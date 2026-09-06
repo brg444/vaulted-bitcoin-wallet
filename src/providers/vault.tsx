@@ -312,14 +312,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [pendingSavingsHandoff])
 
   useEffect(() => {
-    if (!status) return
+    if (!status || status.protectionTier === 'light') return
+    const protectionTier = status.protectionTier
     if (status.network === 'mutinynet' && account === 'savings') {
       setSpend((prev) => (prev.fee === LIVE_FEE ? prev : { ...prev, fee: LIVE_FEE }))
     }
     setSetup((prev) => {
       const next = {
         ...prev,
-        protectionTier: status.protectionTier,
+        protectionTier,
         recoveryPub: status.recoveryPub || status.recoveryKeyPub || '',
         txCapSats: status.txCap || prev.txCapSats,
         dailyLimitSats: status.periodAllowance || prev.dailyLimitSats,
@@ -418,11 +419,20 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     clearError,
   })
 
-  const acceptDesign = useCallback(() => {
-    persist({ ...setup, acceptedDesign: true })
-    setError('')
-    setScreen('hardware')
-  }, [persist, setup])
+  const acceptDesign = useCallback(
+    (tier?: 'standard' | 'advanced') => {
+      const protectionTier = tier || setup.protectionTier
+      persist({
+        ...setup,
+        acceptedDesign: true,
+        protectionTier,
+        ...(protectionTier === 'standard' ? { recoveryPub: '' } : {}),
+      })
+      setError('')
+      setScreen('hardware')
+    },
+    [persist, setup],
+  )
 
   const applyHardware = useCallback(
     (raw: string) => {
@@ -1248,6 +1258,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       dailyRemaining,
       dailySpent: status?.enrolled ? (status.periodSpent ?? 0) : Math.max(0, dailyLimit - dailyRemaining),
       enablePasskeyLogin: enableOtherDevices,
+      lightAvailable: Boolean(deployment?.supportedSetups?.includes('light')),
       enrollmentMode: deployment?.enrollmentMode || 'loading',
       enroll,
       enrolled,
@@ -1354,6 +1365,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setSpendingPolicy,
       deployment?.spendingPolicyCapabilities,
       deployment?.enrollmentMode,
+      deployment?.supportedSetups,
       handoffPsbt,
       dailyLimit,
       dailyRemaining,

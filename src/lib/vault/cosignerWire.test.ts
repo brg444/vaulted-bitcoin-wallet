@@ -1,3 +1,4 @@
+import type { LightDescriptor, LightPolicy } from './light/contract'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { VaultErrorResponse } from './api'
 import {
@@ -18,6 +19,8 @@ import type { VaultStatusWire } from './types'
 import type { ProtectionTier } from './protectionTier'
 
 type ExpectedVaultStatusWire = {
+  lightDescriptor?: LightDescriptor
+  lightDescriptorHash?: string
   enrolled: boolean
   network: string
   clientOrigin: string
@@ -25,7 +28,7 @@ type ExpectedVaultStatusWire = {
   vaultId: string
   templateVersion: string
   policyVersion: string
-  protectionTier: ProtectionTier
+  protectionTier: ProtectionTier | 'light'
   externalOwnerWalletPub?: string
   recoveryKeyPub?: string
   vaultCosignerBasePub?: string
@@ -43,7 +46,7 @@ type ExpectedVaultStatusWire = {
   txCap: number
   absoluteFeeCap: number
   feerateCapSatVb: number
-  spendingPolicy: SpendingPolicy
+  spendingPolicy: SpendingPolicy | LightPolicy
   spendingPolicyDigest: string
   phoneBip340Pub?: string
   phoneDirectP256?: string

@@ -45,6 +45,23 @@ describe('Vercel worker caching', () => {
     expect(readFileSync('api/gateway.ts', 'utf8')).toContain('./authorizer/[...path].js')
   })
 
+  it.each(['vercel.json', 'vercel.mainnet.json'])(
+    'routes Light enrollment through the existing gateway in %s',
+    (file) => {
+      const config = JSON.parse(readFileSync(file, 'utf8')) as {
+        rewrites: { source: string; destination: string }[]
+      }
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/light/renew/:phase',
+        destination: '/api/gateway?route=light-renew&phase=:phase',
+      })
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/light/enroll/:phase',
+        destination: '/api/gateway?route=light-enroll&phase=:phase',
+      })
+    },
+  )
+
   it('routes readiness through the authorizer gateway', () => {
     const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
       rewrites: { source: string; destination: string }[]

@@ -66,8 +66,10 @@ export function kitFromFacts(input: {
     signerOrigin &&
     signerVersion &&
     spendingPolicy &&
+    spendingPolicy.program === 'vault-policy-v1' &&
     statusSpendingPolicyDigest &&
     protectionTier &&
+    protectionTier !== 'light' &&
     isSupportedVaultNetwork(input.status?.network) &&
     liveTemplate === SAVINGS_TEMPLATE
   ) {

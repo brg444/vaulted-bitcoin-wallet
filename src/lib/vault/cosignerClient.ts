@@ -1,3 +1,4 @@
+import type { LightRenewalClient } from './light/renewalTypes'
 import { vaultGet, vaultPost } from './api'
 import { fetchPublicStatus, fetchVaultStatus, type PublicAuthorizerStatus } from './status'
 import type { VaultStatus, VaultStatusWire } from './types'
@@ -388,9 +389,17 @@ export interface VaultCosignerClient {
   recovery: VaultCosignerRecoveryClient
   spending: VaultCosignerSpendingClient
   boarding: VaultCosignerBoardingClient
+  lightRenewal: LightRenewalClient
 }
 
 export const vaultCosignerClient: VaultCosignerClient = {
+  lightRenewal: {
+    prepare: (request) => vaultPost('/v1/light/renew/prepare', request),
+    register: (request) => vaultPost('/v1/light/renew/register', request),
+    final: (request) => vaultPost('/v1/light/renew/final', request),
+    status: ({ vaultId, operationId }) => vaultPost('/v1/light/renew/status', { vaultId, operationId }),
+    release: ({ vaultId, operationId }) => vaultPost('/v1/light/renew/release', { vaultId, operationId }),
+  },
   enrollment: {
     publicStatus(signal) {
       return fetchPublicStatus(signal)

@@ -521,6 +521,33 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   line-height: 1.45;
 }
 
+.qg-setup-options {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1.5rem;
+}
+.qg-setup-options button {
+  padding: 1rem;
+  border: 1px solid var(--qg-line);
+  border-radius: 1rem;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+}
+.qg-setup-options strong,
+.qg-setup-options small {
+  display: block;
+}
+.qg-setup-options strong {
+  font-size: 1rem;
+}
+.qg-setup-options small {
+  margin-top: 0.5rem;
+  font-size: var(--qg-body);
+  line-height: 1.5;
+  color: var(--qg-muted);
+}
+
 .qg-choice-list {
   display: grid;
   gap: 12px;
@@ -2475,7 +2502,8 @@ html.palette-dark .qg-progress {
   animation-play-state: paused;
 }
 
-[data-testid='vault-app'] > .qg-launcher {
+[data-testid='vault-app'] > .qg-launcher,
+[data-testid='vault-light'] > .qg-launcher {
   position: absolute;
   inset: 0;
   max-width: none;
@@ -2556,7 +2584,8 @@ html.palette-dark .qg-progress {
 }
 
 /* The visible tab is the grab surface. Position follows the pointer without layout animation. */
-[data-testid='vault-app'] > .qg-launcher {
+[data-testid='vault-app'] > .qg-launcher,
+[data-testid='vault-light'] > .qg-launcher {
   --qg-launcher-top-inset: max(16px, calc(env(safe-area-inset-top, 0px) + 12px));
   --qg-launcher-bottom-inset: max(16px, calc(var(--vault-safe-area-bottom, env(safe-area-inset-bottom, 0px)) + 12px));
   padding-top: var(--qg-launcher-top-inset);

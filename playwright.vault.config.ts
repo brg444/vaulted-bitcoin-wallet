@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 const appPort = Number(process.env.VAULT_E2E_PORT || 3003)
 const operatorPort = Number(process.env.VAULT_E2E_OPERATOR_PORT || 18_888)
-const appOrigin = `http://localhost:${appPort}`
+const appOrigin = `${process.env.HTTPS === 'true' ? 'https' : 'http'}://localhost:${appPort}`
 const operatorOrigin = `http://127.0.0.1:${operatorPort}`
 
 export default defineConfig({
@@ -25,7 +25,9 @@ export default defineConfig({
   },
   use: {
     baseURL: appOrigin,
+    ignoreHTTPSErrors: process.env.HTTPS === 'true',
     headless: true,
+    launchOptions: process.env.HTTPS === 'true' ? { args: ['--ignore-certificate-errors'] } : undefined,
     viewport: { width: 390, height: 844 },
     trace: 'on-first-retry',
     actionTimeout: 20000,
@@ -34,7 +36,8 @@ export default defineConfig({
   },
   webServer: {
     command: `export NODE_ENV=production VITE_VAULT_RELEASE_NETWORK=mutinynet VITE_GIT_COMMIT=vault-e2e VAULT_E2E_BUILD=arkade-vault-e2e-only VAULT_E2E_OPERATOR_ORIGIN=${operatorOrigin} VAULT_E2E_AUTHORIZER_PROXY_TARGET=${operatorOrigin} VAULT_E2E_ESPLORA_PROXY_TARGET=${operatorOrigin}; pnpm build:worker && pnpm exec vite -c vite.vault-e2e.config.ts --port ${appPort} --host localhost`,
-    port: appPort,
+    url: appOrigin,
+    ignoreHTTPSErrors: process.env.HTTPS === 'true',
     reuseExistingServer: false,
     timeout: 120000,
   },

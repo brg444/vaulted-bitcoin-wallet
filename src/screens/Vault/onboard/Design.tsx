@@ -3,8 +3,34 @@ import { VaultContext } from '../../../vault/context'
 import ProtectionModel from '../qg/ProtectionModel'
 import QgScreen, { QgPrimary } from '../qg/QgScreen'
 
-export default function VaultDesign() {
-  const { acceptDesign, enrollmentMode, navigate } = useContext(VaultContext)
+export default function VaultDesign({ onChooseLight }: { onChooseLight?: () => void }) {
+  const { acceptDesign, enrollmentMode, lightAvailable, navigate } = useContext(VaultContext)
+  if (lightAvailable && onChooseLight)
+    return (
+      <QgScreen title='Choose your Vault' back={() => navigate('welcome')}>
+        <p className='qg-eyebrow'>Multisig protection</p>
+        <h1>Choose your protection</h1>
+        <p className='qg-copy'>
+          Your device and Vaulted approve payments together. Add a hardware key to protect Savings with independent
+          keys.
+        </p>
+        <div className='qg-setup-options' aria-label='Choose your setup'>
+          <button type='button' onClick={onChooseLight}>
+            <strong>Light</strong>
+            <small>Passkey spending with payment limits. Watch Savings held in another wallet.</small>
+          </button>
+          <button type='button' onClick={() => acceptDesign('standard')}>
+            <strong>Standard</strong>
+            <small>Passkey spending, with Savings protected by your device and hardware keys.</small>
+          </button>
+          <button type='button' onClick={() => acceptDesign('advanced')}>
+            <strong>Advanced</strong>
+            <small>Standard protection, plus a separate recovery key.</small>
+          </button>
+        </div>
+        <p className='qg-copy'>Standard and Advanced require a compatible hardware wallet.</p>
+      </QgScreen>
+    )
   return (
     <QgScreen
       title='How it works'

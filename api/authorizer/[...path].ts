@@ -176,6 +176,10 @@ export function publicAuthorizerPath(url = ''): string {
     if (route === 'ready') return '/ready'
     if (route === 'enroll-session') return '/v1/enroll/session'
     const phase = params.get('phase') || ''
+    if (route === 'light-renew' && new Set(['prepare', 'register', 'final', 'status', 'release']).has(phase))
+      return `/v1/light/renew/${phase}`
+    if (route === 'light-enroll' && new Set(['start', 'propose', 'finish']).has(phase))
+      return `/v1/light/enroll/${phase}`
     if (route === 'board' && BOARD_PHASES.has(phase)) return `/v1/vtxo/board/${phase}`
     return raw + q
   }

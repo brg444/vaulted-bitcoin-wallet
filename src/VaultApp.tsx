@@ -1,4 +1,5 @@
-import { useContext, useEffect, useRef } from 'react'
+import VaultLight from './screens/Vault/Light'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { VaultContext } from './vault/context'
 import './screens/Vault/vault.css'
 import './screens/Vault/vault-system.css'
@@ -36,6 +37,7 @@ import { useIntentPress } from './screens/Vault/qg/useIntentPress'
 import { useScreenMotion } from './screens/Vault/qg/useScreenMotion'
 
 export default function VaultApp() {
+  const [lightActive, setLightActive] = useState(() => localStorage.getItem('vaulted:active-setup') === 'light')
   const { screen, account } = useContext(VaultContext)
   const root = useRef<HTMLDivElement>(null)
   const scope = `${screen}:${account}`
@@ -52,7 +54,14 @@ export default function VaultApp() {
     welcome: <VaultWelcome />,
     unlock: <VaultUnlock />,
     handoff: <VaultHandoff />,
-    design: <VaultDesign />,
+    design: (
+      <VaultDesign
+        onChooseLight={() => {
+          localStorage.setItem('vaulted:active-setup', 'light')
+          setLightActive(true)
+        }}
+      />
+    ),
     hardware: <VaultHardware />,
     recovery: <VaultRecovery />,
     recover: <VaultRecover />,
@@ -75,11 +84,26 @@ export default function VaultApp() {
     tx: <VaultTx />,
   }
   const page = pages[screen] || <VaultWelcome />
-  const className = ['page', `vault-screen-${screen}`, launcher ? 'has-vault-navigation' : ''].filter(Boolean).join(' ')
+  const className = [
+    'page',
+    `vault-screen-${lightActive ? 'light' : screen}`,
+    !lightActive && launcher ? 'has-vault-navigation' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
   return (
     <div ref={root} className={className} data-testid='vault-app' {...intentPress}>
-      {page}
-      {launcher ? <VaultNavigation /> : null}
+      {lightActive ? (
+        <VaultLight
+          onExit={() => {
+            localStorage.removeItem('vaulted:active-setup')
+            setLightActive(false)
+          }}
+        />
+      ) : (
+        page
+      )}
+      {!lightActive && launcher ? <VaultNavigation /> : null}
     </div>
   )
 }

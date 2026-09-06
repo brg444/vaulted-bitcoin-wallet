@@ -9,7 +9,8 @@ import RecoveryHelp from './RecoveryHelp'
 import InstallNotice from './qg/InstallNotice'
 
 export default function VaultWelcome() {
-  const { busy, enrollmentMode, error, hasLocalEnrollment, locked, navigate, signIn } = useContext(VaultContext)
+  const { busy, enrollmentMode, lightAvailable, error, hasLocalEnrollment, locked, navigate, signIn } =
+    useContext(VaultContext)
   const onPhone = isCoarsePhone()
   const [showHelp, setShowHelp] = useState(false)
 
@@ -47,9 +48,11 @@ export default function VaultWelcome() {
               ? onPhone
                 ? 'Use face recognition, a fingerprint, or your device PIN'
                 : 'Approve with the passkey on this device'
-              : enrollmentMode === 'token'
-                ? 'Setup needs an invite and a compatible hardware wallet.'
-                : 'Setup needs a compatible hardware wallet.'}
+              : lightAvailable
+                ? 'A hardware wallet is optional with Light.'
+                : enrollmentMode === 'token'
+                  ? 'Setup needs an invite and a compatible hardware wallet.'
+                  : 'Setup needs a compatible hardware wallet.'}
           </p>
         </>
       }
