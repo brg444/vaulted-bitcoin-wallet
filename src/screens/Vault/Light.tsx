@@ -538,6 +538,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     content = (
       <QgScreen
         title='Protect your access'
+        back={busy ? undefined : onExit}
         footer={
           <QgPrimary
             label='Finish automatic backup'
@@ -557,6 +558,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     content = (
       <QgScreen
         title='Protect your access'
+        back={busy ? undefined : onExit}
         footer={
           <QgPrimary
             label='Verify backup and create wallet'
