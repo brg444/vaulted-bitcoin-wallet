@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import defaultDeployment from '../../../vercel.json'
 import mainnetDeployment from '../../../vercel.mainnet.json'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -182,6 +183,59 @@ describe('same-origin authorizer gateway', () => {
     for (let i = 0; i < 60; i++) expect(allowGatewayRate(key, 1)).toBe(true)
     expect(allowGatewayRate(key, 1)).toBe(false)
     expect(allowGatewayRate(key, 61_000)).toBe(true)
+  })
+
+  it.each([
+    ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"vaultId":"victim"}'],
+    ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"VaultID":"victim"}'],
+    ['POST', '/api/v1/light/backup/challenge?vaultId=decoy', '{"vaultId":"victim"}'],
+    ['GET', '/api/v1/status?vault=victim&vaultId=decoy', '{"vaultId":"decoy"}'],
+    ['GET', '/api/v1/map?vault=victim&vaultId=decoy', ''],
+    ['GET', '/api/v1/connector-operation?vault=decoy&vaultId=victim', ''],
+    ['GET', '/api/v1/vtxo-operation?vault=decoy&vaultId=victim', ''],
+  ])('charges the actual Guardian vault for %s %s', async (method, url, body) => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-rate-secret')
+    const victimKey = createHash('sha256').update('victim').digest('hex').slice(0, 32)
+    const fetchMock = vi.fn().mockImplementation(async (target: string, init: RequestInit) => {
+      if (target !== 'https://redis.example/pipeline') return Response.json({ ok: true })
+      const commands = JSON.parse(String(init.body)) as string[][]
+      return Response.json(
+        commands.map(([command, key]) => ({
+          result: command === 'INCR' && key.includes(`:vault:${victimKey}:`) ? 61 : 1,
+        })),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(gatewayRequest({ method, url, body, headers: { host: 'rc.getvaulted.xyz' } }), result.response)
+    expect(result.response.statusCode).toBe(429)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expectLocalNoStore(result)
+  })
+
+  it('rejects conflicting case aliases before charging or forwarding a mainnet request', async () => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({
+        method: 'POST',
+        url: '/api/v1/passkey/challenge?vault=decoy',
+        body: '{"VaultID":"earlier","vaultId":"decoy","VaultID":"victim"}',
+        headers: { host: 'rc.getvaulted.xyz' },
+      }),
+      result.response,
+    )
+    expect(result.response.statusCode).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectLocalNoStore(result)
   })
 
   it('uses a shared durable counter for mainnet client and vault limits', async () => {

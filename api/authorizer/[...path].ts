@@ -96,17 +96,34 @@ function rateIdentity(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 32)
 }
 
-function requestVaultId(pathAndQuery: string, body?: Buffer): string {
-  const query = new URLSearchParams(pathAndQuery.split('?')[1] || '')
-  const fromQuery = query.get('vault') || query.get('vaultId') || ''
-  if (fromQuery) return fromQuery
+function requestVaultId(method: string | undefined, pathAndQuery: string, body?: Buffer): string | null {
+  const [path, search] = pathAndQuery.split('?')
+  if (method === 'GET' || method === 'HEAD') {
+    const query = new URLSearchParams(search || '')
+    // Match the Guardian read handlers; ignored aliases must not change the bucket.
+    if (path === '/v1/connector/operation') return (query.get('vaultId') || query.get('vault') || '').trim()
+    if (path === '/v1/vtxo/operation') return query.get('vaultId') || ''
+    if (path === '/v1/status') return (query.get('vault') || '').trim()
+    if (path === '/v1/map') return query.get('vault') || ''
+    return ''
+  }
   if (!body?.byteLength) return ''
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(body.toString('utf8')) as { vaultId?: unknown }
-    return typeof parsed.vaultId === 'string' ? parsed.vaultId : ''
+    parsed = JSON.parse(body.toString('utf8'))
   } catch {
     return ''
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  // Go accepts case-insensitive JSON field names. Charge a single alias too,
+  // and reject conflicting aliases rather than guessing their decode order.
+  const identities = new Set<string>()
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key.toLowerCase() !== 'vaultid') continue
+    if (typeof value !== 'string') return null
+    identities.add(value)
+  }
+  return identities.size > 1 ? null : [...identities][0] || ''
 }
 
 export async function allowMainnetGatewayRate(
@@ -317,11 +334,16 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
     return
   }
   if (pathOnly !== '/health' && pathOnly !== '/ready') {
+    const vaultId = mainnet ? requestVaultId(req.method, pathAndQuery, body) : ''
+    if (vaultId === null) {
+      jsonError(res, 400, 'ambiguous or invalid vault identity')
+      return
+    }
     try {
       const allowed = mainnet
         ? await allowMainnetGatewayRate(
             clientAddress(req.headers),
-            requestVaultId(pathAndQuery, body),
+            vaultId,
             pathOnly === '/v1/enroll/session',
           )
         : allowGatewayRate(clientAddress(req.headers))
