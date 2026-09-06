@@ -76,8 +76,10 @@ export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
     hash: parsed.descriptorHash,
     trees,
     warnings: [
-      'Recovery cannot exit a Normal UTXO if both cosigners are gone.',
-      'A pending recovery cannot be cancelled if both cosigners are gone, unless this vault has a hardware-only cancel path.',
+      d.templateVersion === CONNECTOR_TEMPLATE
+        ? 'A new connector Savings payment needs its existing service approvals and hardware signature.'
+        : 'Normal Savings can be recovered with the phone and hardware keys without either service.',
+      'Pending cancellation requires the exact remaining keys or service approvals in the saved script.',
       'A mature Pending recovery claim can pay any destination.',
       `Delays are ${PROGRAM_CSV.hardware}, ${PROGRAM_CSV.phone}, and ${PROGRAM_CSV.recovery} blocks. Mutinynet is much faster than a 10-minute chain.`,
     ],

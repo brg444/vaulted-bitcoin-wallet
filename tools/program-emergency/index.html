@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Vaulted recovery</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f5f0e7;
+        color: #171619;
+        font:
+          17px system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 620px;
+        margin: 48px auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 32px;
+      }
+      h2 {
+        font-size: 22px;
+      }
+      p {
+        line-height: 1.5;
+        color: #605b54;
+      }
+      label {
+        display: block;
+        margin: 22px 0;
+      }
+      input,
+      button,
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        font: inherit;
+        padding: 14px;
+        border: 1px solid #cfc8be;
+        border-radius: 12px;
+        background: #fff;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+        background: #a54422;
+        color: white;
+        margin: 8px 0;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      code {
+        overflow-wrap: anywhere;
+      }
+      #error {
+        color: #a52618;
+      }
+      #events {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: #a54422;
+      }
+      select {
+        width: 100%;
+        padding: 12px;
+        font: inherit;
+      }
+      #signature {
+        border: 2px solid #a54422;
+        padding: 18px;
+        margin: 20px 0;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .note {
+        padding: 14px;
+        background: #fff9ed;
+        border-radius: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>Vaulted recovery</p>
+      <p><a href="/light/">Older Light backup with a recovery code</a></p>
+      <h1>Recover with your saved transaction paths</h1>
+      <p>
+        Open a recovery archive or Recovery Kit. Each account keeps the keys and delays defined when it was created.
+      </p>
+      <label>Recovery file<input id="file" type="file" accept=".json,.zip,application/json,application/zip" /></label>
+      <p id="origin"></p>
+      <button id="open" hidden>Open encrypted backup with passkey</button>
+      <section id="review" hidden>
+        <h2>Your saved accounts</h2>
+        <p id="facts"></p>
+        <p id="coverage" class="note"></p>
+        <label>Recovery path<select id="program"></select></label>
+        <label id="coin-label">Saved Bitcoin output<select id="coin"></select></label
+        ><button id="scan">Check Bitcoin outputs</button>
+        <label>Bitcoin destination<input id="destination" autocomplete="off" spellcheck="false" /></label>
+        <label id="fee-label"
+          >Network fee for a Savings transaction, sats<input id="fee" type="number" value="500" min="0"
+        /></label>
+        <button id="prepare">Prepare recovery</button>
+        <p>
+          Preparation does not broadcast. Signatures must come from the keys shown in the signing request. Hardware
+          signatures use an exact partial PSBT handoff; physical-device compatibility must be checked with your signing
+          software.
+        </p>
+      </section>
+      <section id="signature" hidden>
+        <h2>Sign the exact transaction</h2>
+        <p id="signers"></p>
+        <pre id="signing-summary"></pre>
+        <label>PSBT for your signing device<textarea id="psbt" readonly rows="4"></textarea></label
+        ><button class="sign-control" id="save-signing">Save signing request and resume data</button
+        ><button class="sign-control" id="sign-phone">Sign with original passkey</button
+        ><label>Signed partial PSBT<textarea id="signed" rows="4" spellcheck="false"></textarea></label
+        ><button class="sign-control" id="accept-signature">Import signature</button
+        ><button class="sign-control" id="finish-signing">Continue with these signatures</button>
+        <p id="sign-error" role="alert"></p>
+      </section>
+      <section id="prepared" hidden>
+        <h2>Prepared recovery</h2>
+        <button id="change-path">Choose another recovery path</button>
+        <pre id="details"></pre>
+        <button id="save">Save prepared recovery</button><button id="export-psbt">Export PSBT</button
+        ><label id="fee-key-label">Key for separate Bitcoin fee funding<select id="fee-key"></select></label>
+        <p id="funding"></p>
+        <button id="execute">Start or resume Bitcoin recovery</button><button id="stop" hidden>Pause recovery</button>
+        <p>
+          Keep this file after a lost response. Resume checks Bitcoin transaction status and reuses the same
+          transaction. A parent already in the mempool waits for confirmation; this SDK does not automatically raise its
+          fee.
+        </p>
+      </section>
+      <p id="error" role="alert"></p>
+      <p id="status" role="status"></p>
+      <pre id="events" aria-live="polite"></pre>
+    </main>
+    <script type="module" src="./recovery.js"></script>
+  </body>
+</html>

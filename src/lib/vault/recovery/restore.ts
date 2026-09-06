@@ -27,7 +27,7 @@ import { recoveryFileStore } from './fileStore'
 
 /** Idempotent, conservative import; no archived status is treated as current chain state. */
 export async function restoreVaultRecoveryFile(value: VaultRecoveryFile, phone: Uint8Array) {
-  const file = validateVaultRecoveryFile(value)
+  const file = validateVaultRecoveryFile(JSON.parse(JSON.stringify(value)))
   const { status, enrollment } = file.header
   validateRecoveryJournals(status, file as VaultRecoveryFile & RecoveryJournals)
   if (hex.encode(schnorr.getPublicKey(phone)) !== file.header.kit.descriptor.keys.phoneBip340.slice(2))
