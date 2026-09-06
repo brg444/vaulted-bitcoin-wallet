@@ -64,6 +64,10 @@ describe('connector contract matches runtime', () => {
           feeSats: p.fee,
         }
         const prepared = prepareConnectorPayment(request)
+        const phoneKey = new Uint8Array(32)
+        phoneKey[31] = 3 // Public fixture key, never a user wallet.
+        const phoneStage = prepared.signPhone(phoneKey)
+        expect(prepared.verifyPhoneStage(phoneStage)).toBe(phoneStage)
         const built = Transaction.fromPSBT(hex.decode(prepared.psbt()), {
           allowUnknownInputs: true,
           allowUnknownOutputs: true,
@@ -76,7 +80,7 @@ describe('connector contract matches runtime', () => {
         const hardware = prepared.forHardware(p.savingsWitness.map((item) => hex.decode(item)))
         // The real emulator requires the proprietary parent field for BOTH
         // inputs. Transaction/signature parity alone does not detect its loss.
-        for (const serialized of [prepared.psbt(), hardware.psbt()]) {
+        for (const serialized of [prepared.psbt(), phoneStage, hardware.psbt()]) {
           const packet = RawPSBTV0.decode(hex.decode(serialized))
           for (const input of packet.inputs) {
             const parents = input.unknown?.filter(

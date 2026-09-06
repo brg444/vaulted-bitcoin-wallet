@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { hex } from '@scure/base'
 import { Address, OutScript, Transaction } from '@scure/btc-signer'
+import { RawPSBTV0 } from '@scure/btc-signer/psbt.js'
 import { vaultAddressNetwork } from '../addressNetwork'
 import { defaultSpendingPolicy } from '../spendingPolicy'
 import { VaultConcurrencyUnavailableError, type VaultLockManager } from '../vtxo/lock'
@@ -15,6 +16,7 @@ import {
   reservedConnectorOutpoints,
   storeConnectorSavingsWitness,
   storeConnectorSignedTx,
+  storeConnectorPhoneStage,
   withConnectorLock,
   type ConnectorExpectedIdentity,
   type ConnectorPendingInput,
@@ -119,6 +121,64 @@ function vectorInput(
 }
 
 describe('connector durable approval/handoff', () => {
+  it('restores the exact phone-signed authorization instead of signing again after response loss', async () => {
+    const { input, expected } = vectorInput()
+    const storage = memoryStorage()
+    const locks = new FakeLockManager()
+    const { prepared, candidateTxid } = await preparePendingConnectorOperation(input, expected, storage, locks)
+    const key = new Uint8Array(32)
+    key[31] = 3
+    const first = prepared.signPhone(key)
+    const second = prepared.signPhone(key)
+    expect(second).not.toBe(first) // Valid Schnorr auxiliary randomness changes the wire request.
+    expect(prepared.verifyPhoneStage(second)).toBe(second)
+    await storeConnectorPhoneStage(expected, candidateTxid, first, storage, locks)
+    const restored = await loadPendingConnectorOperation(expected, storage, new FakeLockManager())
+    expect(restored?.record.phoneSignedPsbt).toBe(first)
+    expect(restored?.phase).toBe('signing')
+    await expect(storeConnectorPhoneStage(expected, candidateTxid, second, storage, locks)).rejects.toThrow(
+      /already saved/,
+    )
+    await storeConnectorPhoneStage(expected, candidateTxid, first, storage, locks)
+    await expect(cancelPendingConnectorOperation(expected, candidateTxid, storage, locks)).rejects.toThrow(
+      /retained for chain reconciliation/,
+    )
+  })
+
+  it('checks all saved phone-stage metadata on restore, beyond the unsigned transaction id', async () => {
+    const { input, expected } = vectorInput()
+    const storage = memoryStorage()
+    const locks = new FakeLockManager()
+    const { prepared, candidateTxid } = await preparePendingConnectorOperation(input, expected, storage, locks)
+    const key = new Uint8Array(32)
+    key[31] = 3
+    await storeConnectorPhoneStage(expected, candidateTxid, prepared.signPhone(key), storage, locks)
+    const stored = storage.getItem(connectorStoreKey(expected.vaultId))!
+    const mutate = (change: (wire: ReturnType<typeof RawPSBTV0.decode>) => void) => {
+      const record = JSON.parse(stored)
+      const wire = RawPSBTV0.decode(hex.decode(record.phoneSignedPsbt))
+      change(wire)
+      record.phoneSignedPsbt = hex.encode(RawPSBTV0.encode(wire))
+      storage.setItem(connectorStoreKey(expected.vaultId), JSON.stringify(record))
+    }
+    for (const index of [0, 1]) {
+      mutate((wire) => {
+        delete wire.inputs[index].unknown
+      })
+      await expect(loadPendingConnectorOperation(expected, storage, locks)).rejects.toThrow(/changed connector/)
+    }
+    mutate((wire) => {
+      wire.inputs[1].tapKeySig = new Uint8Array(64)
+    })
+    await expect(loadPendingConnectorOperation(expected, storage, locks)).rejects.toThrow(/changed connector/)
+    mutate((wire) => {
+      wire.inputs[0].tapScriptSig![0][1][0] ^= 1
+    })
+    await expect(loadPendingConnectorOperation(expected, storage, locks)).rejects.toThrow(/phone signature/)
+    storage.setItem(connectorStoreKey(expected.vaultId), stored)
+    expect((await loadPendingConnectorOperation(expected, storage, locks))?.record.phoneSignedPsbt).toBeDefined()
+  })
+
   it('persists the exact candidate before any signing request', async () => {
     const { input, expected, payment } = vectorInput()
     const storage = memoryStorage()
@@ -334,6 +394,7 @@ describe('connector durable approval/handoff', () => {
         markConnectorSignaturesMayHaveIssued(expected, candidateTxid, storage, locks),
         name,
       ).rejects.toThrow()
+      await expect(storeConnectorPhoneStage(expected, candidateTxid, '', storage, locks), name).rejects.toThrow()
       await expect(
         storeConnectorSavingsWitness(expected, candidateTxid, payment.savingsWitness, storage, locks),
         name,

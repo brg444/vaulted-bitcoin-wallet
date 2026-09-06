@@ -76,6 +76,7 @@ export interface ConnectorPendingRecord extends ConnectorPendingInput {
   enrollmentDigest: string
   candidatePsbt: string
   signaturesMayHaveIssued: boolean
+  phoneSignedPsbt?: string
   savingsWitness?: string[]
   signedTxHex?: string
   txid?: string
@@ -121,6 +122,7 @@ function isRecordShape(value: unknown): value is ConnectorPendingRecord {
     typeof record.enrollmentDigest === 'string' &&
     typeof record.candidatePsbt === 'string' &&
     typeof record.signaturesMayHaveIssued === 'boolean' &&
+    (record.phoneSignedPsbt === undefined || typeof record.phoneSignedPsbt === 'string') &&
     typeof record.recipient === 'string' &&
     Number.isSafeInteger(record.amountSats) &&
     Number.isSafeInteger(record.feeSats) &&
@@ -186,6 +188,11 @@ function validatedRecord(expected: ConnectorExpectedIdentity, raw: unknown) {
   })
   if (record.candidatePsbt !== prepared.psbt()) throw new Error('connector candidate mismatch on restore')
   const candidateTxid = Transaction.fromPSBT(hex.decode(prepared.psbt()), OPTIONS).id
+  if (record.phoneSignedPsbt !== undefined) {
+    if (prepared.verifyPhoneStage(record.phoneSignedPsbt) !== record.phoneSignedPsbt)
+      throw new Error('noncanonical saved phone signing stage')
+    if (!record.signaturesMayHaveIssued) throw new Error('phone signing stage without retained ownership')
+  }
   // A saved Savings witness is re-validated on every load, even before any
   // signed transaction exists.
   if (record.savingsWitness) {
@@ -301,6 +308,37 @@ export function markConnectorSignaturesMayHaveIssued(
       const validated = readValidated(snap, storage)
       if (!validated) throw new Error('no connector operation to mark')
       requireCandidateMatch(validated, txid)
+      validated.record.signaturesMayHaveIssued = true
+      writeRecord(snap.vaultId, validated.record, storage)
+      return { record: validated.record, candidateTxid: validated.candidateTxid }
+    },
+    locks,
+  )
+}
+
+// Persist before sending to the Guardian. Schnorr auxiliary randomness means
+// signing the same candidate again is not a byte-identical authorization retry.
+// The first verified phone stage wins, even across tabs or a lost response.
+export function storeConnectorPhoneStage(
+  expected: ConnectorExpectedIdentity,
+  candidateTxid: string,
+  phoneSignedPsbt: string,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  const txid = requireCandidateTxid(candidateTxid)
+  const stage = String(phoneSignedPsbt)
+  return withConnectorLock(
+    snap.vaultId,
+    () => {
+      const validated = readValidated(snap, storage)
+      if (!validated) throw new Error('no connector operation to update')
+      requireCandidateMatch(validated, txid)
+      const canonical = validated.prepared.verifyPhoneStage(stage)
+      if (validated.record.phoneSignedPsbt && validated.record.phoneSignedPsbt !== canonical)
+        throw new Error('connector phone signing stage already saved')
+      validated.record.phoneSignedPsbt = canonical
       validated.record.signaturesMayHaveIssued = true
       writeRecord(snap.vaultId, validated.record, storage)
       return { record: validated.record, candidateTxid: validated.candidateTxid }

@@ -1,6 +1,7 @@
 import { hex, base64 } from '@scure/base'
 import { OutScript, Transaction } from '@scure/btc-signer'
 import { RawPSBTV0 } from '@scure/btc-signer/psbt.js'
+import { tapLeafHash } from '@scure/btc-signer/payment.js'
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js'
 import { bitcoinDustSats, scriptHexFromAddress } from '../bitcoin'
 import { buildConnectorFamily, connectorEnrollmentDigest, type ConnectorOrigin } from './connector'
@@ -127,8 +128,40 @@ export function prepareConnectorPayment(input: {
   const vbytes = Math.ceil((unsigned.length * 4 + f.rules.witnessBytes) / 4)
   if (input.feeSats > vbytes * f.rules.feerateCapSatPerV) throw new Error('connector feerate cap exceeded')
   const prepared = tx.toPSBT()
+  // Only the expected phone signature may differ from the retained pristine
+  // candidate. Comparing full PSBT maps also binds parent/origin metadata that
+  // the unsigned transaction id alone does not commit.
+  const verifyPhoneStage = (response: string): string => {
+    if (response.length > 4_000_000) throw new Error('phone signing response too large')
+    const wire = RawPSBTV0.decode(hex.decode(response))
+    const signatures = wire.inputs[0]?.tapScriptSig
+    if (signatures?.length !== 1) throw new Error('exactly one phone signature required')
+    const [[key, signature]] = signatures
+    if (
+      signature.length !== 64 ||
+      hex.encode(key.pubKey) !== hex.encode(xOnlyFromCompressed(phonePub)) ||
+      hex.encode(key.leafHash) !== hex.encode(tapLeafHash(f.savings.normal)) ||
+      !schnorr.verify(
+        signature,
+        tx.preimageWitnessV1(0, scripts, 0, values, -1, f.savings.normal),
+        xOnlyFromCompressed(phonePub),
+      )
+    )
+      throw new Error('invalid phone signature')
+    delete wire.inputs[0].tapScriptSig
+    if (hex.encode(RawPSBTV0.encode(wire)) !== hex.encode(RawPSBTV0.encode(RawPSBTV0.decode(prepared))))
+      throw new Error('phone changed connector candidate')
+    wire.inputs[0].tapScriptSig = signatures
+    return hex.encode(RawPSBTV0.encode(wire))
+  }
   return {
     psbt: () => hex.encode(prepared.slice()),
+    verifyPhoneStage,
+    signPhone(privateKey: Uint8Array) {
+      const phone = Transaction.fromPSBT(prepared, OPTIONS)
+      phone.signIdx(privateKey, 0, [0])
+      return verifyPhoneStage(hex.encode(phone.toPSBT()))
+    },
     forHardware(witness: Uint8Array[]) {
       if (
         witness.length !== 5 ||
