@@ -6,6 +6,7 @@ import { VaultContext } from '../../vault/context'
 import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
 
 import RecoveryHelp from './RecoveryHelp'
+import RecoveryFileImport from './RecoveryFileImport'
 
 export default function VaultUnlock() {
   const { busy, error, signIn, restoreRecoveryArchive } = useContext(VaultContext)
@@ -24,6 +25,7 @@ export default function VaultUnlock() {
             onClick={() => void restoreRecoveryArchive().catch(() => undefined)}
             label='Restore encrypted cloud backup'
           />
+          <RecoveryFileImport busy={busy} restore={restoreRecoveryArchive} />
           <ErrorMessage error={Boolean(error)} text={error} />
           <QgPrimary
             onClick={() => void signIn()}

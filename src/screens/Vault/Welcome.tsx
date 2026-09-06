@@ -6,6 +6,7 @@ import { VaultContext } from '../../vault/context'
 import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
 
 import RecoveryHelp from './RecoveryHelp'
+import RecoveryFileImport from './RecoveryFileImport'
 import InstallNotice from './qg/InstallNotice'
 
 export default function VaultWelcome() {
@@ -40,6 +41,7 @@ export default function VaultWelcome() {
             onClick={() => void restoreRecoveryArchive().catch(() => undefined)}
             label='Restore encrypted cloud backup'
           />
+          <RecoveryFileImport busy={busy} restore={restoreRecoveryArchive} />
           <ErrorMessage error={Boolean(error)} text={error} />
           {locked ? (
             <QgPrimary
