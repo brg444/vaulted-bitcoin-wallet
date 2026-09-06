@@ -12,12 +12,19 @@ tools for conventional P2WPKH/BIP86 inputs beside finalized Savings. Their
 results cover component tests; physical hardware compatibility and a complete
 live payment flow remain separate qualifications.
 
-The next integration stages are exact two-input Guardian authorization, durable
-wallet handoff state, versioned enrollment and Recovery Kit support, then payment
-screens and complete funded qualification. Signed candidates must survive
-reload and lost responses without releasing their inputs or replacing their
-recipient. The existing whole-transaction signature verification remains the
-boundary for signer responses.
+The first increment adds a scoped two-input Guardian signing helper and durable
+wallet handoff state. The store requires a per-vault Web Lock, an independent
+enrollment pin, and the exact candidate identity for mutations. Restore checks
+the complete PSBT and any saved signatures; signed candidates retain their
+inputs across reload and lost responses. These components have no enrollment,
+HTTP, or payment-screen caller yet.
+
+The remaining integration stages are versioned enrollment and Recovery Kit
+support, authenticated ledger authorization, the remote cosigner stage,
+confirmation and conflict reconciliation, then payment screens and complete
+funded qualification. The existing whole-transaction signature verification
+remains the boundary for signer responses. Wallet persistence alone does not
+provide authoritative replay protection.
 
 Connector enforcement requires at least one honest online cosigner. Phone plus
 all required online signing keys can bypass the program; that accepted
