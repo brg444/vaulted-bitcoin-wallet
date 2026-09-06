@@ -92,6 +92,24 @@ describe('shared Spending renewal identity', () => {
     expect(() => guardianRenewalContext(changed)).toThrow()
   })
 
+  it.each(fixtures.filter((status) => status.protectionTier !== 'light'))(
+    'accepts actual enrollment IDs for $network $protectionTier $templateVersion',
+    (status) => {
+      const vaultId = '85d3dbe6dc97a42859b28dde49400985'
+      const enrolled = { ...status, vaultId }
+      expect(guardianRenewalContext(enrolled).vaultId).toBe(vaultId)
+      expect(guardianRenewalContext(enrolled).scriptPubKey).toBe(status.spendingArkScript)
+      expect(guardianRenewalContextDigest(enrolled)).not.toBe(guardianRenewalContextDigest(status))
+      for (const invalid of ['', vaultId.toUpperCase(), vaultId + '00', '../' + vaultId]) {
+        expect(() => guardianRenewalContext({ ...status, vaultId: invalid })).toThrow('identity is invalid')
+      }
+    },
+  )
+
+  it('retains the distinct Light descriptor ID contract', () => {
+    expect(() => guardianRenewalContext({ ...fixtures[0], vaultId: 'ab'.repeat(16) })).toThrow()
+  })
+
   it('rejects tier, policy, and unnamed program substitutions', () => {
     const status = fixtures[1]
     expect(() => guardianRenewalContext({ ...status, protectionTier: 'advanced' })).toThrow()

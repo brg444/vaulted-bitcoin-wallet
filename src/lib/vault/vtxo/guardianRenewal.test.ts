@@ -46,6 +46,7 @@ afterEach(() => {
 function environment(raw: unknown) {
   const status = structuredClone(raw) as VaultStatus,
     scalar = new Uint8Array(32).fill(7)
+  status.vaultId = '85d3dbe6dc97a42859b28dde49400985'
   status.phoneDirectP256 = hex.encode(p256.getPublicKey(scalar, true))
   status.rpId = location.hostname
   status.clientOrigin = location.origin
@@ -54,6 +55,8 @@ function environment(raw: unknown) {
   const f = delegationFixture(
     buildLightDescriptor({
       ...context,
+      // This helper supplies transaction fixtures, not the Spending enrollment identity.
+      vaultId: 'ab'.repeat(32),
       exitDelaySeconds: status.vtxoExitDelay!,
       spendingPolicy: defaultLightPolicy(context.network),
     }),

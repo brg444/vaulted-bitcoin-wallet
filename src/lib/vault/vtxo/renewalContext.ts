@@ -26,7 +26,9 @@ export interface GuardianRenewalContext {
 /** The caller must first verify status against its saved enrollment/recovery pin. */
 export function guardianRenewalContext(status: VaultStatus): GuardianRenewalContext {
   const network = requireSupportedVaultNetwork(status.network)
-  if (!/^[0-9a-f]{64}$/.test(status.vaultId)) throw new Error('Renewal vault identity is invalid')
+  // Enrollment uses 16-byte opaque IDs; existing 32-byte IDs remain valid.
+  // Light's descriptor validator below retains its separate 32-byte requirement.
+  if (!/^(?:[0-9a-f]{32}|[0-9a-f]{64})$/.test(status.vaultId)) throw new Error('Renewal vault identity is invalid')
   if (status.templateVersion === LIGHT_PROFILE) {
     const d = requireLightStatus(status).lightDescriptor!
     return {
