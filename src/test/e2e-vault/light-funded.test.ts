@@ -192,8 +192,9 @@ test('Light prepares recovery of funded change without a passkey', async ({ page
     await readFile(join(directory, 'browser-owner-backup.json'), 'utf8'),
   )
   expect(destination).toMatch(/^tb1p/)
-  await page.addInitScript(() => localStorage.setItem('vaulted:active-setup', 'light'))
   await page.goto('/')
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
   await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
   await page
     .locator('input[type=file]')
@@ -232,6 +233,8 @@ test('Light prepares recovery of funded change without a passkey', async ({ page
   )
   // Reload before the outage drill so recovery depends on persisted data.
   await page.reload()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
   await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
   await page.locator('input[type=file]').setInputFiles({
     name: 'backup.json',
@@ -275,8 +278,9 @@ test('Light explains and pauses an existing Bitcoin recovery delay', async ({ pa
     }
     return route.continue()
   })
-  await page.addInitScript(() => localStorage.setItem('vaulted:active-setup', 'light'))
   await page.goto('/')
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
   await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
   await page.locator('input[type=file]').setInputFiles({
     name: 'saved-exit.json',
