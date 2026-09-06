@@ -341,11 +341,7 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
     }
     try {
       const allowed = mainnet
-        ? await allowMainnetGatewayRate(
-            clientAddress(req.headers),
-            vaultId,
-            pathOnly === '/v1/enroll/session',
-          )
+        ? await allowMainnetGatewayRate(clientAddress(req.headers), vaultId, pathOnly === '/v1/enroll/session')
         : allowGatewayRate(clientAddress(req.headers))
       if (!allowed) {
         jsonError(res, 429, 'too many requests')
