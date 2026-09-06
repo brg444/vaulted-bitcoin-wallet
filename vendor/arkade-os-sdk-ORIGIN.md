@@ -17,5 +17,5 @@ Do not replace this with npm 0.4.68 / swap 0.0.11: that release refactors VHTLC 
 - Rebuilt from `0481df63db88f4de6fa527d27e472fa6bf97755b` on `codex/vaulted-signed-boarding-final`.
 - Parent `b85d9de6` preserves the three compatibility source files listed above on the original `f0fd58d5` base.
 - Named boarding now submits the final signed VTXO tree, retaining the captured batch identity, commitment, expiry, recipients, and tree topology. Guardian verifies the aggregate signatures before co-signing.
-- Build: `pnpm install --frozen-lockfile --ignore-scripts`, then `pnpm -C packages/ts-sdk pack --pack-destination <output>`. The pack hook builds runtime and declarations and runs the distribution smoke check.
+- Candidate rebuilt with Node 24.15.0. Build: `pnpm install --frozen-lockfile --ignore-scripts`, then `pnpm -C packages/ts-sdk pack --pack-destination <output>`. The pack hook builds runtime and declarations and runs the distribution smoke check.
 - Tarball SHA-256: `8d8de2d60576433fd981c8f469adfa11a566741e35f218e398414d8f3c5ce6e8`.
