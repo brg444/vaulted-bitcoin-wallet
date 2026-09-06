@@ -256,22 +256,29 @@ export function useVaultSession({
     async (raw?: unknown) => {
       setBusy(true)
       reportError('')
+      let imported = false
       try {
         const file =
           raw === undefined
             ? (await openRecoveryCloudBackup(undefined, restoreVaultRecoveryFile)).file
             : await openLocalRecoveryBackup(raw, restoreVaultRecoveryFile)
         if (!file) throw new Error('No complete encrypted recovery archive was found')
-        setEnrollment(file.header.enrollment)
-        setAddressPin(pinFromEnrolledStatus(file.header.status))
+        imported = true
         const live = await fetchVaultStatus(undefined, file.header.binding.vaultId)
         restoreConnectorPin(live)
+        const livePin = pinFromEnrolledStatus(live)
+        setEnrollment(file.header.enrollment)
+        setAddressPin(livePin)
         setStatus(live)
         setLocked(false)
         bestEffortBrowserWrite(() => setSessionLocked(false))
         setScreen('home')
       } catch (error) {
-        reportError(humanizeVaultError(error))
+        reportError(
+          imported
+            ? 'Recovery data is saved on this device. Live balances could not be loaded.'
+            : humanizeVaultError(error),
+        )
         throw error
       } finally {
         setBusy(false)

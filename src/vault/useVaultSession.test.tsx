@@ -8,6 +8,9 @@ import { useVaultSession } from './useVaultSession'
 
 const mocks = vi.hoisted(() => ({
   discover: vi.fn(),
+  openArchive: vi.fn(),
+  restoreArchive: vi.fn(),
+  liveStatus: vi.fn(),
   enable: vi.fn(),
   enroll: vi.fn(),
   loadPin: vi.fn(),
@@ -16,6 +19,16 @@ const mocks = vi.hoisted(() => ({
   recover: vi.fn(),
   savePin: vi.fn(),
   unlock: vi.fn(),
+}))
+
+vi.mock('../lib/vault/recovery/backupCodec', async (original) => ({
+  ...(await original<typeof import('../lib/vault/recovery/backupCodec')>()),
+  openLocalRecoveryBackup: mocks.openArchive,
+}))
+vi.mock('../lib/vault/recovery/restore', () => ({ restoreVaultRecoveryFile: mocks.restoreArchive }))
+vi.mock('../lib/vault/status', async (original) => ({
+  ...(await original<typeof import('../lib/vault/status')>()),
+  fetchVaultStatus: mocks.liveStatus,
 }))
 
 vi.mock('../lib/vault/pin', async (importOriginal) => ({
@@ -206,5 +219,40 @@ describe('Vault session enrollment passkey install', () => {
     expect(state.setScreen).toHaveBeenCalledWith('created')
     expect(state.setScreen).not.toHaveBeenCalledWith('problem')
     expect(state.reportError).toHaveBeenCalledWith(expect.stringMatching(/sign-in after a restart is not on yet/i))
+  })
+})
+
+describe('local archive restore with unavailable live status', () => {
+  it('retains imported data without publishing an empty unlocked session, then retries online', async () => {
+    const file = { header: { enrollment, status, binding: { vaultId: enrollment.vaultId } } }
+    mocks.restoreArchive.mockImplementation(async () => {
+      localStorage.setItem('restored-archive-fixture', JSON.stringify(file))
+    })
+    mocks.openArchive.mockImplementation(async (_raw, restore) => {
+      await restore(file, new Uint8Array(32))
+      return file
+    })
+    mocks.liveStatus.mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValueOnce(status)
+    const hook = setupHook({ enrollment: null, status: null })
+    await act(async () => {
+      await expect(hook.result.current.restoreRecoveryArchive({ name: 'encrypted-fixture' })).rejects.toThrow(
+        'Failed to fetch',
+      )
+    })
+    expect(mocks.restoreArchive).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('restored-archive-fixture')).toBe(JSON.stringify(file))
+    expect(hook.setEnrollment).not.toHaveBeenCalled()
+    expect(hook.setAddressPin).not.toHaveBeenCalled()
+    expect(hook.setLocked).not.toHaveBeenCalled()
+    expect(hook.setStatus).not.toHaveBeenCalled()
+    expect(hook.setScreen).not.toHaveBeenCalled()
+    expect(hook.reportError).toHaveBeenLastCalledWith(
+      'Recovery data is saved on this device. Live balances could not be loaded.',
+    )
+    expect(hook.setBusy).toHaveBeenLastCalledWith(false)
+    await act(async () => hook.result.current.restoreRecoveryArchive({ name: 'encrypted-fixture' }))
+    expect(hook.setEnrollment).toHaveBeenCalledWith(enrollment)
+    expect(hook.setStatus).toHaveBeenCalledWith(status)
+    expect(hook.setScreen).toHaveBeenCalledWith('home')
   })
 })
