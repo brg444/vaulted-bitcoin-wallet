@@ -1,23 +1,29 @@
-# Connector qualification and the contingency
+# Savings connector release preparation
 
-The [canonical reconciliation](https://github.com/brg444/arkade-runtime/blob/codex/operator-gated-contingency/docs/contingency/connector-reconciliation.md)
-assigns future Savings implementation and timelocked recovery to the native
-contingency branch. This connector branch remains an isolated L1 experiment;
-its contract is excluded from the native implementation.
+The [accepted implementation sequence](https://github.com/brg444/arkade-runtime/blob/codex/hardware-connector-rc/docs/connector-first.md)
+ships the onchain Savings connector against the current Guardian stack first.
+The later Guardian refactor replaces its forked execution/signing code with the
+upstream embedded engine after PR 102 merges. It is independent of this work.
+Native Savings and the direct multisig proposal are inactive; fund migration is
+deferred.
 
-Retain the [Sparrow](SPARROW.md) and [Electrum](README.md) adapters as reusable
-qualification tools. Their current results cover a conventional P2WPKH/BIP86
-input with finalized foreign Savings, not an admitted native transaction. Native
-input ancestry, signing order, actual destination review, and complete recovery
-require fresh tests. The reconciliation also keeps the original strict
-hardware-compromise test separate from the later accepted honest-cosigner model.
+Retain the [Sparrow](SPARROW.md) and [Electrum](README.md) adapters as qualification
+tools for conventional P2WPKH/BIP86 inputs beside finalized Savings. Their
+results cover component tests; physical hardware compatibility and a complete
+live payment flow remain separate qualifications.
 
-The old L1 transaction builder, fixed reserve, output positions, fee layout, and
-contract identity remain experimental choices. They impose no requirement on
-the new design. Direct native signing can remove the connector if the selected
-wallet demonstrates the same destination approval and transaction binding.
+The next integration stages are exact two-input Guardian authorization, durable
+wallet handoff state, versioned enrollment and Recovery Kit support, then payment
+screens and complete funded qualification. Signed candidates must survive
+reload and lost responses without releasing their inputs or replacing their
+recipient. The existing whole-transaction signature verification remains the
+boundary for signer responses.
 
-Existing funded vaults keep their enrolled scripts and recovery artifacts.
-A new contract requires an intentionally authorized transfer into a new
-enrollment. Neither this evidence nor the contingency preparation activates
-connector enrollment, deploys a service, or establishes native signer support.
+Connector enforcement requires at least one honest online cosigner. Phone plus
+all required online signing keys can bypass the program; that accepted
+limitation remains covered by the original counterexample tests. The later
+Guardian engine refactor must preserve both successful connector fixtures and
+these trust-boundary results.
+
+Existing funded wallets retain their scripts and recovery tooling. No connector
+enrollment or release activation follows from documentation or local tests.
