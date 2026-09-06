@@ -1,10 +1,13 @@
+import { CONNECTOR_TEST_DESCRIPTOR, CONNECTOR_TEST_PUB } from './connector'
+import { buildConnectorEnrollmentPreview } from '../../../lib/vault/program/connectorEnrollmentCore'
+import { tweakPrivateKey } from '../../../lib/vault/program/tweak'
+import { CONNECTOR_TEMPLATE } from '../../../lib/vault/program/connector'
 import { expect, test as base, type BrowserContext, type CDPSession, type Page, type Route } from '@playwright/test'
 import { ArkAddress, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
 import { buildVaultProgramDescriptor } from '../../../lib/vault/program/descriptor'
-import { hashBoardingEnrollmentDescriptor } from '../../../lib/vault/program/enroll'
-import { PROGRAM_FIXTURE } from '../../../lib/vault/program/fixtures'
+import { PROGRAM_FIXTURE, scalarSecret } from '../../../lib/vault/program/fixtures'
 import { recoveryBindingDigest } from '../../../lib/vault/passkeyBinding'
 import { bytesToHex } from '../../../lib/vault/hex'
 import { POLICY_VERSION } from '../../../lib/vault/constants'
@@ -129,6 +132,13 @@ function publicStatus() {
     enrollmentMode: 'token',
     spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
     vtxoBoardingProgram: BOARDING_PROGRAM,
+    connectorCapability: {
+      schema: 'arkade-vault/connector-capability-v1',
+      program: 'savings-connector-v1',
+      template: CONNECTOR_TEMPLATE,
+      reserveSats: 1000,
+      enrollmentSchema: 'arkade-vault/enrollment-with-connector-v1',
+    },
   }
 }
 
@@ -145,6 +155,18 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
     this.inviteOnly = enabled
   }
 
+  private connectorPreview?: ReturnType<typeof buildConnectorEnrollmentPreview>
+  private parents = new Map<string, string>()
+  private reserveUtxos: Record<string, unknown>[] = []
+  private operation?: {
+    operationId: string
+    candidateTxid: string
+    signedPsbt: string
+    phase: string
+    resolution: string
+    verified: boolean
+  }
+  private fundingValue = 0
   private enrolled = false
   private passkeyLoginAvailable = false
   private proposed?: Record<string, any>
@@ -164,19 +186,43 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
   constructor(private readonly page: Page) {}
 
   async installRoutes() {
+    await this.page.route('**/ready', (route) =>
+      json(route, {
+        ok: true,
+        schema: 3,
+        network: 'mutinynet',
+        enrollTemplate: SAVINGS_TEMPLATE,
+        arkadeOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
+        arkadeVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
+      }),
+    )
     await this.page.route('**/v1/**', async (route) => this.handle(route))
     await this.page.route('**/esplora/**', async (route) => {
       const request = route.request()
       const url = new URL(request.url())
+      if (url.pathname.endsWith('/fee-estimates')) return json(route, { '3': 1, '6': 1 })
+      const parentMatch = url.pathname.match(/\/tx\/([0-9a-f]+)\/hex$/)
+      if (parentMatch && this.parents.has(parentMatch[1]))
+        return route.fulfill({ status: 200, body: this.parents.get(parentMatch[1])! })
       if (url.pathname.endsWith('/blocks/tip/height')) return route.fulfill({ status: 200, body: '1' })
       if (url.pathname.endsWith('/tx') && request.method() === 'POST') {
         this.broadcastHex = request.postData() || ''
-        return route.fulfill({ status: 200, body: Transaction.fromRaw(hex.decode(this.broadcastHex)).id })
+        return route.fulfill({
+          status: 200,
+          body: Transaction.fromRaw(hex.decode(this.broadcastHex), { allowUnknownOutputs: true }).id,
+        })
       }
       const addressUtxos = url.pathname.match(/\/address\/([^/]+)\/utxo$/)
       if (addressUtxos) {
         const address = decodeURIComponent(addressUtxos[1])
-        return json(route, address === this.status().savingsAddress ? this.savingsUtxos : [])
+        return json(
+          route,
+          address === this.status().savingsAddress
+            ? this.savingsUtxos
+            : address === this.connectorPreview?.family.connector.address
+              ? this.reserveUtxos
+              : [],
+        )
       }
       if (/\/address\/[^/]+\/txs(?:\/chain\/[^/]+)?$/.test(url.pathname)) return json(route, [])
       if (/\/tx\/[0-9a-f]+\/status$/.test(url.pathname)) return json(route, { confirmed: false })
@@ -204,14 +250,21 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
 
   fundSavings(value: number) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Savings fixture value must be positive sats')
-    this.savingsUtxos = [
-      {
-        txid: '77'.repeat(32),
-        vout: 0,
-        value,
-        status: { confirmed: true, block_height: 1 },
-      },
-    ]
+    this.fundingValue = value
+    this.refreshFunding()
+  }
+
+  private refreshFunding() {
+    if (!this.connectorPreview || !this.fundingValue) return
+    const parent = (script: Uint8Array, value: number, tag: string) => {
+      const tx = new Transaction({ version: 2, allowUnknownInputs: true, allowUnknownOutputs: true })
+      tx.addInput({ txid: tag.repeat(32), index: 0 })
+      tx.addOutput({ script, amount: BigInt(value) })
+      this.parents.set(tx.id, hex.encode(tx.toBytes(true)))
+      return [{ txid: tx.id, vout: 0, value, status: { confirmed: true, block_height: 1 } }]
+    }
+    this.savingsUtxos = parent(this.connectorPreview.family.savings.script, this.fundingValue, '77')
+    this.reserveUtxos = parent(this.connectorPreview.family.connector.script, 1000, '78')
   }
 
   releaseRecover() {
@@ -257,7 +310,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       clientOrigin: ORIGIN,
       rpId: RP_ID,
       vaultId,
-      templateVersion: SAVINGS_TEMPLATE,
+      templateVersion: CONNECTOR_TEMPLATE,
       policyVersion: POLICY_VERSION,
       protectionTier: (proposed?.protectionTier as 'standard' | 'advanced') || 'standard',
       externalOwnerWalletPub: descriptor?.keys.hardware || PROGRAM_FIXTURE.hardwarePub,
@@ -298,6 +351,18 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       vtxoBoardingExitDelayUnit: 'seconds',
       vtxoBoardingDescriptor: this.boardingDescriptor,
       vtxoBoardingDescriptorHash: this.boardingDescriptorHash,
+      ...(this.connectorPreview && proposed
+        ? {
+            connectorEnrollment: {
+              connectorType: proposed.connectorType,
+              connectorPub: proposed.connectorPub,
+              connectorFingerprint: proposed.connectorFingerprint,
+              connectorPath: proposed.connectorPath,
+              enrollmentDigest: this.connectorPreview.digest,
+              descriptorHash: this.connectorPreview.compositeHash,
+            },
+          }
+        : {}),
     }
   }
 
@@ -305,7 +370,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
     if (!this.proposed) throw new Error('passkey was not proposed')
     const status = this.status()
     return JSON.stringify({
-      version: 4,
+      version: 5,
       credentialId: this.proposed.credentialId,
       webauthnP256: this.proposed.webauthnP256,
       phoneDirectP256: status.phoneDirectP256,
@@ -343,6 +408,12 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       feerateCapSatVb: status.feerateCapSatVb,
       envelopeNonce: body.envelopeNonce,
       envelopeCiphertext: body.envelopeCiphertext,
+      connectorType: status.connectorEnrollment!.connectorType,
+      connectorPub: status.connectorEnrollment!.connectorPub,
+      connectorFingerprint: status.connectorEnrollment!.connectorFingerprint,
+      connectorPath: status.connectorEnrollment!.connectorPath.join('/'),
+      connectorEnrollmentDigest: status.connectorEnrollment!.enrollmentDigest,
+      connectorDescriptorHash: status.connectorEnrollment!.descriptorHash,
     })
   }
 
@@ -410,7 +481,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         network: 'mutinynet',
         protectionTier: body.protectionTier,
         phonePub: body.phoneBip340Pub,
-        hardwarePub: PROGRAM_FIXTURE.hardwarePub,
+        hardwarePub: CONNECTOR_TEST_PUB,
         ...(body.recoveryXOnly ? { recoveryPub: `02${body.recoveryXOnly}` } : {}),
         phoneDirectP256: body.phoneDirectP256,
         vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
@@ -442,19 +513,84 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         script: hex.encode(boarding.pkScript),
         address: boarding.onchainAddress(getNetwork('mutinynet')),
       }
-      const composite = {
-        schema: 'arkade-vault/enrollment-with-board-v1' as const,
+      const preview = buildConnectorEnrollmentPreview({
         vaultId: VAULT_ID,
-        savings: this.descriptor,
+        network: 'mutinynet',
+        protectionTier: body.protectionTier,
+        phonePub: body.phoneBip340Pub,
+        phoneDirectP256: body.phoneDirectP256,
+        recoveryPub: body.recoveryXOnly ? `02${body.recoveryXOnly}` : undefined,
+        vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
+        arkadeCosignerBase: PROGRAM_FIXTURE.arkadeCosignerBase,
+        arkadeOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
+        arkadeVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
+        spendingPolicy: proposedPolicy,
         boarding: this.boardingDescriptor,
-      }
-      this.boardingDescriptorHash = hashBoardingEnrollmentDescriptor(composite)
+        origin: {
+          connectorPub: body.connectorPub,
+          connectorType: body.connectorType,
+          connectorFingerprint: body.connectorFingerprint,
+          connectorPath: body.connectorPath,
+        },
+      })
+      this.connectorPreview = preview
+      this.descriptor = preview.descriptor
+      this.boardingDescriptorHash = preview.boardingHash
+      this.refreshFunding()
       return json(route, {
         vaultId: VAULT_ID,
-        descriptorHash: this.boardingDescriptorHash,
-        descriptor: composite,
+        descriptorHash: preview.compositeHash,
+        descriptor: {
+          schema: 'arkade-vault/enrollment-with-connector-v1',
+          vaultId: VAULT_ID,
+          boarding: this.boardingDescriptor,
+          connector: {
+            schema: 'arkade-vault/connector-enrollment-v1',
+            template: CONNECTOR_TEMPLATE,
+            vaultId: VAULT_ID,
+            network: 'mutinynet',
+            protectionTier: body.protectionTier,
+            phonePub: body.phoneBip340Pub,
+            hardwarePub: body.connectorPub,
+            phoneDirectP256: body.phoneDirectP256,
+            ...(body.recoveryXOnly ? { recoveryPub: `02${body.recoveryXOnly}` } : {}),
+            vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
+            arkadeCosignerBase: PROGRAM_FIXTURE.arkadeCosignerBase,
+            spendingPolicyDigest: spendingPolicyDigest(proposedPolicy),
+            program: hex.encode(preview.family.program),
+            savingsScript: preview.descriptor.savings.script,
+            savingsAddress: preview.descriptor.savings.address,
+            connectorScript: hex.encode(preview.family.connector.script),
+            connectorType: body.connectorType,
+            fingerprint: body.connectorFingerprint,
+            originPath: body.connectorPath.join('/'),
+            enrollmentDigest: preview.digest,
+          },
+        },
       })
     }
+    if (path === '/v1/connector/withdraw/authorize' && body) {
+      if (!this.connectorPreview) throw new Error('connector not enrolled')
+      const tx = Transaction.fromPSBT(hex.decode(body.psbt), {
+        allowUnknownInputs: true,
+        allowUnknownOutputs: true,
+        allowUnknown: true,
+      })
+      tx.signIdx(tweakPrivateKey(scalarSecret(14), this.connectorPreview.family.program), 0)
+      tx.signIdx(tweakPrivateKey(scalarSecret(15), this.connectorPreview.family.program), 0)
+      const signedPsbt = hex.encode(tx.toPSBT())
+      this.operation = {
+        operationId: 'ab'.repeat(16),
+        candidateTxid: tx.id,
+        signedPsbt,
+        phase: 'emulator_signed',
+        resolution: 'none',
+        verified: true,
+      }
+      return json(route, { operationId: this.operation.operationId, signedPsbt, replay: false })
+    }
+    if (path === '/v1/connector/operation')
+      return this.operation ? json(route, this.operation) : json(route, { error: 'not found' }, 404)
     if (path === '/v1/enroll/finish') {
       this.enrolled = true
       const status = this.status()
@@ -764,7 +900,7 @@ export async function reachPasskeySetup(page: Page, inviteOnly = true) {
   await expect(page.getByRole('heading', { name: /Everyday spending/ })).toBeVisible()
   await page.getByRole('button', { name: 'Get started' }).click()
   await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByTestId('hardware-pub').fill(PROGRAM_FIXTURE.hardwarePub)
+  await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
   await page.getByRole('button', { name: 'Continue with Standard' }).click()
   await page.getByRole('button', { name: 'Review setup' }).click()

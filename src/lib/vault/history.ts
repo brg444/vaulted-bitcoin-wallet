@@ -11,7 +11,8 @@ export interface VaultHistoryItem {
   confirmed: boolean
   blockTime?: number
   account: 'spend' | 'savings'
-  activity?: 'boarding' | 'lightning' | 'savings-handoff'
+  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector'
+  connectorStage?: 'approval' | 'signer' | 'broadcast'
   displayAmount?: number
   fee?: number
   lightningState?: string

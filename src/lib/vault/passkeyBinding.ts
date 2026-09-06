@@ -7,6 +7,7 @@ import type { VaultStatus } from './types'
 
 const encoder = new TextEncoder()
 const BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v4')
+const CONNECTOR_BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v5')
 const PROOF_DOMAIN = encoder.encode('arkade-2fa-vault/passkey-proof/v1')
 const ZERO = Uint8Array.of(0)
 
@@ -27,7 +28,13 @@ export function accessMode(
 }
 
 export function passkeyProofDigest(purpose: string, challenge: Uint8Array, credentialId: Uint8Array): Uint8Array {
-  if (purpose !== 'recover' && purpose !== 'install-envelope' && purpose !== 'transition' && purpose !== 'map-write') {
+  if (
+    purpose !== 'recover' &&
+    purpose !== 'install-envelope' &&
+    purpose !== 'transition' &&
+    purpose !== 'map-write' &&
+    purpose !== 'connector-withdraw'
+  ) {
     throw new Error('invalid passkey purpose')
   }
   return sha256(concat(PROOF_DOMAIN, ZERO, encoder.encode(purpose), ZERO, challenge, ZERO, credentialId))
@@ -35,7 +42,8 @@ export function passkeyProofDigest(purpose: string, challenge: Uint8Array, crede
 
 export function recoveryBindingDigest(binding: string): Uint8Array {
   if (!binding || binding.length > 16 * 1024) throw new Error('recovery binding')
-  return sha256(concat(BINDING_DOMAIN, ZERO, encoder.encode(binding)))
+  const version = (JSON.parse(binding) as { version?: unknown }).version
+  return sha256(concat(version === 5 ? CONNECTOR_BINDING_DOMAIN : BINDING_DOMAIN, ZERO, encoder.encode(binding)))
 }
 
 type RecoveryBinding = Record<string, string | number | boolean>
@@ -83,11 +91,20 @@ export function parseRecoveryBinding(binding: string): RecoveryBinding {
     'envelopeNonce',
     'envelopeCiphertext',
   ]
+  if (value?.version === 5)
+    expected.push(
+      'connectorType',
+      'connectorPub',
+      'connectorFingerprint',
+      'connectorPath',
+      'connectorEnrollmentDigest',
+      'connectorDescriptorHash',
+    )
   const got = Object.keys(value || {})
   if (got.length !== expected.length || expected.some((field, i) => got[i] !== field)) {
     throw new Error('recovery binding fields or order')
   }
-  if (value.version !== 4) throw new Error('recovery binding version')
+  if (value.version !== 4 && value.version !== 5) throw new Error('recovery binding version')
   return value
 }
 
@@ -132,6 +149,19 @@ export function assertRecoveryBindingMatchesStatus(binding: string | RecoveryBin
       throw new Error('recovery binding ' + bindingField + ' does not match vault status')
     }
   }
+  if (value.version === 5) {
+    const identity = status.connectorEnrollment
+    if (
+      !identity ||
+      value.connectorType !== identity.connectorType ||
+      value.connectorPub !== identity.connectorPub ||
+      value.connectorFingerprint !== identity.connectorFingerprint ||
+      value.connectorPath !== identity.connectorPath.join('/') ||
+      value.connectorEnrollmentDigest !== identity.enrollmentDigest ||
+      value.connectorDescriptorHash !== identity.descriptorHash
+    )
+      throw new Error('connector recovery binding does not match vault status')
+  } else if (status.connectorEnrollment) throw new Error('connector requires version 5 recovery binding')
   return value
 }
 

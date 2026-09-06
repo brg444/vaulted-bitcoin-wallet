@@ -16,6 +16,15 @@ import {
 } from '../lib/vault/signIn'
 import { planReady, sameBip340Key, setupSpendingPolicy, type VaultSetupPlan } from '../lib/vault/setupPlan'
 import { enrollWithPasskey, type EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
+import {
+  connectorPinFromVerifiedStatus,
+  saveConnectorEnrollmentPin,
+  loadConnectorEnrollmentPin,
+  verifyConnectorStatus,
+  connectorKitFromVerifiedStatus,
+  saveConnectorRecoveryKit,
+} from '../lib/vault/program/connectorEnroll'
+import { CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
 import type { VaultStatus } from '../lib/vault/types'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { saveLocalKit } from '../lib/vault/program/kitStore'
@@ -50,6 +59,14 @@ async function restoreMap(enrollment: EnrollmentSecrets, status: VaultStatus, se
   } catch {
     // Authentication is independent of the optional recovery-map backup.
   }
+}
+
+function restoreConnectorPin(status: VaultStatus): void {
+  if (status.templateVersion !== CONNECTOR_TEMPLATE) return
+  const existing = loadConnectorEnrollmentPin(status.vaultId)
+  if (existing) verifyConnectorStatus(status, existing)
+  else saveConnectorEnrollmentPin(connectorPinFromVerifiedStatus(status))
+  saveConnectorRecoveryKit(connectorKitFromVerifiedStatus(status))
 }
 
 function bestEffortBrowserWrite(write: () => void) {
@@ -87,6 +104,11 @@ export function useVaultSession({
         reportError('This vault expects a different hardware key.')
         return
       }
+      if (!status?.enrolled && !setup.connector) {
+        reportError('Add a supported public wallet descriptor before creating this vault.')
+        setScreen('hardware')
+        return
+      }
       setBusy(true)
       reportError('')
       setScreen('creating')
@@ -95,6 +117,16 @@ export function useVaultSession({
           protectionTier: setup.protectionTier,
           hardwarePub: setup.hardwarePub,
           ...(setup.recoveryPub ? { recoveryPub: setup.recoveryPub } : {}),
+          ...(setup.connector
+            ? {
+                connector: {
+                  connectorPub: setup.connector.connectorPub,
+                  connectorType: setup.connector.connectorType,
+                  connectorFingerprint: setup.connector.connectorFingerprint,
+                  connectorPath: [...setup.connector.connectorPath],
+                },
+              }
+            : {}),
           spendingPolicy: setupSpendingPolicy(setup),
         })
         setEnrollment(result.enrollment)
@@ -165,6 +197,7 @@ export function useVaultSession({
       const localPin = local ? loadAddressPin(localStorage, local.vaultId) : null
       if (local && localPin) {
         const unlocked = await unlockLocalEnrollment(local)
+        restoreConnectorPin(unlocked.status)
         setEnrollment(unlocked.enrollment)
         setLocked(false)
         const live = unlocked.status
@@ -179,6 +212,7 @@ export function useVaultSession({
       }
       if (local) {
         const live = await enablePasskeyLogin(local)
+        restoreConnectorPin(live)
         const livePin = pinFromEnrolledStatus(live)
         setEnrollment(local)
         setLocked(false)
@@ -195,6 +229,7 @@ export function useVaultSession({
       const selected = loadSelectedVaultId()
       const vaultId = selected || (await discoverVaultIdFromPasskey())
       const result = await signInWithPasskey(vaultId)
+      restoreConnectorPin(result.status)
       const recoveredPin = pinFromEnrolledStatus(result.status)
       setEnrollment(result.enrollment)
       setLocked(false)

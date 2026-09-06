@@ -23,6 +23,17 @@ export default function VaultPlan() {
     >
       <p className='qg-eyebrow'>Your setup</p>
       <h1>Review your Vault</h1>
+      {setup.connector ? (
+        <section className='qg-note'>
+          <div>
+            <strong>Signer reserve · 1,000 sats</strong>
+            <p style={{ overflowWrap: 'anywhere' }} data-testid='plan-connector-address'>
+              {setup.connector.address}
+            </p>
+            <p>Compare this address with your signing wallet. Savings deposits use a separate address after setup.</p>
+          </div>
+        </section>
+      ) : null}
       <section className='qg-summary'>
         <div>
           <span>Network</span>

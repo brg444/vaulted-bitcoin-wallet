@@ -1,3 +1,5 @@
+import { connectorContract } from '../../lib/vault/connectorWithdrawal'
+import { buildConnectorFamily, CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useMemo, useState } from 'react'
 import { KeyRound, Share2, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
@@ -33,10 +35,18 @@ function AddressRow({
 }
 
 export default function VaultReceive() {
-  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress } = useContext(VaultContext)
+  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status } = useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
+  const reserveAddress = useMemo(() => {
+    if (!status || status.templateVersion !== CONNECTOR_TEMPLATE) return ''
+    try {
+      return buildConnectorFamily(connectorContract(status)).connector.address || ''
+    } catch {
+      return ''
+    }
+  }, [status])
   const unified = useMemo(
     () =>
       boardingAddress && spendingArkAddress
@@ -129,6 +139,21 @@ export default function VaultReceive() {
           </section>
         ) : null}
       </div>
+      {!spending && reserveAddress ? (
+        <section className='qg-addresses' aria-label='Signer reserve'>
+          <p className='qg-copy'>
+            Keep a separate 1,000-sat reserve in your signing wallet to approve Savings transfers. It returns to this
+            address with every transfer.
+          </p>
+          <AddressRow
+            label='Signer reserve · exactly 1,000 sats'
+            value={reserveAddress}
+            testId='receive-connector-reserve'
+            copied={copied === reserveAddress}
+            onCopy={() => void copy(reserveAddress, 'Signer reserve address')}
+          />
+        </section>
+      ) : null}
     </QgScreen>
   )
 }

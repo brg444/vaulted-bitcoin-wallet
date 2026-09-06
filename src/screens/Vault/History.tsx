@@ -79,32 +79,43 @@ export function VaultHistoryList({
             const sent = tx.type === 'sent'
             const lightning = tx.activity === 'lightning'
             const savingsHandoff = tx.activity === 'savings-handoff'
+            const connector = tx.activity === 'savings-connector'
+            const connectorLabel =
+              tx.connectorStage === 'broadcast'
+                ? 'Savings transfer pending'
+                : tx.connectorStage === 'signer'
+                  ? 'Waiting for signer'
+                  : 'Savings approval pending'
             const amount = tx.displayAmount ?? tx.amount
             const time = historyTime(tx.blockTime)
-            const state = savingsHandoff
-              ? 'Complete or cancel'
-              : lightning
-                ? ['claimed', 'settled'].includes(tx.lightningState || '')
-                  ? 'Paid'
-                  : tx.lightningState === 'refunded'
-                    ? 'Refunded'
-                    : tx.lightningState === 'needs_counterparty'
-                      ? 'Ready to return'
-                      : tx.lightningState === 'failed'
-                        ? 'Needs recovery'
-                        : 'Processing'
-                : tx.confirmed
-                  ? time
-                    ? `Confirmed · ${time}`
-                    : 'Confirmed'
-                  : 'Pending'
+            const state = connector
+              ? tx.connectorStage === 'broadcast'
+                ? 'Check or retry broadcast'
+                : 'Continue payment'
+              : savingsHandoff
+                ? 'Complete or cancel'
+                : lightning
+                  ? ['claimed', 'settled'].includes(tx.lightningState || '')
+                    ? 'Paid'
+                    : tx.lightningState === 'refunded'
+                      ? 'Refunded'
+                      : tx.lightningState === 'needs_counterparty'
+                        ? 'Ready to return'
+                        : tx.lightningState === 'failed'
+                          ? 'Needs recovery'
+                          : 'Processing'
+                  : tx.confirmed
+                    ? time
+                      ? `Confirmed · ${time}`
+                      : 'Confirmed'
+                    : 'Pending'
             return (
               <button
                 type='button'
                 key={`${tx.account}:${tx.txid}:${tx.type}`}
                 className='vault-history-row'
                 data-testid={`vault-tx-${tx.txid}`}
-                aria-label={`${savingsHandoff ? 'Waiting for hardware' : lightning ? 'Lightning payment' : sent ? 'Sent' : 'Received'} ${prettyAmount(amount)}. ${state}.`}
+                aria-label={`${connector ? connectorLabel : savingsHandoff ? 'Waiting for hardware' : lightning ? 'Lightning payment' : sent ? 'Sent' : 'Received'} ${prettyAmount(amount)}. ${state}.`}
                 onClick={() => {
                   hapticSubtle()
                   openTx(tx)
@@ -115,13 +126,15 @@ export function VaultHistoryList({
                 </span>
                 <span className='vault-history-copy'>
                   <Text small bold>
-                    {savingsHandoff
-                      ? 'Waiting for hardware'
-                      : lightning
-                        ? 'Lightning payment'
-                        : sent
-                          ? 'Sent'
-                          : 'Received'}
+                    {connector
+                      ? connectorLabel
+                      : savingsHandoff
+                        ? 'Waiting for hardware'
+                        : lightning
+                          ? 'Lightning payment'
+                          : sent
+                            ? 'Sent'
+                            : 'Received'}
                   </Text>
                   <Text color='neutral-600' tiny>
                     {state}

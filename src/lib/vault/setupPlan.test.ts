@@ -1,3 +1,4 @@
+import { importConnectorOrigin } from './program/connectorOrigin'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   FORBIDDEN_PUBLIC_KEY_2G,
@@ -95,6 +96,43 @@ describe('vault setup plan', () => {
     }
     delete legacy.protectionTier
     localStorage.setItem(SETUP_STORE_KEY, JSON.stringify(legacy))
+    expect(loadSetupPlan()).toBeNull()
+  })
+})
+
+describe('connector setup restore', () => {
+  const descriptor = `wpkh([12345678/84h/1h/0h/0/0]${PROGRAM_FIXTURE.hardwarePub})`
+  const imported = importConnectorOrigin(descriptor, 'mutinynet')
+  const connector = {
+    descriptor,
+    address: imported.address,
+    selectedPath: imported.selectedPath,
+    connectorPub: imported.publicKey,
+    connectorType: imported.type,
+    connectorFingerprint: imported.fingerprint,
+    connectorPath: imported.path,
+  }
+  const plan = { ...emptySetupPlan(), hardwarePub: imported.publicKey, connector }
+  it('rebuilds the exact imported origin on restore', () => {
+    saveSetupPlan(plan)
+    expect(loadSetupPlan()).toEqual(plan)
+  })
+  it.each([
+    { connectorType: 'p2tr' },
+    { connectorFingerprint: -1 },
+    { connectorPath: [0] },
+    { connectorPub: FORBIDDEN_PUBLIC_KEY_G },
+    { address: 'bc1qwrong' },
+    { selectedPath: 'wrong' },
+    { descriptor: 'invalid' },
+  ])('rejects a present malformed connector without falling back to a raw key: %o', (change) => {
+    localStorage.setItem(SETUP_STORE_KEY, JSON.stringify({ ...plan, connector: { ...connector, ...change } }))
+    expect(loadSetupPlan()).toBeNull()
+  })
+  it('rejects a connector/key mismatch and malformed JSON', () => {
+    saveSetupPlan({ ...plan, hardwarePub: FORBIDDEN_PUBLIC_KEY_G })
+    expect(loadSetupPlan()).toBeNull()
+    localStorage.setItem(SETUP_STORE_KEY, '{')
     expect(loadSetupPlan()).toBeNull()
   })
 })

@@ -1,3 +1,5 @@
+import { CONNECTOR_TEMPLATE } from './program/connector'
+import { loadConnectorEnrollmentPin, verifyConnectorStatus } from './program/connectorEnroll'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { deriveDirectP256, signDirectP256, zeroBytes } from './ceremony/directauth'
 import { vaultCosignerClient } from './cosignerClient'
@@ -45,7 +47,7 @@ async function deriveKEK(prf: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
   )
 }
 
-async function decryptPhoneSecret(
+export async function decryptPhoneSecret(
   prf: Uint8Array<ArrayBuffer>,
   nonceHex: string,
   ciphertextHex: string,
@@ -72,11 +74,16 @@ async function decryptPhoneSecret(
 }
 
 export async function beginPasskeySession(
-  purpose: 'recover' | 'install-envelope' | 'transition' | 'map-write',
+  purpose: 'recover' | 'install-envelope' | 'transition' | 'map-write' | 'connector-withdraw',
   status: VaultStatus,
   allowCredentialId?: string,
+  candidateTxid?: string,
 ) {
-  const issued = await vaultCosignerClient.recovery.challenge({ purpose, vaultId: status.vaultId })
+  const issued = await vaultCosignerClient.recovery.challenge({
+    purpose,
+    vaultId: status.vaultId,
+    ...(candidateTxid ? { candidateTxid } : {}),
+  })
   const challenge = hexToBytes(issued.challenge)
   if (challenge.length !== 32) throw new Error('authorizer returned a malformed passkey challenge')
   const expectedCred = allowCredentialId || issued.allowCredentialId
@@ -131,6 +138,14 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     if (!vaultId) throw new Error('vault id required')
     const status = await vaultCosignerClient.enrollment.status(vaultId)
     if (!status.enrolled) throw new Error('vault is not enrolled')
+    const connectorPin = loadConnectorEnrollmentPin(vaultId)
+    if (connectorPin) verifyConnectorStatus(status, connectorPin)
+    else if (status.templateVersion === CONNECTOR_TEMPLATE) {
+      // A lost browser pin must come from the existing signed recovery binding,
+      // never from signing a replacement binding supplied by the service.
+      if (status.passkeyLoginAvailable) return (await signInWithPasskey(vaultId)).status
+      throw new Error('connector enrollment pin required before installing passkey sign-in')
+    }
     session = await beginPasskeySession('install-envelope', status, rec.credId)
     phoneSecret = await decryptPhoneSecret(session.prf, rec.nonce, rec.ciphertext)
     const bindingResponse = await vaultCosignerClient.enrollment.binding({
@@ -171,6 +186,7 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     if (!live.passkeyLoginAvailable) {
       throw new Error('authorizer did not persist passkey sign-in recovery data')
     }
+    assertRecoveryBindingMatchesStatus(bindingResponse.binding, live)
     // Validate the complete program pin without making authentication depend
     // on durable browser storage. The session coordinator persists it after
     // the verified session is already live.
@@ -191,6 +207,7 @@ export async function unlockLocalEnrollment(
     throw new Error('deployment RP ID does not match this signing client host')
   }
   const live = await vaultCosignerClient.enrollment.status(rec.vaultId)
+  if (live.templateVersion === CONNECTOR_TEMPLATE) return signInWithPasskey(rec.vaultId)
   pinEnrolledStatus(live)
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({

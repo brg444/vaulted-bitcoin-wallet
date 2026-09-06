@@ -1,3 +1,5 @@
+import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
+import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
@@ -1402,13 +1404,14 @@ for (const theme of ['light', 'dark'] as const) {
   })
 
   test(`@visual-refinement ${theme} welcome and protection remain readable`, async ({ page }, testInfo) => {
+    await mockEnrollmentAccess(page)
     await page.goto('/')
     await expect(page.getByRole('button', { name: 'Get started' })).toBeVisible()
     await page.evaluate((dark) => document.documentElement.classList.toggle('palette-dark', dark), theme === 'dark')
     await page.screenshot({ path: testInfo.outputPath('welcome.png'), animations: 'disabled' })
     await page.getByRole('button', { name: 'Get started' }).click()
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await page.getByTestId('hardware-pub').fill('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798')
+    await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
     await page.getByRole('button', { name: 'Use this hardware key' }).click()
     await expect(page.getByRole('heading', { name: 'Protection', exact: true })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('protection.png'), animations: 'disabled' })

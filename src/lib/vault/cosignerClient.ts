@@ -45,6 +45,10 @@ export interface VaultEnrollmentRequest {
   externalOwnerWalletXOnly?: string
   recoveryXOnly?: string
   recoveryKeyXOnly?: string
+  connectorType?: 'p2wpkh' | 'p2tr'
+  connectorPub?: string
+  connectorFingerprint?: number
+  connectorPath?: number[]
   vaultId?: string
   descriptorHash?: string
   vtxoBoardingProgram?: 'vault-board-v1'
@@ -60,9 +64,10 @@ export interface VaultEnrollProposeResponse {
   descriptor: unknown
 }
 
-export type VaultPasskeyPurpose = 'recover' | 'install-envelope' | 'transition' | 'map-write'
+export type VaultPasskeyPurpose = 'recover' | 'install-envelope' | 'transition' | 'map-write' | 'connector-withdraw'
 
 export interface VaultPasskeyChallengeRequest {
+  candidateTxid?: string
   purpose: string
   vaultId?: string
 }

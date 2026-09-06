@@ -19,7 +19,8 @@ vi.mock('./vtxo/board', () => ({
   provisionBoardingKey: mocks.provision,
 }))
 
-import { unlockLocalEnrollment } from './signIn'
+import { enablePasskeyLogin, unlockLocalEnrollment } from './signIn'
+import { CONNECTOR_TEMPLATE } from './program/connector'
 
 const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
 
@@ -48,6 +49,15 @@ describe('local vault unlock', () => {
     mocks.status.mockReset()
     mocks.pin.mockReset()
     mocks.provision.mockReset()
+    localStorage.clear()
+  })
+
+  it('does not sign a replacement connector binding when its independent enrollment pin is missing', async () => {
+    mocks.status.mockResolvedValue({ enrolled: true, vaultId: 'vault-a', templateVersion: CONNECTOR_TEMPLATE })
+    await expect(
+      enablePasskeyLogin({ vaultId: 'vault-a' } as Parameters<typeof enablePasskeyLogin>[0]),
+    ).rejects.toThrow('connector enrollment pin required')
+    expect(mocks.provision).not.toHaveBeenCalled()
   })
 
   it('fetches and verifies the enrolled status before decrypting the phone scalar', async () => {

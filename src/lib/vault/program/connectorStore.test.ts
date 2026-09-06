@@ -17,6 +17,10 @@ import {
   storeConnectorSavingsWitness,
   storeConnectorSignedTx,
   storeConnectorPhoneStage,
+  storeConnectorOperationId,
+  archiveResolvedConnectorOperation,
+  restoreUnresolvedConnectorOperation,
+  loadConnectorHistory,
   withConnectorLock,
   type ConnectorExpectedIdentity,
   type ConnectorPendingInput,
@@ -584,6 +588,41 @@ describe('connector durable approval/handoff', () => {
     expect(loaded?.candidateTxid).toBe(preparedB.candidateTxid)
     await markConnectorSignaturesMayHaveIssued(second.expected, preparedB.candidateTxid, storage, locks)
     expect((await loadPendingConnectorOperation(second.expected, storage, locks))?.phase).toBe('signing')
+  })
+
+  it('restores the exact archived transaction after reorg without replacing another active candidate', async () => {
+    const { input, expected, payment } = vectorInput()
+    const storage = memoryStorage()
+    const locks = new FakeLockManager()
+    const operationId = '12'.repeat(16)
+    const first = await preparePendingConnectorOperation(input, expected, storage, locks)
+    await storeConnectorOperationId(expected, first.candidateTxid, operationId, storage, locks)
+    await storeConnectorSavingsWitness(expected, first.candidateTxid, payment.savingsWitness, storage, locks)
+    const signed = await storeConnectorSignedTx(expected, first.candidateTxid, payment.finalTx, storage, locks)
+    await archiveResolvedConnectorOperation(expected, first.candidateTxid, operationId, storage, locks)
+    await expect(
+      restoreUnresolvedConnectorOperation(expected, first.candidateTxid, '34'.repeat(16), storage, locks),
+    ).rejects.toThrow(/identity changed/)
+    expect(await loadPendingConnectorOperation(expected, storage, locks)).toBeNull()
+    const restored = await restoreUnresolvedConnectorOperation(
+      expected,
+      first.candidateTxid,
+      operationId,
+      storage,
+      locks,
+    )
+    expect(restored.record.signedTxHex).toBe(signed.txHex)
+    expect(restored.record.operationId).toBe(operationId)
+    expect(await loadConnectorHistory(expected, storage, locks)).toHaveLength(1)
+    await expect(cancelPendingConnectorOperation(expected, first.candidateTxid, storage, locks)).rejects.toThrow(
+      /retained/,
+    )
+    await archiveResolvedConnectorOperation(expected, first.candidateTxid, operationId, storage, locks)
+    const second = await preparePendingConnectorOperation(vectorInput(0, 1).input, expected, storage, locks)
+    await expect(
+      restoreUnresolvedConnectorOperation(expected, first.candidateTxid, operationId, storage, locks),
+    ).rejects.toThrow(/stale/)
+    expect((await loadPendingConnectorOperation(expected, storage, locks))?.candidateTxid).toBe(second.candidateTxid)
   })
 
   it('rejects PSBT metadata tampering that leaves the unsigned transaction intact', async () => {

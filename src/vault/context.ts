@@ -51,6 +51,7 @@ export interface VaultContextProps {
   account: VaultAccount
   positions: VaultAccountPositions
   applyHardware: (raw: string) => void
+  applyConnectorDescriptor: (raw: string) => void
   applyRecovery: (raw: string) => void
   setProtectionTier: (tier: ProtectionTier) => void
   skipRecovery: () => void
@@ -107,6 +108,7 @@ export interface VaultContextProps {
   refreshingBalance: boolean
   reset: () => void
   reviewSpend: () => Promise<void>
+  rebroadcastingConnector: boolean
   resumingPayment: boolean
   pendingPayments: { operationId: string; amountSats: number; authorized: boolean }[]
   openPendingPayment: (operationId: string) => Promise<void>
@@ -133,6 +135,7 @@ export const VaultContext = createContext<VaultContextProps>({
   account: 'spend',
   positions: EMPTY_VAULT_POSITIONS,
   applyHardware: () => {},
+  applyConnectorDescriptor: () => {},
   applyRecovery: () => {},
   setProtectionTier: () => {},
   skipRecovery: () => {},
@@ -189,6 +192,7 @@ export const VaultContext = createContext<VaultContextProps>({
   refreshingBalance: false,
   reset: () => {},
   reviewSpend: async () => {},
+  rebroadcastingConnector: false,
   resumingPayment: false,
   pendingPayments: [],
   openPendingPayment: async () => {},

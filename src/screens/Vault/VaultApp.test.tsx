@@ -5,6 +5,25 @@ import { ToastProvider } from '../../components/Toast'
 import { PROGRAM_FIXTURE } from '../../lib/vault/program/fixtures'
 import { VaultProvider } from '../../providers/vault'
 import VaultApp from '../../VaultApp'
+import { SAVINGS_TEMPLATE } from '../../lib/vault/program/constants'
+import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../../lib/vault/spendingPolicy'
+import { REQUIRED_CONNECTOR_CAPABILITY } from '../../lib/vault/program/connectorEnroll'
+
+vi.mock('../../lib/vault/status', async (original) => ({
+  ...(await original<typeof import('../../lib/vault/status')>()),
+  fetchPublicStatus: vi.fn(async () => ({
+    network: 'mutinynet',
+    clientOrigin: location.origin,
+    rpId: location.hostname,
+    templateVersion: SAVINGS_TEMPLATE,
+    policyVersion: 'vault-spending-policy-v1',
+    enrollmentMode: 'open',
+    spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
+    connectorCapability: REQUIRED_CONNECTOR_CAPABILITY,
+    vtxoBoardingProgram: 'vault-board-v1',
+  })),
+}))
+const signerDescriptor = `wpkh([12345678/84h/1h/0h/0/0]${PROGRAM_FIXTURE.hardwarePub})`
 
 function renderVault() {
   window.localStorage.clear()
@@ -44,7 +63,7 @@ describe('VaultApp onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(await screen.findByRole('heading', { name: 'Add your hardware key' })).toBeTruthy()
-    fireEvent.change(screen.getByTestId('hardware-pub'), { target: { value: PROGRAM_FIXTURE.hardwarePub } })
+    fireEvent.change(screen.getByTestId('hardware-pub'), { target: { value: signerDescriptor } })
     await user.click(screen.getByRole('button', { name: 'Use this hardware key' }))
 
     expect(await screen.findByRole('heading', { name: 'How should recovery work?' })).toBeTruthy()
@@ -82,7 +101,7 @@ describe('VaultApp onboarding', () => {
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.click(await screen.findByRole('button', { name: 'Continue' }))
     fireEvent.change(await screen.findByTestId('hardware-pub'), {
-      target: { value: PROGRAM_FIXTURE.hardwarePub },
+      target: { value: signerDescriptor },
     })
     await user.click(screen.getByRole('button', { name: 'Use this hardware key' }))
 

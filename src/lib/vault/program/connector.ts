@@ -12,7 +12,7 @@ import { OP, concat, pushData, pushInt, collaborativeWitnessBytes } from './scri
 import { buildVaultProgramFamily, tapTreeFromScripts } from './trees'
 import { tweakPair } from './tweak'
 
-// Versioned contract under qualification. Existing enrollment does not select it.
+// Selected for new connector enrollments; existing vaults retain their contract.
 export const CONNECTOR_PROGRAM = 'savings-connector-v1'
 export const CONNECTOR_TEMPLATE = 'phone-connector-recovery-savings-v1'
 export const CONNECTOR_RESERVE_SATS = 1000
@@ -205,7 +205,14 @@ export function buildConnectorFamily(
   const savings = makeNormal(checksigScript([input.phonePub, pair.vault, pair.arkade].map(xOnlyFromCompressed)))
   if (collaborativeWitnessBytes(savings.normal, savings.control) + connectorWitnessBytes !== rules.witnessBytes)
     throw new Error('connector witness shape changed')
-  return { ...base, savings, connector, rules, program, normalTweaks: pair }
+  return {
+    ...base,
+    savings: { ...base.savings, ...savings, admin: savings.normal },
+    connector,
+    rules,
+    program,
+    normalTweaks: pair,
+  }
 }
 
 export interface ConnectorOrigin {

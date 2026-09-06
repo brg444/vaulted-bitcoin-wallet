@@ -1,3 +1,4 @@
+import { CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
@@ -10,8 +11,18 @@ import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
 
 export default function VaultReview() {
-  const { account, approveSend, boardingAddress, busy, error, navigate, resumingPayment, spend, status } =
-    useContext(VaultContext)
+  const {
+    account,
+    approveSend,
+    boardingAddress,
+    busy,
+    error,
+    navigate,
+    resumingPayment,
+    rebroadcastingConnector,
+    spend,
+    status,
+  } = useContext(VaultContext)
   const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
   const fromSavings = account === 'savings'
@@ -22,7 +33,7 @@ export default function VaultReview() {
   const destinationShown =
     movingToSpending || lightning || revealed ? destinationValue : truncateAddress(destinationValue, 8)
 
-  if (fromSavings && busy) {
+  if (fromSavings && busy && !rebroadcastingConnector) {
     return (
       <div className='qg-screen qg-screen-progress'>
         <main className='qg-main qg-centered qg-progress-screen'>
@@ -53,11 +64,13 @@ export default function VaultReview() {
             label={
               busy
                 ? 'Completing payment…'
-                : fromSavings
-                  ? 'Sign on this device'
-                  : resumingPayment
-                    ? 'Continue payment'
-                    : 'Approve payment'
+                : rebroadcastingConnector
+                  ? 'Retry broadcast'
+                  : fromSavings
+                    ? 'Sign on this device'
+                    : resumingPayment
+                      ? 'Continue payment'
+                      : 'Approve payment'
             }
           />
         </>
@@ -106,7 +119,13 @@ export default function VaultReview() {
           </div>
         )}
         <div>
-          <span>{fromSavings ? 'Network fee' : 'Fee'}</span>
+          <span>
+            {fromSavings
+              ? status?.templateVersion === CONNECTOR_TEMPLATE
+                ? 'Network fee and 240-sat anchor'
+                : 'Network fee'
+              : 'Fee'}
+          </span>
           <strong>
             <QgAmount value={prettyAmount(spend.fee)} />
           </strong>
@@ -122,47 +141,49 @@ export default function VaultReview() {
           <strong>{status?.network === 'mainnet' ? 'Bitcoin' : 'Mutinynet'}</strong>
         </div>
       </section>
-      <section className='qg-approvals' aria-labelledby='qg-approvals-heading'>
-        <h3 id='qg-approvals-heading'>Next approval</h3>
-        {fromSavings ? (
-          <>
-            <div>
-              <b>1</b>
-              <span>
-                <strong>Passkey on this device</strong>
-                <small>Signs first</small>
-              </span>
-            </div>
-            <div>
-              <b>2</b>
-              <span>
-                <strong>Hardware key</strong>
-                <small>Signs next on the other device</small>
-              </span>
-            </div>
-          </>
-        ) : (
-          <>
-            <div>
-              <span className='qg-approval-mark'>1</span>
-              <p>
-                <strong>You</strong>
-                <small>Approve with passkey</small>
-              </p>
-            </div>
-            <div>
-              <span className='qg-approval-mark is-safe'>
-                <ShieldCheck />
-              </span>
-              <p>
-                <strong>Vault service</strong>
-                <small>Automatic if this payment is within your limits</small>
-              </p>
-              <span className='qg-auto'>Automatic</span>
-            </div>
-          </>
-        )}
-      </section>
+      {!rebroadcastingConnector && (
+        <section className='qg-approvals' aria-labelledby='qg-approvals-heading'>
+          <h3 id='qg-approvals-heading'>Next approval</h3>
+          {fromSavings ? (
+            <>
+              <div>
+                <b>1</b>
+                <span>
+                  <strong>Passkey on this device</strong>
+                  <small>Signs first</small>
+                </span>
+              </div>
+              <div>
+                <b>2</b>
+                <span>
+                  <strong>{status?.templateVersion === CONNECTOR_TEMPLATE ? 'External signer' : 'Hardware key'}</strong>
+                  <small>Signs next on the other device</small>
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <span className='qg-approval-mark'>1</span>
+                <p>
+                  <strong>You</strong>
+                  <small>Approve with passkey</small>
+                </p>
+              </div>
+              <div>
+                <span className='qg-approval-mark is-safe'>
+                  <ShieldCheck />
+                </span>
+                <p>
+                  <strong>Vault service</strong>
+                  <small>Automatic if this payment is within your limits</small>
+                </p>
+                <span className='qg-auto'>Automatic</span>
+              </div>
+            </>
+          )}
+        </section>
+      )}
     </QgScreen>
   )
 }

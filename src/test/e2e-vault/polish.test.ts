@@ -1,3 +1,4 @@
+import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
@@ -76,7 +77,7 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
   await page.getByRole('button', { name: 'Continue' }).click()
   await expect(page.getByRole('heading', { name: 'Hardware key', exact: true })).toBeVisible()
   const hardwarePub = page.getByTestId('hardware-pub')
-  await hardwarePub.fill(PROGRAM_FIXTURE.hardwarePub)
+  await hardwarePub.fill(CONNECTOR_TEST_DESCRIPTOR)
   await hardwarePub.blur()
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('onboarding-hardware.png', { animations: 'disabled', fullPage: true })

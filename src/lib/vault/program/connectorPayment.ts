@@ -156,6 +156,11 @@ export function prepareConnectorPayment(input: {
   }
   return {
     psbt: () => hex.encode(prepared.slice()),
+    // The policy uses a lower witness bound for its ceiling. Fee estimation
+    // instead allows a maximum-size ECDSA signature or Taproot ALL signature.
+    estimatedVbytes: Math.ceil(
+      (unsigned.length * 4 + f.rules.witnessBytes + (connectorType === 'p2wpkh' ? 64 : 1)) / 4,
+    ),
     verifyPhoneStage,
     signPhone(privateKey: Uint8Array) {
       const phone = Transaction.fromPSBT(prepared, OPTIONS)

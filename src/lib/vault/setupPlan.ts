@@ -1,3 +1,5 @@
+import { importConnectorOrigin } from './program/connectorOrigin'
+import { requireReleaseNetwork } from './releaseNetwork'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import {
   ABSOLUTE_FEE_CEILING_SATS,
@@ -15,10 +17,21 @@ export const SETUP_STORE_KEY = 'arkade-vault-v2:setup'
 export const FORBIDDEN_PUBLIC_KEY_G = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
 export const FORBIDDEN_PUBLIC_KEY_2G = '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5'
 
+export interface VaultSetupConnector {
+  descriptor: string
+  address: string
+  selectedPath: string
+  connectorPub: string
+  connectorType: 'p2wpkh' | 'p2tr'
+  connectorFingerprint: number
+  connectorPath: number[]
+}
+
 export interface VaultSetupPlan {
   protectionTier: ProtectionTier
   hardwarePub: string
   recoveryPub: string
+  connector?: VaultSetupConnector
   txCapSats: number
   dailyLimitSats: number
   absoluteFeeCapSats: number
@@ -54,6 +67,56 @@ export function parseCompressedPub(raw: string, name = 'key'): string {
 
 export function xOnly(pub: string): string {
   return parseCompressedPub(pub).slice(2)
+}
+
+function validSetupConnector(value: unknown): VaultSetupConnector | null {
+  if (!value || typeof value !== 'object') return null
+  const c = value as {
+    descriptor?: unknown
+    address?: unknown
+    selectedPath?: unknown
+    connectorPub?: unknown
+    connectorType?: unknown
+    connectorFingerprint?: unknown
+    connectorPath?: unknown
+  }
+  const { descriptor, address, selectedPath, connectorPub, connectorType, connectorFingerprint, connectorPath } = c
+  if (
+    typeof descriptor !== 'string' ||
+    typeof address !== 'string' ||
+    typeof selectedPath !== 'string' ||
+    typeof connectorPub !== 'string' ||
+    (connectorType !== 'p2wpkh' && connectorType !== 'p2tr') ||
+    typeof connectorFingerprint !== 'number' ||
+    !Number.isInteger(connectorFingerprint) ||
+    !Array.isArray(connectorPath)
+  )
+    return null
+  try {
+    const network = requireReleaseNetwork(address.startsWith('bc1') ? 'mainnet' : 'mutinynet')
+    const imported = importConnectorOrigin(descriptor, network)
+    if (
+      connectorPub !== imported.publicKey ||
+      connectorType !== imported.type ||
+      connectorFingerprint !== imported.fingerprint ||
+      connectorPath.length !== imported.path.length ||
+      connectorPath.some((step, i) => step !== imported.path[i]) ||
+      address !== imported.address ||
+      selectedPath !== imported.selectedPath
+    )
+      return null
+    return {
+      descriptor,
+      address: imported.address,
+      selectedPath: imported.selectedPath,
+      connectorPub: imported.publicKey,
+      connectorType: imported.type,
+      connectorFingerprint: imported.fingerprint,
+      connectorPath: [...imported.path],
+    }
+  } catch {
+    return null
+  }
 }
 
 export function sameBip340Key(a: string | undefined, b: string | undefined): boolean {
@@ -94,7 +157,13 @@ export function setupSpendingPolicy(plan: VaultSetupPlan): SpendingPolicy {
 export function loadSetupPlan(storage: Storage = localStorage): VaultSetupPlan | null {
   const raw = storage.getItem(SETUP_STORE_KEY)
   if (!raw) return null
-  const parsed = JSON.parse(raw) as Partial<VaultSetupPlan>
+  let parsed: Partial<VaultSetupPlan>
+  try {
+    parsed = JSON.parse(raw) as Partial<VaultSetupPlan>
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
   if (
     (parsed.protectionTier !== 'standard' && parsed.protectionTier !== 'advanced') ||
     !Number.isSafeInteger(parsed.txCapSats) ||
@@ -104,10 +173,13 @@ export function loadSetupPlan(storage: Storage = localStorage): VaultSetupPlan |
   ) {
     return null
   }
+  const connector = validSetupConnector(parsed.connector)
+  if (Object.hasOwn(parsed, 'connector') && (!connector || parsed.hardwarePub !== connector.connectorPub)) return null
   return {
     protectionTier: requireProtectionTier(parsed.protectionTier),
     hardwarePub: String(parsed.hardwarePub || ''),
     recoveryPub: String(parsed.recoveryPub || ''),
+    ...(connector ? { connector } : {}),
     txCapSats: Number(parsed.txCapSats),
     dailyLimitSats: Number(parsed.dailyLimitSats),
     absoluteFeeCapSats: Number(parsed.absoluteFeeCapSats),

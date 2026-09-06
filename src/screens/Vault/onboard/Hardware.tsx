@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useState } from 'react'
 import { Clipboard, TriangleAlert } from 'lucide-react'
 import ErrorMessage from '../../../components/Error'
 import { pasteFromClipboard } from '../../../lib/clipboard'
@@ -7,15 +7,18 @@ import '../qg/guidance.css'
 import QgScreen, { QgPrimary } from '../qg/QgScreen'
 
 export default function VaultHardware() {
-  const { applyHardware, error, navigate, setup, status } = useContext(VaultContext)
+  const { applyConnectorDescriptor, applyHardware, error, navigate, setup, status } = useContext(VaultContext)
   const required = status?.externalOwnerWalletPub || ''
-  const [value, setValue] = useState(required || setup.hardwarePub)
-
-  useEffect(() => {
-    if (required) setValue(required)
-  }, [required])
+  const [value, setValue] = useState(required || setup.connector?.descriptor || '')
+  const connector = setup.connector
 
   const ready = Boolean(required || value.trim())
+
+  const submit = () => {
+    const raw = (required || value).trim()
+    if (required) applyHardware(required)
+    else applyConnectorDescriptor(raw)
+  }
 
   return (
     <QgScreen
@@ -25,7 +28,7 @@ export default function VaultHardware() {
       footer={
         <>
           <ErrorMessage error={Boolean(error)} text={error || ''} />
-          <QgPrimary onClick={() => applyHardware(required || value)} disabled={!ready} label='Use this hardware key' />
+          <QgPrimary onClick={submit} disabled={!ready} label='Use this hardware key' />
         </>
       }
     >
@@ -34,20 +37,34 @@ export default function VaultHardware() {
       <p className='qg-copy'>
         {required
           ? 'This vault already has a hardware key. Check that you can still use the hardware wallet that holds it.'
-          : 'Savings transfers need approval from your hardware wallet as well as your passkey. Keep the hardware key and its backup separate from your device.'}
+          : 'Savings transfers need approval from your signing wallet as well as your passkey. Paste the public output descriptor from Sparrow: the app derives the signer reserve address and never asks for a seed phrase or private key.'}
       </p>
       <label className='qg-field'>
-        <span>Hardware public key</span>
-        <input
+        <span>Wallet descriptor</span>
+        <textarea
           value={value}
           readOnly={Boolean(required)}
           data-testid='hardware-pub'
-          aria-label='Hardware public key'
-          placeholder='02… or 03…'
+          aria-label='Wallet descriptor'
+          placeholder='wpkh([fingerprint/path]xpub…/<0;1>/*)'
           onChange={(event) => setValue(event.target.value)}
+          rows={3}
         />
-        <small>Compressed public key beginning with 02 or 03</small>
+        <small>wpkh or tr descriptor with a fingerprint origin, available from Sparrow</small>
       </label>
+      {connector ? (
+        <section className='qg-note' data-testid='connector-import-result'>
+          <div>
+            <strong>Signer reserve address</strong>
+            <p data-testid='connector-import-address'>{connector.address}</p>
+            <p>{connector.selectedPath}</p>
+            <p>
+              Send exactly 1,000 sats to this address for the signer reserve. Savings deposits use a separate address
+              shown after setup.
+            </p>
+          </div>
+        </section>
+      ) : null}
       {required ? null : (
         <button
           type='button'
@@ -55,30 +72,31 @@ export default function VaultHardware() {
           onClick={() => void pasteFromClipboard().then((next) => setValue(next || value))}
         >
           <Clipboard />
-          Paste public key
+          Paste descriptor
         </button>
       )}
       <details className='qg-guidance'>
-        <summary>Find and check your hardware public key</summary>
+        <summary>Find and check your wallet descriptor</summary>
         <div className='qg-guidance-body'>
           <p>
-            A public key identifies the key on your hardware wallet. Use its companion software to export the compressed
-            public key, a 66-character value starting with 02 or 03.
+            In Sparrow, open Settings, then Export and choose Output Descriptor. Copy one wpkh or tr descriptor with its
+            fingerprint and derivation path. Electrum can sign compatible native SegWit transactions, but preparing its
+            public descriptor requires its master public key, fingerprint, and derivation path.
           </p>
           <p>
-            This is different from a Bitcoin address or an extended public key. Your hardware wallet also needs to sign
-            Vaulted’s transaction files, called PSBTs.
+            The app selects the first address from a ranged descriptor and the receive branch from a multipath
+            descriptor. The 1,000-sat reserve returns to that same address in each transfer; Savings pays the fee.
           </p>
           <p>
-            Before depositing, confirm that your hardware signing workflow supports Vaulted’s Savings transactions.
-            Accepting a public key here checks its format, not whether your hardware can sign.
+            Before depositing, confirm that your signing workflow supports Vaulted’s Savings transactions. Accepting a
+            descriptor here checks its format, not whether your signer can sign.
           </p>
         </div>
       </details>
       <section className='qg-note'>
         <TriangleAlert />
         <div>
-          <strong>Public key only</strong>
+          <strong>Public descriptor only</strong>
           <p>Never enter a seed phrase or private key.</p>
         </div>
       </section>

@@ -22,8 +22,8 @@ const OPTIONS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: tru
 //   whole stored record for another legitimate payment under the same
 //   enrollment yields a different candidate identity (see below). Detecting
 //   that swap without an independently held candidate identity or an
-//   authoritative server record is out of scope here; the later
-//   chain-reconciliation stage owns it.
+//   authoritative server record is out of scope here; the authenticated Guardian operation and
+//   chain reconciliation own that boundary.
 // - Mutations additionally bind to the exact candidate identity (the unsigned
 //   transaction txid returned by prepare/load). A stale callback for a
 //   cancelled operation A cannot mark or cancel a newly prepared operation B
@@ -36,9 +36,8 @@ const OPTIONS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: tru
 //   `navigator.locks` in production.
 // - Cancellation racing with signature dispatch must not release a signed
 //   candidate: only a prepared-but-never-signed operation can be cancelled.
-//   Once signatures may have issued, ownership is retained until a later
-//   chain-reconciliation stage confirms the outcome. There is deliberately no
-//   way to clear a signed operation in this increment.
+//   Once signatures may have issued, ownership is retained until chain
+//   reconciliation proves confirmation or a confirmed conflicting spend.
 export const CONNECTOR_STORE_KEY = 'arkade-vault-connector-v1-pending-v1'
 const CONNECTOR_STORE_VERSION = 1
 
@@ -72,6 +71,7 @@ export interface ConnectorPendingInput {
 }
 
 export interface ConnectorPendingRecord extends ConnectorPendingInput {
+  operationId?: string
   version: number
   enrollmentDigest: string
   candidatePsbt: string
@@ -123,6 +123,8 @@ function isRecordShape(value: unknown): value is ConnectorPendingRecord {
     typeof record.candidatePsbt === 'string' &&
     typeof record.signaturesMayHaveIssued === 'boolean' &&
     (record.phoneSignedPsbt === undefined || typeof record.phoneSignedPsbt === 'string') &&
+    (record.operationId === undefined ||
+      (typeof record.operationId === 'string' && /^[0-9a-f]{32}$/.test(record.operationId))) &&
     typeof record.recipient === 'string' &&
     Number.isSafeInteger(record.amountSats) &&
     Number.isSafeInteger(record.feeSats) &&
@@ -378,7 +380,7 @@ export function storeConnectorSavingsWitness(
 // Accept a signed raw transaction only after re-deriving it from the stored
 // witness and candidate. Returns the canonical txid for broadcast. The signed
 // operation stays pending afterwards: rebroadcast the SAME raw tx on loss,
-// and wait for the later chain-reconciliation stage for confirmation.
+// and wait for chain reconciliation for confirmation.
 export function storeConnectorSignedTx(
   expected: ConnectorExpectedIdentity,
   candidateTxid: string,
@@ -399,6 +401,8 @@ export function storeConnectorSignedTx(
       const normalized = hex.encode(hex.decode(rawTx.replace(/\s+/g, '')))
       const hardware = validated.prepared.forHardware(validated.record.savingsWitness.map((item) => hex.decode(item)))
       const derived = hardware.accept(normalized)
+      if (validated.record.signedTxHex && validated.record.signedTxHex !== derived.txHex)
+        throw new Error('connector signed transaction already saved')
       validated.record.signedTxHex = derived.txHex
       validated.record.txid = derived.txid
       validated.record.signaturesMayHaveIssued = true
@@ -437,8 +441,7 @@ export function reservedConnectorOutpoints(
 // for the exact candidate named by the caller. Once the latch is set, a
 // witness is stored, or a signed transaction exists, the operation is retained
 // for chain reconciliation — a racing or stale cancel must never release a
-// signed candidate. There is no signed-operation clearing path in this
-// increment.
+// signed candidate. Signed operations can only be archived after verified chain resolution.
 export function cancelPendingConnectorOperation(
   expected: ConnectorExpectedIdentity,
   candidateTxid: string,
@@ -460,4 +463,104 @@ export function cancelPendingConnectorOperation(
     },
     locks,
   )
+}
+
+// Retain the server capability with the exact candidate. It is never inferred
+// from an outpoint or replaced by a later response.
+export function storeConnectorOperationId(
+  expected: ConnectorExpectedIdentity,
+  candidateTxid: string,
+  operationId: string,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  if (!/^[0-9a-f]{32}$/.test(operationId)) throw new Error('invalid connector operation id')
+  return withConnectorLock(
+    snap.vaultId,
+    () => {
+      const current = readValidated(snap, storage)
+      if (!current) throw new Error('no connector operation to update')
+      requireCandidateMatch(current, candidateTxid)
+      if (current.record.operationId && current.record.operationId !== operationId)
+        throw new Error('connector operation identity changed')
+      current.record.operationId = operationId
+      writeRecord(snap.vaultId, current.record, storage)
+    },
+    locks,
+  )
+}
+
+const connectorHistoryKey = (vaultId: string) => `${connectorStoreKey(vaultId)}:history`
+// The coordinator calls this only after a fresh, verified observation that an
+// archived operation is unresolved again. Keep its exact signing stages and
+// history, and never overwrite another tab's active candidate.
+export function restoreUnresolvedConnectorOperation(
+  expected: ConnectorExpectedIdentity,
+  candidateTxid: string,
+  operationId: string,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  const txid = requireCandidateTxid(candidateTxid)
+  return withConnectorLock(
+    snap.vaultId,
+    () => {
+      const current = readValidated(snap, storage)
+      if (current) {
+        requireCandidateMatch(current, txid)
+        if (current.record.operationId !== operationId) throw new Error('connector operation identity changed')
+        return current
+      }
+      const archived = readConnectorHistory(snap, storage).find((row) => row.candidateTxid === txid)
+      if (!archived || !operationId || archived.record.operationId !== operationId)
+        throw new Error('connector archived operation identity changed')
+      writeRecord(snap.vaultId, archived.record, storage)
+      return archived
+    },
+    locks,
+  )
+}
+
+export function archiveResolvedConnectorOperation(
+  expected: ConnectorExpectedIdentity,
+  candidateTxid: string,
+  operationId: string,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  return withConnectorLock(
+    snap.vaultId,
+    () => {
+      const current = readValidated(snap, storage)
+      if (!current) return
+      requireCandidateMatch(current, candidateTxid)
+      if (!current.record.operationId || current.record.operationId !== operationId)
+        throw new Error('connector operation identity changed')
+      const rows = readConnectorHistory(snap, storage)
+      if (!rows.some((row) => row.candidateTxid === current.candidateTxid)) rows.push(current)
+      // Archive before removing the active pointer. A storage failure retains it.
+      storage.setItem(connectorHistoryKey(snap.vaultId), JSON.stringify(rows.map((row) => row.record)))
+      storage.removeItem(connectorStoreKey(snap.vaultId))
+    },
+    locks,
+  )
+}
+
+function readConnectorHistory(expected: ConnectorExpectedIdentity, storage: Storage) {
+  const raw = storage.getItem(connectorHistoryKey(expected.vaultId))
+  if (!raw) return []
+  const rows: unknown = JSON.parse(raw)
+  if (!Array.isArray(rows)) throw new Error('corrupt connector history')
+  return rows.map((row) => validatedRecord(expected, row))
+}
+export function loadConnectorHistory(
+  expected: ConnectorExpectedIdentity,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  return withConnectorLock(snap.vaultId, () => readConnectorHistory(snap, storage), locks)
 }

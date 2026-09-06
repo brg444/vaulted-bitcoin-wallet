@@ -108,6 +108,16 @@ export type StagedEnrollment = EnrollmentSecrets & {
   protectionTier: ProtectionTier
   spendingPolicy: SpendingPolicy
   spendingPolicyDigest: string
+  connectorPub?: string
+  connectorType?: 'p2wpkh' | 'p2tr'
+  connectorFingerprint?: number
+  connectorPath?: number[]
+  connectorDescriptorHash?: string
+  connectorSavingsAddress?: string
+  connectorSavingsScript?: string
+  connectorNetwork?: 'mainnet' | 'mutinynet'
+  connectorArkadeOrigin?: string
+  connectorArkadeVersion?: string
 }
 
 export function loadStagedEnrollment(storage: Storage = localStorage): StagedEnrollment | null {

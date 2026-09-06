@@ -12,19 +12,29 @@ tools for conventional P2WPKH/BIP86 inputs beside finalized Savings. Their
 results cover component tests; physical hardware compatibility and a complete
 live payment flow remain separate qualifications.
 
-The first increment adds a scoped two-input Guardian signing helper and durable
-wallet handoff state. The store requires a per-vault Web Lock, an independent
-enrollment pin, and the exact candidate identity for mutations. Restore checks
-the complete PSBT and any saved signatures; signed candidates retain their
-inputs across reload and lost responses. These components have no enrollment,
-HTTP, or payment-screen caller yet.
+The candidate integrates versioned enrollment, a public-descriptor signer
+import, authenticated Guardian authorization, the existing external Emulator,
+and complete payment screens. The wallet persists the exact candidate and
+phone signature before dispatch, finalizes Savings before exporting, and saves
+the verified raw transaction before broadcast. Reload and lost responses resume
+that retained operation.
 
-The remaining integration stages are versioned enrollment and Recovery Kit
-support, authenticated ledger authorization, the remote cosigner stage,
-confirmation and conflict reconciliation, then payment screens and complete
-funded qualification. The existing whole-transaction signature verification
-remains the boundary for signer responses. Wallet persistence alone does not
-provide authoritative replay protection.
+The schema-3 Guardian ledger authenticates connector origins and operation rows
+before use. It records authorization before signing, advances the independent
+policy sequence, and resolves reservations only from canonical transaction
+evidence. Timeouts and unconfirmed conflicts preserve ownership. Spending
+allowances remain specific to Spending.
+
+Connector Recovery Kits and version-5 passkey bindings preserve the full
+Savings and boarding identity. The standalone recovery companion reconstructs
+the actual connector Savings tree and existing recovery paths. Legacy kits,
+version-4 bindings, original Savings, and Light state retain their contracts.
+
+The [RC deployment runbook](https://github.com/brg444/arkade-runtime/blob/codex/hardware-connector-rc/docs/connector-rc-deployment.md)
+requires paired runtime and wallet revisions, an operator-assisted Guardian
+unlock, and a funded check against the production broadcast endpoint before
+opening enrollment. Schema 3 requires a compatible runtime; an old binary and
+an older database snapshot cannot safely replace issued authorization history.
 
 Connector enforcement requires at least one honest online cosigner. Phone plus
 all required online signing keys can bypass the program; that accepted

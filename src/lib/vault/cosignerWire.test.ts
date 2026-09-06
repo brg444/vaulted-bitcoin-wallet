@@ -19,6 +19,14 @@ import type { VaultStatusWire } from './types'
 import type { ProtectionTier } from './protectionTier'
 
 type ExpectedVaultStatusWire = {
+  connectorEnrollment?: {
+    connectorType: 'p2wpkh' | 'p2tr'
+    connectorPub: string
+    connectorFingerprint: number
+    connectorPath: number[]
+    enrollmentDigest: string
+    descriptorHash: string
+  }
   lightDescriptor?: LightDescriptor
   lightDescriptorHash?: string
   enrolled: boolean
@@ -80,6 +88,10 @@ type ExpectedVaultEnrollmentRequest = {
   externalOwnerWalletXOnly?: string
   recoveryXOnly?: string
   recoveryKeyXOnly?: string
+  connectorType?: 'p2wpkh' | 'p2tr'
+  connectorPub?: string
+  connectorFingerprint?: number
+  connectorPath?: number[]
   vaultId?: string
   descriptorHash?: string
   vtxoBoardingProgram?: 'vault-board-v1'
@@ -177,7 +189,11 @@ describe('Vault cosigner wire DTO conformance', () => {
   it('matches the frozen server status and request schemas exactly', () => {
     expectTypeOf<VaultStatusWire>().toEqualTypeOf<ExpectedVaultStatusWire>()
     expectTypeOf<VaultEnrollmentRequest>().toEqualTypeOf<ExpectedVaultEnrollmentRequest>()
-    expectTypeOf<VaultPasskeyChallengeRequest>().toEqualTypeOf<{ purpose: string; vaultId?: string }>()
+    expectTypeOf<VaultPasskeyChallengeRequest>().toEqualTypeOf<{
+      purpose: string
+      vaultId?: string
+      candidateTxid?: string
+    }>()
     expectTypeOf<VaultPasskeyChallengeResponse>().toEqualTypeOf<{
       challengeId: string
       challenge: string

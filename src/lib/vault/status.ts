@@ -4,6 +4,8 @@ import { readBounded } from './bounded'
 import { POLICY_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
 import { authorizerWalletHref, requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
+import { CONNECTOR_TEMPLATE } from './program/connector'
+import type { ConnectorCapability } from './program/connectorEnroll'
 import { SAVINGS_TEMPLATE } from './program/constants'
 import { bindStatusToLocalPin } from './pin'
 import type { VaultStatus, VaultStatusWire } from './types'
@@ -34,6 +36,10 @@ export type PublicAuthorizerStatus = {
   enrollmentExpiresAt?: string
   vtxoBoardingProgram?: string
   spendingPolicyCapabilities: SpendingPolicyCapabilities
+  // Versioned connector enrollment capability. Absent on Guardians that
+  // predate connector enrollment; the wallet refuses connector setup before
+  // passkey creation unless it matches exactly.
+  connectorCapability?: ConnectorCapability
 }
 
 export type VaultReadyStatus = {
@@ -222,7 +228,8 @@ export function requireStatusIdentity(
   if (status.vaultId !== expected) throw new Error('status vault id does not match')
   requireReleaseNetwork(status.network)
   if (status.templateVersion === LIGHT_PROFILE) return requireLightStatus(status)
-  if (status.templateVersion !== SAVINGS_TEMPLATE) throw new Error('template version is not this release')
+  if (status.templateVersion !== SAVINGS_TEMPLATE && status.templateVersion !== CONNECTOR_TEMPLATE)
+    throw new Error('template version is not this release')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   const selected = validateSpendingPolicy(status.spendingPolicy)
   if (spendingPolicyDigest(selected) !== status.spendingPolicyDigest) {

@@ -38,7 +38,7 @@ jobs:
             const pack = require('./src/lib/vault/contract-pack.json')
             const programs = pack.programs || {}
             const names = Object.keys(programs).sort()
-            const expected = ['savings-recovery-v1', 'vault-board-v1', 'vault-policy-v1']
+            const expected = ['savings-connector-v1', 'savings-recovery-v1', 'vault-board-v1', 'vault-policy-v1']
             if (JSON.stringify(names) !== JSON.stringify(expected)) {
               throw new Error('contract pack must contain exactly the current programs')
             }

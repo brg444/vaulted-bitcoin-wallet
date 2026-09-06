@@ -1,3 +1,5 @@
+import { CONNECTOR_TEMPLATE } from './connector'
+import { CONNECTOR_KIT_NAME, connectorRecoveryDescriptor } from './connectorEnrollmentCore'
 import { PROGRAM_CSV, PROGRAM_SCHEMA, familyKeysFor, isSavingsTemplate } from './constants'
 import { hashVaultProgramDescriptor, validateVaultProgramDescriptor, type VaultProgramDescriptor } from './descriptor'
 import type { ProtectionTier } from '../protectionTier'
@@ -34,6 +36,8 @@ export function buildRecoveryKit(descriptor: VaultProgramDescriptor): RecoveryKi
 }
 
 export function parseRecoveryKit(raw: unknown): RecoveryKit {
+  if (raw && typeof raw === 'object' && 'name' in raw && raw.name === CONNECTOR_KIT_NAME)
+    return buildRecoveryKit(connectorRecoveryDescriptor(raw))
   const kit = raw as RecoveryKit
   if (!kit || kit.name !== RECOVERY_KIT_NAME) throw new Error('not a Recovery Kit')
   if (kit.version !== RECOVERY_KIT_VERSION) throw new Error('unsupported Recovery Kit version')
@@ -81,7 +85,10 @@ export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
 }
 
 export function assertKitTemplate(d: VaultProgramDescriptor) {
-  if (d.schema !== PROGRAM_SCHEMA || !isSavingsTemplate(d.templateVersion)) {
+  if (
+    d.schema !== PROGRAM_SCHEMA ||
+    (!isSavingsTemplate(d.templateVersion) && d.templateVersion !== CONNECTOR_TEMPLATE)
+  ) {
     throw new Error('Recovery Kit does not match the current Vault Program')
   }
 }

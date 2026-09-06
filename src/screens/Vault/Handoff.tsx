@@ -1,3 +1,5 @@
+import { readConnectorSignerFile } from '../../lib/vault/connectorSignerFile'
+import { CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import QgAmount from './qg/QgAmount'
 import { useContext, useMemo, useRef, useState } from 'react'
 import { Check, Clipboard, Clock3, Copy, QrCode, ScanLine, Share2, TriangleAlert, Upload } from 'lucide-react'
@@ -18,6 +20,7 @@ export default function VaultHandoff() {
   const { busy, cancelSavingsHandoff, completeSavingsHandoff, error, handoffPsbt, navigate, spend, status } =
     useContext(VaultContext)
   const { toast } = useToast()
+  const connector = status?.templateVersion === CONNECTOR_TEMPLATE
   const payload = useMemo(() => (handoffPsbt ? psbtHexToBase64(handoffPsbt) : ''), [handoffPsbt])
   const frames = useMemo(() => (payload ? encodePsbtFrames(payload) : []), [payload])
   const [view, setView] = useState<HandoffView>('export')
@@ -92,19 +95,19 @@ export default function VaultHandoff() {
       <QgScreen title='Return signed transaction' back={() => setView('export')} footer={null}>
         <p className='qg-eyebrow'>Approval 2 of 2</p>
         <h1>Bring the signed PSBT back</h1>
-        <p className='qg-copy'>Choose the method that matches your hardware signer.</p>
+        <p className='qg-copy'>Choose the method that matches your signing wallet.</p>
         <input
           ref={fileInput}
           hidden
           type='file'
-          accept='.psbt,application/octet-stream'
+          accept={connector ? '.psbt,.txn,.txt,application/octet-stream,text/plain' : '.psbt,application/octet-stream'}
           data-testid='savings-signed-psbt-file'
           onChange={(event) => {
             const input = event.currentTarget
             const file = input.files?.[0]
             input.value = ''
             if (!file) return
-            void readPsbtFile(file)
+            void (connector ? readConnectorSignerFile(file) : readPsbtFile(file))
               .then((psbt) => acceptSigned(psbt, file.name))
               .catch(() => {
                 setPasted('')
@@ -188,7 +191,7 @@ export default function VaultHandoff() {
             </strong>
           </div>
           <div>
-            <span>Network fee</span>
+            <span>{connector ? 'Network fee and 240-sat anchor' : 'Network fee'}</span>
             <strong>
               <QgAmount value={prettyAmount(spend.fee)} />
             </strong>
@@ -244,13 +247,16 @@ export default function VaultHandoff() {
 
   return (
     <QgScreen
-      title='Hardware next'
+      title={connector ? 'Signer next' : 'Hardware next'}
       close={() => navigate('home')}
       stepLabel='Saved'
       footer={
         <>
           <QgPrimary onClick={() => setView('import')} label='I’ve signed it' />
-          <QgTextButton onClick={cancelSavingsHandoff} label='Delete pending transfer' />
+          <QgTextButton
+            onClick={cancelSavingsHandoff}
+            label={connector ? 'Keep pending and close' : 'Delete pending transfer'}
+          />
         </>
       }
     >
@@ -263,14 +269,32 @@ export default function VaultHandoff() {
         <Check />
       </div>
       <p className='qg-eyebrow'>Approval 2 of 2</p>
-      <h1>Move the transaction to your hardware signer</h1>
+      <h1>
+        {connector ? 'Move the transaction to your signing wallet' : 'Move the transaction to your hardware signer'}
+      </h1>
       <p className='qg-copy'>
-        Copy or show the PSBT, sign it with your hardware key, then return the signed transaction here.
+        {connector
+          ? 'Copy or show the PSBT, check the destination and amount in your signing wallet, then return the signed transaction here.'
+          : 'Copy or show the PSBT, sign it with your hardware key, then return the signed transaction here.'}
       </p>
       <section className='qg-transfer'>
         <span>₿{prettyNumber(spend.amount, 0)}</span>
-        <strong>PSBT · unsigned by hardware</strong>
+        <strong>{connector ? 'PSBT · awaiting signer' : 'PSBT · unsigned by hardware'}</strong>
       </section>
+      {connector ? (
+        <section className='qg-details' aria-label='Signer review'>
+          <div>
+            <span>Recipient</span>
+            <strong style={{ overflowWrap: 'anywhere' }} data-testid='connector-signer-recipient'>
+              {spend.address}
+            </strong>
+          </div>
+          <div>
+            <span>Signer reserve returned</span>
+            <strong>₿1,000</strong>
+          </div>
+        </section>
+      ) : null}
       {canShareFile ? (
         <button type='button' className='qg-primary' onClick={() => void sharePsbt()}>
           <Share2 />

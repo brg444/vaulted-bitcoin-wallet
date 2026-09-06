@@ -165,6 +165,15 @@ describe('Vault session enrollment passkey install', () => {
     acceptedDesign: true,
     hardwarePub: '02' + '11'.repeat(32),
     complete: true,
+    connector: {
+      descriptor: 'fixture',
+      address: 'fixture',
+      selectedPath: 'fixture',
+      connectorPub: '02' + '11'.repeat(32),
+      connectorType: 'p2wpkh',
+      connectorFingerprint: 1,
+      connectorPath: [0x80000054, 0x80000001, 0x80000000, 0, 0],
+    },
   }
 
   it('pins the enrolled program even when other-device passkey install fails twice', async () => {
