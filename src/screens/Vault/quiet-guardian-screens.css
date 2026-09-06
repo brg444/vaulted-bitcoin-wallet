@@ -70,7 +70,8 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 }
 
 .qg-screen-welcome {
-  grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(0, 1fr) auto;
+  grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(max-content, 1fr) auto;
+  overflow-y: auto;
 }
 
 .qg-screen-success,
@@ -78,12 +79,17 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
+.qg-screen-unlock {
+  grid-template-rows: minmax(max-content, 1fr) auto;
+  overflow-y: auto;
+}
+
 .qg-screen-unlock .qg-main {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   padding: 32px var(--qg-gutter);
-  overflow: auto;
+  overflow: visible;
 }
 
 .qg-unlock {
@@ -261,7 +267,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   flex-direction: column;
   justify-content: safe center;
   padding: 32px var(--qg-gutter);
-  overflow: auto;
+  overflow: visible;
 }
 
 .qg-screen h1 {
