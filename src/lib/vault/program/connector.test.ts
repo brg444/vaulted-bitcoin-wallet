@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { hex } from '@scure/base'
 import { Address, OutScript, Transaction } from '@scure/btc-signer'
+import { RawPSBTV0 } from '@scure/btc-signer/psbt.js'
 import { vaultAddressNetwork } from '../addressNetwork'
 import { prepareConnectorPayment } from './connectorPayment'
 import { defaultSpendingPolicy } from '../spendingPolicy'
@@ -73,6 +74,18 @@ describe('connector contract matches runtime', () => {
             built.getInput(1).bip32Derivation?.[0][1].fingerprint,
         ).toBe(v.originFingerprint)
         const hardware = prepared.forHardware(p.savingsWitness.map((item) => hex.decode(item)))
+        // The real emulator requires the proprietary parent field for BOTH
+        // inputs. Transaction/signature parity alone does not detect its loss.
+        for (const serialized of [prepared.psbt(), hardware.psbt()]) {
+          const packet = RawPSBTV0.decode(hex.decode(serialized))
+          for (const input of packet.inputs) {
+            const parents = input.unknown?.filter(
+              ([key]) => key.type === 222 && hex.encode(key.key) === '707265766f75747478',
+            )
+            expect(parents).toHaveLength(1)
+            expect(hex.encode(parents![0][1])).toBe(p.parent)
+          }
+        }
         expect(hardware.accept(p.responsePSBT)).toEqual({ txHex: p.finalTx, txid: p.txid })
         expect(hardware.accept(p.finalTx)).toEqual({ txHex: p.finalTx, txid: p.txid })
         expect(hardware.accept(p.finalTx.match(/.{1,80}/g)!.join('\n'))).toEqual({ txHex: p.finalTx, txid: p.txid })

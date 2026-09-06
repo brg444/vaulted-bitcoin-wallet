@@ -4,7 +4,7 @@ import { browserVaultLockManager, requireVaultLockManager, type VaultLockManager
 import { prepareConnectorPayment } from './connectorPayment'
 import { connectorEnrollmentDigest, type ConnectorOrigin } from './connector'
 
-const OPTIONS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true } as const
+const OPTIONS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true, allowUnknown: true } as const
 
 // Durable approval/handoff state for one Savings connector withdrawal. This is
 // the wallet side of the signing order: the exact candidate is persisted BEFORE

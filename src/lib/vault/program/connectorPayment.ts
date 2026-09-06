@@ -7,7 +7,9 @@ import { buildConnectorFamily, connectorEnrollmentDigest, type ConnectorOrigin }
 import { emulatorPacketScript } from './packet'
 import { xOnlyFromCompressed } from '../savingsTree'
 
-const OPTIONS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true } as const
+// Parent transactions use the emulator's proprietary PSBT fields. Preserving
+// unknown script types alone does not preserve those fields during updates.
+const OPTIONS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true, allowUnknown: true } as const
 type ContractInput = Parameters<typeof connectorEnrollmentDigest>[0]
 export interface ConnectorCoin {
   parentHex: string
@@ -85,11 +87,13 @@ export function prepareConnectorPayment(input: {
       sequence: 0xfffffffd,
       nonWitnessUtxo: raw,
       witnessUtxo: { amount: out.amount, script: out.script },
-      unknown: [[{ type: 222, key: new TextEncoder().encode('prevouttx') }, raw]],
       ...(index === 0
         ? { tapLeafScript: [signingLeaf], tapInternalKey: f.savings.tapInternalKey }
         : { ...connectorMetadata, ...(input.contract.connectorType === 'p2wpkh' ? { sighashType: 1 } : {}) }),
     })
+    // btc-signer 2.0.1's addInput omits allowUnknown when normalizing fields;
+    // updateInput preserves the emulator parent field with OPTIONS above.
+    tx.updateInput(index, { unknown: [[{ type: 222, key: new TextEncoder().encode('prevouttx') }, raw]] })
   }
   if (values[1] !== 1000n || values[0] + values[1] > 2_100_000_000_000_000n)
     throw new Error('invalid reserve or total value')
