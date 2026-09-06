@@ -192,7 +192,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         schema: 3,
         network: 'mutinynet',
         enrollTemplate: SAVINGS_TEMPLATE,
-        arkadeOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
+        arkadeOrigin: 'configured',
         arkadeVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
       }),
     )
@@ -556,6 +556,8 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
             ...(body.recoveryXOnly ? { recoveryPub: `02${body.recoveryXOnly}` } : {}),
             vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
             arkadeCosignerBase: PROGRAM_FIXTURE.arkadeCosignerBase,
+            arkadeOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
+            arkadeVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
             spendingPolicyDigest: spendingPolicyDigest(proposedPolicy),
             program: hex.encode(preview.family.program),
             savingsScript: preview.descriptor.savings.script,

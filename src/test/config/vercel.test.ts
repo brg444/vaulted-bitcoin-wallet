@@ -62,6 +62,21 @@ describe('Vercel worker caching', () => {
     },
   )
 
+  it.each(['vercel.json', 'vercel.mainnet.json'])(
+    'routes connector authorization and operation reads through flat functions in %s',
+    (file) => {
+      const config = JSON.parse(readFileSync(file, 'utf8'))
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/connector/operation',
+        destination: '/api/v1/connector-operation',
+      })
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/connector/withdraw/authorize',
+        destination: '/api/v1/connector-withdraw-authorize',
+      })
+    },
+  )
+
   it('routes readiness through the authorizer gateway', () => {
     const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
       rewrites: { source: string; destination: string }[]

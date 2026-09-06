@@ -44,6 +44,8 @@
     { "source": "/v1/vtxo/checkpoints/authorize", "destination": "/api/v1/vtxo-checkpoints-authorize" },
     { "source": "/v1/vtxo/finalize", "destination": "/api/v1/vtxo-finalize" },
     { "source": "/v1/vtxo/board/:phase", "destination": "/api/gateway?route=board&phase=:phase" },
+    { "source": "/v1/connector/operation", "destination": "/api/v1/connector-operation" },
+    { "source": "/v1/connector/withdraw/authorize", "destination": "/api/v1/connector-withdraw-authorize" },
     { "source": "/v1/:path*", "destination": "/api/v1/:path*" },
     { "source": "/esplora/:path*", "destination": "https://mempool.space/api/:path*" },
     { "source": "/((?!assets/|api/|health(?:/|$)|v1(?:/|$)).*)", "destination": "/index.html" }

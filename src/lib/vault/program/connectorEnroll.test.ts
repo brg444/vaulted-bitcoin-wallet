@@ -114,6 +114,8 @@ function mockServerPreview() {
         phoneDirectP256: vector.phoneDirect,
         vaultCosignerBase: vector.guardian,
         arkadeCosignerBase: vector.emulator,
+        arkadeOrigin: 'fixture-arkade-origin',
+        arkadeVersion: 'fixture-arkade-version',
         spendingPolicyDigest: preview.descriptor.policy.digest,
         program: hex.encode(preview.family.program),
         savingsScript: hex.encode(preview.family.savings.script),
@@ -290,6 +292,9 @@ describe('connector preview verification', () => {
     expectReject((c) => (c.fingerprint = 1), 'does not match import')
     expectReject((c) => (c.originPath = '2147483734/2147483648/2147483648/0/1'), 'does not match import')
     expectReject((c) => (c.hardwarePub = vector.phone), 'does not match')
+    expectReject((c) => (c.arkadeOrigin = 'configured'), 'missing its committed Arkade identity')
+    expectReject((c) => delete c.arkadeOrigin, 'missing its committed Arkade identity')
+    expectReject((c) => (c.arkadeVersion = 'another-version'), 'missing its committed Arkade identity')
     expect(() =>
       requireProposedConnectorDescriptor(raw, `ff${preview.compositeHash.slice(2)}`, {
         vaultId: 'connector-family-fixture',

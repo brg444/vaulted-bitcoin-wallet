@@ -43,7 +43,7 @@ export interface ConnectorProposalExpectation {
   spendingPolicyDigest: string
   origin: ConnectorEnrollmentOrigin
   boardingPub: string
-  arkadeOrigin: string
+  arkadeOrigin?: string
   arkadeVersion: string
 }
 
@@ -111,6 +111,11 @@ export function requireProposedConnectorDescriptor(
     fail('connector preview direct key does not match this wallet')
   if (connector.spendingPolicyDigest !== expected.spendingPolicyDigest)
     fail('connector preview spending policy does not match this setup')
+  const arkadeOrigin = typeof connector.arkadeOrigin === 'string' ? connector.arkadeOrigin.trim() : ''
+  const arkadeVersion = typeof connector.arkadeVersion === 'string' ? connector.arkadeVersion.trim() : ''
+  if (!arkadeOrigin || arkadeOrigin === 'configured' || !arkadeVersion || arkadeVersion !== expected.arkadeVersion)
+    fail('connector preview is missing its committed Arkade identity')
+  if (expected.arkadeOrigin && arkadeOrigin !== expected.arkadeOrigin) fail('connector preview Arkade identity changed')
   const boarding = requireBoardingDescriptor(composite.boarding, {
     vaultId: expected.vaultId,
     phonePub: expected.phonePub,
@@ -126,8 +131,8 @@ export function requireProposedConnectorDescriptor(
     ...(expected.recoveryPub ? { recoveryPub: expected.recoveryPub } : {}),
     vaultCosignerBase: requireCompressedHex(connector.vaultCosignerBase, 'vaultCosignerBase'),
     arkadeCosignerBase: requireCompressedHex(connector.arkadeCosignerBase, 'arkadeCosignerBase'),
-    arkadeOrigin: expected.arkadeOrigin,
-    arkadeVersion: expected.arkadeVersion,
+    arkadeOrigin,
+    arkadeVersion,
     spendingPolicy: expected.spendingPolicy,
     origin: expected.origin,
     boarding,

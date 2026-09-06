@@ -262,6 +262,23 @@ describe('gateway response cache policy', () => {
     expect(result.headers.get('cache-control')).toBe('no-store')
   })
 
+  it.each([
+    ['GET', '/api/v1/connector-operation?vaultId=x&operationId=y', '/v1/connector/operation?vaultId=x&operationId=y'],
+    ['POST', '/api/v1/connector-withdraw-authorize', '/v1/connector/withdraw/authorize'],
+  ])('forwards the connector %s request with its operation identity and body', async (method, url, target) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { headers: { 'Cache-Control': 'no-store' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    const body = JSON.stringify({ vaultId: 'x', psbt: 'fixture-candidate' })
+    await gatewayHandler(gatewayRequest({ method, url, ...(method === 'POST' ? { body } : {}) }), result.response)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://authorizer.example' + target,
+      expect.objectContaining({ method, body: method === 'POST' ? Buffer.from(body) : undefined }),
+    )
+    expect(result.response.statusCode).toBe(200)
+    expect(result.headers.get('cache-control')).toBe('no-store')
+  })
+
   it('marks an oversized request as no-store without contacting the upstream', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

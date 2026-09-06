@@ -199,7 +199,6 @@ export async function beginTenantEnrollment(
     preflightConnectorEnrollment(publicStatus, enrollmentNetwork, selectedPolicy)
     const readiness = await fetchVaultReadiness()
     if (readiness.state !== 'ready') throw new Error('vault service is not ready for enrollment')
-    arkadeOrigin = readiness.status.arkadeOrigin
     arkadeVersion = readiness.status.arkadeVersion
   }
   const rpId = requireRPID(publicStatus)
@@ -337,7 +336,6 @@ export async function beginTenantEnrollment(
             connectorPath: [...connector.connectorPath],
           },
           boardingPub: stagedBoard.boardingPub,
-          arkadeOrigin,
           arkadeVersion,
         })
       } catch (error) {
@@ -347,6 +345,7 @@ export async function beginTenantEnrollment(
         throw error
       }
       composite = { savings: connectorVerified.preview.descriptor, boarding: connectorVerified.boarding }
+      arkadeOrigin = connectorVerified.preview.descriptor.arkadeCosigner.origin
       descriptor = connectorVerified.preview.descriptor
     } else {
       composite = requireProposedBoardingDescriptor(proposed.descriptor, proposed.descriptorHash, {

@@ -22,7 +22,9 @@ const RATE_WINDOW_MS = 60_000
 const RATE_LIMIT = 60
 const LOCAL_CACHE_CONTROL = 'no-store, max-age=0'
 
-const FLAT_VTXO_PATHS: Record<string, string> = {
+const FLAT_AUTHORIZER_PATHS: Record<string, string> = {
+  '/api/v1/connector-operation': '/v1/connector/operation',
+  '/api/v1/connector-withdraw-authorize': '/v1/connector/withdraw/authorize',
   '/api/v1/vtxo-operation': '/v1/vtxo/operation',
   '/api/v1/vtxo-reserve': '/v1/vtxo/reserve',
   '/api/v1/vtxo-abort': '/v1/vtxo/abort',
@@ -166,7 +168,7 @@ export function publicAuthorizerPath(url = ''): string {
   const raw = (url.split('?')[0] || '/').replace(/\/+$/, '') || '/'
   if (raw === '/api/health' || raw === '/health') return '/health' + q
   if (raw === '/api/ready' || raw === '/ready') return '/ready' + q
-  if (FLAT_VTXO_PATHS[raw]) return FLAT_VTXO_PATHS[raw] + q
+  if (FLAT_AUTHORIZER_PATHS[raw]) return FLAT_AUTHORIZER_PATHS[raw] + q
   if (raw.startsWith('/api/authorizer/')) return raw.slice('/api/authorizer'.length) + q
   if (raw === '/api/authorizer') return '/' + q
   if (raw === '/api/gateway') {
