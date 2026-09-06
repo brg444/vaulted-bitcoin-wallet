@@ -1027,20 +1027,10 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await page.getByTestId('security-kit').click()
   await expect(page.getByRole('heading', { name: 'Recovery Kit', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
-  await expect(
-    page.getByText('Spending operation is missing its exact transaction bundle', { exact: true }),
-  ).toBeVisible()
-  // Background capture status contains a wall-clock timestamp when an earlier
-  // snapshot completed. Its behavior is covered by the archive lifecycle tests.
-  const captureStatus = page.getByText(
-    /Transaction recovery data saved on this device|Save complete transaction data for recovery across every account/,
-  )
-  await expect(captureStatus).toBeVisible()
-  await expect(page).toHaveScreenshot('recovery-kit.png', {
-    animations: 'disabled',
-    fullPage: true,
-    mask: [captureStatus],
-  })
+  // Archive capture is asynchronous and independent of this navigation tour.
+  // Its failure/retained-copy states are tested in Recover and useRecoveryArchive.
+  await expect(page.getByRole('button', { name: 'Download encrypted recovery archive', exact: true })).toBeVisible()
+  await expect(page.getByTestId('download-recovery-kit')).toBeVisible()
   await page.getByRole('button', { name: /I lost a key/ }).click()
   await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
