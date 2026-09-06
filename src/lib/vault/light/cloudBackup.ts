@@ -44,7 +44,10 @@ async function post<T>(phase: string, body: unknown): Promise<T> {
   return JSON.parse(text) as T
 }
 const encode = (value: string) => new TextEncoder().encode(value)
-export async function openLightCloudBackup(local?: LightEnrollment): Promise<LightBackupSession> {
+export async function openLightCloudBackup(
+  local?: LightEnrollment,
+  withOwner?: (owner: Uint8Array, record: LightEnrollment) => Promise<unknown>,
+): Promise<LightBackupSession> {
   const challenge = await post<{ challengeId: string; challenge: string }>('challenge', {})
   if (!/^[0-9a-f]{64}$/.test(challenge.challenge)) throw new Error('Invalid backup challenge')
   const id = local ? Uint8Array.from(hex.decode(local.enrollment.credId)) : undefined
@@ -121,6 +124,9 @@ export async function openLightCloudBackup(local?: LightEnrollment): Promise<Lig
         await storeLightRecoveryArchive(file.archive, record.descriptor)
     }
     localStorage.setItem(revisionKey(vaultId), String(revision))
+    // Only normal wallet callers opt into an existing owner ceremony. Recovery
+    // tools opening this backup never authorize a new collaborative operation.
+    if (withOwner) await withOwner(owner, record)
     return {
       token: response.token,
       expiresAt: response.expiresAt,

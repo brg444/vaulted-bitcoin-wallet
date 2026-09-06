@@ -103,6 +103,14 @@ describe('same-origin authorizer gateway', () => {
       expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-renew&phase=${phase}`))).toBe(false)
     }
   })
+  it('routes only the five native Guardian delegation phases', () => {
+    for (const phase of ['info', 'schedule', 'list', 'status', 'cancel'])
+      expect(publicAuthorizerPath(`/api/gateway?route=light-delegate&phase=${phase}`)).toBe(
+        `/v1/light/delegate/${phase}`,
+      )
+    for (const phase of ['', 'sign', '../schedule', 'status/extra'])
+      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-delegate&phase=${phase}`))).toBe(false)
+  })
 
   it('preserves connector operation queries and all four Light backup aliases', () => {
     expect(publicAuthorizerPath('/api/v1/connector-operation?vaultId=a&operationId=b')).toBe(

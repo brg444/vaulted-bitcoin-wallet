@@ -178,6 +178,8 @@ export function publicAuthorizerPath(url = ''): string {
     if (route === 'ready') return '/ready'
     if (route === 'enroll-session') return '/v1/enroll/session'
     const phase = params.get('phase') || ''
+    if (route === 'light-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
+      return `/v1/light/delegate/${phase}`
     if (route === 'light-renew' && new Set(['prepare', 'register', 'final', 'status', 'release']).has(phase))
       return `/v1/light/renew/${phase}`
     if (route === 'light-backup' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
@@ -348,7 +350,11 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
   try {
     payload = await readBoundedUpstream(
       upstream,
-      /^\/v1\/(light\/backup|recovery-archive)\/(open|read|write)$/.test(pathOnly) ? 3_100_000 : MAX_GATEWAY_BYTES,
+      pathOnly === '/v1/light/delegate/status'
+        ? 12_500_000
+        : /^\/v1\/(light\/backup|recovery-archive)\/(open|read|write)$/.test(pathOnly)
+          ? 3_100_000
+          : MAX_GATEWAY_BYTES,
     )
   } catch {
     jsonError(res, 502, 'API response too large')

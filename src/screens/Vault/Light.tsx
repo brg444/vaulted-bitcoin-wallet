@@ -10,6 +10,14 @@ import { checkLightRenewal, renewLightSpending } from '../../lib/vault/light/ren
 import type { LightRenewalPlan } from '../../lib/vault/light/renewalTypes'
 import { lightRenewalTiming } from '../../lib/vault/light/renewalTiming'
 import {
+  authorizeGuardianRenewals,
+  refreshGuardianRenewals,
+  clearGuardianDelegationReads,
+  guardianRenewalCoverage,
+} from '../../lib/vault/light/guardianDelegation'
+import { guardianRenewalSpendUnlocker } from '../../lib/vault/light/delegationCeremony'
+import type { GuardianDelegationJournal } from '../../lib/vault/light/delegationStore'
+import {
   captureLightRecoveryArchive,
   loadLightRecoveryArchive,
   storeLightRecoveryArchive,
@@ -167,6 +175,21 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [useSavedRecovery, setUseSavedRecovery] = useState(false)
   const [recoveryDataDate, setRecoveryDataDate] = useState('')
   const [renewalTiming, setRenewalTiming] = useState<ReturnType<typeof lightRenewalTiming> | null>(null)
+  const [delegations, setDelegations] = useState<GuardianDelegationJournal | null>(null)
+  const coverage =
+    record && snapshot?.recoveryVtxos
+      ? guardianRenewalCoverage(record.descriptor, delegations, snapshot?.recoveryVtxos || [])
+      : null
+  const authorizeRenewals = async (owner: Uint8Array, saved: LightEnrollment) => {
+    setDelegations(await authorizeGuardianRenewals(saved.descriptor, owner))
+  }
+  useEffect(() => {
+    if (!record) return
+    return () => clearGuardianDelegationReads(record.descriptor.vaultId)
+  }, [record?.descriptor.vaultId])
+  useEffect(() => {
+    if (record && (view === 'unlock' || view === 'emergency')) clearGuardianDelegationReads(record.descriptor.vaultId)
+  }, [record?.descriptor.vaultId, view === 'unlock', view === 'emergency'])
   const [recoveryDataError, setRecoveryDataError] = useState('')
   const recoveryController = useRef<AbortController | null>(null)
   useEffect(() => () => recoveryController.current?.abort(), [])
@@ -176,6 +199,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     const scheduler = lightBackupScheduler(
       async () => {
         if (document.visibilityState === 'hidden') return
+        const renewalState = await refreshGuardianRenewals(record.descriptor)
+        if (active) setDelegations(renewalState)
         const current = await fetchVaultWalletVtxoSnapshot(status)
         if (!current.recoveryVtxos) throw new Error('Wallet output snapshot is unavailable')
         const archive = await captureLightRecoveryArchive(record.descriptor, current.recoveryVtxos)
@@ -327,7 +352,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
         record.descriptor,
       )
-      const session = await openLightCloudBackup(record)
+      const session = await openLightCloudBackup(record, authorizeRenewals)
       cloudSession.current = session
       const archive = await captureCurrent(record, st)
       const saved = await syncLightCloudBackup(session, archive)
@@ -341,7 +366,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const activateAutomaticBackup = async (staged: PendingLightEnrollment) => {
     const next = await finishLightEnrollment(staged)
     setRecord(next.record)
-    const session = await openLightCloudBackup(next.record)
+    const session = await openLightCloudBackup(next.record, authorizeRenewals)
     cloudSession.current = session
     const archive = await captureCurrent(next.record, next.status)
     const saved = await syncLightCloudBackup(session, archive)
@@ -353,7 +378,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   }
   const restoreCloud = () =>
     run(async () => {
-      const session = await openLightCloudBackup()
+      const session = await openLightCloudBackup(undefined, authorizeRenewals)
       if (!session.file)
         throw new Error('No cloud backup was found. Open this wallet on its original device to enable backup.')
       const st = lightStatusMatchesDescriptor(
@@ -390,7 +415,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     run(async () => {
       if (!record) return
       const key = await unlockLightWithPasskey(record)
-      key.fill(0)
+      try {
+        await authorizeRenewals(key, record)
+      } finally {
+        key.fill(0)
+      }
       const st = lightStatusMatchesDescriptor(
         await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
         record.descriptor,
@@ -979,6 +1008,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             </button>
           </div>
           {snapshot?.pendingBalance ? <p className='qg-copy'>{sats(snapshot.pendingBalance)} pending</p> : null}
+          {coverage?.cancelling ? (
+            <p className='qg-copy' role='status'>
+              Guardian is resolving a previous renewal. Payments may be temporarily unavailable.
+            </p>
+          ) : null}
           <p className='qg-copy light-allowance'>
             {status ? sats(status.periodRemaining) : '…'} remaining in your limit
           </p>
@@ -987,7 +1021,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               Cloud backup needs attention. Open Security to retry.
             </p>
           ) : null}
-          {renewalTiming?.due ? (
+          {renewalTiming?.due && (!coverage?.available || coverage.pending > 0) ? (
             <div className='light-panel'>
               <Clock3 />
               <div>
@@ -995,7 +1029,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 <p>
                   {renewalTiming.expired
                     ? 'Some Spending has expired. Open Security to check your recovery options.'
-                    : `The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to renew before then.`}
+                    : `Some funds still need renewal authorization. The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to check coverage.`}
                 </p>
               </div>
             </div>
@@ -1101,7 +1135,12 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             loading={busy}
             onClick={() =>
               void run(async () => {
-                const result = await sendVaultVtxo(record.enrollment, status, quote)
+                const result = await sendVaultVtxo(
+                  record.enrollment,
+                  status,
+                  quote,
+                  guardianRenewalSpendUnlocker(record.descriptor),
+                )
                 setLastTx(result.txid)
                 setView('success')
                 setAddress('')
@@ -1271,7 +1310,30 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <div className='light-panel'>
           <Clock3 />
           <div>
-            <strong>Keep Spending active</strong>
+            <strong>Automatic renewal</strong>
+            <p>
+              {coverage?.available
+                ? `${coverage.scheduled} of ${coverage.total} outputs scheduled; ${coverage.renewing} awaiting renewal confirmation.`
+                : 'Guardian automatic renewal is not currently available for this wallet.'}
+            </p>
+            {coverage?.checkedAt ? <p>Last checked: {new Date(coverage.checkedAt).toLocaleString()}.</p> : null}
+            {coverage?.cancelling ? (
+              <p>
+                {coverage.cancelling} outputs awaiting cancellation confirmation. Guardian retains the reservation while
+                the outcome is uncertain.
+              </p>
+            ) : null}
+            {coverage?.pending ? (
+              <p>
+                {coverage.pending} outputs need authorization or complete transaction paths. Eligible outputs are
+                authorized during your next normal unlock or payment.
+              </p>
+            ) : null}
+            {coverage?.error ? <p role='status'>{coverage.error}</p> : null}
+            <p>
+              Scheduled outputs can renew while this wallet is closed. New receipts and replacement outputs need your
+              next normal unlock or payment before another renewal can be scheduled.
+            </p>
             <p>
               {renewalTiming?.expiresAt
                 ? `Next expiry: ${new Date(renewalTiming.expiresAt).toLocaleString()}.`
@@ -1280,7 +1342,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   : 'Expiry dates appear after you receive bitcoin.'}
             </p>
             {renewalTiming?.incomplete ? <p>Some expiry dates are unavailable. Reconnect to check them.</p> : null}
-            <p>Renew before expiry to keep payments available. The same spending limits still apply.</p>
+            <p>The same spending limits apply. You can also renew here when needed.</p>
           </div>
         </div>
         <QgSecondary
@@ -1348,7 +1410,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           disabled={busy}
           onClick={() =>
             void run(async () => {
-              const session = await openLightCloudBackup(record)
+              const session = await openLightCloudBackup(record, authorizeRenewals)
               cloudSession.current = session
               if (!status) throw new Error('Open the wallet before saving a backup')
               const archive = await captureCurrent(record, status)
