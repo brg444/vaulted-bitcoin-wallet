@@ -4,15 +4,16 @@ import {
   ArkAddress,
   DelegateManagerImpl,
   SingleKey,
+  Intent,
+  Transaction,
   type ArkInfo,
   type ContractVtxo,
   type DelegateProvider,
-  type Intent,
   type SignedIntent,
 } from '@arkade-os/sdk'
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { hex } from '@scure/base'
+import { base64, hex } from '@scure/base'
 import { p2wpkh, NETWORK, TEST_NETWORK } from '@scure/btc-signer'
 import { buildLightDescriptor, defaultLightPolicy, LightScript } from '../../src/lib/vault/light/contract'
 import { networkPins } from '../../src/lib/vault/networkPins'
@@ -99,10 +100,16 @@ for (const [network, operatorFee] of [
   if (result.failed.length || result.delegated.length !== 1 || captured.length !== 1)
     throw new Error('SDK did not produce exactly one successful delegation')
   const signed = captured[0]
+  // Native renewal bounds registration lifetime using the public SDK primitive.
+  // Re-sign before persistence; the SDK partial forfeit remains byte-identical.
+  const stockProof = Transaction.fromPSBT(base64.decode(signed.intent.proof))
+  const message = { ...signed.intent.message, expire_at: expiresAt }
+  const boundedProof = Intent.create(message, [coin], [stockProof.getOutput(0)])
+  const bounded = await SingleKey.fromPrivateKey(secret).sign(boundedProof)
   const payload = {
     vaultId: descriptor.vaultId,
     operationId: '33'.repeat(16),
-    intent: { proof: signed.intent.proof, message: JSON.stringify(signed.intent.message) },
+    intent: { proof: base64.encode(bounded.toPSBT()), message: JSON.stringify(message) },
     forfeitTxs: signed.forfeitTxs,
     expiresAt,
   }
@@ -123,4 +130,8 @@ for (const [network, operatorFee] of [
   })
   secret.fill(0)
 }
-writeFileSync(output, JSON.stringify({ source: 'Vaulted vendored SDK DelegateManagerImpl', fixtures }, null, 2) + '\n')
+writeFileSync(
+  output,
+  JSON.stringify({ source: 'Vaulted vendored SDK DelegateManagerImpl plus bounded Intent.create', fixtures }, null, 2) +
+    '\n',
+)
