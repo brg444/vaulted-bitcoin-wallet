@@ -521,6 +521,33 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   line-height: 1.45;
 }
 
+.qg-setup-options {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1.5rem;
+}
+.qg-setup-options button {
+  padding: 1rem;
+  border: 1px solid var(--qg-line);
+  border-radius: 1rem;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+}
+.qg-setup-options strong,
+.qg-setup-options small {
+  display: block;
+}
+.qg-setup-options strong {
+  font-size: 1rem;
+}
+.qg-setup-options small {
+  margin-top: 0.5rem;
+  font-size: var(--qg-body);
+  line-height: 1.5;
+  color: var(--qg-muted);
+}
+
 .qg-choice-list {
   display: grid;
   gap: 12px;

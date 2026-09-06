@@ -36,7 +36,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and verifies 
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: 'Use Light without a hardware wallet', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
   await expect(page.getByRole('heading', { name: 'Set your spending limits' })).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'Invite code' })).toHaveCount(0)
   await page.getByLabel('Per-payment limit, in sats').fill('20000')

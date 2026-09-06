@@ -31,7 +31,7 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: 'Use Light without a hardware wallet', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
   await page.getByLabel('Per-payment limit, in sats').fill('20000')
   await page.getByLabel('Rolling 24-hour limit, in sats').fill('50000')
   await page.getByRole('button', { name: 'Create passkey', exact: true }).click()
