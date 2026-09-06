@@ -127,6 +127,23 @@ function vectorInput(
 }
 
 describe('connector durable approval/handoff', () => {
+  it('merges old pending backup evidence without reactivating locally archived history', async () => {
+    const { input, expected, payment } = vectorInput()
+    const storage = memoryStorage()
+    const locks = new FakeLockManager()
+    const { candidateTxid } = await preparePendingConnectorOperation(input, expected, storage, locks)
+    const operationId = 'ab'.repeat(16)
+    await storeConnectorOperationId(expected, candidateTxid, operationId, storage, locks)
+    await storeConnectorSavingsWitness(expected, candidateTxid, payment.savingsWitness, storage, locks)
+    const older = await exportConnectorRecoveryJournal(expected, storage, locks)
+    await storeConnectorSignedTx(expected, candidateTxid, payment.finalTx, storage, locks)
+    await archiveResolvedConnectorOperation(expected, candidateTxid, operationId, storage, locks)
+    await restoreConnectorRecoveryJournal(expected, older, storage, locks)
+    expect(await loadPendingConnectorOperation(expected, storage, locks)).toBeNull()
+    expect((await loadConnectorHistory(expected, storage, locks))[0].record.signedTxHex).toBe(payment.finalTx)
+    await restoreUnresolvedConnectorOperation(expected, candidateTxid, operationId, storage, locks)
+    expect((await loadPendingConnectorOperation(expected, storage, locks))?.phase).toBe('signed')
+  })
   it('exports and restores the exact signed transaction on a fresh device', async () => {
     const { input, expected, payment } = vectorInput()
     const storage = memoryStorage()

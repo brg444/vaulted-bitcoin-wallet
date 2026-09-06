@@ -648,8 +648,16 @@ export function restoreConnectorRecoveryJournal(
     () => {
       const current = readValidated(snap, storage)
       let pending = current?.record ?? null
-      if (incoming.pending) pending = pending ? mergeRecoveryRecord(snap, pending, incoming.pending) : incoming.pending
       const history = new Map(readConnectorHistory(snap, storage).map((row) => [row.candidateTxid, row.record]))
+      if (incoming.pending) {
+        const candidate = validatedRecord(snap, incoming.pending)
+        const locallyArchived = history.get(candidate.candidateTxid)
+        if (!pending && locallyArchived) {
+          // An old backup adds evidence, not a fresh observation of a reorg.
+          // Only explicit chain reconciliation may reactivate local history.
+          history.set(candidate.candidateTxid, mergeRecoveryRecord(snap, locallyArchived, incoming.pending))
+        } else pending = pending ? mergeRecoveryRecord(snap, pending, incoming.pending) : incoming.pending
+      }
       for (const record of incoming.history) {
         const { candidateTxid } = validatedRecord(snap, record)
         const prior = history.get(candidateTxid)
