@@ -1,0 +1,215 @@
+.light-app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+.light-app h1 {
+  overflow-wrap: anywhere;
+}
+.light-app h2 {
+  font-size: 1.125rem;
+  margin-top: 2rem;
+}
+.light-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  border: 1px solid var(--qg-line);
+  border-radius: 1.25rem;
+  padding: 1.25rem;
+  margin-block: 1.25rem;
+}
+.light-panel > svg {
+  flex: 0 0 24px;
+}
+.light-panel p {
+  margin: 0.5rem 0 0;
+  line-height: 1.5;
+}
+.light-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+.light-actions > button {
+  flex: 1;
+  min-width: 0;
+}
+.light-fields {
+  display: grid;
+  gap: 1.25rem;
+  margin-block: 1.5rem;
+}
+.light-fields label,
+.light-field {
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+.light-fields input,
+.light-fields textarea,
+.light-field input,
+.light-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--qg-line);
+  border-radius: 1rem;
+  background: var(--qg-paper);
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  box-shadow: none;
+}
+.light-fields textarea,
+.light-field textarea {
+  min-height: 6rem;
+  resize: vertical;
+  overflow-wrap: anywhere;
+}
+
+.light-field.light-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.light-checkbox input[type='checkbox'] {
+  flex: 0 0 1.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  min-height: 0;
+  padding: 0;
+  accent-color: var(--qg-ink);
+}
+.light-secret-label {
+  display: block;
+  margin-block: 1.5rem;
+  font-size: 0.875rem;
+}
+.light-secret,
+.light-address {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.6;
+}
+.light-secret {
+  display: block;
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--qg-line);
+  border-radius: 1rem;
+  font-size: 1rem;
+  user-select: all;
+}
+.light-balance {
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(2rem, 8vw, 3.5rem) !important;
+}
+.light-activity > button {
+  display: flex;
+  gap: 0.875rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 1rem 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--qg-line);
+}
+.light-activity > button > span:nth-child(2) {
+  display: grid;
+  gap: 0.25rem;
+  flex: 1;
+}
+.light-activity > button > strong {
+  max-width: 45%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.light-activity small {
+  opacity: 0.7;
+}
+.light-activity-icon {
+  width: 2rem;
+}
+.light-activity-icon svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.8;
+}
+.light-success {
+  display: flex;
+  width: 4rem;
+  height: 4rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  margin-block: 1.5rem;
+}
+.light-success svg {
+  width: 2rem;
+  height: 2rem;
+}
+.light-message {
+  position: absolute;
+  z-index: 20;
+  left: 1rem;
+  right: 1rem;
+  top: 4rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--qg-paper, #fffdf9);
+  color: var(--qg-ink, #171618);
+  box-shadow: 0 4px 24px #0002;
+  max-height: 30%;
+  overflow: auto;
+}
+.light-plan-options {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1.5rem;
+}
+.light-plan-options button {
+  padding: 1rem;
+  border: 1px solid var(--qg-line);
+  border-radius: 1rem;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+}
+.light-plan-options strong,
+.light-plan-options small {
+  display: block;
+}
+.light-plan-options small {
+  margin-top: 0.5rem;
+  line-height: 1.5;
+}
+
+.light-field :is(input, textarea):focus,
+.light-fields :is(input, textarea):focus {
+  outline: none;
+}
+
+.light-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.light-message > span {
+  flex: 1;
+}
+.light-message > button {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.5rem;
+}

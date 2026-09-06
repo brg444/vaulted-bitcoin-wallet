@@ -9,7 +9,8 @@ import RecoveryHelp from './RecoveryHelp'
 import InstallNotice from './qg/InstallNotice'
 
 export default function VaultWelcome() {
-  const { busy, enrollmentMode, error, hasLocalEnrollment, locked, navigate, signIn } = useContext(VaultContext)
+  const { busy, enrollmentMode, lightAvailable, error, hasLocalEnrollment, locked, navigate, signIn } =
+    useContext(VaultContext)
   const onPhone = isCoarsePhone()
   const [showHelp, setShowHelp] = useState(false)
 
@@ -47,9 +48,11 @@ export default function VaultWelcome() {
               ? onPhone
                 ? 'Use face recognition, a fingerprint, or your device PIN'
                 : 'Approve with the passkey on this device'
-              : enrollmentMode === 'token'
-                ? 'Setup needs an invite and a compatible hardware wallet.'
-                : 'Setup needs a compatible hardware wallet.'}
+              : lightAvailable
+                ? `${enrollmentMode === 'token' ? 'An invite is required. ' : ''}Start with a passkey, or add hardware protection for Savings.`
+                : enrollmentMode === 'token'
+                  ? 'Setup needs an invite and a compatible hardware wallet.'
+                  : 'Setup needs a compatible hardware wallet.'}
           </p>
         </>
       }
@@ -61,7 +64,9 @@ export default function VaultWelcome() {
         Protected savings.
       </h1>
       <p className='qg-lead'>
-        Use your passkey for everyday payments and your hardware wallet for a second Savings approval.
+        {lightAvailable
+          ? 'Pay with your passkey, within the limits you choose. Keep Savings in another wallet or protect it here with independent keys.'
+          : 'Use your passkey for everyday payments and your hardware wallet for a second Savings approval.'}
       </p>
       <div className='qg-assurances'>
         <span>
@@ -70,7 +75,7 @@ export default function VaultWelcome() {
         </span>
         <span>
           <ShieldCheck />
-          Two-key Savings
+          {lightAvailable ? 'Choose your protection' : 'Two-key Savings'}
         </span>
       </div>
       <InstallNotice />

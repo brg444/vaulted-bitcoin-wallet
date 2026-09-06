@@ -1,3 +1,4 @@
+import type { LightKeyBackup } from './light/keyBackup'
 import { clearOpenEnrollmentSession, openEnrollmentToken } from './openEnrollmentSession'
 import { p256 } from '@noble/curves/nist.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
@@ -27,6 +28,7 @@ const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
 const DIRECT_INFO = new TextEncoder().encode('arkade-2fa-vault/direct-p256/v1')
 
 export interface EnrollmentSecrets {
+  lightKeyBackup?: LightKeyBackup
   vaultId: string
   credId: string
   webauthnP256: string
@@ -47,7 +49,7 @@ function requireRPID(status: { rpId?: string; clientOrigin?: string }): string {
   return rpId
 }
 
-async function compressedES256(response: AuthenticatorAttestationResponse): Promise<Uint8Array> {
+export async function compressedES256(response: AuthenticatorAttestationResponse): Promise<Uint8Array> {
   if (response.getPublicKeyAlgorithm() !== -7) throw new Error('credential public key must use ES256')
   const spki = response.getPublicKey()
   if (!spki) throw new Error('credential public key unavailable')

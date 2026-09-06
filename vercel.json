@@ -32,6 +32,8 @@
   "rewrites": [
     { "source": "/health", "destination": "/api/gateway?route=health" },
     { "source": "/ready", "destination": "/api/gateway?route=ready" },
+    { "source": "/v1/light/renew/:phase", "destination": "/api/gateway?route=light-renew&phase=:phase" },
+    { "source": "/v1/light/enroll/:phase", "destination": "/api/gateway?route=light-enroll&phase=:phase" },
     { "source": "/v1/enroll/session", "destination": "/api/gateway?route=enroll-session" },
     { "source": "/v1/enroll/:action", "destination": "/api/v1/enroll/:action" },
     { "source": "/v1/passkey/:action", "destination": "/api/v1/passkey/:action" },

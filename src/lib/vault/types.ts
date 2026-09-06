@@ -1,3 +1,4 @@
+import type { LightDescriptor, LightPolicy } from './light/contract'
 import type { VaultNetwork } from './constants'
 import type { SpendingPolicy } from './spendingPolicy'
 import type { ProtectionTier } from './protectionTier'
@@ -5,6 +6,8 @@ import type { ProtectionTier } from './protectionTier'
 // Exact JSON object emitted by GET /v1/status?vault=... . Keep normalized
 // compatibility aliases out of this type; they belong to VaultStatus below.
 export interface VaultStatusWire {
+  lightDescriptor?: LightDescriptor
+  lightDescriptorHash?: string
   enrolled: boolean
   network: string
   clientOrigin: string
@@ -12,7 +15,7 @@ export interface VaultStatusWire {
   vaultId: string
   templateVersion: string
   policyVersion: string
-  protectionTier: ProtectionTier
+  protectionTier: ProtectionTier | 'light'
   externalOwnerWalletPub?: string
   recoveryKeyPub?: string
   vaultCosignerBasePub?: string
@@ -30,7 +33,7 @@ export interface VaultStatusWire {
   txCap: number
   absoluteFeeCap: number
   feerateCapSatVb: number
-  spendingPolicy: SpendingPolicy
+  spendingPolicy: SpendingPolicy | LightPolicy
   spendingPolicyDigest: string
   phoneBip340Pub?: string
   phoneDirectP256?: string
@@ -56,6 +59,8 @@ export interface VaultStatusWire {
 // Wallet domain view. recoveryPub is a normalized compatibility alias and is
 // never represented as a server wire field.
 export interface VaultStatus {
+  lightDescriptor?: LightDescriptor
+  lightDescriptorHash?: string
   enrolled: boolean
   network: string
   clientOrigin: string
@@ -63,7 +68,7 @@ export interface VaultStatus {
   vaultId: string
   templateVersion: string
   policyVersion: string
-  protectionTier: ProtectionTier
+  protectionTier: ProtectionTier | 'light'
   externalOwnerWalletPub?: string
   vaultCosignerBasePub?: string
   arkadeCosignerBasePub?: string
@@ -77,7 +82,7 @@ export interface VaultStatus {
   txCap: number
   absoluteFeeCap: number
   feerateCapSatVb: number
-  spendingPolicy?: SpendingPolicy
+  spendingPolicy?: SpendingPolicy | LightPolicy
   spendingPolicyDigest?: string
   phoneBip340Pub?: string
   phoneDirectP256?: string

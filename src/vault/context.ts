@@ -47,7 +47,7 @@ export interface VaultSpend {
 }
 
 export interface VaultContextProps {
-  acceptDesign: () => void
+  acceptDesign: (tier?: 'standard' | 'advanced') => void
   account: VaultAccount
   positions: VaultAccountPositions
   applyHardware: (raw: string) => void
@@ -77,6 +77,7 @@ export interface VaultContextProps {
   dailyRemaining: number
   dailySpent: number
   enablePasskeyLogin: () => Promise<void>
+  lightAvailable: boolean
   enrollmentMode: string
   enroll: (token?: string) => Promise<void>
   enrolled: boolean
@@ -158,6 +159,7 @@ export const VaultContext = createContext<VaultContextProps>({
   dailyRemaining: 0,
   dailySpent: 0,
   enablePasskeyLogin: async () => {},
+  lightAvailable: false,
   enrollmentMode: 'token',
   enroll: async () => {},
   enrolled: false,

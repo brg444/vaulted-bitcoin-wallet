@@ -1,3 +1,6 @@
+import { LIGHT_PROFILE, LightScript } from '../light/contract'
+import { requireLightStatus } from '../light/status'
+import { unlockLightOwnerKey } from '../light/keyBackup'
 import {
   ArkAddress,
   buildOffchainTx,
@@ -477,7 +480,16 @@ function requireEnrolledSpendingStatus(status: VaultStatus) {
   return pins
 }
 
+export function spendingScriptFromStatus(status: VaultStatus): VaultPolicyV1Script | LightScript {
+  if (status.templateVersion === LIGHT_PROFILE) {
+    const valid = requireLightStatus(status)
+    return new LightScript(valid.lightDescriptor!)
+  }
+  return vaultPolicyV1ScriptFromStatus(status)
+}
+
 export function vaultPolicyV1ScriptFromStatus(status: VaultStatus): VaultPolicyV1Script {
+  if (status.templateVersion === LIGHT_PROFILE) throw new Error('Light requires its own Spending script')
   const pins = requireEnrolledSpendingStatus(status)
   const address = ArkAddress.decode(String(status.spendingArkAddress || ''))
   if (address.hrp !== pins.arkHrp) throw new Error('spending Ark address does not match this network')
@@ -584,7 +596,15 @@ async function authorizeWithPasskey(
     if (hex.encode(derived.pub) !== enrollment.phoneDirectP256 || hex.encode(derived.pub) !== status.phoneDirectP256) {
       throw new Error('passkey direct key does not match this vault')
     }
-    const phoneSecret = await unwrapPhoneSecret(prf, enrollment.nonce, enrollment.ciphertext)
+    const phoneSecret =
+      status.templateVersion === LIGHT_PROFILE
+        ? await unlockLightOwnerKey(
+            enrollment.lightKeyBackup,
+            prf,
+            'passkey-prf',
+            requireLightStatus(status).lightDescriptor!,
+          )
+        : await unwrapPhoneSecret(prf, enrollment.nonce, enrollment.ciphertext)
     const identity = SingleKey.fromPrivateKey(phoneSecret)
     if (hex.encode(await identity.compressedPublicKey()) !== enrollment.phoneBip340Pub) {
       zeroBytes(phoneSecret)
@@ -702,7 +722,7 @@ export function buildReservedVtxoSpend(
   destAddress: string,
   expectedFeePolicyDigest: string,
 ) {
-  const script = vaultPolicyV1ScriptFromStatus(status)
+  const script = spendingScriptFromStatus(status)
   if (!Number.isSafeInteger(amountSats) || amountSats < VTXO_DUST_SATS) {
     throw new Error('VTXO amount is below dust')
   }
@@ -792,7 +812,7 @@ export function buildPersistedVtxoSdkBundle(status: VaultStatus, pending: Persis
   ) {
     throw new Error('fresh SDK spend is missing its validated reservation bundle')
   }
-  const script = vaultPolicyV1ScriptFromStatus(status)
+  const script = spendingScriptFromStatus(status)
   const policyScriptHex = hex.encode(script.pkScript)
   for (const input of pending.reservedInputs) {
     if (input.scriptHex !== policyScriptHex) throw new Error('persisted SDK input is not current vault-policy-v1')

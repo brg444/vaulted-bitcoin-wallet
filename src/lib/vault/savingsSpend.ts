@@ -1,3 +1,6 @@
+import { LIGHT_PROFILE } from './light/contract'
+import { unlockLightOwnerKey } from './light/keyBackup'
+import { requireLightStatus } from './light/status'
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
 import { bitcoinDustSats, scriptHexFromAddress } from './bitcoin'
@@ -133,6 +136,12 @@ export async function unlockPhoneBip340(rec: EnrollmentSecrets, status: VaultSta
   const prf = prfFrom(get)
   if (!prf || prf.length !== 32) throw new Error('authenticator did not return PRF')
   try {
+    if (status.templateVersion === LIGHT_PROFILE) {
+      const valid = requireLightStatus(status)
+      if (rec.vaultId !== valid.vaultId || rec.phoneBip340Pub !== valid.phoneBip340Pub)
+        throw new Error('Light enrollment does not match this vault')
+      return await unlockLightOwnerKey(rec.lightKeyBackup, prf, 'passkey-prf', valid.lightDescriptor!)
+    }
     const kek = await crypto.subtle.deriveKey(
       { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: HKDF_INFO },
       await crypto.subtle.importKey('raw', prf, 'HKDF', false, ['deriveKey']),

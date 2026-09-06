@@ -1,3 +1,5 @@
+import { LIGHT_PROFILE } from './light/contract'
+import { requireLightStatus } from './light/status'
 import { readBounded } from './bounded'
 import { POLICY_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
@@ -22,6 +24,7 @@ export function authorizerBase(): string {
 }
 
 export type PublicAuthorizerStatus = {
+  supportedSetups?: ('light' | 'standard' | 'advanced')[]
   network: string
   clientOrigin: string
   rpId: string
@@ -218,6 +221,7 @@ export function requireStatusIdentity(
   if (!status.vaultId || String(status.vaultId).trim() === '') throw new Error('vault id required')
   if (status.vaultId !== expected) throw new Error('status vault id does not match')
   requireReleaseNetwork(status.network)
+  if (status.templateVersion === LIGHT_PROFILE) return requireLightStatus(status)
   if (status.templateVersion !== SAVINGS_TEMPLATE) throw new Error('template version is not this release')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   const selected = validateSpendingPolicy(status.spendingPolicy)

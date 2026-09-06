@@ -39,7 +39,7 @@ import {
 
 const APP_PORT = process.env.VAULT_E2E_PORT || '3003'
 const OPERATOR_PORT = process.env.VAULT_E2E_OPERATOR_PORT || '18888'
-const ORIGIN = `http://localhost:${APP_PORT}`
+const ORIGIN = `${process.env.HTTPS === 'true' ? 'https' : 'http'}://localhost:${APP_PORT}`
 const RP_ID = 'localhost'
 const INVITE = 'e2e-passkey-invite-0000000000000000'
 const VAULT_ID = PROGRAM_FIXTURE.vaultId

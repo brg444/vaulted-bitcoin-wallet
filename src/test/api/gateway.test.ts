@@ -84,6 +84,26 @@ describe('same-origin authorizer gateway', () => {
     )
   })
 
+  it('routes only the three supported Light enrollment phases', () => {
+    for (const phase of ['start', 'propose', 'finish']) {
+      const path = publicAuthorizerPath(`/api/gateway?route=light-enroll&phase=${phase}`)
+      expect(path).toBe(`/v1/light/enroll/${phase}`)
+      expect(allowAuthorizerPath(path)).toBe(true)
+    }
+    for (const phase of ['', 'unknown', '../start', 'start/extra']) {
+      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-enroll&phase=${phase}`))).toBe(false)
+    }
+  })
+
+  it('routes only the five named Light renewal phases', () => {
+    for (const phase of ['prepare', 'register', 'final', 'status', 'release']) {
+      expect(publicAuthorizerPath(`/api/gateway?route=light-renew&phase=${phase}`)).toBe(`/v1/light/renew/${phase}`)
+    }
+    for (const phase of ['', 'sign', '../final', 'final/extra']) {
+      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-renew&phase=${phase}`))).toBe(false)
+    }
+  })
+
   it('only proxies health, readiness, and /v1', () => {
     expect(allowAuthorizerPath('/health')).toBe(true)
     expect(allowAuthorizerPath('/ready')).toBe(true)

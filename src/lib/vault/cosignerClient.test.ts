@@ -39,6 +39,17 @@ const enrollment: VaultEnrollmentRequest = {
 }
 
 describe('VaultCosignerClient route compatibility', () => {
+  it('sends only the operation identity when checking or releasing a renewal', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ state: 'confirmed' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const preparedInput = { vaultId: 'wallet', operationId: 'renewal', txid: '11'.repeat(32), vout: 1 }
+    await vaultCosignerClient.lightRenewal.status(preparedInput)
+    await vaultCosignerClient.lightRenewal.release(preparedInput)
+    for (const [, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
+      expect(JSON.parse(String(init.body))).toEqual({ vaultId: 'wallet', operationId: 'renewal' })
+    }
+  })
+
   it('groups the exact existing HTTP API into enrollment, recovery, and Spending capabilities', async () => {
     const operationWire = {
       operationId: '11'.repeat(16),
