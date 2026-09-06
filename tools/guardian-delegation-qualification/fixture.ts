@@ -106,11 +106,14 @@ for (const [network, operatorFee] of [
   const message = { ...signed.intent.message, expire_at: expiresAt }
   const boundedProof = Intent.create(message, [coin], [stockProof.getOutput(0)])
   const bounded = await SingleKey.fromPrivateKey(secret).sign(boundedProof)
+  const deleteMessage = { type: 'delete' as const, expire_at: 0 }
+  const deletion = await SingleKey.fromPrivateKey(secret).sign(Intent.create(deleteMessage, [coin], []))
   const payload = {
     vaultId: descriptor.vaultId,
     operationId: '33'.repeat(16),
     intent: { proof: base64.encode(bounded.toPSBT()), message: JSON.stringify(message) },
     forfeitTxs: signed.forfeitTxs,
+    deleteIntent: { proof: base64.encode(deletion.toPSBT()), message: JSON.stringify(deleteMessage) },
     expiresAt,
   }
   const digest = sha256(new TextEncoder().encode('vaulted-light/delegate-schedule/v1:' + JSON.stringify(payload)))

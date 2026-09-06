@@ -3,7 +3,8 @@
 `fixture.ts` creates owner-signed requests through the vendored SDK's
 `DelegateManagerImpl`, then bounds the registration lifetime with the public
 `Intent.create` primitive and a fresh owner signature. The original partial
-forfeit is preserved. It uses public test keys and synthetic VTXOs; network
+forfeit is preserved. A separate input-scoped SDK delete proof authorizes queue
+cleanup without spending funds. It uses public test keys and synthetic VTXOs; network
 access is disabled. Guardian consumes the JSON in
 `internal/application/testdata/light-delegation-sdk.json` through
 `TestLightDelegationActualSDKRequests`.
