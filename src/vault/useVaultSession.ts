@@ -1,3 +1,7 @@
+import { openRecoveryCloudBackup } from '../lib/vault/recovery/cloudBackup'
+import { openLocalRecoveryBackup } from '../lib/vault/recovery/backupCodec'
+import { restoreVaultRecoveryFile } from '../lib/vault/recovery/restore'
+import { fetchVaultStatus } from '../lib/vault/status'
 import { useCallback, type Dispatch, type SetStateAction } from 'react'
 import {
   findStoredEnrollment,
@@ -248,5 +252,33 @@ export function useVaultSession({
     }
   }, [enrollment, reportError, setAddressPin, setBusy, setEnrollment, setLocked, setScreen, setStatus, setup])
 
-  return { enableOtherDevices, enroll, signIn }
+  const restoreRecoveryArchive = useCallback(
+    async (raw?: unknown) => {
+      setBusy(true)
+      reportError('')
+      try {
+        const file =
+          raw === undefined
+            ? (await openRecoveryCloudBackup(undefined, restoreVaultRecoveryFile)).file
+            : await openLocalRecoveryBackup(raw, restoreVaultRecoveryFile)
+        if (!file) throw new Error('No complete encrypted recovery archive was found')
+        setEnrollment(file.header.enrollment)
+        setAddressPin(pinFromEnrolledStatus(file.header.status))
+        const live = await fetchVaultStatus(undefined, file.header.binding.vaultId)
+        restoreConnectorPin(live)
+        setStatus(live)
+        setLocked(false)
+        bestEffortBrowserWrite(() => setSessionLocked(false))
+        setScreen('home')
+      } catch (error) {
+        reportError(humanizeVaultError(error))
+        throw error
+      } finally {
+        setBusy(false)
+      }
+    },
+    [reportError, setBusy, setEnrollment, setAddressPin, setStatus, setLocked, setScreen],
+  )
+
+  return { enableOtherDevices, enroll, signIn, restoreRecoveryArchive }
 }

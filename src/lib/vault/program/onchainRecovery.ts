@@ -184,7 +184,8 @@ export interface SavingsRecoveryChain {
 }
 
 /** Persist the signed artifact before calling this. Retry broadcasts the same bytes. */
-export async function executeSavingsRecovery(file: SavingsRecoveryFile, chain: SavingsRecoveryChain) {
+export async function executeSavingsRecovery(value: SavingsRecoveryFile, chain: SavingsRecoveryChain) {
+  const file = JSON.parse(JSON.stringify(value)) as SavingsRecoveryFile
   const view = validateSavingsRecovery(file)
   const signed = finalizeSavingsRecovery(file)
   const spend = await chain.outspend(view.parentTxid, file.vout)

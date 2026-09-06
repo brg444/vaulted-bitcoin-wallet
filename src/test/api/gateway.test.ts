@@ -117,6 +117,10 @@ describe('same-origin authorizer gateway', () => {
       )
       expect(publicAuthorizerPath(`/api/gateway?route=light-backup&phase=${phase}`)).toBe(`/v1/light/backup/${phase}`)
     }
+    for (const phase of ['', 'delete', '../write', 'write/extra'])
+      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=recovery-archive&phase=${phase}`))).toBe(
+        false,
+      )
     expect(allowAuthorizerPath(publicAuthorizerPath('/api/gateway?route=light-backup&phase=sign'))).toBe(false)
   })
 

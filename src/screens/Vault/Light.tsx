@@ -1,5 +1,6 @@
+import { syncCompleteLightBackup as syncLightCloudBackup } from '../../lib/vault/recovery/capture'
 import { lightBackupScheduler } from '../../lib/vault/light/backupScheduler'
-import { openLightCloudBackup, syncLightCloudBackup, type LightBackupSession } from '../../lib/vault/light/cloudBackup'
+import { openLightCloudBackup, type LightBackupSession } from '../../lib/vault/light/cloudBackup'
 import { encryptLightBackup, openLocalLightBackup, lightBackupKey } from '../../lib/vault/light/backupCodec'
 import { unlockLightWithPasskey } from '../../lib/vault/light/passkey'
 import type { ExecutorEvent } from '@arkade-os/sdk'

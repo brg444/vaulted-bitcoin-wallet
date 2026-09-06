@@ -46,7 +46,10 @@ async function post<T>(phase: 'challenge' | 'open' | 'read' | 'write', body: unk
   return JSON.parse(text) as T
 }
 
-export async function openRecoveryCloudBackup(local?: RecoveryHeader): Promise<RecoveryBackupSession> {
+export async function openRecoveryCloudBackup(
+  local?: RecoveryHeader,
+  restored?: (file: VaultRecoveryFile, phone: Uint8Array) => Promise<unknown>,
+): Promise<RecoveryBackupSession> {
   if (local) validateRecoveryHeader(local)
   const challenge = await post<{ challengeId: string; challenge: string }>('challenge', {})
   if (!/^[0-9a-f]{64}$/.test(challenge.challenge)) throw new Error('Invalid recovery backup challenge')
@@ -122,6 +125,7 @@ export async function openRecoveryCloudBackup(local?: RecoveryHeader): Promise<R
     const seen = Number(localStorage.getItem(revisionKey(vaultId)) || 0)
     if (!Number.isSafeInteger(revision) || revision < 0 || revision < seen)
       throw new Error('Cloud backup is older than the last verified copy')
+    if (file && restored) await restored(file, phone)
     localStorage.setItem(revisionKey(vaultId), String(revision))
     return {
       token: response.token,

@@ -74,6 +74,10 @@ function RecoverAlert({ text }: { text: string }) {
 export default function VaultRecover() {
   const {
     backupRecoveryKit,
+    backupRecoveryArchive,
+    downloadRecoveryArchive,
+    recoveryArchiveStatus,
+    recoveryArchiveError,
     busy,
     downloadRecoveryKit,
     error,
@@ -555,6 +559,32 @@ export default function VaultRecover() {
           <RecoverAlert text={error || localError} />
           {hasRecoveryKit ? (
             <>
+              <p className='qg-copy'>
+                {recoveryArchiveStatus || 'Save complete transaction data for recovery across every account.'}
+              </p>
+              <RecoverAlert text={recoveryArchiveError} />
+              <QgSecondary
+                label='Enable encrypted automatic backup'
+                disabled={busy}
+                onClick={() => {
+                  setLocalError('')
+                  void backupRecoveryArchive().catch((err) =>
+                    setLocalError(err instanceof Error ? err.message : 'Backup is unavailable'),
+                  )
+                }}
+              />
+              <QgSecondary
+                label='Download encrypted recovery archive'
+                disabled={busy}
+                onClick={() => {
+                  setLocalError('')
+                  void downloadRecoveryArchive()
+                    .then((raw) => downloadJson('Vaulted encrypted recovery.json', raw))
+                    .catch((err) =>
+                      setLocalError(err instanceof Error ? err.message : 'Recovery archive is unavailable'),
+                    )
+                }}
+              />
               <QgPrimary label='Download Recovery Kit' testId='download-recovery-kit' onClick={saveKit} />
               <QgSecondary
                 label={busy ? 'Waiting for passkey…' : 'Save copy with Vault service'}

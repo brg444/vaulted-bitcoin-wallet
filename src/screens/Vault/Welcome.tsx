@@ -9,8 +9,17 @@ import RecoveryHelp from './RecoveryHelp'
 import InstallNotice from './qg/InstallNotice'
 
 export default function VaultWelcome() {
-  const { busy, enrollmentMode, lightAvailable, error, hasLocalEnrollment, locked, navigate, signIn } =
-    useContext(VaultContext)
+  const {
+    busy,
+    enrollmentMode,
+    lightAvailable,
+    error,
+    hasLocalEnrollment,
+    locked,
+    navigate,
+    signIn,
+    restoreRecoveryArchive,
+  } = useContext(VaultContext)
   const onPhone = isCoarsePhone()
   const [showHelp, setShowHelp] = useState(false)
 
@@ -27,6 +36,10 @@ export default function VaultWelcome() {
       footer={
         <>
           <QgTextButton onClick={() => setShowHelp(true)} label='Access and recovery help' />
+          <QgTextButton
+            onClick={() => void restoreRecoveryArchive().catch(() => undefined)}
+            label='Restore encrypted cloud backup'
+          />
           <ErrorMessage error={Boolean(error)} text={error} />
           {locked ? (
             <QgPrimary

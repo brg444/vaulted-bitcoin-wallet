@@ -8,7 +8,7 @@ import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
 import RecoveryHelp from './RecoveryHelp'
 
 export default function VaultUnlock() {
-  const { busy, error, signIn } = useContext(VaultContext)
+  const { busy, error, signIn, restoreRecoveryArchive } = useContext(VaultContext)
   const onPhone = isCoarsePhone()
   const [showHelp, setShowHelp] = useState(false)
 
@@ -20,6 +20,10 @@ export default function VaultUnlock() {
       footer={
         <>
           <QgTextButton onClick={() => setShowHelp(true)} label='Access and recovery help' />
+          <QgTextButton
+            onClick={() => void restoreRecoveryArchive().catch(() => undefined)}
+            label='Restore encrypted cloud backup'
+          />
           <ErrorMessage error={Boolean(error)} text={error} />
           <QgPrimary
             onClick={() => void signIn()}

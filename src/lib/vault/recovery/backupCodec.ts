@@ -1,3 +1,4 @@
+import { validateRecoveryJournals, type RecoveryJournals } from './journals'
 import { base64, hex } from '@scure/base'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
@@ -28,7 +29,7 @@ export interface RecoveryHeader {
   origin: string
   rpId: string
 }
-export interface VaultRecoveryFile {
+export interface VaultRecoveryFile extends Partial<RecoveryJournals> {
   name: 'vaulted-recovery'
   version: 1
   header: RecoveryHeader
@@ -182,6 +183,8 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
       file.connectorJournal,
     )
   } else if (file.connectorJournal !== undefined) throw new Error('Connector journal on another program')
+  if (file.spendingJournal !== undefined || file.lightningJournal !== undefined)
+    validateRecoveryJournals(header.status, file as VaultRecoveryFile & RecoveryJournals)
   return file
 }
 
@@ -273,13 +276,18 @@ export async function decryptRecoveryBackup(raw: unknown, key: CryptoKey): Promi
   }
 }
 
-export async function openLocalRecoveryBackup(raw: unknown) {
+export async function openLocalRecoveryBackup(
+  raw: unknown,
+  restored?: (file: VaultRecoveryFile, phone: Uint8Array) => Promise<unknown>,
+) {
   const file = parseEncryptedRecoveryBackup(raw)
   if (location.origin !== file.header.origin || location.hostname !== file.header.rpId)
     throw new Error(`Open recovery at ${file.header.origin} to use the original passkey`)
   const phone = await unlockPhoneBip340(file.header.enrollment, file.header.status)
   try {
-    return await decryptRecoveryBackup(file, await recoveryBackupKey(phone, file.header))
+    const decoded = await decryptRecoveryBackup(file, await recoveryBackupKey(phone, file.header))
+    if (restored) await restored(decoded, phone)
+    return decoded
   } finally {
     phone.fill(0)
   }

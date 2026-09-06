@@ -87,3 +87,44 @@ export function lightStatusMatchesDescriptor(status: VaultStatus, expected: unkn
     throw new Error('Light identity changed from its saved descriptor')
   return valid
 }
+
+/** Static signing facts for saved files; allowance fields here are not live balances. */
+export function lightRecoveryStatus(value: unknown): VaultStatus {
+  const descriptor = validateLightDescriptor(value)
+  const p = descriptor.spendingPolicy
+  return requireLightStatus({
+    enrolled: true,
+    network: descriptor.network,
+    clientOrigin: '',
+    rpId: '',
+    vaultId: descriptor.vaultId,
+    templateVersion: LIGHT_PROFILE,
+    policyVersion: LIGHT_POLICY_SCHEMA,
+    protectionTier: 'light',
+    savingsAddress: '',
+    savingsScript: '',
+    arkadeCosignerOrigin: '',
+    arkadeCosignerVersion: '',
+    phoneBip340Pub: `02${descriptor.ownerPub}`,
+    vtxoVaultCosignerPub: `02${descriptor.cosignerPub}`,
+    vaultCosignerBasePub: `02${descriptor.cosignerPub}`,
+    spendingPolicy: p,
+    spendingPolicyDigest: descriptor.spendingPolicyDigest,
+    periodAllowance: p.periodAllowanceSats,
+    periodSpent: 0,
+    periodRemaining: p.periodAllowanceSats,
+    txCap: p.txRecipientCapSats,
+    absoluteFeeCap: p.absoluteFeeCapSats,
+    feerateCapSatVb: p.feerateCapSatPerV,
+    vtxoExitDelay: descriptor.exitDelaySeconds,
+    vtxoExitDelayUnit: 'seconds',
+    spendingArkAddress: new ArkAddress(
+      hex.decode(descriptor.operatorPub),
+      new LightScript(descriptor).tweakedPublicKey,
+      networkPins(descriptor.network).arkHrp,
+    ).encode(),
+    spendingArkScript: descriptor.scriptPubKey,
+    lightDescriptor: descriptor,
+    lightDescriptorHash: lightDescriptorDigest(descriptor),
+  } as VaultStatus)
+}

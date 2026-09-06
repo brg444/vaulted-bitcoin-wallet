@@ -48,6 +48,7 @@ export function recoveryFixture(
   advanced = true,
   network: 'mainnet' | 'mutinynet' = 'mutinynet',
   phoneDirectP256 = PROGRAM_FIXTURE.phoneDirectP256,
+  derivedBoardingPub?: string,
 ) {
   const d = buildVaultProgramDescriptor({
     ...PROGRAM_FIXTURE,
@@ -71,7 +72,7 @@ export function recoveryFixture(
     exitHardwarePub: hex.decode(d.keys.hardware).slice(1),
     ...(d.keys.recovery ? { exitRecoveryPub: hex.decode(d.keys.recovery).slice(1) } : {}),
   })
-  const boardingPub = compressedFromScalar(19)
+  const boardingPub = derivedBoardingPub || compressedFromScalar(19)
   const boardingGuardian = compressedFromScalar(20)
   const board = createBoardingProgramScript(
     {

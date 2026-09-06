@@ -169,7 +169,7 @@ function requireCandidateTxid(candidateTxid: string): string {
 // witness, or a signed transaction that does not re-derive from the stored
 // artifacts. Returns the freshly rebuilt handle (retained request wins over
 // stored metadata) and the candidate identity (unsigned-tx txid).
-function validatedRecord(expected: ConnectorExpectedIdentity, raw: unknown) {
+export function validateConnectorRecoveryRecord(expected: ConnectorExpectedIdentity, raw: unknown) {
   const vaultId = expected.vaultId.trim()
   if (!vaultId) throw new Error('vault id required')
   if (!/^[0-9a-f]{64}$/i.test(expected.enrollmentDigest)) throw new Error('connector enrollment pin required')
@@ -216,7 +216,7 @@ function validatedRecord(expected: ConnectorExpectedIdentity, raw: unknown) {
 function readValidated(expected: ConnectorExpectedIdentity, storage: Storage) {
   const raw = storage.getItem(connectorStoreKey(expected.vaultId))
   if (!raw) return null
-  return validatedRecord(expected, JSON.parse(raw))
+  return validateConnectorRecoveryRecord(expected, JSON.parse(raw))
 }
 
 function writeRecord(vaultId: string, record: ConnectorPendingRecord, storage: Storage): void {
@@ -556,7 +556,7 @@ function readConnectorHistory(expected: ConnectorExpectedIdentity, storage: Stor
   if (!raw) return []
   const rows: unknown = JSON.parse(raw)
   if (!Array.isArray(rows)) throw new Error('corrupt connector history')
-  return rows.map((row) => validatedRecord(expected, row))
+  return rows.map((row) => validateConnectorRecoveryRecord(expected, row))
 }
 export function loadConnectorHistory(
   expected: ConnectorExpectedIdentity,
@@ -579,10 +579,10 @@ export function validateConnectorRecoveryJournal(expected: ConnectorExpectedIden
   if (!journal || journal.version !== 1 || !Array.isArray(journal.history) || journal.history.length > 1024)
     throw new Error('invalid connector recovery journal')
   if (JSON.stringify(journal).length > 12_000_000) throw new Error('connector recovery journal too large')
-  if (journal.pending !== null) validatedRecord(expected, journal.pending)
+  if (journal.pending !== null) validateConnectorRecoveryRecord(expected, journal.pending)
   const seen = new Set<string>()
   for (const record of journal.history) {
-    const { candidateTxid } = validatedRecord(expected, record)
+    const { candidateTxid } = validateConnectorRecoveryRecord(expected, record)
     if (seen.has(candidateTxid)) throw new Error('duplicate connector recovery history')
     seen.add(candidateTxid)
   }
@@ -612,8 +612,8 @@ function mergeRecoveryRecord(
   current: ConnectorPendingRecord,
   incoming: ConnectorPendingRecord,
 ): ConnectorPendingRecord {
-  const a = validatedRecord(expected, current)
-  const b = validatedRecord(expected, incoming)
+  const a = validateConnectorRecoveryRecord(expected, current)
+  const b = validateConnectorRecoveryRecord(expected, incoming)
   requireCandidateMatch(a, b.candidateTxid)
   const merged = {
     ...current,
@@ -631,7 +631,7 @@ function mergeRecoveryRecord(
     ...incoming,
     ...Object.fromEntries(Object.entries(merged).filter(([, value]) => value !== undefined)),
   }
-  return validatedRecord(expected, result).record
+  return validateConnectorRecoveryRecord(expected, result).record
 }
 
 /** Restore never treats absent data as cancellation or an archive as fresh chain evidence. */
@@ -650,7 +650,7 @@ export function restoreConnectorRecoveryJournal(
       let pending = current?.record ?? null
       const history = new Map(readConnectorHistory(snap, storage).map((row) => [row.candidateTxid, row.record]))
       if (incoming.pending) {
-        const candidate = validatedRecord(snap, incoming.pending)
+        const candidate = validateConnectorRecoveryRecord(snap, incoming.pending)
         const locallyArchived = history.get(candidate.candidateTxid)
         if (!pending && locallyArchived) {
           // An old backup adds evidence, not a fresh observation of a reorg.
@@ -659,12 +659,12 @@ export function restoreConnectorRecoveryJournal(
         } else pending = pending ? mergeRecoveryRecord(snap, pending, incoming.pending) : incoming.pending
       }
       for (const record of incoming.history) {
-        const { candidateTxid } = validatedRecord(snap, record)
+        const { candidateTxid } = validateConnectorRecoveryRecord(snap, record)
         const prior = history.get(candidateTxid)
         history.set(candidateTxid, prior ? mergeRecoveryRecord(snap, prior, record) : record)
       }
       if (pending) {
-        const { candidateTxid } = validatedRecord(snap, pending)
+        const { candidateTxid } = validateConnectorRecoveryRecord(snap, pending)
         const archived = history.get(candidateTxid)
         if (archived) pending = mergeRecoveryRecord(snap, pending, archived)
       }

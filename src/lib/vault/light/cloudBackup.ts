@@ -1,3 +1,4 @@
+import type { RecoveryJournals } from '../recovery/journals'
 import { passkeyProofDigest } from '../passkeyBinding'
 import { hex } from '@scure/base'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -127,32 +128,54 @@ export async function openLightCloudBackup(local?: LightEnrollment): Promise<Lig
       key,
       revision,
       file,
-      fingerprint: file?.archive ? fingerprint(file.archive) : '',
+      fingerprint: file?.archive ? fingerprint(file.archive, file) : '',
     }
   } finally {
     zeroBytes(prf, owner, direct?.scalar)
   }
 }
 const revisionKey = (id: string) => `vaulted-light:${id}:cloud-revision`
-function fingerprint(archive: LightRecoveryArchive) {
-  const data = { ...archive, capturedAt: undefined }
+function fingerprint(archive: LightRecoveryArchive, journals?: Partial<RecoveryJournals>) {
+  const data = {
+    ...archive,
+    capturedAt: undefined,
+    ...(journals?.spendingJournal
+      ? { spendingJournal: journals.spendingJournal, lightningJournal: journals.lightningJournal }
+      : {}),
+  }
   return hex.encode(sha256(encode(JSON.stringify(data))))
 }
 // Serialize callers sharing a session so a capture and a manual export cannot
 // race its revision or pending ciphertext. Other devices still use server CAS.
 const activeSyncs = new WeakMap<LightBackupSession, Promise<LightRecoveryFile>>()
-export function syncLightCloudBackup(session: LightBackupSession, archive: LightRecoveryArchive) {
+export function syncLightCloudBackup(
+  session: LightBackupSession,
+  archive: LightRecoveryArchive,
+  journals?: RecoveryJournals,
+) {
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      journals ||
+        (session.file?.spendingJournal
+          ? { spendingJournal: session.file.spendingJournal, lightningJournal: session.file.lightningJournal }
+          : null),
+    ),
+  ) as RecoveryJournals | null
   const previous = activeSyncs.get(session)
   const pending = (previous ? previous.catch(() => undefined) : Promise.resolve())
-    .then(() => syncSnapshot(session, archive))
+    .then(() => syncSnapshot(session, archive, snapshot || undefined))
     .finally(() => {
       if (activeSyncs.get(session) === pending) activeSyncs.delete(session)
     })
   activeSyncs.set(session, pending)
   return pending
 }
-async function syncSnapshot(session: LightBackupSession, archive: LightRecoveryArchive): Promise<LightRecoveryFile> {
-  const nextFingerprint = fingerprint(archive)
+async function syncSnapshot(
+  session: LightBackupSession,
+  archive: LightRecoveryArchive,
+  journals?: RecoveryJournals,
+): Promise<LightRecoveryFile> {
+  const nextFingerprint = fingerprint(archive, journals)
   while (session.pending || !session.revision || session.fingerprint !== nextFingerprint) {
     if (Date.now() >= Date.parse(session.expiresAt)) throw new Error('Unlock with your passkey to resume cloud backup')
     if (!session.pending) {
@@ -162,6 +185,7 @@ async function syncSnapshot(session: LightBackupSession, archive: LightRecoveryA
         version: 1,
         createdAt: archive.capturedAt,
         archive,
+        ...journals,
       }
       const encrypted = await encryptLightBackup(file, session.key)
       // Retain these exact bytes before dispatch. A lost response must retry the

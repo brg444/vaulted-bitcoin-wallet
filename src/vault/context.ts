@@ -56,10 +56,15 @@ export interface VaultContextProps {
   setProtectionTier: (tier: ProtectionTier) => void
   skipRecovery: () => void
   downloadRecoveryKit: () => string
+  backupRecoveryArchive: () => Promise<void>
+  downloadRecoveryArchive: () => Promise<string>
+  recoveryArchiveStatus: string
+  recoveryArchiveError: string
   backupRecoveryKit: () => Promise<boolean>
   balanceError: string
   balancesLoaded: boolean
   boardingAddress: string
+  restoreRecoveryArchive: (raw?: unknown) => Promise<void>
   restoreRecoveryKit: () => Promise<void>
   signGuardianExitWithDevice: (psbtHex: string) => Promise<string>
   hasRecoveryKit: boolean
@@ -140,10 +145,15 @@ export const VaultContext = createContext<VaultContextProps>({
   setProtectionTier: () => {},
   skipRecovery: () => {},
   downloadRecoveryKit: () => '',
+  backupRecoveryArchive: async () => {},
+  downloadRecoveryArchive: async () => '',
+  recoveryArchiveStatus: '',
+  recoveryArchiveError: '',
   backupRecoveryKit: async () => false,
   balanceError: '',
   balancesLoaded: false,
   boardingAddress: '',
+  restoreRecoveryArchive: async () => {},
   restoreRecoveryKit: async () => {},
   signGuardianExitWithDevice: async () => '',
   hasRecoveryKit: false,

@@ -1,3 +1,4 @@
+import { validateRecoveryJournals, type RecoveryJournals } from '../recovery/journals'
 import { requireReleaseNetwork } from '../releaseNetwork'
 import { isVaultBitcoinAddress } from '../bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
@@ -18,7 +19,7 @@ import {
 } from '@arkade-os/sdk'
 import { lightContract, registerLightContractHandler } from './contractHandler'
 import { LightScript, lightDescriptorDigest } from './contract'
-import { lightStatusMatchesDescriptor } from './status'
+import { lightStatusMatchesDescriptor, lightRecoveryStatus } from './status'
 import { validateLightEnrollment, type LightEnrollment } from './enrollment'
 import { unlockLightOwnerKey } from './keyBackup'
 import { unlockLightWithPasskey } from './passkey'
@@ -33,7 +34,7 @@ import {
   type LightRecoveryArchive,
 } from './recoveryArchive'
 
-export interface LightRecoveryFile extends LightEnrollment {
+export interface LightRecoveryFile extends LightEnrollment, Partial<RecoveryJournals> {
   name: 'vaulted-light-recovery'
   version: 1
   createdAt: string
@@ -197,14 +198,25 @@ export function validateLightRecoveryFile(value: unknown): LightRecoveryFile {
   const archive = supplied.archive
     ? validateLightRecoveryArchive(supplied.archive, valid.descriptor).archive
     : undefined
+  const journals =
+    supplied.spendingJournal !== undefined || supplied.lightningJournal !== undefined
+      ? validateRecoveryJournals(
+          lightRecoveryStatus(valid.descriptor),
+          supplied as LightRecoveryFile & RecoveryJournals,
+        )
+      : undefined
+  const savedJournals = journals
+    ? { spendingJournal: journals.spendingJournal, lightningJournal: journals.lightningJournal }
+    : {}
   if (!supplied.exitPackage)
-    return { ...valid, name: supplied.name, version: 1, createdAt: supplied.createdAt || '', archive }
+    return { ...valid, name: supplied.name, version: 1, createdAt: supplied.createdAt || '', archive, ...savedJournals }
   const pkg = deserializeExitPackage(serializeExitPackage(supplied.exitPackage))
   const file: LightRecoveryFile = {
     ...valid,
     name: supplied.name,
     version: 1,
     createdAt: supplied.createdAt,
+    ...savedJournals,
     exitPackage: pkg,
     exitPackageSignature: supplied.exitPackageSignature,
     feeFundingAddress: supplied.feeFundingAddress,

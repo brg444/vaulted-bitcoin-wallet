@@ -1,3 +1,4 @@
+import { useRecoveryArchive } from '../vault/useRecoveryArchive'
 import {
   prepareConnectorWithdrawal,
   loadConnectorWithdrawal,
@@ -472,6 +473,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     clearError,
   })
 
+  const { backupRecoveryArchive, downloadRecoveryArchive, recoveryArchiveStatus, recoveryArchiveError } =
+    useRecoveryArchive(enrollment, status, locked)
+
   const acceptDesign = useCallback(
     (tier?: 'standard' | 'advanced') => {
       const protectionTier = tier || setup.protectionTier
@@ -609,7 +613,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     return next
   }, [persist, setup])
 
-  const { enableOtherDevices, enroll, signIn } = useVaultSession({
+  const { enableOtherDevices, enroll, signIn, restoreRecoveryArchive } = useVaultSession({
     enrollment,
     reportError,
     sealPlan,
@@ -1393,10 +1397,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       skipRecovery,
       downloadRecoveryKit,
       backupRecoveryKit,
+      backupRecoveryArchive,
+      downloadRecoveryArchive,
+      recoveryArchiveStatus,
+      recoveryArchiveError,
       balanceError,
       balancesLoaded,
       boardingAddress,
       restoreRecoveryKit,
+      restoreRecoveryArchive,
       signGuardianExitWithDevice,
       hasRecoveryKit,
       initiateAlert,
@@ -1521,10 +1530,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       skipRecovery,
       downloadRecoveryKit,
       backupRecoveryKit,
+      backupRecoveryArchive,
+      downloadRecoveryArchive,
+      recoveryArchiveStatus,
+      recoveryArchiveError,
       balanceError,
       balancesLoaded,
       boardingAddress,
       restoreRecoveryKit,
+      restoreRecoveryArchive,
       signGuardianExitWithDevice,
       hasRecoveryKit,
       initiateAlert,

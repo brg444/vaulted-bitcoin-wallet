@@ -4,6 +4,7 @@ import { EsploraProvider, Transaction } from '@arkade-os/sdk'
 import { parseRecoveryKit, type RecoveryKit } from '../program/kit'
 import { kitFromFacts } from '../program/kitBackup'
 import {
+  packExitArchive,
   captureExitArchive,
   validateExitArchive,
   exitArchiveProviders,
@@ -204,4 +205,54 @@ export async function captureVaultRecoveryArchive(kit: RecoveryKit, status: Vaul
   }
   if (!navigator.locks) throw new Error('Web Locks required to capture recovery data')
   return navigator.locks.request(`vaulted:archive:${binding.descriptorHash}`, run)
+}
+
+/** Import complete evidence before the next refresh; older files cannot erase local paths. */
+export async function storeVaultRecoveryArchive(value: VaultRecoveryArchive) {
+  const incoming = validateVaultRecoveryArchive(value)
+  const binding = vaultRecoveryBinding(incoming.kit, incoming.status)
+  if (!navigator.locks) throw new Error('Web Locks required to restore recovery data')
+  return navigator.locks.request(`vaulted:archive:${binding.descriptorHash}`, async () => {
+    const previous = await loadVaultRecoveryArchive(incoming.kit, incoming.status)
+    let archive = incoming
+    if (previous) {
+      const left = validateExitArchive(previous.spending, binding)
+      const right = validateExitArchive(incoming.spending, binding)
+      const transactions = { ...incoming.spending.transactions, ...previous.spending.transactions }
+      for (const [id, raw] of Object.entries(incoming.spending.transactions))
+        if (previous.spending.transactions[id] && previous.spending.transactions[id] !== raw)
+          throw new Error('Conflicting saved recovery transaction evidence')
+      const coins = [
+        ...new Map([...right.coins, ...left.coins].map((coin) => [`${coin.txid}:${coin.vout}`, coin])).values(),
+      ]
+      const onchain = [
+        ...new Map(
+          [...incoming.onchain, ...previous.onchain].map((coin) => [`${coin.txid}:${coin.vout}`, coin]),
+        ).values(),
+      ]
+      archive = validateVaultRecoveryArchive({
+        ...previous,
+        onchain,
+        spending: {
+          ...previous.spending,
+          coins: packExitArchive(coins),
+          branches: { ...incoming.spending.branches, ...previous.spending.branches },
+          transactions,
+        },
+      })
+    }
+    const db = await archiveDatabase(archive.status.vaultId, binding.network)
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('archive', 'readwrite')
+        tx.objectStore('archive').put(archive, 'current')
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+        tx.onabort = () => reject(tx.error)
+      })
+    } finally {
+      db.close()
+    }
+    return archive
+  })
 }

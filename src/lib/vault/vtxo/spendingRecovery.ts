@@ -1,17 +1,14 @@
-import { p2tr } from '@scure/btc-signer'
-import { hex, base64 } from '@scure/base'
+import { canonicalRecoveryGraph } from '../recovery/graphPackage'
+import { hex } from '@scure/base'
 import {
   Wallet,
   ArkAddress,
-  ChainTxType,
   EsploraProvider,
   InMemoryContractRepository,
   InMemoryWalletRepository,
   OnchainWallet,
   ReadonlySingleKey,
   Transaction,
-  TxWeightEstimator,
-  getNetwork,
   UnilateralExit,
   contractHandlers,
   timelockToSequence,
@@ -25,7 +22,12 @@ import { networkPins } from '../networkPins'
 import { requireExactDefaultTapscriptSignatures } from '../taprootSignatures'
 import { VaultPolicyV1ContractHandler } from './contractHandler'
 import { vaultPolicyV1ScriptFromStatus } from './spend'
-import { validateVaultRecoveryArchive, vaultArchiveProviders, type VaultRecoveryArchive } from './recoveryArchive'
+import {
+  validateVaultRecoveryArchive,
+  vaultArchiveProviders,
+  vaultRecoveryBinding,
+  type VaultRecoveryArchive,
+} from './recoveryArchive'
 
 // Registered only by explicit recovery preparation, never by the online worker.
 const RECOVERY_TYPE = 'vault-policy-v1-recovery'
@@ -201,111 +203,24 @@ export async function prepareVaultSpendingRecovery(
 /** Complete ancestor transport makes confirmation/reorg status an execution concern. */
 function canonicalSpendingPackage(archive: VaultRecoveryArchive, pkg: ExitPackage, sweeps: string[]): ExitPackage {
   validateVaultRecoveryArchive(archive)
-  const coins = vaultArchiveProviders(archive).coins
-  const pins = networkPins(archive.status.network)
-  if (
-    !pkg ||
-    pkg.mode !== 'graph' ||
-    pkg.version !== 1 ||
-    pkg.network !== pins.sdkNetwork ||
-    !Number.isFinite(pkg.feeRate) ||
-    pkg.feeRate < 1 ||
-    pkg.feeRate > archive.kit.descriptor.policy.feerateCapSatVb ||
-    !Array.isArray(sweeps) ||
-    sweeps.length !== coins.length ||
-    !Number.isSafeInteger(pkg.createdAt) ||
-    pkg.createdAt <= 0
-  )
-    throw new Error('Recovery package does not cover the saved outputs')
-  const signed = new Map<string, ReturnType<typeof sweepFacts>>(
-    sweeps.map((psbt) => {
-      const result = sweepFacts(archive, pkg.sweepAddress, psbt, true)
-      result.tx.finalize()
-      if (result.fee > Math.ceil(result.tx.vsize * archive.kit.descriptor.policy.feerateCapSatVb))
-        throw new Error('Recovery sweep fee rate exceeds the vault cap')
-      return [`${result.coin.txid}:${result.coin.vout}`, result]
-    }),
-  )
-  if (signed.size !== coins.length) throw new Error('Duplicate recovery sweep')
-  const parents = new Map<string, { tx: Transaction; forVtxos: Set<string>; type: ChainTxType }>()
-  for (const coin of coins) {
-    const outpoint = `${coin.txid}:${coin.vout}`
-    const chain = new Map(archive.spending.branches[outpoint].map((node) => [node.txid, node]))
-    const visited = new Set<string>()
-    const visit = (id: string) => {
-      if (visited.has(id)) return
-      visited.add(id)
-      const node = chain.get(id)!
-      if (node.type === ChainTxType.COMMITMENT) return
-      node.spends.forEach(visit)
-      const existing = parents.get(id)
-      if (existing) {
-        if (existing.type !== node.type) throw new Error('Recovery ancestors disagree about transaction type')
-        existing.forVtxos.add(outpoint)
-        return
-      }
-      const tx = Transaction.fromPSBT(base64.decode(archive.spending.transactions[id]))
-      // This is the current SDK's TREE witness completion; other PSBTs use its ordinary finalizer.
-      if (node.type === ChainTxType.TREE) {
-        const input = tx.getInput(0)
-        if (!input.tapKeySig) throw new Error('Recovery tree signature missing')
-        tx.updateInput(0, { finalScriptWitness: [input.tapKeySig] })
-      } else tx.finalize()
-      parents.set(id, { tx, forVtxos: new Set([outpoint]), type: node.type })
+  if (!Array.isArray(sweeps)) throw new Error('Recovery sweeps are missing')
+  const signed = sweeps.map((psbt) => {
+    const facts = sweepFacts(archive, pkg.sweepAddress, psbt, true)
+    facts.tx.finalize()
+    return {
+      ...facts,
+      delay: { type: 'seconds' as const, value: archive.status.vtxoExitDelay! },
+      path: `${RECOVERY_TYPE}:unilateral`,
     }
-    visit(coin.txid)
-  }
-  const feeAddress = p2tr(
-    hex.decode(archive.kit.descriptor.keys.phoneBip340).slice(1),
-    undefined,
-    getNetwork(pins.sdkNetwork),
-  ).address!
-  const childVsize = Number(
-    TxWeightEstimator.create()
-      .addP2AInput()
-      .addKeySpendInput(true)
-      .addOutputAddress(feeAddress, getNetwork(pins.sdkNetwork))
-      .vsize().value,
-  )
-  const funding = [...parents.values()].reduce(
-    (sum, parent) => sum + Math.ceil(pkg.feeRate * (parent.tx.vsize + childVsize)),
-    0,
-  )
-  const delay = { type: 'seconds' as const, value: archive.status.vtxoExitDelay! }
-  const vtxos = coins.map((coin) => {
-    const outpoint = `${coin.txid}:${coin.vout}`
-    const item = signed.get(outpoint)
-    if (!item) throw new Error('Recovery sweeps are missing')
-    return { outpoint, value: coin.value, sweepFee: item.fee, path: `${RECOVERY_TYPE}:unilateral`, delay }
   })
-  const steps: ExitPackage['steps'] = [...parents.values()].map(({ tx, forVtxos }) => ({
-    kind: 'bump',
-    parentTxid: tx.id,
-    parentHex: hex.encode(tx.extract()),
-    forVtxos: [...forVtxos].sort(),
-  }))
-  for (const vtxo of vtxos) {
-    const item = signed.get(vtxo.outpoint)!
-    steps.push({
-      kind: 'sweep',
-      vtxo: vtxo.outpoint,
-      txid: item.tx.id,
-      hex: hex.encode(item.tx.extract()),
-      dependsOnTxid: item.coin.txid,
-      delay,
-    })
-  }
-  return {
-    ...pkg,
-    steps,
-    vtxos,
-    totals: {
-      txCount: parents.size * 2 + coins.length,
-      fundingRequiredSats: funding,
-      totalFeeSats: funding + vtxos.reduce((sum, v) => sum + v.sweepFee, 0),
-      recoveredSats: vtxos.reduce((sum, v) => sum + v.value - v.sweepFee, 0),
-    },
-  }
+  return canonicalRecoveryGraph({
+    archive: archive.spending,
+    archiveBinding: vaultRecoveryBinding(archive.kit, archive.status),
+    phonePub: archive.kit.descriptor.keys.phoneBip340,
+    pkg,
+    sweeps: signed,
+    feeLimits: archive.kit.descriptor.policy,
+  })
 }
 
 export function validateSpendingRecoveryPackage(file: SpendingRecoveryPackage) {
@@ -323,6 +238,7 @@ export function executeVaultSpendingRecovery(
   feeWallet: ExitFeeWallet,
   signal?: AbortSignal,
 ) {
-  validateSpendingRecoveryPackage(file)
-  return new UnilateralExit.Executor(file.exitPackage, onchain, { feeWallet, signal })
+  const snapshot = JSON.parse(JSON.stringify(file)) as SpendingRecoveryPackage
+  validateSpendingRecoveryPackage(snapshot)
+  return new UnilateralExit.Executor(snapshot.exitPackage, onchain, { feeWallet, signal })
 }

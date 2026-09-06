@@ -15,6 +15,10 @@ import { SAVINGS_TEMPLATE } from '../program/constants'
 import type { VaultStatus } from '../types'
 import golden from './testdata/vault-policy-v1-tree.json'
 import {
+  validateSpendingRecoveryJournal,
+  exportSpendingRecoveryJournal,
+  restoreSpendingRecoveryJournal,
+  vtxoSpendJournalKey,
   abortPersistedVtxoSpend,
   applyVtxoOperationView,
   advanceAuthorizedVtxoSpend,
@@ -2373,5 +2377,55 @@ describe('regular VTXO spend coordinator', () => {
     expect(loadPersistedVtxoSpendById('vault-a', OP_1)?.stage).toBe('authorized')
     expect(listPersistedVtxoSpends('vault-a')).toHaveLength(1)
     clearPersistedVtxoSpend('vault-a')
+  })
+})
+
+describe('independent Spending journal archives', () => {
+  const locks = { request: async <T>(_name: string, _options: unknown, run: (lock: unknown) => Promise<T>) => run({}) }
+  it('preserves exact SDK reservation data and ambiguity while refusing corrupt or excess records', async () => {
+    localStorage.clear()
+    const pending = { ...sdkReservedPending(), operatorSubmitAttempted: true }
+    persistVtxoSpend(pending)
+    const journal = await exportSpendingRecoveryJournal(status(), locks)
+    expect(journal.operations).toEqual([pending])
+    localStorage.clear()
+    await restoreSpendingRecoveryJournal(status(), journal, locks)
+    expect(loadPersistedVtxoSpend(status().vaultId)).toEqual(pending)
+    expect(() =>
+      validateSpendingRecoveryJournal(status(), { ...journal, operations: Array(33).fill(pending) }),
+    ).toThrow()
+    expect(() =>
+      validateSpendingRecoveryJournal(status(), { ...journal, operations: [{ ...pending, amountSats: 13000 }] }),
+    ).toThrow()
+    localStorage.setItem(
+      vtxoSpendJournalKey(status().vaultId),
+      JSON.stringify({ version: 1, operations: [pending, { broken: true }] }),
+    )
+    await expect(exportSpendingRecoveryJournal(status(), locks)).rejects.toThrow()
+  })
+  it('retains resolved history and does not reactivate a cleared operation from an old backup', async () => {
+    localStorage.clear()
+    persistVtxoSpend(sdkReservedPending())
+    const old = await exportSpendingRecoveryJournal(status(), locks)
+    clearPersistedVtxoSpend(status().vaultId, OP_1)
+    const restored = await restoreSpendingRecoveryJournal(status(), old, locks)
+    expect(restored.operations).toEqual([])
+    expect(restored.resolved?.[0].operationId).toBe(OP_1)
+    expect(loadPersistedVtxoSpend(status().vaultId)).toBeUndefined()
+  })
+  it('preserves a local pending operation when an imported backup lacks it, and rejects conflicts before writes', async () => {
+    localStorage.clear()
+    const pending = sdkReservedPending()
+    persistVtxoSpend(pending)
+    await restoreSpendingRecoveryJournal(status(), { version: 1, vaultId: status().vaultId, operations: [] }, locks)
+    const previous = localStorage.getItem(vtxoSpendJournalKey(status().vaultId))
+    await expect(
+      restoreSpendingRecoveryJournal(
+        status(),
+        { version: 1, vaultId: status().vaultId, operations: [{ ...pending, bundleDigest: 'ff'.repeat(32) }] },
+        locks,
+      ),
+    ).rejects.toThrow('Conflicting')
+    expect(localStorage.getItem(vtxoSpendJournalKey(status().vaultId))).toBe(previous)
   })
 })
