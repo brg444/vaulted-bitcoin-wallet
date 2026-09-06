@@ -186,6 +186,16 @@ describe('same-origin authorizer gateway', () => {
   })
 
   it.each([
+    ['POST', '/api/v1/passkey/challenge', JSON.stringify({ vaultId: '  victim\t' })],
+    ['POST', '/api/v1/light/backup/challenge', JSON.stringify({ VaultID: '\u0085victim\u0085' })],
+    ['GET', '/api/v1/vtxo-operation?vaultId=%20victim%09', ''],
+    ['GET', '/api/v1/status?vault=%C2%85victim%C2%85', ''],
+    ['GET', '/api/v1/connector-operation?vaultId=%20%09&vault=%C2%85victim%C2%85', ''],
+    ['GET', '/api/v1/map?vault=%20victim%20', '', ' victim '],
+    ['GET', '/api/v1/map?vault=victim?question', '', 'victim?question'],
+    ['GET', '/api/v1/map?vault=victim%3Bvalue', '', 'victim;value'],
+    ['POST', '/api/v1/passkey/challenge', JSON.stringify({ vaultId: '\ufeffvictim\ufeff' }), '\ufeffvictim\ufeff'],
+    ['GET', '/api/v1/status?vault=%EF%BB%BFvictim%EF%BB%BF', '', '\ufeffvictim\ufeff'],
     ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"vaultId":"victim"}'],
     ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"VaultID":"victim"}'],
     ['POST', '/api/v1/light/backup/challenge?vaultId=decoy', '{"vaultId":"victim"}'],
@@ -193,13 +203,13 @@ describe('same-origin authorizer gateway', () => {
     ['GET', '/api/v1/map?vault=victim&vaultId=decoy', ''],
     ['GET', '/api/v1/connector-operation?vault=decoy&vaultId=victim', ''],
     ['GET', '/api/v1/vtxo-operation?vault=decoy&vaultId=victim', ''],
-  ])('charges the actual Guardian vault for %s %s', async (method, url, body) => {
+  ])('charges the actual Guardian vault for %s %s', async (method, url, body, expectedVault = 'victim') => {
     vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
     vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
     vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
     vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example')
     vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-rate-secret')
-    const victimKey = createHash('sha256').update('victim').digest('hex').slice(0, 32)
+    const victimKey = createHash('sha256').update(expectedVault).digest('hex').slice(0, 32)
     const fetchMock = vi.fn().mockImplementation(async (target: string, init: RequestInit) => {
       if (target !== 'https://redis.example/pipeline') return Response.json({ ok: true })
       const commands = JSON.parse(String(init.body)) as string[][]
@@ -214,6 +224,49 @@ describe('same-origin authorizer gateway', () => {
     await gatewayHandler(gatewayRequest({ method, url, body, headers: { host: 'rc.getvaulted.xyz' } }), result.response)
     expect(result.response.statusCode).toBe(429)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    expectLocalNoStore(result)
+  })
+
+  it.each([
+    '/api/v1/%73tatus?vault=victim',
+    '/api/v1/%6dap?vault=victim',
+    '/api/v1/unused/../status?vault=victim',
+    '/api/v1/unused/%2e%2e/status?vault=victim',
+    '/api/v1//status?vault=victim',
+  ])('rejects noncanonical paths before rate lookup or forwarding: %s', async (url) => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({ method: 'GET', url, headers: { host: 'rc.getvaulted.xyz' } }),
+      result.response,
+    )
+    expect(result.response.statusCode).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectLocalNoStore(result)
+  })
+
+  it.each([
+    '/api/v1/status?vault=decoy;ignored&vault=victim',
+    '/api/v1/vtxo-operation?vaultId=decoy%zz&vaultId=victim',
+    '/api/v1/map?vault=victim#decoy',
+    '/api/v1/status?vault=vic\ttim',
+  ])('rejects query parser ambiguity before rate lookup or forwarding: %s', async (url) => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({ method: 'GET', url, headers: { host: 'rc.getvaulted.xyz' } }),
+      result.response,
+    )
+    expect(result.response.statusCode).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
     expectLocalNoStore(result)
   })
 

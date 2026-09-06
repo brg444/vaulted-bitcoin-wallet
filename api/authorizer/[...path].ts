@@ -50,6 +50,10 @@ export function isMainnetGatewayRelease(value = process.env.VAULT_RELEASE_NETWOR
 }
 
 export function allowAuthorizerPath(path: string): boolean {
+  // Wallet API paths are canonical ASCII segments. Escapes and dot segments
+  // can select a different upstream route after URL/ServeMux normalization.
+  if (/[\\%?#\u0000-\u0020\u007f]/.test(path) || path.includes('//') || /(?:^|\/)\.{1,2}(?:\/|$)/.test(path))
+    return false
   return path === '/health' || path === '/ready' || path === '/v1' || path.startsWith('/v1/')
 }
 
@@ -96,14 +100,25 @@ function rateIdentity(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 32)
 }
 
+// Go strings.TrimSpace uses Unicode White_Space, not JavaScript's trim set.
+function guardianTrimSpace(value: string): string {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '')
+}
+
 function requestVaultId(method: string | undefined, pathAndQuery: string, body?: Buffer): string | null {
-  const [path, search] = pathAndQuery.split('?')
+  const separator = pathAndQuery.indexOf('?')
+  const path = separator < 0 ? pathAndQuery : pathAndQuery.slice(0, separator)
+  const search = separator < 0 ? '' : pathAndQuery.slice(separator + 1)
   if (method === 'GET' || method === 'HEAD') {
-    const query = new URLSearchParams(search || '')
+    // Reject query forms Go discards or fetch rewrites, rather than charging
+    // a different first value from the one the upstream handler receives.
+    if (/[;#\u0000-\u0020\u007f]/.test(search) || /%(?![0-9a-f]{2})/i.test(search)) return null
+    const query = new URLSearchParams(search)
     // Match the Guardian read handlers; ignored aliases must not change the bucket.
-    if (path === '/v1/connector/operation') return (query.get('vaultId') || query.get('vault') || '').trim()
-    if (path === '/v1/vtxo/operation') return query.get('vaultId') || ''
-    if (path === '/v1/status') return (query.get('vault') || '').trim()
+    if (path === '/v1/connector/operation')
+      return guardianTrimSpace(query.get('vaultId') || '') || guardianTrimSpace(query.get('vault') || '')
+    if (path === '/v1/vtxo/operation') return guardianTrimSpace(query.get('vaultId') || '')
+    if (path === '/v1/status') return guardianTrimSpace(query.get('vault') || '')
     if (path === '/v1/map') return query.get('vault') || ''
     return ''
   }
@@ -123,7 +138,7 @@ function requestVaultId(method: string | undefined, pathAndQuery: string, body?:
     if (typeof value !== 'string') return null
     identities.add(value)
   }
-  return identities.size > 1 ? null : [...identities][0] || ''
+  return identities.size > 1 ? null : guardianTrimSpace([...identities][0] || '')
 }
 
 export async function allowMainnetGatewayRate(
