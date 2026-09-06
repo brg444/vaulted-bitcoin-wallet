@@ -49,7 +49,7 @@ export default function VaultWelcome() {
                 ? 'Use face recognition, a fingerprint, or your device PIN'
                 : 'Approve with the passkey on this device'
               : lightAvailable
-                ? `${enrollmentMode === 'token' ? 'An invite is required. ' : ''}Start with a passkey, or add hardware protection for Savings.`
+                ? 'A hardware wallet is optional with Light.'
                 : enrollmentMode === 'token'
                   ? 'Setup needs an invite and a compatible hardware wallet.'
                   : 'Setup needs a compatible hardware wallet.'}
@@ -64,9 +64,7 @@ export default function VaultWelcome() {
         Protected savings.
       </h1>
       <p className='qg-lead'>
-        {lightAvailable
-          ? 'Pay with your passkey, within the limits you choose. Keep Savings in another wallet or protect it here with independent keys.'
-          : 'Use your passkey for everyday payments and your hardware wallet for a second Savings approval.'}
+        Use your passkey for everyday payments and your hardware wallet for a second Savings approval.
       </p>
       <div className='qg-assurances'>
         <span>
@@ -75,7 +73,7 @@ export default function VaultWelcome() {
         </span>
         <span>
           <ShieldCheck />
-          {lightAvailable ? 'Choose your protection' : 'Two-key Savings'}
+          Two-key Savings
         </span>
       </div>
       <InstallNotice />

@@ -4,7 +4,7 @@ import TransferArrowIcon from '../../icons/TransferArrow'
 import { prettyAmount, prettyNumber } from '../../lib/format'
 import { hapticSubtle } from '../../lib/haptics'
 import { RECENT_HISTORY_LIMIT } from '../../lib/vault/constants'
-import { groupVaultHistory } from '../../lib/vault/history'
+import { groupVaultHistory, type VaultHistoryItem } from '../../lib/vault/history'
 import { VaultContext } from '../../vault/context'
 
 function historyTime(blockTime?: number): string {
@@ -14,7 +14,30 @@ function historyTime(blockTime?: number): string {
 
 export default function VaultHistory() {
   const { account, balancesLoaded, history, openTx, refreshingBalance } = useContext(VaultContext)
+  return (
+    <VaultHistoryList
+      account={account}
+      balancesLoaded={balancesLoaded}
+      history={history}
+      openTx={openTx}
+      refreshingBalance={refreshingBalance}
+    />
+  )
+}
 
+export function VaultHistoryList({
+  account,
+  balancesLoaded,
+  history,
+  openTx,
+  refreshingBalance = false,
+}: {
+  account: 'spend' | 'savings'
+  balancesLoaded: boolean
+  history: VaultHistoryItem[]
+  openTx: (tx: VaultHistoryItem) => void
+  refreshingBalance?: boolean
+}) {
   if (history.length === 0) {
     return (
       <section
