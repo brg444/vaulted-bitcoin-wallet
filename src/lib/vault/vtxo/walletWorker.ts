@@ -582,6 +582,7 @@ export interface VaultWalletVtxoSnapshot {
   boardingBalance?: number
   boardingConfirmedBalance?: number
   commitmentIds?: string[]
+  recoveryVtxos?: { txid: string; vout: number; value: number; script: string }[]
   history: VaultHistoryItem[]
 }
 
@@ -634,6 +635,13 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
     balance: position.availableSats,
     pendingBalance: position.pendingSats,
     commitmentIds: [...commitmentIds],
+    ...(status.templateVersion === LIGHT_PROFILE
+      ? {
+          recoveryVtxos: vtxos
+            .filter((v) => !v.isSpent)
+            .map(({ txid, vout, value, script }) => ({ txid, vout, value, script })),
+        }
+      : {}),
     boardingBalance: status.templateVersion === LIGHT_PROFILE ? 0 : balance.boarding.total,
     boardingConfirmedBalance: status.templateVersion === LIGHT_PROFILE ? 0 : balance.boarding.confirmed,
     history: [...detectedBoardingHistory, ...activityHistory],

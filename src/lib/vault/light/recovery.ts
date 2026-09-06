@@ -21,8 +21,7 @@ import { LightScript, lightDescriptorDigest } from './contract'
 import { lightStatusMatchesDescriptor } from './status'
 import { validateLightEnrollment, type LightEnrollment } from './enrollment'
 import { unlockLightOwnerKey } from './keyBackup'
-import { unlockPhoneBip340 } from '../savingsSpend'
-import { vaultArkServer } from '../vtxo/spend'
+import { unlockLightWithPasskey } from './passkey'
 import { networkPins, sdkNetworkName } from '../networkPins'
 import type { VaultStatus } from '../types'
 import { hex } from '@scure/base'
@@ -52,8 +51,8 @@ export async function prepareLightRecoveryFile(
   useSavedData = false,
 ): Promise<LightRecoveryFile> {
   const valid = validateLightEnrollment(record)
-  const bound = lightStatusMatchesDescriptor(status, valid.descriptor)
-  const owner = await unlockPhoneBip340(valid.enrollment, bound)
+  lightStatusMatchesDescriptor(status, valid.descriptor)
+  const owner = await unlockLightWithPasskey(valid)
   try {
     return await prepareLightRecoveryWithOwner(
       valid,
@@ -92,7 +91,7 @@ export async function prepareLightRecoveryWithSecret(
   }
 }
 
-async function prepareLightRecoveryWithOwner(
+export async function prepareLightRecoveryWithOwner(
   record: LightEnrollment,
   owner: Uint8Array,
   recoveryAddress: string,
@@ -137,7 +136,7 @@ async function prepareLightRecoveryWithOwner(
   // The explicit script-filtered set keeps default SDK funds out of recovery.
   const wallet = await Wallet.create({
     identity,
-    arkServerUrl: vaultArkServer(record.descriptor.network),
+    arkServerUrl: networkPins(record.descriptor.network).operatorOrigin,
     arkProvider: local.arkProvider,
     indexerProvider: local.indexerProvider,
     esploraUrl: '/esplora',
@@ -242,14 +241,7 @@ export async function executeLightRecovery(
   let owner: Uint8Array | undefined
   try {
     owner = await unlockLightOwnerKey(valid.recoveryBackup, material, 'recovery-secret', valid.descriptor)
-    const identity = SingleKey.fromPrivateKey(owner)
-    const provider = new EsploraProvider('/esplora')
-    const feeWallet = await OnchainWallet.create(identity, sdkNetworkName(valid.descriptor.network)!, provider)
-    if (valid.feeFundingAddress !== feeWallet.address)
-      throw new Error('Recovery fee address is not this owner’s Bitcoin address')
-    const executor = new UnilateralExit.Executor(valid.exitPackage, provider, { feeWallet, signal })
-    await requireConfirmedLightRecovery(valid.exitPackage, executor, onEvent)
-    signal.throwIfAborted()
+    await executeLightRecoveryWithOwner(valid, owner, signal, onEvent)
   } finally {
     material.fill(0)
     owner?.fill(0)
@@ -278,4 +270,25 @@ export async function requireConfirmedLightRecovery(
     throw new Error(
       'Recovery is incomplete. Keep the saved exit file and review the failed transactions before resuming.',
     )
+}
+
+export async function executeLightRecoveryWithOwner(
+  file: LightRecoveryFile,
+  owner: Uint8Array,
+  signal: AbortSignal,
+  onEvent: (event: ExecutorEvent) => void,
+) {
+  const valid = validateLightRecoveryFile(file)
+  requireReleaseNetwork(valid.descriptor.network)
+  signal.throwIfAborted()
+  if (!valid.exitPackage || hex.encode(schnorr.getPublicKey(owner)) !== valid.descriptor.ownerPub)
+    throw new Error('Prepare a current emergency exit first')
+  const identity = SingleKey.fromPrivateKey(owner)
+  const provider = new EsploraProvider('/esplora')
+  const feeWallet = await OnchainWallet.create(identity, sdkNetworkName(valid.descriptor.network)!, provider)
+  if (valid.feeFundingAddress !== feeWallet.address)
+    throw new Error('Recovery fee address is not this owner’s Bitcoin address')
+  const executor = new UnilateralExit.Executor(valid.exitPackage, provider, { feeWallet, signal })
+  await requireConfirmedLightRecovery(valid.exitPackage, executor, onEvent)
+  signal.throwIfAborted()
 }

@@ -66,6 +66,8 @@ type AuthenticatorOptions = {
   hasPrf: true
   isUserVerified: true
   automaticPresenceSimulation: boolean
+  defaultBackupEligibility?: boolean
+  defaultBackupState?: boolean
 }
 
 export type VirtualPasskey = {
@@ -665,6 +667,9 @@ async function addAuthenticator(cdp: CDPSession, presence: boolean): Promise<str
     hasPrf: true,
     isUserVerified: true,
     automaticPresenceSimulation: presence,
+    ...(process.env.VAULT_LIGHT_BROWSER_API || process.env.VAULT_LIGHT_LIVE
+      ? { defaultBackupEligibility: true, defaultBackupState: true }
+      : {}),
   }
   const result = await cdp.send('WebAuthn.addVirtualAuthenticator', { options })
   return result.authenticatorId

@@ -1,3 +1,4 @@
+import { lightExitRepository } from './exitRepository'
 import {
   RestArkProvider,
   RestIndexerProvider,
@@ -144,6 +145,38 @@ export function validateLightRecoveryArchive(value: LightRecoveryArchive, descri
       )
         throw new Error('Recovery path is incomplete')
     }
+    const nodes = new Map(chain.map((node) => [node.txid, node]))
+    if (!chain.some((node) => node.type === ChainTxType.COMMITMENT))
+      throw new Error('Recovery path has no Bitcoin commitment')
+    for (const node of chain) {
+      if (node.type === ChainTxType.COMMITMENT) continue
+      const tx = transactions.get(node.txid)!
+      const physical = new Set<string>()
+      for (let i = 0; i < tx.inputsLength; i++) {
+        const id = tx.getInput(i).txid
+        if (!id) throw new Error('Recovery transaction input is incomplete')
+        physical.add(hex.encode(id))
+      }
+      if (
+        !physical.size ||
+        [...physical].some((id) => !nodes.has(id)) ||
+        [...physical].sort().join('|') !== [...new Set(node.spends)].sort().join('|')
+      )
+        throw new Error('Recovery ancestry does not match its transaction inputs')
+    }
+    const visiting = new Set<string>()
+    const visited = new Set<string>()
+    const visit = (id: string) => {
+      if (visited.has(id)) return
+      if (visiting.has(id)) throw new Error('Recovery ancestry contains a cycle')
+      visiting.add(id)
+      const node = nodes.get(id)
+      if (!node) throw new Error('Recovery ancestry is incomplete')
+      if (node.type !== ChainTxType.COMMITMENT) node.spends.forEach(visit)
+      visiting.delete(id)
+      visited.add(id)
+    }
+    visit(coin.txid)
     const output = transactions.get(coin.txid)?.getOutput(coin.vout)
     if (!output || output.amount !== BigInt(coin.value) || hex.encode(output.script!) !== d.scriptPubKey)
       throw new Error('Recovery output does not match its transaction')
@@ -178,7 +211,7 @@ export async function loadLightRecoveryArchive(d: LightDescriptor): Promise<Ligh
     db.close()
   }
 }
-async function storeArchive(archive: LightRecoveryArchive, d: LightDescriptor) {
+export async function storeLightRecoveryArchive(archive: LightRecoveryArchive, d: LightDescriptor) {
   validateLightRecoveryArchive(archive, d)
   const db = await database(d)
   try {
@@ -194,16 +227,31 @@ async function storeArchive(archive: LightRecoveryArchive, d: LightDescriptor) {
   }
 }
 const activeCaptures = new Map<string, Promise<LightRecoveryArchive>>()
-export function captureLightRecoveryArchive(d: LightDescriptor): Promise<LightRecoveryArchive> {
+export function captureLightRecoveryArchive(
+  d: LightDescriptor,
+  expected?: { txid: string; vout: number; value: number; script: string }[],
+): Promise<LightRecoveryArchive> {
   validateLightDescriptor(d)
   const hash = lightDescriptorDigest(d)
   const active = activeCaptures.get(hash)
-  if (active) return active
-  const pending = capture(d).finally(() => activeCaptures.delete(hash))
+  if (active)
+    return active.then((archive) => {
+      assertLightArchiveMatchesVtxos(archive, d, expected)
+      return archive
+    })
+  const run = () => capture(d, expected)
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  const pending = (async () =>
+    locks ? await locks.request(`vaulted-light:recovery:${d.vaultId}`, run) : await run())().finally(() =>
+    activeCaptures.delete(hash),
+  )
   activeCaptures.set(hash, pending)
   return pending
 }
-async function capture(d: LightDescriptor): Promise<LightRecoveryArchive> {
+async function capture(
+  d: LightDescriptor,
+  expected?: { txid: string; vout: number; value: number; script: string }[],
+): Promise<LightRecoveryArchive> {
   const url = networkPins(d.network).operatorOrigin
   const indexer = new RestIndexerProvider(url)
   const info = await new RestArkProvider(url).getInfo()
@@ -219,46 +267,52 @@ async function capture(d: LightDescriptor): Promise<LightRecoveryArchive> {
     if (removed.some((old) => !resolved.some((coin) => outpoint(coin) === outpoint(old) && coin.isSpent)))
       throw new Error('An earlier output is missing. Previous recovery data has been retained.')
   }
-  const resolver = createExitChainResolver({ indexer })
-  const branches: LightRecoveryArchive['branches'] = {}
-  const wanted = new Set<string>()
-  for (const coin of coins) {
-    // Shared ancestors appear repeatedly in the public indexer's DAG walk.
-    const prior = previousCoins.find((old) => outpoint(old) === outpoint(coin) && old.value === coin.value)
-    const chain = prior
-      ? previous!.branches[outpoint(coin)]
-      : normalizeLightRecoveryChain(await resolver.getVtxoChain(coin))
-    branches[outpoint(coin)] = chain
-    for (const node of chain) if (node.type !== ChainTxType.COMMITMENT) wanted.add(node.txid)
-    if (wanted.size > 4096) throw new Error('Recovery transaction limit exceeded')
-  }
-  const transactions: Record<string, string> = {}
-  for (const id of wanted) if (previous?.transactions[id]) transactions[id] = previous.transactions[id]
-  const ids = [...wanted].filter((id) => !transactions[id])
-  for (let i = 0; i < ids.length; i += 100) {
-    for (const psbt of await resolver.getVirtualTxs(ids.slice(i, i + 100))) {
-      if (psbt.length > 1_000_000) throw new Error('Recovery transaction limit exceeded')
-      transactions[Transaction.fromPSBT(base64.decode(psbt)).id] = psbt
+  const repository = lightExitRepository(d)
+  try {
+    const resolver = createExitChainResolver({ indexer, repository })
+    const branches: LightRecoveryArchive['branches'] = {}
+    const wanted = new Set<string>()
+    for (const coin of coins) {
+      // Shared ancestors appear repeatedly in the public indexer's DAG walk.
+      const prior = previousCoins.find((old) => outpoint(old) === outpoint(coin) && old.value === coin.value)
+      const chain = prior
+        ? previous!.branches[outpoint(coin)]
+        : normalizeLightRecoveryChain(await resolver.getVtxoChain(coin))
+      branches[outpoint(coin)] = chain
+      for (const node of chain) if (node.type !== ChainTxType.COMMITMENT) wanted.add(node.txid)
+      if (wanted.size > 4096) throw new Error('Recovery transaction limit exceeded')
     }
+    const transactions: Record<string, string> = {}
+    for (const id of wanted) if (previous?.transactions[id]) transactions[id] = previous.transactions[id]
+    const ids = [...wanted].filter((id) => !transactions[id])
+    for (let i = 0; i < ids.length; i += 100) {
+      for (const psbt of await resolver.getVirtualTxs(ids.slice(i, i + 100))) {
+        if (psbt.length > 1_000_000) throw new Error('Recovery transaction limit exceeded')
+        transactions[Transaction.fromPSBT(base64.decode(psbt)).id] = psbt
+      }
+    }
+    const fingerprint = (values: VirtualCoin[]) =>
+      values
+        .map((v) => `${outpoint(v)}:${v.value}:${v.script}`)
+        .sort()
+        .join('|')
+    if (fingerprint(coins) !== fingerprint(await getCoins()))
+      throw new Error('Your balance changed while saving recovery data')
+    const archive: LightRecoveryArchive = {
+      version: 1,
+      descriptorHash: lightDescriptorDigest(d),
+      capturedAt: new Date().toISOString(),
+      info: pack(info),
+      coins: pack(coins),
+      branches,
+      transactions,
+    }
+    assertLightArchiveMatchesVtxos(archive, d, expected)
+    await storeLightRecoveryArchive(archive, d)
+    return archive
+  } finally {
+    await repository[Symbol.asyncDispose]()
   }
-  const fingerprint = (values: VirtualCoin[]) =>
-    values
-      .map((v) => `${outpoint(v)}:${v.value}:${v.script}`)
-      .sort()
-      .join('|')
-  if (fingerprint(coins) !== fingerprint(await getCoins()))
-    throw new Error('Your balance changed while saving recovery data')
-  const archive: LightRecoveryArchive = {
-    version: 1,
-    descriptorHash: lightDescriptorDigest(d),
-    capturedAt: new Date().toISOString(),
-    info: pack(info),
-    coins: pack(coins),
-    branches,
-    transactions,
-  }
-  await storeArchive(archive, d)
-  return archive
 }
 
 // Explicit local provider surfaces. Any unexpected SDK call fails without
@@ -308,4 +362,21 @@ export function lightArchiveProviders(archive: LightRecoveryArchive, d: LightDes
     }),
   })
   return { arkProvider, indexerProvider, source, coins }
+}
+
+/** Match outpoints as well as value: an equal-balance payment still changes its exit path. */
+export function assertLightArchiveMatchesVtxos(
+  archive: LightRecoveryArchive,
+  d: LightDescriptor,
+  expected?: { txid: string; vout: number; value: number; script: string }[],
+) {
+  if (!expected) return
+  const { coins } = validateLightRecoveryArchive(archive, d)
+  const fingerprint = (values: { txid: string; vout: number; value: number; script: string }[]) =>
+    values
+      .map((v) => `${v.txid}:${v.vout}:${v.value}:${v.script}`)
+      .sort()
+      .join('|')
+  if (fingerprint(expected) !== fingerprint(coins))
+    throw new Error('Transaction paths are catching up with your wallet. The previous backup is retained.')
 }

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vaulted Light recovery</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f5f0e7;
+        color: #171619;
+        font:
+          17px system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 620px;
+        margin: 48px auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 32px;
+      }
+      h2 {
+        font-size: 22px;
+      }
+      p {
+        line-height: 1.5;
+        color: #605b54;
+      }
+      label {
+        display: block;
+        margin: 22px 0;
+      }
+      input,
+      button,
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        font: inherit;
+        padding: 14px;
+        border: 1px solid #cfc8be;
+        border-radius: 12px;
+        background: #fff;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+        background: #a54422;
+        color: white;
+        margin: 8px 0;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      code {
+        overflow-wrap: anywhere;
+      }
+      #error {
+        color: #a52618;
+      }
+      #events {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: #a54422;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>Vaulted Light</p>
+      <h1>Recover directly to Bitcoin</h1>
+      <p>
+        Open your local backup to recover without Vaulted’s approval or the Arkade Operator. Your original passkey
+        unlocks the encrypted file.
+      </p>
+      <label>Light backup file<input id="file" type="file" accept=".json,application/json" /></label>
+      <p id="origin"></p>
+      <button id="unlock" disabled>Open with passkey</button>
+      <section id="legacy" hidden>
+        <label
+          >Recovery code from an older Light wallet<textarea
+            id="secret"
+            autocomplete="off"
+            spellcheck="false"
+          ></textarea></label
+        ><button id="legacy-open">Use recovery code</button>
+      </section>
+      <section id="review" hidden>
+        <h2>Saved transaction paths</h2>
+        <p id="snapshot"></p>
+        <label>Bitcoin address to recover to<input id="destination" autocomplete="off" spellcheck="false" /></label>
+        <button id="prepare">Prepare Bitcoin exit</button>
+        <p>
+          Preparation does not broadcast a transaction. The saved paths cover activity up to the backup date. Missing or
+          newer paths must be recovered from a newer backup.
+        </p>
+      </section>
+      <section id="exit" hidden>
+        <h2>Review your Bitcoin exit</h2>
+        <p id="details"></p>
+        <p>Recover to <code id="target"></code></p>
+        <p>Fee funding address: <code id="funding"></code></p>
+        <p>
+          Network fees require separate Bitcoin funding. Recovery broadcasts the saved transaction paths, waits for
+          confirmations and the exit delay, then sends your bitcoin to the destination above.
+        </p>
+        <button id="save">Save prepared exit</button>
+        <button id="export-sdk">Export for Arkade exit tool</button><button id="execute">Start Bitcoin recovery</button
+        ><button id="stop" hidden>Pause recovery</button>
+      </section>
+      <p id="error" role="alert"></p>
+      <p id="status" role="status"></p>
+      <pre id="events" aria-live="polite"></pre>
+    </main>
+    <script type="module" src="./recovery.js"></script>
+  </body>
+</html>

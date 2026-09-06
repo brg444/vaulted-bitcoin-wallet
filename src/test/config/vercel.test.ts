@@ -59,6 +59,10 @@ describe('Vercel worker caching', () => {
         source: '/v1/light/enroll/:phase',
         destination: '/api/gateway?route=light-enroll&phase=:phase',
       })
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/light/backup/:phase',
+        destination: '/api/gateway?route=light-backup&phase=:phase',
+      })
     },
   )
 

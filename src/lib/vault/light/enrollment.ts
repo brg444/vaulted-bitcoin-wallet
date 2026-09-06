@@ -24,7 +24,7 @@ export const LIGHT_STAGE_STORE = 'vaulted-light:pending-v1'
 export interface LightEnrollment {
   descriptor: LightDescriptor
   enrollment: EnrollmentSecrets
-  recoveryBackup: LightKeyBackup
+  recoveryBackup?: LightKeyBackup
 }
 export interface LightEnrollmentRequest {
   handle: string
@@ -88,8 +88,8 @@ export function validateLightEnrollment(value: unknown): LightEnrollment {
   )
     throw new Error('Light credential does not match its descriptor')
   const passkeyBackup = validateLightKeyBackup(enrollment.lightKeyBackup, descriptor)
-  const recoveryBackup = validateLightKeyBackup(record.recoveryBackup, descriptor)
-  if (passkeyBackup.purpose !== 'passkey-prf' || recoveryBackup.purpose !== 'recovery-secret')
+  const recoveryBackup = record.recoveryBackup ? validateLightKeyBackup(record.recoveryBackup, descriptor) : undefined
+  if (passkeyBackup.purpose !== 'passkey-prf' || (recoveryBackup && recoveryBackup.purpose !== 'recovery-secret'))
     throw new Error('Light backup purposes do not match')
   try {
     p256.Point.fromHex(enrollment.webauthnP256)
@@ -109,7 +109,7 @@ export function validateLightEnrollment(value: unknown): LightEnrollment {
       ciphertext: passkeyBackup.ciphertext,
       lightKeyBackup: passkeyBackup,
     },
-    recoveryBackup,
+    ...(recoveryBackup ? { recoveryBackup } : {}),
   }
 }
 
@@ -121,6 +121,7 @@ export function loadLightEnrollment(): LightEnrollment | null {
 export async function beginLightEnrollment(
   selected: LightPolicy,
   invite = '',
+  automaticBackup = false,
 ): Promise<{ pending: PendingLightEnrollment; recoverySecret: string }> {
   const publicStatus = await fetchPublicStatus()
   const rpId = publicStatus.rpId
@@ -159,6 +160,11 @@ export async function beginLightEnrollment(
     }),
   })) as PublicKeyCredential | null
   if (!credential) throw new Error('Passkey setup was cancelled')
+  if (
+    automaticBackup &&
+    !(new Uint8Array((credential.response as AuthenticatorAttestationResponse).getAuthenticatorData())[32] & 0x08)
+  )
+    throw new Error('Choose a passkey provider that supports syncing between devices for Light automatic backup')
   let prf = prfFrom(credential)
   if (!prf) {
     const assertion = (await navigator.credentials.get({
@@ -215,7 +221,9 @@ export async function beginLightEnrollment(
       throw new Error('Light descriptor changed during setup')
     request.descriptorHash = proposed.descriptorHash
     const passkeyBackup = await wrapLightOwnerKey(owner, prf, 'passkey-prf', descriptor)
-    const recoveryBackup = await wrapLightOwnerKey(owner, recovery, 'recovery-secret', descriptor)
+    const recoveryBackup = automaticBackup
+      ? undefined
+      : await wrapLightOwnerKey(owner, recovery, 'recovery-secret', descriptor)
     const enrollment: EnrollmentSecrets = {
       vaultId: descriptor.vaultId,
       credId: request.credentialId,
@@ -229,7 +237,7 @@ export async function beginLightEnrollment(
     const pending: PendingLightEnrollment = { descriptor, enrollment, recoveryBackup, token, request }
     // Neither the owner scalar, PRF nor recovery secret is written to browser storage.
     localStorage.setItem(LIGHT_STAGE_STORE, JSON.stringify(pending))
-    return { pending, recoverySecret: hex.encode(recovery) }
+    return { pending, recoverySecret: automaticBackup ? '' : hex.encode(recovery) }
   } finally {
     zeroBytes(owner, recovery, prf, direct?.scalar as Uint8Array)
   }
@@ -246,9 +254,9 @@ export async function verifyLightRecoverySecret(record: LightEnrollment, secret:
   }
 }
 
-export async function finishLightEnrollment(pending: PendingLightEnrollment, secret: string) {
+export async function finishLightEnrollment(pending: PendingLightEnrollment, secret = '') {
   const valid = validateLightEnrollment(pending)
-  await verifyLightRecoverySecret(valid, secret)
+  if (valid.recoveryBackup) await verifyLightRecoverySecret(valid, secret)
   const response = await post<unknown>('finish', pending.token, pending.request)
   const status = lightStatusMatchesDescriptor(
     parseStatusJson(JSON.stringify(response), valid.descriptor.vaultId),

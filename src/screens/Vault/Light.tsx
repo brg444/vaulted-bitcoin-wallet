@@ -1,12 +1,22 @@
+import { lightBackupScheduler } from '../../lib/vault/light/backupScheduler'
+import { openLightCloudBackup, syncLightCloudBackup, type LightBackupSession } from '../../lib/vault/light/cloudBackup'
+import { encryptLightBackup, openLocalLightBackup, lightBackupKey } from '../../lib/vault/light/backupCodec'
+import { unlockLightWithPasskey } from '../../lib/vault/light/passkey'
 import type { ExecutorEvent } from '@arkade-os/sdk'
 import { networkPins } from '../../lib/vault/networkPins'
 import { lightExitDelayLabel, lightRecoveryProgress } from '../../lib/vault/light/recoveryProgress'
 import { checkLightRenewal, renewLightSpending } from '../../lib/vault/light/renewal'
 import type { LightRenewalPlan } from '../../lib/vault/light/renewalTypes'
 import { lightRenewalTiming } from '../../lib/vault/light/renewalTiming'
-import { captureLightRecoveryArchive, validateLightRecoveryArchive } from '../../lib/vault/light/recoveryArchive'
 import {
-  prepareLightRecoveryFile,
+  captureLightRecoveryArchive,
+  loadLightRecoveryArchive,
+  storeLightRecoveryArchive,
+  validateLightRecoveryArchive,
+} from '../../lib/vault/light/recoveryArchive'
+import {
+  prepareLightRecoveryWithOwner,
+  executeLightRecoveryWithOwner,
   prepareLightRecoveryWithSecret,
   validateLightRecoveryFile,
   executeLightRecovery,
@@ -57,7 +67,6 @@ import {
   saveWatchedSavings,
   type WatchedSavingsAddress,
 } from '../../lib/vault/light/watchSavings'
-import { unlockPhoneBip340 } from '../../lib/vault/savingsSpend'
 import {
   fetchVaultWalletVtxoSnapshot,
   subscribeVaultWalletEvents,
@@ -82,6 +91,7 @@ import './light.css'
 type View =
   | 'setup'
   | 'backup'
+  | 'auto-backup'
   | 'unlock'
   | 'home'
   | 'receive'
@@ -116,6 +126,16 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [pending, setPending] = useState<PendingLightEnrollment | null>(null)
   const [setupExpired, setSetupExpired] = useState(false)
   const restoreRead = useRef(0)
+  const cloudSession = useRef<LightBackupSession | null>(null)
+  const [cloudSavedAt, setCloudSavedAt] = useState('')
+  const [cloudError, setCloudError] = useState('')
+  const [passkeyRecovery, setPasskeyRecovery] = useState(false)
+  useEffect(
+    () => () => {
+      cloudSession.current = null
+    },
+    [],
+  )
   const backupRead = useRef(0)
   const [recoverySecret, setRecoverySecret] = useState('')
   const [confirmation, setConfirmation] = useState('')
@@ -152,34 +172,51 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     if (!record || !status || view === 'unlock' || view === 'emergency') return
     let active = true
-    const capture = () => {
-      if (document.visibilityState === 'hidden') return
-      void captureLightRecoveryArchive(record.descriptor)
-        .then((archive) => {
+    const scheduler = lightBackupScheduler(
+      async () => {
+        if (document.visibilityState === 'hidden') return
+        const current = await fetchVaultWalletVtxoSnapshot(status)
+        if (!current.recoveryVtxos) throw new Error('Wallet output snapshot is unavailable')
+        const archive = await captureLightRecoveryArchive(record.descriptor, current.recoveryVtxos)
+        const coins = validateLightRecoveryArchive(archive, record.descriptor).coins
+        if (!active) return
+        setRecoveryDataDate(archive.capturedAt)
+        setRenewalTiming(lightRenewalTiming(coins))
+        setRecoveryDataError('')
+        const session = cloudSession.current
+        if (session) {
+          const saved = await syncLightCloudBackup(session, archive)
           if (active) {
-            setRecoveryDataDate(archive.capturedAt)
-            setRenewalTiming(lightRenewalTiming(validateLightRecoveryArchive(archive, record.descriptor).coins))
-            setRecoveryDataError('')
+            setCloudSavedAt(saved.createdAt)
+            setCloudError('')
           }
-        })
-        .catch(() => {
-          if (active) {
-            setRenewalTiming(null)
-            setRecoveryDataError(
-              'Recovery data could not be updated. Keep this wallet open and reconnect before updating your recovery file.',
-            )
-          }
-        })
-    }
-    capture()
-    const timer = window.setInterval(capture, 30_000)
-    window.addEventListener('focus', capture)
+        }
+      },
+      (error) => {
+        if (active) {
+          setRecoveryDataError(
+            error instanceof Error ? error.message : 'Transaction recovery data could not be updated',
+          )
+          setCloudError('Backup update is waiting for complete transaction paths or a cloud connection.')
+        }
+      },
+    )
+    scheduler.request()
+    const unsubscribe = subscribeVaultWalletEvents(status, scheduler.request)
+    const timer = window.setInterval(scheduler.request, 30_000)
+    window.addEventListener('focus', scheduler.request)
+    window.addEventListener('online', scheduler.request)
+    document.addEventListener('visibilitychange', scheduler.request)
     return () => {
       active = false
+      scheduler.dispose()
+      unsubscribe()
       window.clearInterval(timer)
-      window.removeEventListener('focus', capture)
+      window.removeEventListener('focus', scheduler.request)
+      window.removeEventListener('online', scheduler.request)
+      document.removeEventListener('visibilitychange', scheduler.request)
     }
-  }, [record, status?.vaultId, view === 'unlock', view === 'emergency', snapshot])
+  }, [record, status?.vaultId, view === 'unlock', view === 'emergency'])
 
   useScreenMotion(root, renewalReview ? 'renewal-review' : view)
   const intent = useIntentPress(renewalReview ? 'renewal-review' : view)
@@ -217,7 +254,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const staged = loadPendingLightEnrollment()
         if (staged) {
           setPending(staged)
-          setView('backup')
+          setView(staged.recoveryBackup ? 'backup' : 'auto-backup')
         }
       }
     } catch (e) {
@@ -277,6 +314,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       window.removeEventListener('focus', update)
     }
   }, [record, status?.vaultId, view === 'unlock', refresh]) // wallet identity changes only after an explicit restore
+  const captureCurrent = async (saved: LightEnrollment, currentStatus: VaultStatus) => {
+    const current = await fetchVaultWalletVtxoSnapshot(currentStatus)
+    if (!current.recoveryVtxos) throw new Error('Wallet output snapshot is unavailable')
+    return captureLightRecoveryArchive(saved.descriptor, current.recoveryVtxos)
+  }
   const unlock = () =>
     run(async () => {
       if (!record) throw new Error('Import your Light recovery file first')
@@ -284,12 +326,78 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
         record.descriptor,
       )
-      const secret = await unlockPhoneBip340(record.enrollment, st)
-      secret.fill(0)
+      const session = await openLightCloudBackup(record)
+      cloudSession.current = session
+      const archive = await captureCurrent(record, st)
+      const saved = await syncLightCloudBackup(session, archive)
+      setCloudSavedAt(saved.createdAt)
+      setCloudError('')
       setStatus(st)
       setWatched(loadWatchedSavings(st.vaultId, record.descriptor.network))
       setView('home')
       await refresh()
+    })
+  const activateAutomaticBackup = async (staged: PendingLightEnrollment) => {
+    const next = await finishLightEnrollment(staged)
+    setRecord(next.record)
+    const session = await openLightCloudBackup(next.record)
+    cloudSession.current = session
+    const archive = await captureCurrent(next.record, next.status)
+    const saved = await syncLightCloudBackup(session, archive)
+    setCloudSavedAt(saved.createdAt)
+    setCloudError('')
+    setStatus(next.status)
+    setPending(null)
+    setView('home')
+  }
+  const restoreCloud = () =>
+    run(async () => {
+      const session = await openLightCloudBackup()
+      if (!session.file)
+        throw new Error('No cloud backup was found. Open this wallet on its original device to enable backup.')
+      const st = lightStatusMatchesDescriptor(
+        await fetchVaultStatusUnpinned(undefined, session.record.descriptor.vaultId),
+        session.record.descriptor,
+      )
+      localStorage.setItem(LIGHT_LOCAL_STORE, JSON.stringify(session.record))
+      cloudSession.current = session
+      setRecord(session.record)
+      setStatus(st)
+      setCloudSavedAt(session.file.createdAt)
+      setCloudError('')
+      setView('home')
+    })
+  const saveLocalBackup = () =>
+    run(async () => {
+      if (!record) return
+      const owner = await unlockLightWithPasskey(record)
+      try {
+        const key = await lightBackupKey(owner, record)
+        if (!status) throw new Error('Open the wallet before saving a backup')
+        const archive = await captureCurrent(record, status)
+        const saved = await encryptLightBackup(
+          { ...record, name: 'vaulted-light-recovery', version: 1, createdAt: archive.capturedAt, archive },
+          key,
+        )
+        downloadJSON(saved, `vaulted-light-${record.descriptor.vaultId.slice(0, 8)}.json`)
+        setNotice('Encrypted backup saved with current Bitcoin exit paths')
+      } finally {
+        owner.fill(0)
+      }
+    })
+  const unlockLocally = () =>
+    run(async () => {
+      if (!record) return
+      const key = await unlockLightWithPasskey(record)
+      key.fill(0)
+      const st = lightStatusMatchesDescriptor(
+        await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
+        record.descriptor,
+      )
+      cloudSession.current = null
+      setStatus(st)
+      setCloudError('Cloud backup is paused. Open Security to reconnect.')
+      setView('home')
     })
   const backup = (saved: LightEnrollment) => {
     downloadJSON(
@@ -364,13 +472,14 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               loading={busy}
               onClick={() =>
                 void run(async () => {
-                  const next = await beginLightEnrollment(policy, invite)
+                  const next = await beginLightEnrollment(policy, invite, true)
                   setPending(next.pending)
                   setRecoverySecret(next.recoverySecret)
                   setConfirmation('')
                   setDownloaded(false)
                   setBackupFileVerified(false)
-                  setView('backup')
+                  setView('auto-backup')
+                  await activateAutomaticBackup(next.pending)
                 })
               }
             />
@@ -410,7 +519,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           ) : null}
         </div>
         <p className='qg-copy'>
-          These limits are fixed when you create your wallet. Next, you’ll save and verify your recovery backup.
+          Your encrypted wallet backup is saved automatically. Keep access to the passkey provider you choose so you can
+          restore on another device.
         </p>
         <details className='light-details'>
           <summary>About Light</summary>
@@ -421,6 +531,25 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           <p className='qg-copy'>Savings can show an address from another wallet, which controls those funds.</p>
         </details>
         {mode !== null && !available ? <p className='qg-copy'>Light is not available on this deployment yet.</p> : null}
+      </QgScreen>
+    )
+  else if (view === 'auto-backup' && pending)
+    content = (
+      <QgScreen
+        title='Protect your access'
+        footer={
+          <QgPrimary
+            label='Finish automatic backup'
+            loading={busy}
+            onClick={() => void run(() => activateAutomaticBackup(pending))}
+          />
+        }
+      >
+        <h1>Saving your wallet backup</h1>
+        <p className='qg-copy'>
+          Approve with your passkey to finish saving your encrypted backup. Your wallet opens once the saved copy has
+          been verified.
+        </p>
       </QgScreen>
     )
   else if (view === 'backup' && pending)
@@ -537,6 +666,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       >
         <h1>Welcome back</h1>
         <p className='qg-copy'>Use face recognition, a fingerprint or your device PIN to unlock your wallet key.</p>
+        <QgTextButton label='Unlock on this device' onClick={() => void unlockLocally()} />
         <QgTextButton label='Restore from a recovery file' onClick={() => navigate('restore')} />
       </QgScreen>
     )
@@ -552,14 +682,21 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             disabled={!restoreRaw}
             onClick={() =>
               void run(async () => {
-                const restored = validateLightEnrollment(JSON.parse(restoreRaw))
+                const parsed = JSON.parse(restoreRaw)
+                const opened = parsed.name === 'vaulted-light-backup' ? await openLocalLightBackup(parsed) : null
+                const restored = opened ? validateLightEnrollment(opened.file) : validateLightEnrollment(parsed)
                 const st = lightStatusMatchesDescriptor(
                   await fetchVaultStatusUnpinned(undefined, restored.descriptor.vaultId),
                   restored.descriptor,
                 )
-                const key = await unlockPhoneBip340(restored.enrollment, st)
-                key.fill(0)
+                if (!opened) {
+                  const key = await unlockLightWithPasskey(restored)
+                  key.fill(0)
+                }
+                if (opened?.file.archive) await storeLightRecoveryArchive(opened.file.archive, restored.descriptor)
                 localStorage.setItem(LIGHT_LOCAL_STORE, JSON.stringify(restored))
+                cloudSession.current = null
+                setCloudError('Local backup restored. Open Security to reconnect cloud backup.')
                 setRecord(restored)
                 setStatus(st)
                 setView('home')
@@ -570,6 +707,14 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         }
       >
         <h1>Restore your wallet</h1>
+        <QgPrimary
+          label='Restore with passkey'
+          loading={busy}
+          icon={<Fingerprint />}
+          onClick={() => void restoreCloud()}
+        />
+        <p className='qg-copy'>Use the passkey saved with your passkey provider to open your encrypted cloud backup.</p>
+        <h2>Use a local backup</h2>
         <p className='qg-copy'>
           Choose your Light recovery file and approve with the same passkey. Your receiving address and spending limits
           stay the same.
@@ -600,11 +745,15 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           }}
         />
         <QgSecondary
-          label='I no longer have my passkey'
+          label='Recover directly to Bitcoin'
           disabled={!restoreRaw}
           onClick={() =>
             void run(async () => {
-              const saved = validateLightRecoveryFile(JSON.parse(restoreRaw))
+              const parsed = JSON.parse(restoreRaw)
+              const encrypted = parsed.name === 'vaulted-light-backup'
+              const saved = encrypted ? (await openLocalLightBackup(parsed)).file : validateLightRecoveryFile(parsed)
+              setPasskeyRecovery(encrypted || !saved.recoveryBackup)
+              setUseSavedRecovery(Boolean(saved.archive))
               setRecoveryFile(saved)
               setConfirmation('')
               setView('emergency')
@@ -612,8 +761,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           }
         />
         <p className='qg-copy'>
-          If you no longer have the passkey, use your recovery secret with the emergency recovery tools. A recovery
-          secret does not create a replacement passkey for this wallet.
+          Your local backup includes the saved paths for a Bitcoin exit without Vaulted’s approval or the Operator. Keep
+          access to your original passkey to unlock it. Older recovery files can still use their recovery code.
         </p>
       </QgScreen>
     )
@@ -629,16 +778,22 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             <QgPrimary
               label='Start Bitcoin recovery'
               loading={busy}
-              disabled={!confirmation}
+              disabled={!passkeyRecovery && !confirmation}
               onClick={() =>
                 void run(async () => {
                   const controller = new AbortController()
                   recoveryController.current = controller
                   setRecoveryEvents([])
                   try {
-                    await executeLightRecovery(recoveryFile, confirmation, controller.signal, (event) =>
-                      setRecoveryEvents((prev) => [...prev.slice(-7), event]),
-                    )
+                    const onEvent = (event: ExecutorEvent) => setRecoveryEvents((prev) => [...prev.slice(-7), event])
+                    if (passkeyRecovery) {
+                      const owner = await unlockLightWithPasskey(recoveryFile)
+                      try {
+                        await executeLightRecoveryWithOwner(recoveryFile, owner, controller.signal, onEvent)
+                      } finally {
+                        owner.fill(0)
+                      }
+                    } else await executeLightRecovery(recoveryFile, confirmation, controller.signal, onEvent)
                     setNotice('Bitcoin recovery completed')
                   } catch (error) {
                     if (!(error instanceof Error) || error.name !== 'AbortError') throw error
@@ -654,15 +809,30 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             <QgPrimary
               label='Prepare emergency exit'
               loading={busy}
-              disabled={!confirmation}
+              disabled={!passkeyRecovery && !confirmation}
               onClick={() =>
                 void run(async () => {
-                  const next = await prepareLightRecoveryWithSecret(
-                    recoveryFile,
-                    confirmation,
-                    recoveryDestination.trim(),
-                    useSavedRecovery,
-                  )
+                  let next: LightRecoveryFile
+                  if (passkeyRecovery) {
+                    const owner = await unlockLightWithPasskey(recoveryFile)
+                    try {
+                      next = await prepareLightRecoveryWithOwner(
+                        recoveryFile,
+                        owner,
+                        recoveryDestination.trim(),
+                        recoveryFile.archive,
+                        useSavedRecovery,
+                      )
+                    } finally {
+                      owner.fill(0)
+                    }
+                  } else
+                    next = await prepareLightRecoveryWithSecret(
+                      recoveryFile,
+                      confirmation,
+                      recoveryDestination.trim(),
+                      useSavedRecovery,
+                    )
                   if (!next.exitPackage) throw new Error('No unspent Light outputs were found')
                   setRecoveryFile(next)
                   downloadJSON(next, `vaulted-light-exit-${next.descriptor.vaultId.slice(0, 8)}.json`)
@@ -675,9 +845,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <p className='qg-eyebrow'>Owner recovery</p>
         <h1>Recover to Bitcoin</h1>
         <p className='qg-copy'>
-          Use the secret you saved during setup to recover without your passkey. A prepared exit needs only a Bitcoin
-          explorer. To prepare a new exit while the Operator is unavailable, use recovery data previously saved on this
-          device or included in your file.
+          {passkeyRecovery
+            ? 'Use your passkey to unlock the backup and recover directly to Bitcoin.'
+            : 'Use your saved recovery code to recover without your passkey.'}{' '}
+          A prepared exit needs only a Bitcoin explorer. Saved transaction paths let you prepare an exit while the
+          Operator is unavailable.
         </p>
         {!recoveryFile.exitPackage ? (
           <label className='light-field'>
@@ -710,15 +882,17 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             after that time are not covered by this file.
           </p>
         ) : null}
-        <label className='light-field'>
-          Recovery secret
-          <textarea
-            value={confirmation}
-            onChange={(e) => setConfirmation(e.target.value)}
-            autoComplete='off'
-            spellCheck={false}
-          />
-        </label>
+        {!passkeyRecovery ? (
+          <label className='light-field'>
+            Recovery code
+            <textarea
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              autoComplete='off'
+              spellCheck={false}
+            />
+          </label>
+        ) : null}
         {recoveryFile.exitPackage ? (
           <>
             <div className='light-panel'>
@@ -805,6 +979,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           <p className='qg-copy light-allowance'>
             {status ? sats(status.periodRemaining) : '…'} remaining in your limit
           </p>
+          {cloudError ? (
+            <p className='qg-copy' role='status'>
+              Cloud backup needs attention. Open Security to retry.
+            </p>
+          ) : null}
           {renewalTiming?.due ? (
             <div className='light-panel'>
               <Clock3 />
@@ -1059,6 +1238,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             label='Lock wallet'
             onClick={() =>
               void run(async () => {
+                cloudSession.current = null
+                setCloudSavedAt('')
                 await shutdownVaultWalletWorker(record.descriptor.vaultId)
                 setSnapshot(null)
                 setStatus(null)
@@ -1152,44 +1333,62 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             })
           }
         />
-        <label className='light-field'>
-          Bitcoin recovery destination
-          <input
-            value={recoveryDestination}
-            onChange={(e) => setRecoveryDestination(e.target.value)}
-            autoComplete='off'
-            spellCheck={false}
-          />
-        </label>
+        <h2>Wallet backup</h2>
         <p className='qg-copy'>
-          Use a receiving address from another wallet you control. The prepared emergency exit will send your recovered
-          bitcoin there.
+          {cloudError ||
+            (cloudSavedAt
+              ? `Encrypted cloud backup saved ${new Date(cloudSavedAt).toLocaleString()}.`
+              : 'Unlock with your passkey to enable automatic cloud backup.')}
         </p>
         <QgSecondary
-          label='Download recovery file'
+          label='Update cloud backup'
+          disabled={busy}
           onClick={() =>
             void run(async () => {
-              if (!status) throw new Error('Unlock the wallet first')
-              const file = await prepareLightRecoveryFile(record, status, recoveryDestination.trim())
-              downloadJSON(file, `vaulted-light-${record.descriptor.vaultId.slice(0, 8)}.json`)
-              setNotice(
-                file.exitPackage
-                  ? 'Recovery file updated for your current balance'
-                  : 'Recovery file saved. Update it after receiving funds.',
-              )
+              const session = await openLightCloudBackup(record)
+              cloudSession.current = session
+              if (!status) throw new Error('Open the wallet before saving a backup')
+              const archive = await captureCurrent(record, status)
+              const saved = await syncLightCloudBackup(session, archive)
+              setCloudSavedAt(saved.createdAt)
+              setCloudError('')
             })
           }
         />
+        <QgSecondary label='Save a local backup' disabled={busy} onClick={() => void saveLocalBackup()} />
         <p className='qg-copy'>
-          The file contains encrypted keys. Keep your recovery secret separately. Emergency recovery also needs current
-          transaction paths and Bitcoin network fees. Download a new file after receiving, paying, or renewing.
+          Your backup includes the saved transaction paths for a unilateral Bitcoin exit. Your passkey unlocks it;
+          Vaulted cannot decrypt it. Keep access to your passkey provider.
+        </p>
+        <p className='qg-copy'>
+          A local file covers activity up to the time it was saved. Bitcoin recovery requires network fees and the exit
+          waiting period.
         </p>
         <p className='qg-copy'>
           {recoveryDataError ||
             (recoveryDataDate
-              ? `Recovery data saved on this device ${new Date(recoveryDataDate).toLocaleString()}. Keep an updated file elsewhere in case you lose this device.`
-              : 'Saving recovery data on this device…')}
+              ? `Transaction paths saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
+              : 'Saving transaction paths…')}
         </p>
+        <QgTextButton
+          label='Recover directly to Bitcoin'
+          onClick={() =>
+            void run(async () => {
+              const archive = await loadLightRecoveryArchive(record.descriptor)
+              if (!archive) throw new Error('Import a current backup to recover')
+              setRecoveryFile({
+                ...record,
+                name: 'vaulted-light-recovery',
+                version: 1,
+                createdAt: archive.capturedAt,
+                archive,
+              })
+              setPasskeyRecovery(true)
+              setUseSavedRecovery(true)
+              setView('emergency')
+            })
+          }
+        />
         <QgTextButton label='Switch wallet' onClick={onExit} />
       </QgScreen>
     )

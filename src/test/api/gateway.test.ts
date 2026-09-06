@@ -104,6 +104,19 @@ describe('same-origin authorizer gateway', () => {
     }
   })
 
+  it('preserves connector operation queries and all four Light backup aliases', () => {
+    expect(publicAuthorizerPath('/api/v1/connector-operation?vaultId=a&operationId=b')).toBe(
+      '/v1/connector/operation?vaultId=a&operationId=b',
+    )
+    expect(publicAuthorizerPath('/api/v1/connector-withdraw-authorize?operationId=b')).toBe(
+      '/v1/connector/withdraw/authorize?operationId=b',
+    )
+    for (const phase of ['challenge', 'open', 'read', 'write']) {
+      expect(publicAuthorizerPath(`/api/gateway?route=light-backup&phase=${phase}`)).toBe(`/v1/light/backup/${phase}`)
+    }
+    expect(allowAuthorizerPath(publicAuthorizerPath('/api/gateway?route=light-backup&phase=sign'))).toBe(false)
+  })
+
   it('only proxies health, readiness, and /v1', () => {
     expect(allowAuthorizerPath('/health')).toBe(true)
     expect(allowAuthorizerPath('/ready')).toBe(true)
@@ -240,6 +253,47 @@ describe('gateway response cache policy', () => {
     )
     expect(result.response.statusCode).toBe(503)
     expect(result.body()?.toString()).toBe(JSON.stringify({ ok: false, arkadeOrigin: 'configured' }))
+  })
+
+  it('allows large backup payloads without increasing connector or challenge request limits', async () => {
+    const body = 'a'.repeat(MAX_GATEWAY_BYTES + 1)
+    const fetchMock = vi.fn().mockImplementation(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    for (const url of ['/v1/light/backup/write?request=1', '/api/gateway?route=light-backup&phase=write']) {
+      const result = gatewayResponse()
+      await gatewayHandler(gatewayRequest({ method: 'POST', url, body }), result.response)
+      expect(result.response.statusCode).toBe(200)
+    }
+    fetchMock.mockClear()
+    for (const url of ['/api/v1/connector-withdraw-authorize', '/v1/light/backup/challenge', '/v1/light/backup/open']) {
+      const result = gatewayResponse()
+      await gatewayHandler(gatewayRequest({ method: 'POST', url, body }), result.response)
+      expect(result.response.statusCode).toBe(413)
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('bounds large backup responses by route even when the request has a query', async () => {
+    const payload = 'a'.repeat(MAX_GATEWAY_BYTES + 1)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => new Response(payload)),
+    )
+    for (const phase of ['open', 'read', 'write']) {
+      const result = gatewayResponse()
+      await gatewayHandler(
+        gatewayRequest({ method: 'POST', url: `/v1/light/backup/${phase}?request=1`, body: '{}' }),
+        result.response,
+      )
+      expect(result.response.statusCode).toBe(200)
+      expect(result.body()?.length).toBe(payload.length)
+    }
+    const connector = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({ url: '/api/v1/connector-operation?vaultId=a&operationId=b' }),
+      connector.response,
+    )
+    expect(connector.response.statusCode).toBe(502)
   })
 
   it('forwards open enrollment through the flat gateway without a user invite', async () => {

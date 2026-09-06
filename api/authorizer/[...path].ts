@@ -180,6 +180,8 @@ export function publicAuthorizerPath(url = ''): string {
     const phase = params.get('phase') || ''
     if (route === 'light-renew' && new Set(['prepare', 'register', 'final', 'status', 'release']).has(phase))
       return `/v1/light/renew/${phase}`
+    if (route === 'light-backup' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
+      return `/v1/light/backup/${phase}`
     if (route === 'light-enroll' && new Set(['start', 'propose', 'finish']).has(phase))
       return `/v1/light/enroll/${phase}`
     if (route === 'board' && BOARD_PHASES.has(phase)) return `/v1/vtxo/board/${phase}`
@@ -302,7 +304,7 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
 
   let body: Buffer | undefined
   try {
-    body = await readBoundedRequest(req)
+    body = await readBoundedRequest(req, pathOnly === '/v1/light/backup/write' ? 3_100_000 : MAX_GATEWAY_BYTES)
   } catch {
     jsonError(res, 413, 'API request too large')
     return
@@ -339,7 +341,10 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
   }
   let payload: Buffer
   try {
-    payload = await readBoundedUpstream(upstream)
+    payload = await readBoundedUpstream(
+      upstream,
+      /^\/v1\/light\/backup\/(open|read|write)$/.test(pathOnly) ? 3_100_000 : MAX_GATEWAY_BYTES,
+    )
   } catch {
     jsonError(res, 502, 'API response too large')
     return
