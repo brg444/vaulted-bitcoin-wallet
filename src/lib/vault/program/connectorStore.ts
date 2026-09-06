@@ -198,6 +198,7 @@ function validatedRecord(expected: ConnectorExpectedIdentity, raw: unknown) {
   // A saved Savings witness is re-validated on every load, even before any
   // signed transaction exists.
   if (record.savingsWitness) {
+    if (!record.signaturesMayHaveIssued) throw new Error('Savings witness without retained ownership')
     const hardware = prepared.forHardware(record.savingsWitness.map((item) => hex.decode(item)))
     if (record.signedTxHex) {
       const derived = hardware.accept(record.signedTxHex)
@@ -208,6 +209,7 @@ function validatedRecord(expected: ConnectorExpectedIdentity, raw: unknown) {
   } else if (record.signedTxHex) {
     throw new Error('connector Savings witness required before signed tx')
   }
+  if (record.txid && !record.signedTxHex) throw new Error('connector txid without signed transaction')
   return { prepared, record, candidateTxid }
 }
 
@@ -563,4 +565,108 @@ export function loadConnectorHistory(
 ) {
   const snap = snapshotIdentity(expected)
   return withConnectorLock(snap.vaultId, () => readConnectorHistory(snap, storage), locks)
+}
+
+/** Exact signing evidence, including resolved operations that may reappear after a reorg. */
+export interface ConnectorRecoveryJournal {
+  version: 1
+  pending: ConnectorPendingRecord | null
+  history: ConnectorPendingRecord[]
+}
+
+export function validateConnectorRecoveryJournal(expected: ConnectorExpectedIdentity, raw: unknown) {
+  const journal = JSON.parse(JSON.stringify(raw)) as ConnectorRecoveryJournal
+  if (!journal || journal.version !== 1 || !Array.isArray(journal.history) || journal.history.length > 1024)
+    throw new Error('invalid connector recovery journal')
+  if (JSON.stringify(journal).length > 12_000_000) throw new Error('connector recovery journal too large')
+  if (journal.pending !== null) validatedRecord(expected, journal.pending)
+  const seen = new Set<string>()
+  for (const record of journal.history) {
+    const { candidateTxid } = validatedRecord(expected, record)
+    if (seen.has(candidateTxid)) throw new Error('duplicate connector recovery history')
+    seen.add(candidateTxid)
+  }
+  return journal
+}
+
+export function exportConnectorRecoveryJournal(
+  expected: ConnectorExpectedIdentity,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  return withConnectorLock(
+    snap.vaultId,
+    () =>
+      validateConnectorRecoveryJournal(snap, {
+        version: 1,
+        pending: readValidated(snap, storage)?.record ?? null,
+        history: readConnectorHistory(snap, storage).map(({ record }) => record),
+      }),
+    locks,
+  )
+}
+
+function mergeRecoveryRecord(
+  expected: ConnectorExpectedIdentity,
+  current: ConnectorPendingRecord,
+  incoming: ConnectorPendingRecord,
+): ConnectorPendingRecord {
+  const a = validatedRecord(expected, current)
+  const b = validatedRecord(expected, incoming)
+  requireCandidateMatch(a, b.candidateTxid)
+  const merged = {
+    ...current,
+    signaturesMayHaveIssued: current.signaturesMayHaveIssued || incoming.signaturesMayHaveIssued,
+  }
+  for (const field of ['operationId', 'phoneSignedPsbt', 'savingsWitness', 'signedTxHex', 'txid'] as const) {
+    if (
+      current[field] !== undefined &&
+      incoming[field] !== undefined &&
+      JSON.stringify(current[field]) !== JSON.stringify(incoming[field])
+    )
+      throw new Error(`conflicting connector recovery ${field}`)
+  }
+  const result = {
+    ...incoming,
+    ...Object.fromEntries(Object.entries(merged).filter(([, value]) => value !== undefined)),
+  }
+  return validatedRecord(expected, result).record
+}
+
+/** Restore never treats absent data as cancellation or an archive as fresh chain evidence. */
+export function restoreConnectorRecoveryJournal(
+  expected: ConnectorExpectedIdentity,
+  raw: unknown,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  const incoming = validateConnectorRecoveryJournal(snap, raw)
+  return withConnectorLock(
+    snap.vaultId,
+    () => {
+      const current = readValidated(snap, storage)
+      let pending = current?.record ?? null
+      if (incoming.pending) pending = pending ? mergeRecoveryRecord(snap, pending, incoming.pending) : incoming.pending
+      const history = new Map(readConnectorHistory(snap, storage).map((row) => [row.candidateTxid, row.record]))
+      for (const record of incoming.history) {
+        const { candidateTxid } = validatedRecord(snap, record)
+        const prior = history.get(candidateTxid)
+        history.set(candidateTxid, prior ? mergeRecoveryRecord(snap, prior, record) : record)
+      }
+      if (pending) {
+        const { candidateTxid } = validatedRecord(snap, pending)
+        const archived = history.get(candidateTxid)
+        if (archived) pending = mergeRecoveryRecord(snap, pending, archived)
+      }
+      // Validate every merge before the first write. History first means a failed
+      // second write retains evidence and never clears the active operation.
+      const merged = validateConnectorRecoveryJournal(snap, { version: 1, pending, history: [...history.values()] })
+      storage.setItem(connectorHistoryKey(snap.vaultId), JSON.stringify(merged.history))
+      if (merged.pending) writeRecord(snap.vaultId, merged.pending, storage)
+      return merged
+    },
+    locks,
+  )
 }

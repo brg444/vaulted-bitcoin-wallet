@@ -22,6 +22,8 @@ import {
   restoreUnresolvedConnectorOperation,
   loadConnectorHistory,
   withConnectorLock,
+  exportConnectorRecoveryJournal,
+  restoreConnectorRecoveryJournal,
   type ConnectorExpectedIdentity,
   type ConnectorPendingInput,
 } from './connectorStore'
@@ -125,6 +127,49 @@ function vectorInput(
 }
 
 describe('connector durable approval/handoff', () => {
+  it('exports and restores the exact signed transaction on a fresh device', async () => {
+    const { input, expected, payment } = vectorInput()
+    const storage = memoryStorage()
+    const locks = new FakeLockManager()
+    const { candidateTxid } = await preparePendingConnectorOperation(input, expected, storage, locks)
+    await markConnectorSignaturesMayHaveIssued(expected, candidateTxid, storage, locks)
+    await storeConnectorSavingsWitness(expected, candidateTxid, payment.savingsWitness, storage, locks)
+    await storeConnectorSignedTx(expected, candidateTxid, payment.finalTx, storage, locks)
+    const journal = await exportConnectorRecoveryJournal(expected, storage, locks)
+    const fresh = memoryStorage()
+    await restoreConnectorRecoveryJournal(expected, journal, fresh, locks)
+    expect((await loadPendingConnectorOperation(expected, fresh, locks))?.record).toEqual(journal.pending)
+    expect((await loadPendingConnectorOperation(expected, fresh, locks))?.phase).toBe('signed')
+  })
+
+  it('keeps signing ambiguity when restoring an older or empty backup', async () => {
+    const { input, expected } = vectorInput()
+    const storage = memoryStorage()
+    const locks = new FakeLockManager()
+    const { candidateTxid } = await preparePendingConnectorOperation(input, expected, storage, locks)
+    const older = await exportConnectorRecoveryJournal(expected, storage, locks)
+    await markConnectorSignaturesMayHaveIssued(expected, candidateTxid, storage, locks)
+    await restoreConnectorRecoveryJournal(expected, older, storage, locks)
+    await restoreConnectorRecoveryJournal(expected, { version: 1, pending: null, history: [] }, storage, locks)
+    expect((await loadPendingConnectorOperation(expected, storage, locks))?.phase).toBe('signing')
+    await expect(cancelPendingConnectorOperation(expected, candidateTxid, storage, locks)).rejects.toThrow()
+  })
+
+  it('rejects corrupt parents and a conflicting candidate before changing storage', async () => {
+    const { input, expected } = vectorInput()
+    const storage = memoryStorage()
+    const locks = new FakeLockManager()
+    await preparePendingConnectorOperation(input, expected, storage, locks)
+    const journal = await exportConnectorRecoveryJournal(expected, storage, locks)
+    const before = storage.getItem(connectorStoreKey(expected.vaultId))
+    journal.pending!.savings.parentHex = '00'
+    expect(() => restoreConnectorRecoveryJournal(expected, journal, storage, locks)).toThrow()
+    const other = memoryStorage()
+    await preparePendingConnectorOperation({ ...input, amountSats: input.amountSats - 1 }, expected, other, locks)
+    const different = await exportConnectorRecoveryJournal(expected, other, locks)
+    await expect(restoreConnectorRecoveryJournal(expected, different, storage, locks)).rejects.toThrow('stale')
+    expect(storage.getItem(connectorStoreKey(expected.vaultId))).toBe(before)
+  })
   it('restores the exact phone-signed authorization instead of signing again after response loss', async () => {
     const { input, expected } = vectorInput()
     const storage = memoryStorage()
