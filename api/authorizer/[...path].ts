@@ -210,6 +210,8 @@ export function publicAuthorizerPath(url = ''): string {
     if (route === 'ready') return '/ready'
     if (route === 'enroll-session') return '/v1/enroll/session'
     const phase = params.get('phase') || ''
+    if (route === 'vtxo-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
+      return `/v1/vtxo/delegate/${phase}`
     if (route === 'light-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
       return `/v1/light/delegate/${phase}`
     if (route === 'light-renew' && new Set(['prepare', 'register', 'final', 'status', 'release']).has(phase))
@@ -383,7 +385,7 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
   try {
     payload = await readBoundedUpstream(
       upstream,
-      pathOnly === '/v1/light/delegate/status'
+      pathOnly === '/v1/light/delegate/status' || pathOnly === '/v1/vtxo/delegate/status'
         ? 12_500_000
         : /^\/v1\/(light\/backup|recovery-archive)\/(open|read|write)$/.test(pathOnly)
           ? 3_100_000

@@ -10,6 +10,7 @@ import { base64 } from '@scure/base'
 import { normalizeRecoveryChain, packExitArchive, validateExitArchive } from '../recovery/exitArchive'
 import { lightDescriptorDigest, type LightDescriptor } from './contract'
 import { lightExitRepository } from './exitRepository'
+import type { VaultNetwork } from '../constants'
 
 /** A preconfirmed receipt is eligible once its complete committed ancestry exists. */
 export async function requireGuardianInputAncestry(
@@ -18,7 +19,27 @@ export async function requireGuardianInputAncestry(
   info: ArkInfo,
   indexer: IndexerProvider,
 ) {
-  const repository = lightExitRepository(d)
+  return requireDelegationInputAncestryForBinding(
+    {
+      network: d.network,
+      descriptorHash: lightDescriptorDigest(d),
+      scriptPubKey: d.scriptPubKey,
+    },
+    coin,
+    info,
+    indexer,
+    () => lightExitRepository(d),
+  )
+}
+
+export async function requireDelegationInputAncestryForBinding(
+  binding: { network: VaultNetwork; descriptorHash: string; scriptPubKey: string },
+  coin: VirtualCoin,
+  info: ArkInfo,
+  indexer: IndexerProvider,
+  createRepository: () => ReturnType<typeof lightExitRepository>,
+) {
+  const repository = createRepository()
   try {
     const resolver = createExitChainResolver({ indexer, repository })
     const chain = normalizeRecoveryChain(await resolver.getVtxoChain(coin))
@@ -38,14 +59,14 @@ export async function requireGuardianInputAncestry(
     validateExitArchive(
       {
         version: 1,
-        descriptorHash: lightDescriptorDigest(d),
+        descriptorHash: binding.descriptorHash,
         capturedAt: new Date().toISOString(),
         info: packExitArchive(info),
         coins: packExitArchive([coin]),
         branches: { [`${coin.txid}:${coin.vout}`]: chain },
         transactions,
       },
-      { ...d, descriptorHash: lightDescriptorDigest(d) },
+      binding,
     )
   } finally {
     await repository[Symbol.asyncDispose]()

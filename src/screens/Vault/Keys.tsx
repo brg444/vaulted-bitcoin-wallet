@@ -52,6 +52,7 @@ function SecurityTile({
 export default function VaultKeys() {
   const {
     busy,
+    spendingRenewals,
     enablePasskeyLogin,
     hasLocalEnrollment,
     hasRecoveryKit,
@@ -171,6 +172,20 @@ export default function VaultKeys() {
           </HubGroup>
 
           <RecoveryExplanation advanced={protectionTier === 'advanced'} mainnet={status?.network === 'mainnet'} />
+          {spendingRenewals?.available ? (
+            <SecurityTile
+              icon={<Server />}
+              label='Automatic renewal'
+              value={
+                spendingRenewals.error
+                  ? 'Checking coverage'
+                  : `${Object.values(spendingRenewals.operations).filter((operation) => operation.status?.state === 'armed' && operation.status.expiresAt * 1000 > Date.now()).length} scheduled`
+              }
+              detail='Guardian renews authorized Spending outputs while this wallet is closed.'
+              tone={spendingRenewals.error ? 'orange' : 'green'}
+              testId='spending-renewal-status'
+            />
+          ) : null}
           <HubGroup label='Recovery and access'>
             <HubRow title='I lost a key' onClick={() => openRecover('lost', 'keys')} testId='security-lost' />
             {canEnableOther ? (

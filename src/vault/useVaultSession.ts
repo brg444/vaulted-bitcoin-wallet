@@ -1,3 +1,4 @@
+import { renewFromLocalUnlock, setupSpendingRenewals } from '../lib/vault/vtxo/renewalCeremony'
 import { openRecoveryCloudBackup } from '../lib/vault/recovery/cloudBackup'
 import { openLocalRecoveryBackup } from '../lib/vault/recovery/backupCodec'
 import { restoreVaultRecoveryFile } from '../lib/vault/recovery/restore'
@@ -166,6 +167,7 @@ export function useVaultSession({
             )
           }
         }
+        await setupSpendingRenewals(result.status, result.enrollment)
         setScreen('created')
       } catch (error) {
         reportError(humanizeVaultError(error))
@@ -200,7 +202,9 @@ export function useVaultSession({
       const local = enrollment || findStoredEnrollment()
       const localPin = local ? loadAddressPin(localStorage, local.vaultId) : null
       if (local && localPin) {
-        const unlocked = await unlockLocalEnrollment(local)
+        const unlocked = await unlockLocalEnrollment(local, (live, auth, canAuthorizeNew, record) =>
+          renewFromLocalUnlock(live, record, auth, canAuthorizeNew),
+        )
         restoreConnectorPin(unlocked.status)
         setEnrollment(unlocked.enrollment)
         setLocked(false)
@@ -211,6 +215,7 @@ export function useVaultSession({
         bestEffortBrowserWrite(() => saveEnrollment(unlocked.enrollment))
         bestEffortBrowserWrite(() => saveSelectedVaultId(unlocked.enrollment.vaultId))
         bestEffortBrowserWrite(() => setSessionLocked(false))
+        if (live.templateVersion === CONNECTOR_TEMPLATE) await setupSpendingRenewals(live, unlocked.enrollment)
         void restoreMap(unlocked.enrollment, live, setup)
         return
       }
@@ -227,12 +232,15 @@ export function useVaultSession({
         bestEffortBrowserWrite(() => saveEnrollment(local))
         bestEffortBrowserWrite(() => saveSelectedVaultId(local.vaultId))
         bestEffortBrowserWrite(() => setSessionLocked(false))
+        await setupSpendingRenewals(live, local)
         void restoreMap(local, live, setup)
         return
       }
       const selected = loadSelectedVaultId()
       const vaultId = selected || (await discoverVaultIdFromPasskey())
-      const result = await signInWithPasskey(vaultId)
+      const result = await signInWithPasskey(vaultId, (live, auth, canAuthorizeNew, record) =>
+        renewFromLocalUnlock(live, record, auth, canAuthorizeNew),
+      )
       restoreConnectorPin(result.status)
       const recoveredPin = pinFromEnrolledStatus(result.status)
       setEnrollment(result.enrollment)
@@ -244,6 +252,7 @@ export function useVaultSession({
       bestEffortBrowserWrite(() => saveEnrollment(result.enrollment))
       bestEffortBrowserWrite(() => saveSelectedVaultId(result.enrollment.vaultId))
       bestEffortBrowserWrite(() => setSessionLocked(false))
+      await setupSpendingRenewals(result.status, result.enrollment)
       void restoreMap(result.enrollment, result.status, setup)
     } catch (error) {
       reportError(humanizeVaultError(error))
@@ -273,6 +282,7 @@ export function useVaultSession({
         setLocked(false)
         bestEffortBrowserWrite(() => setSessionLocked(false))
         setScreen('home')
+        await setupSpendingRenewals(live, file.header.enrollment)
       } catch (error) {
         reportError(
           imported

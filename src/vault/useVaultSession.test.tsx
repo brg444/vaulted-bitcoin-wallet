@@ -7,6 +7,8 @@ import type { VaultStatus } from '../lib/vault/types'
 import { useVaultSession } from './useVaultSession'
 
 const mocks = vi.hoisted(() => ({
+  renew: vi.fn(),
+  setupRenewal: vi.fn(),
   discover: vi.fn(),
   openArchive: vi.fn(),
   restoreArchive: vi.fn(),
@@ -36,6 +38,11 @@ vi.mock('../lib/vault/pin', async (importOriginal) => ({
   loadAddressPin: mocks.loadPin,
   pinFromEnrolledStatus: mocks.makePin,
   saveAddressPin: mocks.savePin,
+}))
+
+vi.mock('../lib/vault/vtxo/renewalCeremony', () => ({
+  renewFromLocalUnlock: mocks.renew,
+  setupSpendingRenewals: mocks.setupRenewal,
 }))
 
 vi.mock('../lib/vault/signIn', () => ({
@@ -128,7 +135,7 @@ describe('Vault session program-pin recovery', () => {
 
     await act(async () => hook.result.current.signIn())
 
-    expect(mocks.unlock).toHaveBeenCalledExactlyOnceWith(enrollment)
+    expect(mocks.unlock).toHaveBeenCalledExactlyOnceWith(enrollment, expect.any(Function))
     expect(mocks.recover).not.toHaveBeenCalled()
     expect(hook.setStatus).toHaveBeenCalledWith(status)
     expect(hook.setScreen).toHaveBeenCalledWith('home')
@@ -160,7 +167,7 @@ describe('Vault session program-pin recovery', () => {
 
     await act(async () => hook.result.current.signIn())
 
-    expect(mocks.recover).toHaveBeenCalledExactlyOnceWith('vault-a')
+    expect(mocks.recover).toHaveBeenCalledExactlyOnceWith('vault-a', expect.any(Function))
     expect(hook.setEnrollment).toHaveBeenCalledWith(enrollment)
     expect(hook.setAddressPin).toHaveBeenCalledWith(pin)
     expect(hook.setStatus).toHaveBeenCalledWith(status)

@@ -104,6 +104,20 @@ export function validateGuardianDelegationStatus(
   d: LightDescriptor,
   expectedId?: string,
 ): GuardianDelegationStatus {
+  return validateDelegationStatusForBinding(
+    raw,
+    {
+      descriptorHash: lightDescriptorDigest(d),
+      absoluteFeeCapSats: d.spendingPolicy.absoluteFeeCapSats,
+    },
+    expectedId,
+  )
+}
+export function validateDelegationStatusForBinding(
+  raw: unknown,
+  binding: { descriptorHash: string; absoluteFeeCapSats: number; program?: string },
+  expectedId?: string,
+): GuardianDelegationStatus {
   const r = raw as GuardianDelegationStatus
   if (
     !r ||
@@ -111,7 +125,8 @@ export function validateGuardianDelegationStatus(
     !canonicalHex(r.operationId, 16) ||
     (expectedId && r.operationId !== expectedId) ||
     !guardianDelegationStates.includes(r.state as (typeof guardianDelegationStates)[number]) ||
-    r.descriptorHash !== lightDescriptorDigest(d) ||
+    r.descriptorHash !== binding.descriptorHash ||
+    (binding.program !== undefined && (raw as { program?: string }).program !== binding.program) ||
     !canonicalHex(r.txid, 32) ||
     !Number.isSafeInteger(r.vout) ||
     r.vout < 0 ||
@@ -127,7 +142,7 @@ export function validateGuardianDelegationStatus(
     !Number.isSafeInteger(r.receiverSats) ||
     r.receiverSats <= 0 ||
     r.receiverSats > r.inputValueSats ||
-    r.inputValueSats - r.receiverSats > d.spendingPolicy.absoluteFeeCapSats ||
+    r.inputValueSats - r.receiverSats > binding.absoluteFeeCapSats ||
     (r.commitmentTxid !== undefined && !canonicalHex(r.commitmentTxid, 32)) ||
     (r.receiverTxid !== undefined && !canonicalHex(r.receiverTxid, 32)) ||
     (r.receiverVout !== undefined &&

@@ -1,3 +1,4 @@
+import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
 import { createContext } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { emptySetupPlan, type VaultSetupPlan } from '../lib/vault/setupPlan'
@@ -49,6 +50,7 @@ export interface VaultSpend {
 export interface VaultContextProps {
   acceptDesign: (tier?: 'standard' | 'advanced') => void
   account: VaultAccount
+  spendingRenewals?: SpendingRenewalJournal | null
   positions: VaultAccountPositions
   applyHardware: (raw: string) => void
   applyConnectorDescriptor: (raw: string) => void

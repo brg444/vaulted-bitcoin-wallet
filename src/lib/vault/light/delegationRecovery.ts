@@ -23,8 +23,9 @@ import { networkPins } from '../networkPins'
 import { requireExitArchiveInfo } from '../recovery/exitArchive'
 import { lightDescriptorDigest, type LightDescriptor } from './contract'
 import { lightExitRepository } from './exitRepository'
-import { requireDelegationRecovery, validateGuardianDelegationStatus } from './delegationClient'
+import { requireDelegationRecovery, validateDelegationStatusForBinding } from './delegationClient'
 import type { GuardianDelegationStatus } from './delegationStore'
+import type { VaultNetwork } from '../constants'
 
 function checkedTree(nodes: TxTreeNode[]) {
   const raw = new Map<string, { node: TxTreeNode; tx: Transaction }>()
@@ -78,15 +79,45 @@ export async function importGuardianReplacement(
   operatorInfo: ArkInfo,
   coin: VirtualCoin,
 ) {
-  const d = structuredClone(descriptor),
-    status = validateGuardianDelegationStatus(response, d)
+  return importDelegationReplacementForBinding(
+    {
+      network: descriptor.network,
+      descriptorHash: lightDescriptorDigest(descriptor),
+      scriptPubKey: descriptor.scriptPubKey,
+      cosignerPub: descriptor.cosignerPub,
+      absoluteFeeCapSats: descriptor.spendingPolicy.absoluteFeeCapSats,
+    },
+    response,
+    operatorInfo,
+    coin,
+    () => lightExitRepository(descriptor),
+  )
+}
+
+/** Callers reconstruct the binding from their verified program and choose its existing SDK repository. */
+export async function importDelegationReplacementForBinding(
+  binding: {
+    network: VaultNetwork
+    descriptorHash: string
+    scriptPubKey: string
+    cosignerPub: string
+    absoluteFeeCapSats: number
+    program?: string
+  },
+  response: GuardianDelegationStatus,
+  operatorInfo: ArkInfo,
+  coin: VirtualCoin,
+  repository: () => ReturnType<typeof lightExitRepository>,
+) {
+  const d = structuredClone(binding),
+    status = validateDelegationStatusForBinding(response, d)
   const recovery = requireDelegationRecovery(status),
     info = structuredClone(operatorInfo),
     current = structuredClone(coin)
   const pins = networkPins(d.network)
   requireExitArchiveInfo(info, {
     network: d.network,
-    descriptorHash: lightDescriptorDigest(d),
+    descriptorHash: d.descriptorHash,
     scriptPubKey: d.scriptPubKey,
   })
   if (
@@ -161,7 +192,7 @@ export async function importGuardianReplacement(
     )
       throw new Error('Replacement tree signature or recovery delay changed')
   }
-  const repo = lightExitRepository(d)
+  const repo = repository()
   try {
     for (const id of path) {
       const existing = await repo.getVirtualTx(id)

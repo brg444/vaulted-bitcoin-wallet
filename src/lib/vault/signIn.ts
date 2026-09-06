@@ -18,6 +18,7 @@ import type { VaultStatus } from './types'
 import { allowPasskey, isCoarsePhone, passkeyGetOptions, prfExtension, prfFrom } from './webauthn'
 import { provisionBoardingKey } from './vtxo/board'
 import { requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
+import type { VtxoSpendPasskey } from './vtxo/spend'
 
 const PRF_SALT = new TextEncoder().encode('arkade-2fa-vault/prf/v1')
 const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
@@ -200,6 +201,12 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
 
 export async function unlockLocalEnrollment(
   rec: EnrollmentSecrets,
+  withRenewalAuth?: (
+    status: VaultStatus,
+    auth: VtxoSpendPasskey,
+    canAuthorizeNew: boolean,
+    enrollment: EnrollmentSecrets,
+  ) => Promise<void>,
 ): Promise<{ enrollment: EnrollmentSecrets; status: VaultStatus }> {
   const publicStatus = await vaultCosignerClient.enrollment.publicStatus()
   const rpId = String(publicStatus.rpId || location.hostname).toLowerCase()
@@ -207,7 +214,7 @@ export async function unlockLocalEnrollment(
     throw new Error('deployment RP ID does not match this signing client host')
   }
   const live = await vaultCosignerClient.enrollment.status(rec.vaultId)
-  if (live.templateVersion === CONNECTOR_TEMPLATE) return signInWithPasskey(rec.vaultId)
+  if (live.templateVersion === CONNECTOR_TEMPLATE) return signInWithPasskey(rec.vaultId, withRenewalAuth)
   pinEnrolledStatus(live)
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({
@@ -229,6 +236,36 @@ export async function unlockLocalEnrollment(
     const secret = await decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
     try {
       await provisionBoardingKey(secret, live)
+      if (withRenewalAuth) {
+        const direct = await deriveDirectP256(prf)
+        try {
+          if (
+            bytesToHex(direct.pub) !== rec.phoneDirectP256 ||
+            bytesToHex(direct.pub) !== live.phoneDirectP256 ||
+            bytesToHex(new Uint8Array(got.rawId)) !== rec.credId ||
+            bytesToHex(schnorr.getPublicKey(secret)) !== String(live.phoneBip340Pub).slice(2)
+          )
+            throw new Error('Renewal ceremony identity changed')
+          const response = got.response as AuthenticatorAssertionResponse
+          await withRenewalAuth(
+            live,
+            {
+              phoneSecret: secret,
+              scalar: direct.scalar,
+              assertion: {
+                credentialId: rec.credId,
+                clientDataJSON: bytesToHex(new Uint8Array(response.clientDataJSON)),
+                authenticatorData: bytesToHex(new Uint8Array(response.authenticatorData)),
+                signature: bytesToHex(new Uint8Array(response.signature)),
+              },
+            },
+            true,
+            rec,
+          )
+        } finally {
+          zeroBytes(direct.scalar)
+        }
+      }
       return { enrollment: rec, status: live }
     } finally {
       zeroBytes(secret)
@@ -265,6 +302,12 @@ export async function discoverVaultIdFromPasskey(): Promise<string> {
 
 export async function signInWithPasskey(
   vaultId: string,
+  withRenewalSync?: (
+    status: VaultStatus,
+    auth: VtxoSpendPasskey,
+    canAuthorizeNew: boolean,
+    enrollment: EnrollmentSecrets,
+  ) => Promise<void>,
 ): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets }> {
   let session: Awaited<ReturnType<typeof beginPasskeySession>> | undefined
   let phoneSecret: Uint8Array | undefined
@@ -310,6 +353,17 @@ export async function signInWithPasskey(
     // private browsing cannot turn a valid recovery into a failed login.
     pinFromEnrolledStatus(status)
     await provisionBoardingKey(phoneSecret, status)
+    if (withRenewalSync)
+      await withRenewalSync(
+        status,
+        {
+          phoneSecret,
+          scalar: session.scalar,
+          assertion: session.assertion,
+        },
+        false,
+        recordFromRecoveryBinding(verified),
+      )
     return { status, enrollment: recordFromRecoveryBinding(verified) }
   } finally {
     zeroBytes(session?.prf as Uint8Array, session?.scalar as Uint8Array, phoneSecret as Uint8Array)

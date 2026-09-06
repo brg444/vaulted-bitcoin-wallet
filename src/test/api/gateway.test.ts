@@ -63,14 +63,16 @@ describe('same-origin authorizer gateway', () => {
     ['default', defaultDeployment],
     ['mainnet', mainnetDeployment],
   ] as const)('routes %s deployment delegation requests through the bounded gateway', (_network, config) => {
-    const routeIndex = config.rewrites.findIndex((route) => route.source === '/v1/light/delegate/:phase')
-    expect(routeIndex).toBeGreaterThanOrEqual(0)
-    expect(routeIndex).toBeLessThan(config.rewrites.findIndex((route) => route.source === '/v1/:path*'))
-    for (const phase of ['info', 'schedule', 'list', 'status', 'cancel']) {
-      const destination = config.rewrites[routeIndex].destination.replace(':phase', phase)
-      const path = publicAuthorizerPath(destination)
-      expect(path).toBe(`/v1/light/delegate/${phase}`)
-      expect(allowAuthorizerPath(path)).toBe(true)
+    for (const program of ['light', 'vtxo']) {
+      const routeIndex = config.rewrites.findIndex((route) => route.source === `/v1/${program}/delegate/:phase`)
+      expect(routeIndex).toBeGreaterThanOrEqual(0)
+      expect(routeIndex).toBeLessThan(config.rewrites.findIndex((route) => route.source === '/v1/:path*'))
+      for (const phase of ['info', 'schedule', 'list', 'status', 'cancel']) {
+        const destination = config.rewrites[routeIndex].destination.replace(':phase', phase)
+        const path = publicAuthorizerPath(destination)
+        expect(path).toBe(`/v1/${program}/delegate/${phase}`)
+        expect(allowAuthorizerPath(path)).toBe(true)
+      }
     }
   })
 

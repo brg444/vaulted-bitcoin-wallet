@@ -1,3 +1,5 @@
+import { useSpendingRenewals } from '../vault/useSpendingRenewals'
+import { clearSpendingRenewalReads } from '../lib/vault/vtxo/guardianRenewal'
 import { useRecoveryArchive } from '../vault/useRecoveryArchive'
 import {
   prepareConnectorWithdrawal,
@@ -1323,6 +1325,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(() => {
     if (status?.vaultId) {
+      clearSpendingRenewalReads(status.vaultId)
       void shutdownVaultWalletWorker(status.vaultId)
         .then(() => deleteBoardingKey(status.vaultId))
         .catch(() => undefined)
@@ -1386,10 +1389,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     return txid
   }, [enrollment, refreshBalance, status])
 
+  const spendingRenewals = useSpendingRenewals(status, enrollment, locked)
+
   const value = useMemo<VaultContextProps>(
     () => ({
       acceptDesign,
       account,
+      spendingRenewals,
       applyHardware,
       applyConnectorDescriptor,
       applyRecovery,
@@ -1523,6 +1529,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [
       acceptDesign,
       account,
+      spendingRenewals,
       applyHardware,
       applyConnectorDescriptor,
       applyRecovery,
