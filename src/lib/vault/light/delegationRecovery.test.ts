@@ -71,7 +71,12 @@ describe('actual native Guardian MuSig recovery graph through the pinned SDK', (
     const txs = vi.spyOn(RestIndexerProvider.prototype, 'getVirtualTxs').mockRejectedValue(new Error('offline'))
     const archive = await captureLightRecoveryArchive(f.d, [f.coin])
     expect(validateLightRecoveryArchive(archive, f.d).coins).toEqual([f.coin])
-    for (const node of pruned.recovery.vtxoTree) expect(archive.transactions[node.txid]).toBeTruthy()
+    for (const node of pruned.recovery.vtxoTree) {
+      const saved = Transaction.fromPSBT(base64.decode(archive.transactions[node.txid]))
+      expect(saved.getInput(0).witnessUtxo).toBeDefined()
+      expect(saved.id).toBe(node.txid)
+      expect(saved.getInput(0).tapKeySig).toEqual(Transaction.fromPSBT(base64.decode(node.tx)).getInput(0).tapKeySig)
+    }
     expect(chain).not.toHaveBeenCalled()
     expect(txs).not.toHaveBeenCalled()
   })

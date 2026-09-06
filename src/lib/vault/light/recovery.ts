@@ -1,3 +1,4 @@
+import { prepareExitArchivePrevouts } from '../recovery/archivePrevouts'
 import { validateRecoveryJournals, type RecoveryJournals } from '../recovery/journals'
 import { requireReleaseNetwork } from '../releaseNetwork'
 import { isVaultBitcoinAddress } from '../bitcoin'
@@ -123,7 +124,12 @@ export async function prepareLightRecoveryWithOwner(
       throw new Error('No recovery data is saved here. Reconnect to the Operator or import a current recovery file.')
     return candidates[0]
   }
-  const archive = useSavedData ? await savedArchive() : await captureLightRecoveryArchive(record.descriptor)
+  const originalArchive = useSavedData ? await savedArchive() : await captureLightRecoveryArchive(record.descriptor)
+  const archive = await prepareExitArchivePrevouts(originalArchive, {
+    network: record.descriptor.network,
+    descriptorHash: lightDescriptorDigest(record.descriptor),
+    scriptPubKey: record.descriptor.scriptPubKey,
+  })
   const local = lightArchiveProviders(archive, record.descriptor)
   const coins = local.coins
   const file: LightRecoveryFile = {

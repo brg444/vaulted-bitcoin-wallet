@@ -1,3 +1,4 @@
+import { prepareExitArchivePrevouts, type RecoveryCommitmentReader } from '../recovery/archivePrevouts'
 import { canonicalRecoveryGraph } from '../recovery/graphPackage'
 import { hex } from '@scure/base'
 import {
@@ -117,8 +118,17 @@ export async function prepareVaultSpendingRecovery(
   destination: string,
   sign: SpendingRecoverySigner,
   onchain: OnchainProvider = new EsploraProvider('/esplora'),
+  readCommitment?: RecoveryCommitmentReader,
 ): Promise<SpendingRecoveryPackage> {
   validateVaultRecoveryArchive(archive)
+  archive = {
+    ...archive,
+    spending: await prepareExitArchivePrevouts(
+      archive.spending,
+      vaultRecoveryBinding(archive.kit, archive.status),
+      readCommitment,
+    ),
+  }
   scriptHexFromAddress(destination, archive.status.network)
   registerVaultSpendingRecoveryHandler()
   const local = vaultArchiveProviders(archive)

@@ -196,6 +196,14 @@ export async function importDelegationReplacementForBinding(
       !schnorr.verify(input.tapKeySig, tx.preimageWitnessV1(0, [previous.script!], 0, [previous.amount!]), expectedKey)
     )
       throw new Error('Replacement tree signature or recovery delay changed')
+    if (
+      input.witnessUtxo &&
+      (input.witnessUtxo.amount !== previous.amount ||
+        hex.encode(input.witnessUtxo.script) !== hex.encode(previous.script!))
+    )
+      throw new Error('Replacement parent output metadata changed')
+    // Preserve the independently verified prevout for later offline extraction.
+    tx.updateInput(0, { witnessUtxo: { amount: previous.amount!, script: previous.script! } })
   }
   const repo = repository()
   try {

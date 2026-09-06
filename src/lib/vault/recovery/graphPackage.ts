@@ -1,4 +1,5 @@
 import { p2tr } from '@scure/btc-signer'
+import { hydrateArchivedPrevouts } from './archivePrevouts'
 import { base64, hex } from '@scure/base'
 import {
   ChainTxType,
@@ -102,6 +103,7 @@ export function canonicalRecoveryGraph(input: {
         return
       }
       const tx = Transaction.fromPSBT(base64.decode(archive.transactions[id]))
+      hydrateArchivedPrevouts(tx, archive.transactions)
       // Current SDK TREE witness completion; other nodes use its ordinary finalizer.
       if (node.type === ChainTxType.TREE) {
         const input = tx.getInput(0)

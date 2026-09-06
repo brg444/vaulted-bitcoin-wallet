@@ -1,3 +1,4 @@
+import { prepareExitArchivePrevouts, type RecoveryCommitmentReader } from './archivePrevouts'
 import { hex } from '@scure/base'
 import {
   Wallet,
@@ -90,10 +91,13 @@ export async function prepareLightningRecovery(
   sign: LightningRecoverySigner,
   feeLimits: RecoveryFeeLimits,
   onchain: OnchainProvider = new EsploraProvider('/esplora'),
+  readCommitment?: RecoveryCommitmentReader,
 ): Promise<LightningRecoveryPackage> {
   const saved = JSON.parse(JSON.stringify(entry)) as LightningRecoveryEntry
   const enrolled = { ...binding }
   const limits = { ...feeLimits }
+  const archiveBinding = lightningArchiveProviders(saved, enrolled).binding
+  saved.exit = await prepareExitArchivePrevouts(saved.exit, archiveBinding, readCommitment)
   const local = lightningArchiveProviders(saved, enrolled)
   if (!local.coins.length) throw new Error('No saved Lightning outputs to recover')
   scriptHexFromAddress(destination, enrolled.network)
