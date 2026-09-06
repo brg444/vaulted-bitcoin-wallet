@@ -112,6 +112,9 @@ describe('same-origin authorizer gateway', () => {
       '/v1/connector/withdraw/authorize?operationId=b',
     )
     for (const phase of ['challenge', 'open', 'read', 'write']) {
+      expect(publicAuthorizerPath(`/api/gateway?route=recovery-archive&phase=${phase}`)).toBe(
+        `/v1/recovery-archive/${phase}`,
+      )
       expect(publicAuthorizerPath(`/api/gateway?route=light-backup&phase=${phase}`)).toBe(`/v1/light/backup/${phase}`)
     }
     expect(allowAuthorizerPath(publicAuthorizerPath('/api/gateway?route=light-backup&phase=sign'))).toBe(false)
@@ -259,7 +262,12 @@ describe('gateway response cache policy', () => {
     const body = 'a'.repeat(MAX_GATEWAY_BYTES + 1)
     const fetchMock = vi.fn().mockImplementation(async () => new Response('{}'))
     vi.stubGlobal('fetch', fetchMock)
-    for (const url of ['/v1/light/backup/write?request=1', '/api/gateway?route=light-backup&phase=write']) {
+    for (const url of [
+      '/v1/light/backup/write?request=1',
+      '/api/gateway?route=light-backup&phase=write',
+      '/v1/recovery-archive/write?request=1',
+      '/api/gateway?route=recovery-archive&phase=write',
+    ]) {
       const result = gatewayResponse()
       await gatewayHandler(gatewayRequest({ method: 'POST', url, body }), result.response)
       expect(result.response.statusCode).toBe(200)

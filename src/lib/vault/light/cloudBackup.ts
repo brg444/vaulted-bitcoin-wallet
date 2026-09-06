@@ -1,3 +1,4 @@
+import { passkeyProofDigest } from '../passkeyBinding'
 import { hex } from '@scure/base'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { authorizerBase } from '../status'
@@ -42,24 +43,6 @@ async function post<T>(phase: string, body: unknown): Promise<T> {
   return JSON.parse(text) as T
 }
 const encode = (value: string) => new TextEncoder().encode(value)
-function proofDigest(challenge: string, id: string) {
-  const parts = [
-    encode('arkade-2fa-vault/passkey-proof/v1'),
-    Uint8Array.of(0),
-    encode('light-backup-open'),
-    Uint8Array.of(0),
-    hex.decode(challenge),
-    Uint8Array.of(0),
-    hex.decode(id),
-  ]
-  const bytes = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
-  let offset = 0
-  for (const part of parts) {
-    bytes.set(part, offset)
-    offset += part.length
-  }
-  return sha256(bytes)
-}
 export async function openLightCloudBackup(local?: LightEnrollment): Promise<LightBackupSession> {
   const challenge = await post<{ challengeId: string; challenge: string }>('challenge', {})
   if (!/^[0-9a-f]{64}$/.test(challenge.challenge)) throw new Error('Invalid backup challenge')
@@ -98,7 +81,12 @@ export async function openLightCloudBackup(local?: LightEnrollment): Promise<Lig
         clientDataJSON: hex.encode(new Uint8Array(assertion.clientDataJSON)),
         authenticatorData: hex.encode(new Uint8Array(assertion.authenticatorData)),
         signature: hex.encode(new Uint8Array(assertion.signature)),
-        directProof: hex.encode(signDirectP256(direct.scalar, proofDigest(challenge.challenge, credentialId))),
+        directProof: hex.encode(
+          signDirectP256(
+            direct.scalar,
+            passkeyProofDigest('light-backup-open', hex.decode(challenge.challenge), hex.decode(credentialId)),
+          ),
+        ),
       },
     )
     if (

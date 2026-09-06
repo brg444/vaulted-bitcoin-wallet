@@ -182,6 +182,8 @@ export function publicAuthorizerPath(url = ''): string {
       return `/v1/light/renew/${phase}`
     if (route === 'light-backup' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
       return `/v1/light/backup/${phase}`
+    if (route === 'recovery-archive' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
+      return `/v1/recovery-archive/${phase}`
     if (route === 'light-enroll' && new Set(['start', 'propose', 'finish']).has(phase))
       return `/v1/light/enroll/${phase}`
     if (route === 'board' && BOARD_PHASES.has(phase)) return `/v1/vtxo/board/${phase}`
@@ -304,7 +306,10 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
 
   let body: Buffer | undefined
   try {
-    body = await readBoundedRequest(req, pathOnly === '/v1/light/backup/write' ? 3_100_000 : MAX_GATEWAY_BYTES)
+    body = await readBoundedRequest(
+      req,
+      /^\/v1\/(light\/backup|recovery-archive)\/write$/.test(pathOnly) ? 3_100_000 : MAX_GATEWAY_BYTES,
+    )
   } catch {
     jsonError(res, 413, 'API request too large')
     return
@@ -343,7 +348,7 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
   try {
     payload = await readBoundedUpstream(
       upstream,
-      /^\/v1\/light\/backup\/(open|read|write)$/.test(pathOnly) ? 3_100_000 : MAX_GATEWAY_BYTES,
+      /^\/v1\/(light\/backup|recovery-archive)\/(open|read|write)$/.test(pathOnly) ? 3_100_000 : MAX_GATEWAY_BYTES,
     )
   } catch {
     jsonError(res, 502, 'API response too large')

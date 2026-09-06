@@ -1,10 +1,12 @@
+import { p2tr } from '@scure/btc-signer'
+import { packExitArchive } from '../exitArchive'
 import { ArkAddress, ChainTxType, Transaction, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
 import { hex, base64 } from '@scure/base'
 import type { VaultStatus, BoardingDescriptor } from '../../types'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../../spendingPolicy'
 import { buildVaultProgramDescriptor, type VaultProgramDescriptor } from '../../program/descriptor'
 import { buildRecoveryKit } from '../../program/kit'
-import { PROGRAM_FIXTURE, compressedFromScalar } from '../../program/fixtures'
+import { PROGRAM_FIXTURE, compressedFromScalar, scalarSecret } from '../../program/fixtures'
 import { networkPins } from '../../networkPins'
 import { VaultPolicyV1Script } from '../../vtxo/script'
 import { BOARDING_PROGRAM, BOARDING_SCHEMA, BOARDING_TEMPLATE } from '../../vtxo/board'
@@ -42,10 +44,15 @@ function statusFromDescriptor(committed: VaultProgramDescriptor): VaultStatus {
   }
 }
 
-export function recoveryFixture(advanced = true, network: 'mainnet' | 'mutinynet' = 'mutinynet') {
+export function recoveryFixture(
+  advanced = true,
+  network: 'mainnet' | 'mutinynet' = 'mutinynet',
+  phoneDirectP256 = PROGRAM_FIXTURE.phoneDirectP256,
+) {
   const d = buildVaultProgramDescriptor({
     ...PROGRAM_FIXTURE,
     network,
+    phoneDirectP256,
     protectionTier: advanced ? 'advanced' : 'standard',
     recoveryPub: advanced ? PROGRAM_FIXTURE.recoveryPub : undefined,
   })
@@ -111,8 +118,16 @@ export function recoveryFixture(advanced = true, network: 'mainnet' | 'mutinynet
     vtxoBoardingExitDelayUnit: 'seconds',
   })
   const tx = new Transaction({ version: 3 })
-  tx.addInput({ txid: '01'.repeat(32), index: 0 })
+  const root = p2tr(hex.decode(compressedFromScalar(21)).slice(1), undefined, getNetwork(pins.sdkNetwork))
+  tx.addInput({
+    txid: '01'.repeat(32),
+    index: 0,
+    witnessUtxo: { script: root.script, amount: 40_000n },
+    tapInternalKey: root.tapInternalKey,
+  })
   tx.addOutput({ amount: 40_000n, script: spending.pkScript })
+  tx.addOutput({ amount: 0n, script: hex.decode('51024e73') })
+  tx.sign(scalarSecret(21))
   const coin = {
     txid: tx.id,
     vout: 0,
@@ -138,11 +153,26 @@ export function recoveryFixture(advanced = true, network: 'mainnet' | 'mutinynet
       version: 1,
       descriptorHash: binding.descriptorHash,
       capturedAt: '2026-09-06T00:00:00Z',
-      info: JSON.stringify({
+      info: packExitArchive({
         network: pins.operatorGetInfoNetwork,
         signerPubkey: pins.operatorSignerPub,
         checkpointTapscript: pins.checkpointTapscript,
         forfeitPubkey: pins.checkpointForfeitPub,
+        forfeitAddress: p2tr(hex.decode(pins.checkpointForfeitPub).slice(1), undefined, getNetwork(pins.sdkNetwork))
+          .address!,
+        unilateralExitDelay: 2048n,
+        boardingExitDelay: BigInt(pins.boardExitDelay),
+        sessionDuration: 100n,
+        dust: 330n,
+        fees: {},
+        digest: 'ab'.repeat(32),
+        version: 'fixture',
+        vtxoMinAmount: 330n,
+        vtxoMaxAmount: -1n,
+        utxoMinAmount: 330n,
+        utxoMaxAmount: -1n,
+        deprecatedSigners: [],
+        serviceStatus: {},
       }),
       coins: JSON.stringify([coin]),
       branches: {
