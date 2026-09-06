@@ -151,6 +151,19 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
     await page.screenshot({ path: join(directory, 'renewed-light-security.png'), fullPage: true })
   }
 
+  // Leave the normal wallet before measuring recovery requests, so its balance
+  // and backup timers cannot contaminate the independent recovery check.
+  if (!(await page.getByRole('button', { name: 'Lock wallet', exact: true }).isVisible())) {
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+    await page.getByRole('button', { name: 'Security', exact: true }).click()
+  }
+  await page.getByRole('button', { name: 'Lock wallet', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Unlock with passkey', exact: true })).toBeVisible()
+  await page.route('**/__light-offline-test', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Offline recovery qualification</title>' }),
+  )
+  await page.goto('/__light-offline-test')
+
   // Prepare the latest automatically saved paths after disabling both services.
   const forbiddenRequests: string[] = []
   for (const pattern of ['**/v1/**', 'https://mutinynet.arkade.sh/**']) {

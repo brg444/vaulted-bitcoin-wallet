@@ -121,6 +121,11 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await expect(page.locator('.light-address')).toHaveText(originalAddress)
   // The same exported file opens in the independent companion with every
   // Vaulted/Operator API blocked; only the local assets and passkey are used.
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+  await page.getByRole('button', { name: 'Security', exact: true }).click()
+  await page.getByRole('button', { name: 'Lock wallet', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Unlock with passkey', exact: true })).toBeVisible()
   const externalRequests: string[] = []
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
@@ -128,7 +133,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
       const name = url.pathname.split('/').pop()!
       if (!['index.html', 'recovery.js', 'recovery.js.map'].includes(name)) return route.abort()
       return route.fulfill({
-        body: await readFile(`.vault-browser-tests/light-recovery/mutinynet/${name}`),
+        body: await readFile(`tools/offline-recovery/light/mutinynet/${name}`),
         contentType: name.endsWith('.html') ? 'text/html' : 'text/javascript',
       })
     }
