@@ -51,7 +51,7 @@ jobs:
             }
           "
       - name: Unit tests
-        run: corepack pnpm test:unit
+        run: corepack pnpm test:unit --maxWorkers=2
       - name: Reject ambiguous builds
         run: node scripts/verify-release-build.mjs
       - name: Build vault
