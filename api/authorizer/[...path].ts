@@ -113,7 +113,7 @@ function requestVaultId(method: string | undefined, pathAndQuery: string, body?:
     // Reject query forms Go discards or fetch rewrites, rather than charging
     // a different first value from the one the upstream handler receives.
     if (/[;#\u0000-\u0020\u007f]/.test(search) || /%(?![0-9a-f]{2})/i.test(search)) return null
-    const query = new URLSearchParams(search)
+    const query = new URLSearchParams('?' + search)
     // Match the Guardian read handlers; ignored aliases must not change the bucket.
     if (path === '/v1/connector/operation')
       return guardianTrimSpace(query.get('vaultId') || '') || guardianTrimSpace(query.get('vault') || '')
