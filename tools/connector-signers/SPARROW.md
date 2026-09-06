@@ -1,7 +1,7 @@
 # Sparrow connector qualification
 
-This branch qualifies the L1 connector experiment. The native Savings contingency
-uses it as reference evidence; see [reconciliation and deployment status](DEPLOYMENT.md).
+The onchain Savings connector is the active integration candidate; see
+[implementation and deployment status](DEPLOYMENT.md).
 
 Sparrow 2.5.4's software wallet signs the connector Savings PSBT using native
 SegWit (BIP84) or Taproot (BIP86) keys. Eight cases cover both key types,
