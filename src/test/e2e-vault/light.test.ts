@@ -13,6 +13,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
 }) => {
   void passkey
   const errors: string[] = []
+  let backupChallenges = 0
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/v1/**', async (route) => {
     const request = route.request()
@@ -32,6 +33,12 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
     })
     if (url.pathname === '/v1/light/enroll/finish' && response.ok())
       await page.request.post(`${CONTROL}/__vault_e2e_authorizer`, { data: await response.json() })
+    if (url.pathname === '/v1/light/backup/challenge' && response.ok()) {
+      const challenge = await response.json()
+      expect(challenge.challengeId).toMatch(/^v1\.[A-Za-z0-9_-]+$/)
+      expect(Buffer.from(challenge.challenge, 'hex')).toHaveLength(32)
+      backupChallenges++
+    }
     await route.fulfill({ response })
   })
   await page.goto('/')
@@ -83,18 +90,33 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await page.getByRole('button', { name: 'Save a local backup', exact: true }).click()
   const path = await (await download).path()
   const saved = JSON.parse(await readFile(path!, 'utf8'))
+  expect(backupChallenges).toBeGreaterThan(0)
   expect(saved.name).toBe('vaulted-light-backup')
   expect(saved.header.recoveryBackup).toBeUndefined()
   // Keep the original authenticator but remove this device's app record.
-  // Restoring the downloaded file must recover the same script and policy.
+  // Both cloud and local-file restoration retain the same script and policy.
   await page.evaluate(() => {
     localStorage.clear()
     localStorage.setItem('vaulted:active-setup', 'light')
   })
   await page.reload()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
   await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
   await page.getByRole('button', { name: 'Restore with passkey', exact: true }).click()
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
+  await page.getByRole('button', { name: 'Receive', exact: true }).click()
+  await expect(page.locator('.light-address')).toHaveText(originalAddress)
+  // Exercise the downloaded encrypted file independently of cloud discovery.
+  await page.evaluate(() => localStorage.clear())
+  await page.reload()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
+  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
+  await page.locator('input[type="file"]').setInputFiles(path!)
+  await page.getByRole('button', { name: 'Verify file and unlock', exact: true }).click()
+  await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
+  await expect(page.getByText('50,000 sats remaining in your limit')).toBeVisible()
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
   await expect(page.locator('.light-address')).toHaveText(originalAddress)
   // The same exported file opens in the independent companion with every

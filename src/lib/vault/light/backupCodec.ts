@@ -120,14 +120,19 @@ export async function decryptLightBackup(value: unknown, key: CryptoKey): Promis
     plain?.fill(0)
   }
 }
-export async function openLocalLightBackup(value: unknown) {
+export async function openLocalLightBackup(
+  value: unknown,
+  withOwner?: (owner: Uint8Array, record: LightEnrollment) => Promise<unknown>,
+) {
   const encrypted = parseLightEncryptedBackup(value)
   if (location.origin !== encrypted.header.origin || location.hostname !== encrypted.header.rpId)
     throw new Error(`Open recovery at ${encrypted.header.origin} to use this wallet’s passkey`)
   const owner = await unlockLightWithPasskey(encrypted.header)
   try {
     const key = await lightBackupKey(owner, encrypted.header)
-    return { file: await decryptLightBackup(encrypted, key), key }
+    const file = await decryptLightBackup(encrypted, key)
+    if (withOwner) await withOwner(owner, validateLightEnrollment(file))
+    return { file, key }
   } finally {
     owner.fill(0)
   }

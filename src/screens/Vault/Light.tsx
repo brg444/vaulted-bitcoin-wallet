@@ -715,7 +715,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             onClick={() =>
               void run(async () => {
                 const parsed = JSON.parse(restoreRaw)
-                const opened = parsed.name === 'vaulted-light-backup' ? await openLocalLightBackup(parsed) : null
+                const opened =
+                  parsed.name === 'vaulted-light-backup' ? await openLocalLightBackup(parsed, authorizeRenewals) : null
                 const restored = opened ? validateLightEnrollment(opened.file) : validateLightEnrollment(parsed)
                 const st = lightStatusMatchesDescriptor(
                   await fetchVaultStatusUnpinned(undefined, restored.descriptor.vaultId),
@@ -723,7 +724,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 )
                 if (!opened) {
                   const key = await unlockLightWithPasskey(restored)
-                  key.fill(0)
+                  try {
+                    await authorizeRenewals(key, restored)
+                  } finally {
+                    key.fill(0)
+                  }
                 }
                 if (opened?.file.archive) await storeLightRecoveryArchive(opened.file.archive, restored.descriptor)
                 localStorage.setItem(LIGHT_LOCAL_STORE, JSON.stringify(restored))

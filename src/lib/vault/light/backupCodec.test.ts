@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { base64, hex } from '@scure/base'
 import { Transaction, ChainTxType } from '@arkade-os/sdk'
 import { lightTestEnrollment, testOwner, testDescriptor } from './testdata/helpers'
 import { lightDescriptorDigest } from './contract'
 import { networkPins } from '../networkPins'
-import { encryptLightBackup, decryptLightBackup, lightBackupKey } from './backupCodec'
+import { encryptLightBackup, decryptLightBackup, lightBackupKey, openLocalLightBackup } from './backupCodec'
+import { unlockLightWithPasskey } from './passkey'
+
+vi.mock('./passkey', () => ({ unlockLightWithPasskey: vi.fn() }))
 import { lightArchiveProviders, assertLightArchiveMatchesVtxos } from './recoveryArchive'
 import type { LightRecoveryFile } from './recovery'
 
@@ -107,5 +110,49 @@ describe('automatic Light backup and unilateral exit data', () => {
     archive.branches[branch] = archive.branches[branch].filter((node) => node.type !== ChainTxType.COMMITMENT)
     const key = await lightBackupKey(testOwner, file)
     await expect(encryptLightBackup(file, key)).rejects.toThrow('commitment')
+  })
+})
+
+describe('local restore owner ceremony', () => {
+  it('authorizes only after authenticated decryption and wipes the same owner key', async () => {
+    const file = await fixture()
+    const encrypted = await encryptLightBackup(file, await lightBackupKey(testOwner, file))
+    const owner = Uint8Array.from(testOwner)
+    vi.mocked(unlockLightWithPasskey).mockResolvedValueOnce(owner)
+    const authorize = vi.fn(async (key, record) => {
+      expect(key).toBe(owner)
+      expect(key).toEqual(testOwner)
+      expect(record.descriptor).toEqual(file.descriptor)
+    })
+    const restored = await openLocalLightBackup(encrypted, authorize)
+    expect(authorize).toHaveBeenCalledTimes(1)
+    expect(restored.file.archive).toEqual(file.archive)
+    expect(restored.key.extractable).toBe(false)
+    expect(owner.every((byte) => byte === 0)).toBe(true)
+  })
+
+  it('wipes the owner after a failed authorization callback', async () => {
+    const file = await fixture()
+    const encrypted = await encryptLightBackup(file, await lightBackupKey(testOwner, file))
+    const owner = Uint8Array.from(testOwner)
+    vi.mocked(unlockLightWithPasskey).mockResolvedValueOnce(owner)
+    await expect(
+      openLocalLightBackup(encrypted, async () => {
+        throw new Error('authorization unavailable')
+      }),
+    ).rejects.toThrow('authorization unavailable')
+    expect(owner.every((byte) => byte === 0)).toBe(true)
+  })
+
+  it('never authorizes a tampered backup and still wipes the owner', async () => {
+    const file = await fixture()
+    const encrypted = await encryptLightBackup(file, await lightBackupKey(testOwner, file))
+    encrypted.ciphertext = (encrypted.ciphertext[0] === 'A' ? 'B' : 'A') + encrypted.ciphertext.slice(1)
+    const owner = Uint8Array.from(testOwner)
+    vi.mocked(unlockLightWithPasskey).mockResolvedValueOnce(owner)
+    const authorize = vi.fn()
+    await expect(openLocalLightBackup(encrypted, authorize)).rejects.toThrow()
+    expect(authorize).not.toHaveBeenCalled()
+    expect(owner.every((byte) => byte === 0)).toBe(true)
   })
 })
