@@ -28,7 +28,11 @@ export function guardianRenewalContext(status: VaultStatus): GuardianRenewalCont
   const network = requireSupportedVaultNetwork(status.network)
   // Existing Vault IDs are opaque enrolled strings, not descriptor hashes.
   // Light's descriptor validator below retains its separate 32-byte requirement.
-  if (typeof status.vaultId !== 'string' || !status.vaultId || status.vaultId !== status.vaultId.trim())
+  if (
+    typeof status.vaultId !== 'string' ||
+    !status.vaultId ||
+    status.vaultId !== status.vaultId.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '')
+  )
     throw new Error('Renewal vault identity is invalid')
   if (status.templateVersion === LIGHT_PROFILE) {
     const d = requireLightStatus(status).lightDescriptor!

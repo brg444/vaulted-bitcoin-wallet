@@ -100,13 +100,13 @@ describe('shared Spending renewal identity', () => {
       expect(guardianRenewalContext(enrolled).vaultId).toBe(vaultId)
       expect(guardianRenewalContext(enrolled).scriptPubKey).toBe(status.spendingArkScript)
       expect(guardianRenewalContextDigest(enrolled)).not.toBe(guardianRenewalContextDigest(status))
-      for (const invalid of ['', ' ' + vaultId, vaultId + '\n']) {
+      for (const invalid of ['', ' ' + vaultId, vaultId + '\n', '\u0085' + vaultId]) {
         expect(() => guardianRenewalContext({ ...status, vaultId: invalid })).toThrow('identity is invalid')
       }
     },
   )
 
-  it.each(['existing-tenant-vault', '550e8400-e29b-41d4-a716-446655440000', 'vault-é'])(
+  it.each(['existing-tenant-vault', '550e8400-e29b-41d4-a716-446655440000', 'vault-é', '\uFEFFvault'])(
     'preserves opaque enrolled Vault identity %s',
     (vaultId) => {
       expect(guardianRenewalContext({ ...fixtures[1], vaultId }).vaultId).toBe(vaultId)
