@@ -273,10 +273,11 @@ export async function prepareGuardianDelegation(
       expiry < now + 300000
     )
       throw new Error('This output cannot yet be delegated')
-    const rate = Number(operatorInfo.fees?.txFeeRate)
+    const rateText = operatorInfo.fees?.txFeeRate
+    const rate = typeof rateText === 'string' && rateText.trim() !== '' ? Number(rateText) : NaN
     if (
       !Number.isFinite(rate) ||
-      rate <= 0 ||
+      rate < 0 ||
       rate > d.spendingPolicy.feerateCapSatPerV ||
       operatorInfo.dust <= 0n ||
       operatorInfo.dust > 10000n

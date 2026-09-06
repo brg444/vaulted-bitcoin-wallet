@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { Transaction, type VirtualCoin } from '@arkade-os/sdk'
+import { describe, it, expect, vi } from 'vitest'
+import { RestArkProvider, Transaction, type VirtualCoin } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { delegationFixture } from './testdata/delegation'
 import vectors from './testdata/contracts.json'
+import liveMutinynetInfo from './testdata/operator-mutinynet-info-20260906.json'
 import type { LightDescriptor } from './contract'
 import { testOwner } from './testdata/helpers'
 import {
@@ -119,4 +120,28 @@ it('rejects changed delegate authority, destination, rate cap and expired schedu
       now,
     ),
   ).rejects.toThrow('cannot yet')
+})
+
+it('accepts the actual Mutinynet zero-rate metadata through the pinned SDK', async () => {
+  const descriptor = vectors.find((vector) => vector.descriptor.network === 'mutinynet')!.descriptor
+  const f = delegationFixture(descriptor as LightDescriptor)
+  // Public /v1/info captured by the native live qualification runner on September 6.
+  const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(liveMutinynetInfo))
+  try {
+    const info = await new RestArkProvider('https://mutinynet.arkade.sh').getInfo()
+    expect(info.fees.txFeeRate).toBe('0')
+    const plan = await prepareGuardianDelegation(f.d, f.coin, info, f.capability, testOwner, now)
+    expect(plan.receiverSats).toBe(f.coin.value)
+    expect(validateGuardianSchedule(plan.request, f.d).txid).toBe(f.coin.txid)
+  } finally {
+    fetch.mockRestore()
+  }
+})
+
+it.each(['-1', 'NaN', 'Infinity', '', ' '])('rejects malformed or negative transaction fee rate %j', async (rate) => {
+  const f = delegationFixture()
+  f.info.fees.txFeeRate = rate
+  await expect(prepareGuardianDelegation(f.d, f.coin, f.info, f.capability, testOwner, now)).rejects.toThrow(
+    'fees exceed',
+  )
 })
