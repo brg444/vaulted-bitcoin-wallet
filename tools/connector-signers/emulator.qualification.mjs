@@ -69,7 +69,9 @@ for (const v of vectors.filter((v) => v.network === 'mainnet')) {
         amountSats: p.amount,
         feeSats: p.fee,
       })
-      const tx = Transaction.fromPSBT(hex.decode(prepared.psbt()), options)
+      const phoneKey = new Uint8Array(32)
+      phoneKey[31] = 3
+      const tx = Transaction.fromPSBT(hex.decode(prepared.signPhone(phoneKey)), options)
       assert.ok(family.savings.normal.length < 253)
       const leafHash = schnorr.utils.taggedHash(
         'TapLeaf',
@@ -80,7 +82,7 @@ for (const v of vectors.filter((v) => v.network === 'mainnet')) {
       const guardian = hex.decode(family.normalTweaks.vault).slice(1)
       const emulator = hex.decode(family.normalTweaks.arkade).slice(1)
       const earlier = [
-        [{ pubKey: phone, leafHash }, hex.decode(p.savingsWitness[2])],
+        [{ pubKey: phone, leafHash }, tx.getInput(0).tapScriptSig[0][1]],
         [{ pubKey: guardian, leafHash }, hex.decode(p.savingsWitness[1])],
       ]
       tx.updateInput(0, { tapScriptSig: earlier })
@@ -103,7 +105,7 @@ for (const v of vectors.filter((v) => v.network === 'mainnet')) {
       const handoff = prepared.forHardware([
         added[0][1],
         hex.decode(p.savingsWitness[1]),
-        hex.decode(p.savingsWitness[2]),
+        earlier[0][1],
         family.savings.normal,
         family.savings.control,
       ])
