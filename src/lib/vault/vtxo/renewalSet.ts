@@ -1,3 +1,4 @@
+import { renewalSigningJson } from './renewalJson'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
@@ -37,7 +38,9 @@ export function spendingRenewalSetBody(set: SpendingRenewalSet) {
 
 export function spendingRenewalSetDigest(set: SpendingRenewalSet) {
   return sha256(
-    new TextEncoder().encode(`vaulted-vtxo/delegate-schedule-set/v1:${JSON.stringify(spendingRenewalSetBody(set))}`),
+    new TextEncoder().encode(
+      `vaulted-vtxo/delegate-schedule-set/v1:${renewalSigningJson(spendingRenewalSetBody(set))}`,
+    ),
   )
 }
 

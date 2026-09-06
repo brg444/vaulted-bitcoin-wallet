@@ -1,3 +1,4 @@
+import { renewalSigningJson } from './renewalJson'
 import {
   ArkAddress,
   DelegateManagerImpl,
@@ -57,7 +58,7 @@ export interface SpendingDelegationPlan {
 export const canonicalHex = (value: unknown, bytes: number): value is string =>
   typeof value === 'string' && new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(value)
 export function spendingDelegationDigest(purpose: 'schedule' | 'status' | 'cancel' | 'list', value: unknown) {
-  return sha256(new TextEncoder().encode(`vaulted-vtxo/delegate-${purpose}/v1:${JSON.stringify(value)}`))
+  return sha256(new TextEncoder().encode(`vaulted-vtxo/delegate-${purpose}/v1:${renewalSigningJson(value)}`))
 }
 export function spendingDelegationAddress(status: VaultStatus) {
   const d = guardianRenewalContext(status)

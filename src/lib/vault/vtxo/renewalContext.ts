@@ -1,3 +1,4 @@
+import { renewalSigningJson } from './renewalJson'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
 import { requireSupportedVaultNetwork, type VaultNetwork } from '../constants'
@@ -83,7 +84,7 @@ export function guardianRenewalContext(status: VaultStatus): GuardianRenewalCont
 export function guardianRenewalContextDigest(status: VaultStatus): string {
   return hex.encode(
     sha256(
-      new TextEncoder().encode(`vaulted-vtxo/renewal-context/v1:${JSON.stringify(guardianRenewalContext(status))}`),
+      new TextEncoder().encode(`vaulted-vtxo/renewal-context/v1:${renewalSigningJson(guardianRenewalContext(status))}`),
     ),
   )
 }
