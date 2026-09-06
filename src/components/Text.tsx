@@ -84,21 +84,3 @@ export default function Text({
     </p>
   )
 }
-
-export function TextLabel({ children }: TextProps) {
-  return (
-    <div style={{ padding: '0 1rem 0.5rem 1rem' }}>
-      <Text capitalize color='neutral-500' smaller>
-        {children}
-      </Text>
-    </div>
-  )
-}
-
-export function TextSecondary({ centered, children }: TextProps) {
-  return (
-    <Text centered={centered} color='neutral-500' small thin wrap>
-      {children}
-    </Text>
-  )
-}

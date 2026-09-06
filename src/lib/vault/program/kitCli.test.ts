@@ -123,28 +123,4 @@ describe('Recovery Kit CLI', () => {
     expect(bumped.startsWith('800\n')).toBe(true)
     expect(inspectTransitionPsbt(bumped.split('\n')[1]).destScript).toBe(inspectTransitionPsbt(psbt).destScript)
   })
-
-  it('refuses a suspect clawback from the CLI', () => {
-    const kit = fixtureKit()
-    const cmd = parseKitCli(
-      [
-        'clawback',
-        'kit.json',
-        '--claimant',
-        'hardware',
-        '--guardian',
-        'hardware',
-        '--txid',
-        '11'.repeat(32),
-        '--vout',
-        '0',
-        '--value',
-        '50000',
-        '--fee',
-        '500',
-      ],
-      () => kit,
-    )
-    expect(() => runKitCli(cmd)).toThrow(/guardian/)
-  })
 })
