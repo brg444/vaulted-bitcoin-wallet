@@ -1,5 +1,11 @@
 # Operator-compatible Savings contingency
 
+Update 2026-09-06: the next design is [simple onchain Savings](https://github.com/brg444/arkade-runtime/blob/codex/operator-gated-contingency/docs/design/simple-savings.md),
+with direct phone/signer approval and delayed signer-only phone-loss recovery.
+It targets Liana qualification and pauses native Savings implementation. This
+contingency remains reference material; existing wallets and Spending are unchanged.
+
+
 Status: preparation only, 2026-09-05. This branch starts from wallet main `53c597393c68374afaec06108a8f803f24d7de6e`; production contracts, enrollment, network configuration, and deployment behavior are unchanged.
 
 The canonical architecture and timelocked-recovery work packages live on runtime branch `codex/operator-gated-contingency` in `docs/contingency/hardening.md` and `docs/contingency/implementation/native-savings.md`. Runtime baseline is `a70823a28b596195e033c4c25e48d8d82e22a72d`. Fetch current main and compare actual deployment manifests again before implementation or release.
