@@ -1,3 +1,5 @@
+import defaultDeployment from '../../../vercel.json'
+import mainnetDeployment from '../../../vercel.mainnet.json'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import gatewayHandler, {
   allowAuthorizerPath,
@@ -56,6 +58,21 @@ function expectLocalNoStore(result: ReturnType<typeof gatewayResponse>) {
 }
 
 describe('same-origin authorizer gateway', () => {
+  it.each([
+    ['default', defaultDeployment],
+    ['mainnet', mainnetDeployment],
+  ] as const)('routes %s deployment delegation requests through the bounded gateway', (_network, config) => {
+    const routeIndex = config.rewrites.findIndex((route) => route.source === '/v1/light/delegate/:phase')
+    expect(routeIndex).toBeGreaterThanOrEqual(0)
+    expect(routeIndex).toBeLessThan(config.rewrites.findIndex((route) => route.source === '/v1/:path*'))
+    for (const phase of ['info', 'schedule', 'list', 'status', 'cancel']) {
+      const destination = config.rewrites[routeIndex].destination.replace(':phase', phase)
+      const path = publicAuthorizerPath(destination)
+      expect(path).toBe(`/v1/light/delegate/${phase}`)
+      expect(allowAuthorizerPath(path)).toBe(true)
+    }
+  })
+
   it('maps function URLs back to authorizer paths', () => {
     expect(publicAuthorizerPath('/api/health')).toBe('/health')
     expect(publicAuthorizerPath('/api/ready')).toBe('/ready')
