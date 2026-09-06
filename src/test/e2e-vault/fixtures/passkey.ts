@@ -191,7 +191,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
     await this.page.route('**/ready', (route) =>
       json(route, {
         ok: true,
-        schema: 3,
+        schema: 4,
         network: 'mutinynet',
         enrollTemplate: SAVINGS_TEMPLATE,
         arkadeOrigin: 'configured',
