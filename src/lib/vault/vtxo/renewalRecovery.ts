@@ -36,5 +36,5 @@ export function importSpendingRenewalReplacement(
   info: ArkInfo,
   coin: VirtualCoin,
 ) {
-  return importDelegationReplacementForBinding(binding(status), result, info, coin, () => repository(status))
+  return importDelegationReplacementForBinding(binding(status), result, info, coin, () => repository(status), true)
 }

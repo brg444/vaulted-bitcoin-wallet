@@ -94,15 +94,8 @@ async function refreshOperation(
     })
     const coin = vtxos.find((v) => v.txid === result.receiverTxid && v.vout === result.receiverVout)
     if (!coin) throw new Error('Renewal replacement is not yet available from the indexer')
-    if (!coin.isSpent) {
-      await importSpendingRenewalReplacement(
-        status,
-        result,
-        info || (await new RestArkProvider(origin).getInfo()),
-        coin,
-      )
-      await captureVaultRecoveryFile(status, enrollment)
-    }
+    await importSpendingRenewalReplacement(status, result, info || (await new RestArkProvider(origin).getInfo()), coin)
+    await captureVaultRecoveryFile(status, enrollment)
     journal.operations[result.operationId].recoveryImported = true
   }
   await saveSpendingRenewals(status, journal)
@@ -134,13 +127,20 @@ export async function authorizeSpendingRenewals(
           const origin = networkPins(status.network).operatorOrigin,
             indexer = new RestIndexerProvider(origin)
           const info = await new RestArkProvider(origin).getInfo()
-          const { vtxos } = await indexer.getVtxos({ scripts: [context.scriptPubKey], renewableOnly: true })
+          const { vtxos } = await indexer.getVtxos({ scripts: [context.scriptPubKey] })
           const coins = vtxos.filter((c) => !c.isSpent && !c.isSwept && !c.isUnrolled)
           if (coins.length > 512) throw new Error('Too many outputs for bounded renewal authorization')
           const kit = kitFromFacts({ status, enrollment })
           if (!kit) throw new Error('Renewal recovery descriptor unavailable')
           const archive = await loadVaultRecoveryArchive(kit, status)
           const archived = archive ? validateExitArchive(archive.spending, vaultRecoveryBinding(kit, status)).coins : []
+          // A spent renewal may still be an ancestor of current change. Spending
+          // alone is insufficient; the complete current outputs must be archived.
+          const liveCovered = coins.every((coin) =>
+            archived.some(
+              (saved) => point(saved) === point(coin) && saved.value === coin.value && saved.script === coin.script,
+            ),
+          )
           const live = new Set(coins.map(point)),
             spent = new Set<string>()
           const archivedReplacement = (s: SpendingRenewalStatus) =>
@@ -173,7 +173,7 @@ export async function authorizeSpendingRenewals(
                 !guardianDelegationTerminal(s.state) ||
                 (s.state === 'confirmed' &&
                   !archivedReplacement(s) &&
-                  !spent.has(`${s.receiverTxid}:${s.receiverVout}`)),
+                  !(liveCovered && spent.has(`${s.receiverTxid}:${s.receiverVout}`))),
             )
           })
           pruneSets(journal)
@@ -185,7 +185,7 @@ export async function authorizeSpendingRenewals(
               guardianDelegationTerminal(saved.status.state) &&
               (saved.status.state !== 'confirmed' ||
                 archivedReplacement(saved.status) ||
-                spent.has(`${saved.status.receiverTxid}:${saved.status.receiverVout}`))
+                (liveCovered && spent.has(`${saved.status.receiverTxid}:${saved.status.receiverVout}`)))
             )
               delete journal.operations[id]
           if ((epochs.get(status.vaultId) || 0) !== epoch) throw new Error('Wallet locked during renewal authorization')

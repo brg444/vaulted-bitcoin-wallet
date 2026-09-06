@@ -13,6 +13,8 @@ import { spendingDelegationAddress, validateSpendingSchedule } from './renewalRe
 import { validateSpendingRenewalSet } from './renewalSet'
 import { authorizeSpendingRenewals, clearSpendingRenewalReads } from './guardianRenewal'
 import { loadSpendingRenewals } from './renewalStore'
+import { setupSpendingRenewals } from './renewalCeremony'
+import * as spending from './spend'
 import vectors from './testdata/renewal-context-v1.json'
 
 const mocks = vi.hoisted(() => ({ ancestry: vi.fn() }))
@@ -45,6 +47,8 @@ function environment(raw: unknown) {
   const status = structuredClone(raw) as VaultStatus,
     scalar = new Uint8Array(32).fill(7)
   status.phoneDirectP256 = hex.encode(p256.getPublicKey(scalar, true))
+  status.rpId = location.hostname
+  status.clientOrigin = location.origin
   clearSpendingRenewalReads(status.vaultId)
   const context = guardianRenewalContext(status)
   const f = delegationFixture(
@@ -107,10 +111,60 @@ function environment(raw: unknown) {
     scalar,
     assertion: { credentialId: '01', clientDataJSON: '00', authenticatorData: '00', signature: '00' },
   }
-  return { status, auth, schedules: () => schedules, enrollment: { vaultId: status.vaultId } as EnrollmentSecrets }
+  return {
+    coins,
+    status,
+    auth,
+    schedules: () => schedules,
+    enrollment: {
+      vaultId: status.vaultId,
+      credId: '01',
+      phoneDirectP256: status.phoneDirectP256,
+      phoneBip340Pub: status.phoneBip340Pub,
+    } as EnrollmentSecrets,
+  }
 }
 
 describe('automatic renewal authorization ceremony boundaries', () => {
+  it('requests a fresh setup ceremony for uncovered outputs without sending after dismissal', async () => {
+    const f = environment(vectors[1].status)
+    const get = vi.fn(async () => {
+      throw new Error('Setup dismissed')
+    })
+    Object.assign(navigator, { credentials: { get } })
+    await setupSpendingRenewals(f.status, f.enrollment)
+    expect(get).toHaveBeenCalledOnce()
+    expect(f.schedules()).toBe(0)
+    expect((await loadSpendingRenewals(f.status)).error).toBe('Setup dismissed')
+  })
+  it('does not open another passkey ceremony when every output is reserved for a payment', async () => {
+    const f = environment(vectors[1].status)
+    vi.spyOn(spending, 'listPersistedVtxoSpends').mockReturnValue([
+      {
+        vaultId: f.status.vaultId,
+        operationId: 'ab'.repeat(16),
+        bundleDigest: 'cd'.repeat(32),
+        destAddress: f.status.spendingArkAddress!,
+        amountSats: 1000,
+        arkTxid: 'ef'.repeat(32),
+        stage: 'reserved',
+        reservedInputs: f.coins.map((coin) => ({
+          txid: coin.txid,
+          vout: coin.vout,
+          valueSats: coin.value,
+          scriptHex: coin.script!,
+        })),
+      },
+    ])
+    const get = vi.fn(async () => {
+      throw new Error('An unnecessary passkey prompt was opened')
+    })
+    Object.assign(navigator, { credentials: { get } })
+    await setupSpendingRenewals(f.status, f.enrollment)
+    expect(get).not.toHaveBeenCalled()
+    expect((await loadSpendingRenewals(f.status)).error).toBeUndefined()
+    expect(f.schedules()).toBe(0)
+  })
   it.each(vectors.filter((v) => v.context.protectionTier !== 'light'))(
     'submits one bounded set for $name',
     async (vector) => {

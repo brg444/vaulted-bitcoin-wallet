@@ -1,12 +1,13 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
-import { Transaction, RestArkProvider, RestIndexerProvider, type VirtualCoin } from '@arkade-os/sdk'
+import { Transaction, RestArkProvider, RestIndexerProvider, ChainTxType, type VirtualCoin } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import native from './testdata/nativeDelegationRecovery.json'
 import { delegationFixture } from './testdata/delegation'
 import { lightDescriptorDigest, type LightDescriptor } from './contract'
-import { importGuardianReplacement } from './delegationRecovery'
+import { importGuardianReplacement, importDelegationReplacementForBinding } from './delegationRecovery'
+import { captureExitArchive, exitArchiveProviders, validateExitArchive } from '../recovery/exitArchive'
 import { lightExitRepository } from './exitRepository'
 import { captureLightRecoveryArchive, validateLightRecoveryArchive } from './recoveryArchive'
 import type { GuardianDelegationStatus } from './delegationStore'
@@ -57,6 +58,61 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('actual native Guardian MuSig recovery graph through the pinned SDK', () => {
+  it('retains a verified spent renewal as ancestry for a live descendant archive', async () => {
+    const f = fixture()
+    const binding = {
+      network: f.d.network,
+      descriptorHash: lightDescriptorDigest(f.d),
+      scriptPubKey: f.d.scriptPubKey,
+      cosignerPub: f.d.cosignerPub,
+      absoluteFeeCapSats: f.d.spendingPolicy.absoluteFeeCapSats,
+    }
+    f.coin.isSpent = true
+    await expect(importGuardianReplacement(f.d, f.status, f.info, f.coin)).rejects.toThrow()
+    await importDelegationReplacementForBinding(binding, f.status, f.info, f.coin, () => lightExitRepository(f.d), true)
+    // A transaction-shape fixture exercises ancestry capture; it is not a funded spend/exit claim.
+    const child = new Transaction({ version: 3 })
+    child.addInput({ txid: f.coin.txid, index: f.coin.vout })
+    child.addOutput({ script: hex.decode(f.d.scriptPubKey), amount: BigInt(f.coin.value - 100) })
+    const live = { ...f.coin, txid: child.id, vout: 0, value: f.coin.value - 100, isSpent: false }
+    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(f.info)
+    vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({ vtxos: [live] })
+    vi.spyOn(RestIndexerProvider.prototype, 'getVtxoChain').mockResolvedValue({
+      chain: [
+        { txid: f.commitment.id, type: ChainTxType.COMMITMENT, spends: [], expiresAt: '0' },
+        { txid: f.leaf.id, type: ChainTxType.TREE, spends: [f.commitment.id], expiresAt: '0' },
+        { txid: child.id, type: ChainTxType.TREE, spends: [f.leaf.id], expiresAt: '0' },
+      ],
+    })
+    vi.spyOn(RestIndexerProvider.prototype, 'getVirtualTxs').mockImplementation(async (ids) => {
+      expect(ids).not.toContain(f.leaf.id)
+      return { txs: [base64.encode(child.toPSBT())] }
+    })
+    const repo = lightExitRepository(f.d)
+    try {
+      const archive = await captureExitArchive(binding, repo, null)
+      expect(validateExitArchive(archive, binding).coins.map((coin) => coin.txid)).toEqual([child.id])
+      expect(archive.transactions[f.leaf.id]).toBeTruthy()
+      const offline = exitArchiveProviders(archive, binding)
+      const forbidden = vi.fn(async () => {
+        throw new Error('Operator and Guardian are blocked')
+      })
+      vi.stubGlobal('fetch', forbidden)
+      expect(offline.coins[0].txid).toBe(child.id)
+      expect(archive.branches[`${child.id}:0`].map((node) => node.txid)).toContain(f.leaf.id)
+      expect(
+        (await offline.indexerProvider.getVtxos({ outpoints: [{ txid: f.leaf.id, vout: f.coin.vout }] })).vtxos,
+      ).toEqual([])
+      const branch = await offline.source.getVtxoChain!(live)
+      expect(branch?.map((node) => node.txid)).toContain(f.leaf.id)
+      const localTransactions = await offline.source.getVirtualTxs!([f.leaf.id, child.id])
+      expect(localTransactions.size).toBe(2)
+      expect(f.coin.isSpent).toBe(true)
+      expect(forbidden).not.toHaveBeenCalled()
+    } finally {
+      await repo[Symbol.asyncDispose]()
+    }
+  })
   it('imports verified signed transactions into the SDK repository and captures the ordinary full archive', async () => {
     const f = fixture()
     await importGuardianReplacement(f.d, f.status, f.info, f.coin)

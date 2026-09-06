@@ -6,7 +6,7 @@ import { networkPins } from '../networkPins'
 import { LIGHT_PROFILE } from '../light/contract'
 import { guardianRenewalContext } from './renewalContext'
 import { authorizeSpendingRenewals } from './guardianRenewal'
-import { createVtxoSpendUnlocker, type VtxoSpendPasskey } from './spend'
+import { createVtxoSpendUnlocker, listPersistedVtxoSpends, type VtxoSpendPasskey } from './spend'
 import { loadSpendingRenewals, saveSpendingRenewals } from './renewalStore'
 import { spendingRenewalInfo, guardianDelegationTerminal } from './renewalClient'
 import { browserVaultLockManager, requireVaultLockManager } from './lock'
@@ -51,8 +51,14 @@ export async function setupSpendingRenewals(status: VaultStatus, enrollment: Enr
       renewableOnly: true,
     })
     const journal = await loadSpendingRenewals(status)
+    const reserved = new Set(
+      listPersistedVtxoSpends(status.vaultId).flatMap((spend) =>
+        (spend.reservedInputs || []).map((input) => `${input.txid}:${input.vout}`),
+      ),
+    )
     const needsAuthorization = vtxos.some(
       (coin) =>
+        !reserved.has(`${coin.txid}:${coin.vout}`) &&
         !coin.isSpent &&
         !coin.isSwept &&
         !coin.isUnrolled &&

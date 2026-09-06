@@ -89,7 +89,7 @@ async function retryPending(d: LightDescriptor, journal: GuardianDelegationJourn
 }
 async function checkedInputs(d: LightDescriptor) {
   const indexer = new RestIndexerProvider(networkPins(d.network).operatorOrigin)
-  const result = await indexer.getVtxos({ scripts: [d.scriptPubKey], renewableOnly: true })
+  const result = await indexer.getVtxos({ scripts: [d.scriptPubKey] })
   const coins = result.vtxos.filter((c) => !c.isSpent && !c.isSwept && !c.isUnrolled)
   if (coins.length > 512) throw new Error('Too many outputs to authorize renewal safely')
   return { indexer, coins }
@@ -112,15 +112,14 @@ async function refreshOperation(
     })
     const coin = vtxos.find((c) => c.txid === response.receiverTxid && c.vout === response.receiverVout)
     if (!coin) throw new Error('Replacement output is not yet available from the indexer')
-    if (!coin.isSpent) {
-      await importGuardianReplacement(
-        d,
-        response,
-        info || (await new RestArkProvider(pins.operatorOrigin).getInfo()),
-        coin,
-      )
-      await captureLightRecoveryArchive(d)
-    }
+    await importGuardianReplacement(
+      d,
+      response,
+      info || (await new RestArkProvider(pins.operatorOrigin).getInfo()),
+      coin,
+      true,
+    )
+    await captureLightRecoveryArchive(d)
     journal.operations[response.operationId] = { ...journal.operations[response.operationId], recoveryImported: true }
   }
   rememberStatus(journal, response)
@@ -151,6 +150,11 @@ export async function authorizeGuardianRenewals(
         const { coins, indexer } = await checkedInputs(d)
         const archive = await loadLightRecoveryArchive(d).catch(() => null)
         const archived = archive ? validateLightRecoveryArchive(archive, d).coins : []
+        const liveCovered = coins.every((coin) =>
+          archived.some(
+            (saved) => point(saved) === point(coin) && saved.value === coin.value && saved.script === coin.script,
+          ),
+        )
         const hasArchivedReplacement = (s: GuardianDelegationStatus) =>
           archived.some(
             (coin) =>
@@ -185,7 +189,7 @@ export async function authorizeGuardianRenewals(
               !guardianDelegationTerminal(s.state) ||
               (s.state === 'confirmed' &&
                 !hasArchivedReplacement(s) &&
-                !spent.has(`${s.receiverTxid}:${s.receiverVout}`)),
+                !(liveCovered && spent.has(`${s.receiverTxid}:${s.receiverVout}`))),
           )
         })
         for (const [id, saved] of Object.entries(journal.operations)) {
@@ -193,7 +197,9 @@ export async function authorizeGuardianRenewals(
           if (
             s &&
             guardianDelegationTerminal(s.state) &&
-            (s.state !== 'confirmed' || hasArchivedReplacement(s) || spent.has(`${s.receiverTxid}:${s.receiverVout}`))
+            (s.state !== 'confirmed' ||
+              hasArchivedReplacement(s) ||
+              (liveCovered && spent.has(`${s.receiverTxid}:${s.receiverVout}`)))
           )
             delete journal.operations[id]
         }

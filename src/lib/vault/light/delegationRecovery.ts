@@ -78,6 +78,7 @@ export async function importGuardianReplacement(
   response: GuardianDelegationStatus,
   operatorInfo: ArkInfo,
   coin: VirtualCoin,
+  allowSpentAncestry = false,
 ) {
   return importDelegationReplacementForBinding(
     {
@@ -91,6 +92,7 @@ export async function importGuardianReplacement(
     operatorInfo,
     coin,
     () => lightExitRepository(descriptor),
+    allowSpentAncestry,
   )
 }
 
@@ -108,6 +110,7 @@ export async function importDelegationReplacementForBinding(
   operatorInfo: ArkInfo,
   coin: VirtualCoin,
   repository: () => ReturnType<typeof lightExitRepository>,
+  allowSpentAncestry = false,
 ) {
   const d = structuredClone(binding),
     status = validateDelegationStatusForBinding(response, d)
@@ -127,7 +130,7 @@ export async function importDelegationReplacementForBinding(
     current.script !== d.scriptPubKey ||
     current.value !== status.receiverSats ||
     !current.commitmentTxIds?.includes(status.commitmentTxid!) ||
-    current.isSpent ||
+    (current.isSpent && !allowSpentAncestry) ||
     !current.expiresAt ||
     !Number.isFinite(current.expiresAt.getTime()) ||
     current.expiresAt.getTime() <= 0 ||

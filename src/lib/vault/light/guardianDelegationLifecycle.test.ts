@@ -1,3 +1,4 @@
+import { captureLightRecoveryArchive } from './recoveryArchive'
 import 'fake-indexeddb/auto'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
@@ -100,7 +101,8 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
     value: {
-      request: async (_name: string, _options: unknown, run: (lock: object) => Promise<unknown>) => run({}),
+      request: async (_name: string, options: unknown, run?: (lock: object) => Promise<unknown>) =>
+        (run || (options as (lock: object) => Promise<unknown>))({}),
     },
   })
 })
@@ -225,6 +227,7 @@ describe('Guardian renewal lifecycle using actual SDK requests and durable journ
       f.indexer.mockImplementation(async (filter) => ({
         vtxos: filter?.outpoints ? filter.outpoints.map((p) => ({ ...f.coin, ...p, isSpent: true })) : [f.coin],
       }))
+      if (state === 'confirmed') await captureLightRecoveryArchive(f.d)
       const result = await authorizeGuardianRenewals(f.d, testOwner)
       expect(result!.error).toBeUndefined()
       expect(Object.keys(result!.operations)).toEqual([base.operationId])
@@ -234,6 +237,35 @@ describe('Guardian renewal lifecycle using actual SDK requests and durable journ
       clearGuardianDelegationReads(f.d.vaultId)
     },
   )
+  it('retains a spent renewal while a live output has no complete saved archive', async () => {
+    const f = environment()
+    const plan = await prepareGuardianDelegation(f.d, f.coin, f.info, f.capability, testOwner)
+    const id = 'ab'.repeat(16)
+    f.setRemote([
+      {
+        version: 1,
+        operationId: id,
+        descriptorHash: lightDescriptorDigest(f.d),
+        state: 'confirmed',
+        validAt: plan.validAt,
+        expiresAt: plan.request.expiresAt,
+        txid: plan.txid,
+        vout: plan.vout,
+        inputValueSats: plan.valueSats,
+        receiverSats: plan.receiverSats,
+        receiverTxid: '33'.repeat(32),
+        receiverVout: 0,
+      },
+    ])
+    f.indexer.mockImplementation(async (filter) => ({
+      vtxos: filter?.outpoints ? filter.outpoints.map((p) => ({ ...f.coin, ...p, isSpent: true })) : [f.coin],
+    }))
+    const result = await authorizeGuardianRenewals(f.d, testOwner)
+    expect(result!.operations[id].status?.state).toBe('confirmed')
+    expect(result!.operations[id].recoveryImported).not.toBe(true)
+    expect(result!.error).toMatch(/recovery/i)
+    clearGuardianDelegationReads(f.d.vaultId)
+  })
   it('keeps an unsupported Guardian optional and clears read authority on lock', async () => {
     const f = environment()
     f.fetch.mockResolvedValueOnce(Response.json({ version: 1, enabled: false }))
