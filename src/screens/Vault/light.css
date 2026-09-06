@@ -29,14 +29,6 @@
   margin: 0.5rem 0 0;
   line-height: 1.5;
 }
-.light-actions {
-  display: flex;
-  gap: 0.75rem;
-}
-.light-actions > button {
-  flex: 1;
-  min-width: 0;
-}
 .light-fields {
   display: grid;
   gap: 1.25rem;
@@ -105,43 +97,6 @@
   font-size: 1rem;
   user-select: all;
 }
-.light-balance {
-  font-variant-numeric: tabular-nums;
-  font-size: clamp(2rem, 8vw, 3.5rem) !important;
-}
-.light-activity > button {
-  display: flex;
-  gap: 0.875rem;
-  align-items: center;
-  width: 100%;
-  text-align: left;
-  padding: 1rem 0;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--qg-line);
-}
-.light-activity > button > span:nth-child(2) {
-  display: grid;
-  gap: 0.25rem;
-  flex: 1;
-}
-.light-activity > button > strong {
-  max-width: 45%;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-.light-activity small {
-  opacity: 0.7;
-}
-.light-activity-icon {
-  width: 2rem;
-}
-.light-activity-icon svg {
-  width: 22px;
-  height: 22px;
-  stroke-width: 1.8;
-}
 .light-success {
   display: flex;
   width: 4rem;
@@ -170,28 +125,6 @@
   max-height: 30%;
   overflow: auto;
 }
-.light-plan-options {
-  display: grid;
-  gap: 0.75rem;
-  margin-block: 1.5rem;
-}
-.light-plan-options button {
-  padding: 1rem;
-  border: 1px solid var(--qg-line);
-  border-radius: 1rem;
-  text-align: left;
-  background: transparent;
-  color: inherit;
-}
-.light-plan-options strong,
-.light-plan-options small {
-  display: block;
-}
-.light-plan-options small {
-  margin-top: 0.5rem;
-  line-height: 1.5;
-}
-
 .light-field :is(input, textarea):focus,
 .light-fields :is(input, textarea):focus {
   outline: none;
@@ -212,4 +145,28 @@
   min-width: 44px;
   min-height: 44px;
   font-size: 1.5rem;
+}
+
+.light-account-balance {
+  cursor: default;
+}
+.light-allowance {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+.light-details {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--qg-line);
+}
+.light-details summary {
+  cursor: pointer;
+  padding-block: 1rem;
+  font-size: 0.875rem;
+}
+
+.light-app > .content {
+  flex: 1 1 auto;
+  min-height: 0;
 }

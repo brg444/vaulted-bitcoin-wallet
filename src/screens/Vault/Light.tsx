@@ -13,8 +13,26 @@ import {
   type LightRecoveryFile,
 } from '../../lib/vault/light/recovery'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Check, Clock3, Copy, Eye, Fingerprint, ShieldCheck } from 'lucide-react'
-import QgScreen, { QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Check,
+  Clock3,
+  Copy,
+  Eye,
+  Fingerprint,
+  ShieldCheck,
+  Shield,
+  QrCode as QrIcon,
+  Plus,
+  Pencil,
+} from 'lucide-react'
+import Content from './Content'
+import { VaultLauncher } from './Navigation'
+import { VaultHistoryList } from './History'
+import QgAmount, { amountSizeStyle } from './qg/QgAmount'
+import { prettyNumber } from '../../lib/format'
+import QgScreen, { QgMark, QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
 import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
 import { fetchPublicStatus, fetchVaultStatusUnpinned } from '../../lib/vault/status'
@@ -71,6 +89,7 @@ type View =
   | 'review'
   | 'success'
   | 'savings'
+  | 'savings-address'
   | 'security'
   | 'restore'
   | 'tx'
@@ -90,7 +109,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [view, setView] = useState<View>('setup')
   const [status, setStatus] = useState<VaultStatus | null>(null)
   const [policy, setPolicy] = useState<LightPolicy>(defaultLightPolicy('mainnet'))
-  const [mode, setMode] = useState('token')
+  const [mode, setMode] = useState<string | null>(null)
   const [available, setAvailable] = useState(false)
   const [setupExitDelay, setSetupExitDelay] = useState<number | null>(null)
   const [invite, setInvite] = useState('')
@@ -293,32 +312,48 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     await copyToClipboard(text)
     setNotice('Copied')
   }
-  const activity = (rows: VaultHistoryItem[]) => (
-    <div className='light-activity'>
-      {rows.length ? (
-        rows.map((tx) => (
-          <button type='button' key={`${tx.account}:${tx.txid}`} onClick={() => openTransaction(tx)}>
-            <span className='light-activity-icon'>{tx.confirmed ? <Check /> : <Clock3 />}</span>
-            <span>
-              <strong>{tx.type === 'sent' ? 'Sent' : 'Received'}</strong>
-              <small>{tx.confirmed ? 'Confirmed' : 'Pending'}</small>
-            </span>
-            <strong>
-              {tx.type === 'sent' ? '−' : '+'}
-              {sats(tx.amount)}
-            </strong>
-          </button>
-        ))
-      ) : (
-        <p className='qg-copy'>Your activity will appear here after your first transaction.</p>
-      )}
-    </div>
+  const activity = (rows: VaultHistoryItem[], account: 'spend' | 'savings' = 'spend', loaded = true) => (
+    <VaultHistoryList account={account} balancesLoaded={loaded} history={rows} openTx={openTransaction} />
   )
+  const accountHeader = (account: 'Spending' | 'Savings') => (
+    <header className='qg-account-bar vault-account-bar'>
+      <div className='qg-account'>
+        <QgMark />
+        <strong>{account}</strong>
+      </div>
+      <div className='qg-utilities'>
+        <button type='button' disabled={busy} aria-label='Open Security' onClick={() => navigate('security')}>
+          <Shield />
+        </button>
+        {account === 'Spending' ? (
+          <button type='button' aria-label='Receive to Spending' disabled={!status} onClick={() => navigate('receive')}>
+            <QrIcon />
+          </button>
+        ) : null}
+      </div>
+    </header>
+  )
+  const balance = (value: number | null, account: string) => {
+    const amount = value === null ? '—' : `₿${prettyNumber(value)}`
+    return (
+      <div
+        className='qg-balance light-account-balance'
+        data-testid='vault-balance'
+        aria-live='polite'
+        aria-label={`${account} balance: ${value === null ? 'loading' : sats(value)}`}
+        style={amountSizeStyle(amount)}
+      >
+        <strong>
+          <QgAmount value={amount} />
+        </strong>
+      </div>
+    )
+  }
   let content: React.ReactNode
   if (view === 'setup')
     content = (
       <QgScreen
-        title='Vaulted Light'
+        title='Vaulted'
         back={onExit}
         footer={
           <>
@@ -344,21 +379,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         }
       >
         <p className='qg-eyebrow'>Light</p>
-        <h1>Everyday bitcoin, with limits</h1>
-        <p className='qg-copy'>
-          Approve payments with your passkey. Vaulted checks each payment against the limits you choose, without needing
-          a hardware key.
-        </p>
-        <div className='light-panel'>
-          <ShieldCheck />
-          <div>
-            <strong>Two approvals for payments</strong>
-            <p>
-              Your device signs and Vaulted checks your limits before cosigning. The Arkade Operator completes the
-              transaction.
-            </p>
-          </div>
-        </div>
+        <h1>Set your spending limits</h1>
+        <p className='qg-copy'>Use your passkey for payments, within the limits you choose.</p>
         <div className='light-fields'>
           <label>
             Per-payment limit, in sats
@@ -380,7 +402,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               onChange={(e) => setPolicy({ ...policy, periodAllowanceSats: Number(e.target.value) })}
             />
           </label>
-          {mode !== 'open' ? (
+          {mode === 'token' ? (
             <label>
               Invite code
               <input autoComplete='off' value={invite} onChange={(e) => setInvite(e.target.value)} />
@@ -388,20 +410,17 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           ) : null}
         </div>
         <p className='qg-copy'>
-          Save a recovery file and a separate recovery secret during setup. If you lose every copy of your passkey, both
-          are needed to recover your wallet key.
+          These limits are fixed when you create your wallet. Next, you’ll save and verify your recovery backup.
         </p>
-        <p className='qg-copy'>
-          The owner key also has a Bitcoin exit that does not require Vaulted’s approval.
-          {setupExitDelay
-            ? ` It includes a waiting period of ${lightExitDelayLabel(setupExitDelay)} after the required Bitcoin transactions confirm, plus network fees.`
-            : ''}{' '}
-          Spending limits apply to normal payments, not this emergency exit.
-        </p>
-        <p className='qg-copy'>
-          Savings can show a Bitcoin address from another wallet. That wallet keeps control of those funds.
-        </p>
-        {!available ? <p className='qg-copy'>Light is not available on this deployment yet.</p> : null}
+        <details className='light-details'>
+          <summary>About Light</summary>
+          <p className='qg-copy'>
+            Your device signs payments and Vaulted checks the limits before cosigning. The Arkade Operator completes the
+            transaction.
+          </p>
+          <p className='qg-copy'>Savings can show an address from another wallet, which controls those funds.</p>
+        </details>
+        {mode !== null && !available ? <p className='qg-copy'>Light is not available on this deployment yet.</p> : null}
       </QgScreen>
     )
   else if (view === 'backup' && pending)
@@ -497,22 +516,26 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         </label>
         <p className='qg-copy'>
-          This file restores your key. Emergency Bitcoin recovery also needs the transaction paths for your current
-          balance, plus Bitcoin for network fees.
+          Keep the file and secret separately; both are needed if you lose your passkey. Emergency Bitcoin recovery
+          works independently of Vaulted’s approval and these payment limits, and requires current transaction paths,
+          Bitcoin for network fees
+          {setupExitDelay
+            ? `, and a waiting period of ${lightExitDelayLabel(setupExitDelay)} after the required Bitcoin transactions confirm`
+            : ''}
+          .
         </p>
       </QgScreen>
     )
   else if (view === 'unlock')
     content = (
       <QgScreen
-        title='Vaulted Light'
+        title='Vaulted'
         back={onExit}
         footer={
           <QgPrimary label='Unlock with passkey' loading={busy} icon={<Fingerprint />} onClick={() => void unlock()} />
         }
       >
-        <p className='qg-eyebrow'>Welcome back</p>
-        <h1>Your everyday wallet</h1>
+        <h1>Welcome back</h1>
         <p className='qg-copy'>Use face recognition, a fingerprint or your device PIN to unlock your wallet key.</p>
         <QgTextButton label='Restore from a recovery file' onClick={() => navigate('restore')} />
       </QgScreen>
@@ -546,7 +569,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <h1>Bring your wallet back</h1>
+        <h1>Restore your wallet</h1>
         <p className='qg-copy'>
           Choose your Light recovery file and approve with the same passkey. Your receiving address and spending limits
           stay the same.
@@ -760,67 +783,60 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'home' && record)
     content = (
-      <QgScreen
-        title='Vaulted Light'
-        footer={
-          <div className='light-actions'>
-            <QgSecondary label='Savings' disabled={busy} onClick={() => void openSavings()} />
-            <QgSecondary label='Security' disabled={busy} onClick={() => navigate('security')} />
+      <Content className='qg-home-content' noRefresh>
+        <main className='qg-home'>
+          {accountHeader('Spending')}
+          {balance(snapshot?.balance ?? null, 'Spending')}
+          <div className='qg-actions'>
+            <button type='button' disabled={busy || !status || !snapshot?.balance} onClick={() => navigate('send')}>
+              <span>
+                <ArrowUpRight />
+                <b>Send</b>
+              </span>
+            </button>
+            <button type='button' disabled={busy || !status} onClick={() => navigate('receive')}>
+              <span>
+                <ArrowDownLeft />
+                <b>Receive</b>
+              </span>
+            </button>
           </div>
-        }
-      >
-        <p className='qg-eyebrow'>Spending</p>
-        <h1 className='light-balance'>{snapshot ? sats(snapshot.balance) : 'Updating…'}</h1>
-        {snapshot?.pendingBalance ? <p className='qg-copy'>{sats(snapshot.pendingBalance)} pending</p> : null}
-        <p className='qg-copy'>
-          {status ? sats(status.periodRemaining) : '…'} available within your rolling 24-hour limit.
-        </p>
-        <div className='light-actions'>
-          <QgPrimary
-            label='Receive'
-            icon={<ArrowDownLeft />}
-            disabled={busy || !status}
-            onClick={() => navigate('receive')}
-          />
-          <QgPrimary
-            label='Send'
-            icon={<ArrowUpRight />}
-            disabled={busy || !status || !snapshot?.balance}
-            onClick={() => navigate('send')}
-          />
-        </div>
-        {renewalTiming?.due ? (
-          <div className='light-panel'>
-            <Clock3 />
-            <div>
-              <strong>{renewalTiming.expired ? 'Check expired Spending' : 'Spending needs renewal soon'}</strong>
-              <p>
-                {renewalTiming.expired
-                  ? 'Some Spending has expired. Open Security to check your recovery options.'
-                  : `The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to renew before then.`}
-              </p>
+          {snapshot?.pendingBalance ? <p className='qg-copy'>{sats(snapshot.pendingBalance)} pending</p> : null}
+          <p className='qg-copy light-allowance'>
+            {status ? sats(status.periodRemaining) : '…'} remaining in your limit
+          </p>
+          {renewalTiming?.due ? (
+            <div className='light-panel'>
+              <Clock3 />
+              <div>
+                <strong>{renewalTiming.expired ? 'Check expired Spending' : 'Spending needs renewal soon'}</strong>
+                <p>
+                  {renewalTiming.expired
+                    ? 'Some Spending has expired. Open Security to check your recovery options.'
+                    : `The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to renew before then.`}
+                </p>
+              </div>
             </div>
-          </div>
-        ) : null}
-        <h2>Activity</h2>
-        {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
-        {activity(snapshot?.history || [])}
-        {status && loadPersistedVtxoSpend(status.vaultId) ? (
-          <QgSecondary
-            label='Resume pending payment'
-            onClick={() =>
-              void run(async () => {
-                await refresh()
-                const p = loadPersistedVtxoSpend(status.vaultId)
-                if (p) {
-                  setQuote(quoteFromPersistedVtxoSpend(p))
-                  setView('review')
-                } else setNotice('Payment reconciled')
-              })
-            }
-          />
-        ) : null}
-      </QgScreen>
+          ) : null}
+          {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
+          {activity(snapshot?.history || [], 'spend', snapshot !== null)}
+          {status && loadPersistedVtxoSpend(status.vaultId) ? (
+            <QgSecondary
+              label='Resume pending payment'
+              onClick={() =>
+                void run(async () => {
+                  await refresh()
+                  const p = loadPersistedVtxoSpend(status.vaultId)
+                  if (p) {
+                    setQuote(quoteFromPersistedVtxoSpend(p))
+                    setView('review')
+                  } else setNotice('Payment reconciled')
+                })
+              }
+            />
+          ) : null}
+        </main>
+      </Content>
     )
   else if (view === 'receive' && status)
     content = (
@@ -865,7 +881,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <h1>Where is it going?</h1>
+        <h1>Send bitcoin</h1>
         <div className='light-fields'>
           <label>
             Arkade address
@@ -925,9 +941,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             <strong>Total: {sats(quote.amountSats + quote.feeSats)}</strong>
           </div>
         </div>
-        <p className='qg-copy'>
-          Your passkey approves this payment. Vaulted will independently check your spending limits.
-        </p>
+        <p className='qg-copy'>Approve with your passkey to send this payment.</p>
       </QgScreen>
     )
   else if (view === 'success')
@@ -954,9 +968,46 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'savings' && record)
     content = (
+      <Content className='qg-home-content' noRefresh>
+        <main className='qg-home'>
+          {accountHeader('Savings')}
+          {watched ? balance(savings?.balance ?? null, 'Savings') : null}
+          <p className='qg-copy light-allowance'>
+            <Eye size={16} aria-hidden /> Watch only
+          </p>
+          {!watched ? <p className='qg-copy'>See Savings held in another Bitcoin wallet.</p> : null}
+          <div className='qg-actions'>
+            <button
+              type='button'
+              disabled={busy}
+              onClick={() => {
+                setWatchAddress(watched?.address || '')
+                navigate('savings-address')
+              }}
+            >
+              <span>
+                {watched ? <Pencil /> : <Plus />}
+                <b>{watched ? 'Edit address' : 'Add address'}</b>
+              </span>
+            </button>
+            {watched ? (
+              <button type='button' onClick={() => void run(() => copy(watched.address))}>
+                <span>
+                  <Copy />
+                  <b>Copy address</b>
+                </span>
+              </button>
+            ) : null}
+          </div>
+          {watched ? activity(savings?.history || [], 'savings', savings !== null) : null}
+        </main>
+      </Content>
+    )
+  else if (view === 'savings-address' && record)
+    content = (
       <QgScreen
-        title='Savings'
-        back={() => navigate('home')}
+        title='Savings address'
+        back={() => navigate('savings')}
         footer={
           <QgPrimary
             label={watched ? 'Update watched address' : 'Watch this address'}
@@ -973,26 +1024,16 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 setSavings(null)
                 setSavings(await fetchWatchedSavings(next, record.descriptor.network))
                 setWatchAddress('')
+                setView('savings')
               })
             }
           />
         }
       >
-        <p className='qg-eyebrow'>
-          <Eye size={18} /> Watch only
-        </p>
-        <h1>{savings ? sats(savings.balance) : watched ? 'Balance unavailable' : 'Savings elsewhere'}</h1>
+        <h1>Watch your Savings</h1>
         <p className='qg-copy'>
-          See a Bitcoin address from another wallet here. That wallet controls spending and recovery; its balance is
-          separate from your Light spending balance and limits.
+          Add a receiving address from another Bitcoin wallet. That wallet controls spending and recovery.
         </p>
-        {watched ? (
-          <>
-            <p className='light-address'>{watched.address}</p>
-            <h2>Activity</h2>
-            {activity(savings?.history || [])}
-          </>
-        ) : null}
         <label className='light-field'>
           Bitcoin receiving address
           <input
@@ -1027,12 +1068,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <p className='qg-eyebrow'>Light protection</p>
-        <h1>Your access and limits</h1>
+        <h1>Access and limits</h1>
         <div className='light-panel'>
           <ShieldCheck />
           <div>
-            <strong>Passkey + policy cosigner</strong>
+            <strong>Spending limits</strong>
             <p>
               {sats(record.descriptor.spendingPolicy.txRecipientCapSats)} per payment
               <br />
@@ -1150,7 +1190,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               ? `Recovery data saved on this device ${new Date(recoveryDataDate).toLocaleString()}. Keep an updated file elsewhere in case you lose this device.`
               : 'Saving recovery data on this device…')}
         </p>
-        <QgTextButton label='Return to Standard / Advanced' onClick={onExit} />
+        <QgTextButton label='Switch wallet' onClick={onExit} />
       </QgScreen>
     )
   else if (view === 'tx' && selectedTx && record) {
@@ -1176,7 +1216,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   } else
     content = (
-      <QgScreen title='Vaulted Light'>
+      <QgScreen title='Vaulted'>
         <p className='qg-copy'>Loading your wallet…</p>
         <QgSecondary label='Return' onClick={() => navigate(record ? 'unlock' : 'setup')} />
       </QgScreen>
@@ -1211,6 +1251,26 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   return (
     <div ref={root} className='light-app' data-testid='vault-light' {...intent}>
       {content}
+      {record && !renewalReview && (view === 'home' || view === 'savings') ? (
+        <VaultLauncher
+          disabled={busy}
+          account={view === 'savings' ? 'savings' : 'spend'}
+          balances={{ spending: snapshot?.balance ?? null, savings: watched ? (savings?.balance ?? null) : 0 }}
+          onAccount={(account) => {
+            if (account === 'savings') void openSavings()
+            else navigate('home')
+          }}
+          actions={[
+            {
+              id: 'security',
+              label: 'Security',
+              testId: 'tab-vault',
+              icon: <Shield />,
+              onClick: () => navigate('security'),
+            },
+          ]}
+        />
+      ) : null}
       {error ? (
         <div className='light-message' role='alert'>
           <span>{error}</span>

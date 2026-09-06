@@ -25,6 +25,32 @@ const ACCOUNTS: { id: VaultAccount; label: string; testId: string; icon: ReactNo
 
 export default function VaultNavigation() {
   const { account, balancesLoaded, navigate, positions, setAccount } = useContext(VaultContext)
+  return (
+    <VaultLauncher
+      account={account}
+      balances={{
+        spending: balancesLoaded ? positions.spending.totalSats : null,
+        savings: balancesLoaded ? positions.savings.totalSats : null,
+      }}
+      onAccount={setAccount}
+      actions={ACTIONS.map((action) => ({ ...action, onClick: () => navigate(action.screen) }))}
+    />
+  )
+}
+
+export function VaultLauncher({
+  account,
+  balances,
+  onAccount,
+  actions,
+  disabled = false,
+}: {
+  disabled?: boolean
+  account: VaultAccount
+  balances: { spending: number | null; savings: number | null }
+  onAccount: (account: VaultAccount) => void
+  actions: { id: string; label: string; testId: string; icon: ReactNode; onClick: () => void }[]
+}) {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const [pull, setPull] = useState(0)
@@ -92,14 +118,14 @@ export default function VaultNavigation() {
     setOpen(true)
   }
 
-  const select = (screen: VaultScreen) => {
+  const select = (onClick: () => void) => {
     hapticLight()
     setOpen(false)
-    navigate(screen)
+    onClick()
   }
 
   const chooseAccount = (next: VaultAccount) => {
-    setAccount(next)
+    onAccount(next)
     close()
   }
 
@@ -131,7 +157,7 @@ export default function VaultNavigation() {
     >
       {placement.upper ? closeButton : null}
       {ACCOUNTS.map((item) => {
-        const position = item.id === 'spend' ? positions.spending : positions.savings
+        const balance = item.id === 'spend' ? balances.spending : balances.savings
         const on = account === item.id
         return (
           <button
@@ -139,6 +165,7 @@ export default function VaultNavigation() {
             type='button'
             className={on ? 'qg-launcher-item is-on' : 'qg-launcher-item'}
             onClick={() => chooseAccount(item.id)}
+            disabled={disabled}
             aria-label={item.label}
             aria-pressed={on}
             data-testid={item.testId}
@@ -146,9 +173,7 @@ export default function VaultNavigation() {
           >
             <span className='qg-launcher-copy'>
               <span className='qg-launcher-label'>{item.label}</span>
-              <span className='qg-launcher-amt'>
-                {balancesLoaded ? `₿${prettyNumber(position.totalSats)}` : 'Loading…'}
-              </span>
+              <span className='qg-launcher-amt'>{balance !== null ? `₿${prettyNumber(balance)}` : 'Loading…'}</span>
             </span>
             <span className='qg-launcher-icon' aria-hidden='true'>
               {item.icon}
@@ -156,12 +181,13 @@ export default function VaultNavigation() {
           </button>
         )
       })}
-      {ACTIONS.map((action) => (
+      {actions.map((action) => (
         <button
           key={action.id}
           type='button'
           className='qg-launcher-item'
-          onClick={() => select(action.screen)}
+          onClick={() => select(action.onClick)}
+          disabled={disabled}
           aria-label={action.label}
           data-testid={action.testId}
           tabIndex={open ? undefined : -1}
