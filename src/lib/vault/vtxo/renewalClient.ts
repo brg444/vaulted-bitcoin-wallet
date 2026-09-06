@@ -51,8 +51,6 @@ export async function spendingRenewalInfo(status: VaultStatus) {
   const context = guardianRenewalContext(status)
   return validateSpendingDelegateInfo(
     await spendingRenewalPost('info', {
-      program: context.program,
-      descriptorHash: guardianRenewalContextDigest(status),
       vaultId: context.vaultId,
     }),
     status,

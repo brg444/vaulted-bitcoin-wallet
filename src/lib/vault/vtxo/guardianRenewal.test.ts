@@ -69,7 +69,8 @@ function environment(raw: unknown) {
     'fetch',
     vi.fn(async (url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body))
-      if (url.endsWith('/info'))
+      if (url.endsWith('/info')) {
+        expect(body).toEqual({ vaultId: status.vaultId })
         return Response.json({
           ...f.capability,
           program: context.program,
@@ -77,6 +78,7 @@ function environment(raw: unknown) {
           maxPlans: 50,
           delegateAddress: spendingDelegationAddress(status),
         })
+      }
       if (url.endsWith('/list')) return Response.json({ version: 1, operations: [], nextCursor: '' })
       if (!url.endsWith('/schedule')) throw new Error('Unexpected request')
       schedules++
