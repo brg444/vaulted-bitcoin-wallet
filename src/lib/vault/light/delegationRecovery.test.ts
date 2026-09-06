@@ -4,6 +4,7 @@ import { IDBFactory } from 'fake-indexeddb'
 import { Transaction, RestArkProvider, RestIndexerProvider, ChainTxType, type VirtualCoin } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import native from './testdata/nativeDelegationRecovery.json'
+import pruned from './testdata/prunedDelegationRecovery.json'
 import { delegationFixture } from './testdata/delegation'
 import { lightDescriptorDigest, type LightDescriptor } from './contract'
 import { importGuardianReplacement, importDelegationReplacementForBinding } from './delegationRecovery'
@@ -12,21 +13,21 @@ import { lightExitRepository } from './exitRepository'
 import { captureLightRecoveryArchive, validateLightRecoveryArchive } from './recoveryArchive'
 import type { GuardianDelegationStatus } from './delegationStore'
 
-function fixture() {
-  const d = native.descriptor as LightDescriptor
-  const info = { ...delegationFixture(d).info, vtxoTreeExpiry: BigInt(native.recovery.batchExpiry) }
-  const commitment = Transaction.fromPSBT(base64.decode(native.recovery.commitmentPsbt))
-  const leaf = Transaction.fromPSBT(base64.decode(native.recovery.vtxoTree[0].tx))
+function fixture(source: typeof native = native) {
+  const d = source.descriptor as LightDescriptor
+  const info = { ...delegationFixture(d).info, vtxoTreeExpiry: BigInt(source.recovery.batchExpiry) }
+  const commitment = Transaction.fromPSBT(base64.decode(source.recovery.commitmentPsbt))
+  const leaf = Transaction.fromPSBT(base64.decode(source.recovery.vtxoTree[0].tx))
   const vout = Array.from({ length: leaf.outputsLength }, (_, i) => i).find(
     (i) => hex.encode(leaf.getOutput(i).script!) === d.scriptPubKey,
   )!
   const coin = {
     txid: leaf.id,
     vout,
-    value: native.plan.renewal.receiverSats,
+    value: source.plan.renewal.receiverSats,
     script: d.scriptPubKey,
-    createdAt: new Date(native.plan.validAt * 1000),
-    expiresAt: new Date(native.plan.inputExpiresAt * 1000),
+    createdAt: new Date(source.plan.validAt * 1000),
+    expiresAt: new Date(source.plan.inputExpiresAt * 1000),
     commitmentTxIds: [commitment.id],
     isSpent: false,
     isSwept: false,
@@ -35,20 +36,20 @@ function fixture() {
   } as VirtualCoin
   const status: GuardianDelegationStatus = {
     version: 1,
-    operationId: native.plan.request.operationId,
+    operationId: source.plan.request.operationId,
     descriptorHash: lightDescriptorDigest(d),
     state: 'confirmed',
-    validAt: native.plan.validAt,
-    expiresAt: native.plan.request.expiresAt,
-    txid: native.plan.renewal.txid,
-    vout: native.plan.renewal.vout,
-    inputValueSats: native.plan.renewal.valueSats,
+    validAt: source.plan.validAt,
+    expiresAt: source.plan.request.expiresAt,
+    txid: source.plan.renewal.txid,
+    vout: source.plan.renewal.vout,
+    inputValueSats: source.plan.renewal.valueSats,
     receiverSats: coin.value,
     commitmentTxid: commitment.id,
     receiverTxid: coin.txid,
     receiverVout: coin.vout,
     receiverExpiresAt: Math.floor(coin.expiresAt!.getTime() / 1000),
-    recovery: structuredClone(native.recovery),
+    recovery: structuredClone(source.recovery),
   }
   return { d, info, coin, status, commitment, leaf }
 }
@@ -58,6 +59,42 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('actual native Guardian MuSig recovery graph through the pinned SDK', () => {
+  it('imports a signed participant path with omitted sibling references and archives it offline', async () => {
+    const f = fixture(pruned)
+    const original = structuredClone(f.status.recovery)
+    await importGuardianReplacement(f.d, f.status, f.info, f.coin)
+    expect(f.status.recovery).toEqual(original)
+    vi.stubGlobal('navigator', { locks: { request: async (_name: string, run: () => Promise<unknown>) => run() } })
+    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(f.info)
+    vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({ vtxos: [f.coin] })
+    const chain = vi.spyOn(RestIndexerProvider.prototype, 'getVtxoChain').mockRejectedValue(new Error('offline'))
+    const txs = vi.spyOn(RestIndexerProvider.prototype, 'getVirtualTxs').mockRejectedValue(new Error('offline'))
+    const archive = await captureLightRecoveryArchive(f.d, [f.coin])
+    expect(validateLightRecoveryArchive(archive, f.d).coins).toEqual([f.coin])
+    for (const node of pruned.recovery.vtxoTree) expect(archive.transactions[node.txid]).toBeTruthy()
+    expect(chain).not.toHaveBeenCalled()
+    expect(txs).not.toHaveBeenCalled()
+  })
+
+  it.each(['root', 'leaf', 'signature', 'unrelated'] as const)(
+    'rejects a pruned path with invalid %s before repository writes',
+    async (failure) => {
+      const f = fixture(pruned)
+      const nodes = f.status.recovery!.vtxoTree
+      if (failure === 'root') f.status.recovery!.vtxoTree = nodes.filter((node) => !Object.keys(node.children).length)
+      if (failure === 'leaf') f.status.recovery!.vtxoTree = nodes.filter((node) => Object.keys(node.children).length)
+      if (failure === 'signature') {
+        f.leaf.updateInput(0, { tapKeySig: new Uint8Array(64).fill(1) }, true)
+        nodes.find((node) => node.txid === f.leaf.id)!.tx = base64.encode(f.leaf.toPSBT())
+      }
+      if (failure === 'unrelated') nodes.push(structuredClone(native.recovery.vtxoTree[0]))
+      await expect(importGuardianReplacement(f.d, f.status, f.info, f.coin)).rejects.toThrow()
+      const repo = lightExitRepository(f.d)
+      expect(await repo.getVirtualTx(f.coin.txid)).toBeNull()
+      await repo[Symbol.asyncDispose]()
+    },
+  )
+
   it('retains a verified spent renewal as ancestry for a live descendant archive', async () => {
     const f = fixture()
     const binding = {

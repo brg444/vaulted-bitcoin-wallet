@@ -62,10 +62,12 @@ function checkedTree(nodes: TxTreeNode[]) {
     const item = raw.get(id)
     if (!item || visited.has(id)) throw new Error('Replacement ancestry is incomplete or cyclic')
     visited.add(id)
-    return new TxTree(
-      item.tx,
-      new Map(Object.entries(item.node.children).map(([vout, child]) => [Number(vout), build(child)])),
-    )
+    const references = Object.entries(item.node.children)
+    const provided = references.filter(([, child]) => raw.has(child))
+    // Participant streams retain references to omitted siblings, but every
+    // supplied internal node must still lead to a supplied descendant.
+    if (references.length && !provided.length) throw new Error('Replacement ancestry is incomplete')
+    return new TxTree(item.tx, new Map(provided.map(([vout, child]) => [Number(vout), build(child)])))
   }
   const tree = build(roots[0])
   if (visited.size !== nodes.length) throw new Error('Replacement graph contains unrelated transactions')
