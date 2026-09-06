@@ -1,5 +1,8 @@
 # Electrum connector qualification
 
+This branch qualifies the L1 connector experiment. The native Savings contingency
+uses it as reference evidence; see [reconciliation and deployment status](DEPLOYMENT.md).
+
 Unmodified Electrum 4.8.1 signs the connector Savings PSBT with a native SegWit
 software wallet. Eight tests cover native Electrum seed derivation and imported
 BIP84 derivation, Standard and Advanced contracts, and partial and complete
