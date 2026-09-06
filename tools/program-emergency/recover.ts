@@ -529,6 +529,8 @@ async function prepare() {
     prepared = file
   }
   if (!prepared) throw new Error('Recovery preparation did not produce a file')
+  if (prepared.name === 'vaulted-light-recovery' && !prepared.exitPackage)
+    throw new Error('This archive has no Spending outputs to recover')
   paintPrepared()
   el('status').textContent = 'Recovery prepared. Save the file before starting.'
 }
@@ -553,7 +555,10 @@ function paintPrepared() {
   el('details').textContent = details
   const needsFeeWallet = p.name === 'vaulted-spending-recovery' || p.name === 'vaulted-lightning-refund'
   el('fee-key-label').hidden = !needsFeeWallet
-  el('funding').hidden = !needsFeeWallet
+  el('funding').hidden = !needsFeeWallet && p.name !== 'vaulted-light-recovery'
+  if (p.name === 'vaulted-light-recovery')
+    el('funding').textContent = `Separate Bitcoin fee funding address: ${p.feeFundingAddress}`
+  el('export-psbt').hidden = p.name === 'vaulted-light-recovery'
 }
 el('change-path').onclick = () => {
   prepared = undefined
@@ -783,5 +788,6 @@ el('execute').onclick = () =>
     } finally {
       el('stop').hidden = true
       controller = undefined
+      paintPrepared()
     }
   })
