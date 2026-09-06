@@ -110,8 +110,14 @@ describe('vault UI lock', () => {
     expect(userCopy).not.toMatch(/version 4/i)
     expect(userCopy).not.toMatch(/\bRP ID\b/)
     expect(userCopy).not.toMatch(/envelope/i)
-    expect(read('tools/offline-recovery/index.html')).toMatch(/Is the Vaulted app still working/)
-    expect(read('tools/offline-recovery/index.html')).toMatch(/Choose Recovery Kit/)
+    expect(read('tools/offline-recovery/index.html')).toMatch(/Open recovery/)
+    for (const network of ['mainnet', 'mutinynet']) {
+      const page = read(`tools/offline-recovery/programs/${network}/index.html`)
+      expect(page).toMatch(/Recovery file/)
+      expect(page).toMatch(/Save prepared recovery/)
+      expect(page).toMatch(/Start or resume Bitcoin recovery/)
+      expect(page).not.toMatch(/\bRP ID\b|private key input|WIF or 64-char/)
+    }
     expect(read('src/screens/Vault/onboard/Kit.tsx')).toMatch(/Recovery Kit/)
   })
 
