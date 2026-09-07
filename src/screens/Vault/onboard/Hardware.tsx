@@ -166,6 +166,57 @@ export default function VaultHardware() {
         }}
       />
       <ErrorMessage error={Boolean(importError)} text={importError} />
+      <section className='qg-note'>
+        <TriangleAlert />
+        <div>
+          <strong>Check your signer before depositing</strong>
+          <p>
+            Importing a descriptor does not confirm signing compatibility. Use a tested setup and check that you can
+            approve a Savings transfer before adding more funds.
+          </p>
+        </div>
+      </section>
+      <details className='qg-guidance'>
+        <summary>Compatible signing options</summary>
+        <div className='qg-guidance-body'>
+          <p>
+            Sparrow 2.5.4 software signing and Bitcoin Core 31.0 RPC signing passed automated tests for native SegWit
+            and Taproot. Hardware key protection requires a separate physical signing device.
+          </p>
+          <p>
+            Ledger Bitcoin app 2.4.2 passed simulator tests. Physical Ledger approval and funded production tests remain
+            incomplete. Jade is not compatible with this Savings signing flow; other hardware devices and Electrum have
+            not been qualified for it.
+          </p>
+          <p>
+            Sparrow and Ledger may show a non-default signature warning. Review the recipient and amount carefully; the
+            two reserve signatures approve the recipient and protected change separately. Return the signed PSBT to
+            Vaulted to complete the transfer.
+          </p>
+        </div>
+      </details>
+      <details className='qg-guidance'>
+        <summary>Create a key and export with Sparrow</summary>
+        <div className='qg-guidance-body'>
+          <ol>
+            <li>Create a new wallet in Sparrow and choose Single Signature, then Native SegWit.</li>
+            <li>
+              For hardware protection, create the seed on your hardware device and add it through Connected Hardware
+              Wallet. Keep the seed backup offline.
+            </li>
+            <li>
+              Apply the wallet settings, then show the public Descriptor QR or export an Output Descriptor file from
+              Sparrow. Scan, upload or paste it here.
+            </li>
+            <li>Compare Vaulted’s reserve address with the first receive address in your signing wallet.</li>
+          </ol>
+          <p>
+            For software testing, choose New or Imported Software Wallet and create a BIP39 seed, or import a dedicated
+            test seed. Use a new wallet for test keys and keep them separate from your savings.
+          </p>
+          <p>Choose a signing setup from the compatibility notice above before funding Savings.</p>
+        </div>
+      </details>
       <details className='qg-guidance'>
         <summary>Find and check your wallet descriptor</summary>
         <div className='qg-guidance-body'>

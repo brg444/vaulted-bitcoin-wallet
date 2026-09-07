@@ -175,7 +175,12 @@ export function prepareConnectorPayment(input: {
   const vbytes = Math.ceil((unsigned.length * 4 + f.rules.witnessBytes) / 4)
   if (input.feeSats > vbytes * f.rules.feerateCapSatPerV) throw new Error('connector feerate cap exceeded')
   const prepared = tx.toPSBT()
-  function mergeResponse(responseText: string, completePSBT: Uint8Array, approvalUnsigned: Uint8Array) {
+  function mergeResponse(
+    responseText: string,
+    completePSBT: Uint8Array,
+    approvalUnsigned: Uint8Array,
+    hardwareApprovalStage = false,
+  ) {
     if (responseText.length > 4_000_000) throw new Error('signer response too large')
     const text = responseText.replace(/\s+/g, '')
     const raw = /^[0-9a-f]+$/i.test(text) && text.length % 2 === 0 ? hex.decode(text) : base64.decode(text)
@@ -186,7 +191,20 @@ export function prepareConnectorPayment(input: {
       throw new Error('hardware changed transaction')
     for (let i = 0; i < coins.length; i++) {
       const returned = response.getInput(i)
+      // Core annotates even foreign unsigned inputs with its requested mode.
+      // At the hardware-only stage, discard that hint with the rest of the
+      // returned Savings map. The retained candidate still owns Savings signing.
+      const unsignedSavingsHint =
+        hardwareApprovalStage &&
+        dual &&
+        i === savingsIndex &&
+        returned.sighashType === 3 &&
+        !returned.tapKeySig &&
+        !returned.tapScriptSig?.length &&
+        !returned.partialSig?.length &&
+        !returned.finalScriptWitness?.length
       if (
+        !unsignedSavingsHint &&
         returned.sighashType !== undefined &&
         (i === savingsIndex
           ? returned.sighashType !== 0
@@ -310,7 +328,7 @@ export function prepareConnectorPayment(input: {
     hardwareApproval: () => hex.encode(approvalPsbt()),
     acceptHardwareApproval(response: string) {
       const approvalUnsigned = Transaction.fromPSBT(approvalPsbt(), OPTIONS).unsignedTx
-      const accepted = mergeResponse(response, prepared, approvalUnsigned)
+      const accepted = mergeResponse(response, prepared, approvalUnsigned, true)
       return [0, 1].map((i) => hex.encode(accepted.getInput(i).finalScriptWitness![0]))
     },
     // The policy uses a lower witness bound for its ceiling. Fee estimation
