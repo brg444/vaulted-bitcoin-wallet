@@ -214,6 +214,15 @@ export default function VaultHardware() {
             <summary>What to expect with Ledger</summary>
             <div className='qg-guidance-body'>
               <p>
+                <a
+                  href='https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/ledger-guide.md'
+                  target='_blank'
+                  rel='noopener noreferrer'
+                >
+                  Read the full Ledger guide (opens in a new tab)
+                </a>
+              </p>
+              <p>
                 Keep the key on your Ledger and use a desktop wallet to exchange public descriptors and PSBT files with
                 Vaulted. The complete Ledger and desktop-wallet flow still needs physical-device qualification.
               </p>
