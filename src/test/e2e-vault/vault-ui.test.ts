@@ -1545,7 +1545,7 @@ for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
             amount: i % 2 ? 32475 : 5000,
             type: i % 2 ? 'received' : 'sent',
             confirmed: true,
-            blockTime: 1788739200,
+            blockTime: 1788739200 - (state === 'long' && i >= 10 ? 86400 : 0),
           }))
     await page.route('**/src/screens/Vault/Home.tsx*', async (route) => {
       if (new URL(route.request().url()).searchParams.has('parity-original')) return route.continue()
@@ -1574,6 +1574,16 @@ for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
             document.documentElement.classList.toggle('palette-light', theme === 'light')
           }, theme)
           await expectWalletLayout(target)
+          const rows = await target.locator('.vault-history-row').evaluateAll((elements) =>
+            elements.map((element) => {
+              const { top, bottom, height } = element.getBoundingClientRect()
+              return { top, bottom, height }
+            }),
+          )
+          for (let i = 1; i < rows.length; i++) {
+            expect(rows[i].height, 'Ordinary two-line transactions have equal height').toBeCloseTo(rows[0].height, 1)
+            expect(rows[i].top - rows[i - 1].bottom, 'No extra space at a hidden date boundary').toBeCloseTo(0, 1)
+          }
           await expect(target.getByTestId('account-scan')).toBeVisible()
           await expect(target.locator('.qg-actions')).toBeInViewport({ ratio: 1 })
           await expect(target.getByTestId('account-receive')).toBeVisible()
