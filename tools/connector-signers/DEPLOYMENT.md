@@ -1,46 +1,55 @@
 # Savings connector release preparation
 
-The [accepted implementation sequence](https://github.com/brg444/arkade-runtime/blob/codex/hardware-connector-rc/docs/connector-first.md)
-ships the onchain Savings connector against the current Guardian stack first.
-The later Guardian refactor replaces its forked execution/signing code with the
-upstream embedded engine after PR 102 merges. It is independent of this work.
-Native Savings and the direct multisig proposal are inactive; fund migration is
-deferred.
+Deploy the wallet, Guardian and pinned offline recovery companion as a reviewed
+release. New connector enrollments use `savings-connector-dual-v2`; existing
+wallets continue to use their enrolled scripts, signer origins and recovery
+paths. This release requires no fund migration or Emulator change.
 
-Retain the [Sparrow](SPARROW.md) and [Electrum](README.md) adapters as qualification
-tools for conventional P2WPKH/BIP86 inputs beside finalized Savings. Their
-results cover component tests; physical hardware compatibility and a complete
-live payment flow remain separate qualifications.
+[Ledger approval](LEDGER.md) documents the hardware-first flow, independent
+Emulator proof, transaction layout and qualification limits. The first prepared
+Savings deposit includes two 500-sat reserves. After hardware approval, the
+wallet fills the packet and persists the final candidate before requesting
+passkey and service signatures. Retries retain all three input reservations.
 
-The candidate integrates versioned enrollment, a public-descriptor signer
-import, authenticated Guardian authorization, the existing external Emulator,
-and complete payment screens. The wallet persists the exact candidate and
-phone signature before dispatch, finalizes Savings before exporting, and saves
-the verified raw transaction before broadcast. Reload and lost responses resume
-that retained operation.
+## Release gates
 
-The schema-3 Guardian ledger authenticates connector origins and operation rows
-before use. It records authorization before signing, advances the independent
-policy sequence, and resolves reservations only from canonical transaction
-evidence. Timeouts and unconfirmed conflicts preserve ownership. Spending
-allowances remain specific to Spending.
+Require wallet unit, type, formatting, lint, build and browser checks, plus the
+Guardian check, race, lint, vulnerability and image gates. Both repositories
+must carry identical network Contract Packs. Verify the shared connector
+vectors and current-Emulator qualification; retain the v1 vectors unchanged.
 
-Connector Recovery Kits and version-5 passkey bindings preserve the full
-Savings and boarding identity. The standalone recovery companion reconstructs
-the actual connector Savings tree and existing recovery paths. Legacy kits,
-version-4 bindings, original Savings, and Light state retain their contracts.
+The offline companion must pass its complete suite with `WALLET_ROOT` pointing
+to the installed release wallet. Build both network bundles from clean wallet
+source into a temporary output directory, then copy them into the companion.
+Verify each manifest's revision, input hashes and bundle hash before committing
+the companion and updating the wallet submodule pointer.
 
-The [RC deployment runbook](https://github.com/brg444/arkade-runtime/blob/codex/hardware-connector-rc/docs/connector-rc-deployment.md)
-requires paired runtime and wallet revisions, an operator-assisted Guardian
-unlock, and a funded check against the production broadcast endpoint before
-opening enrollment. Schema 3 requires a compatible runtime; an old binary and
-an older database snapshot cannot safely replace issued authorization history.
+## Activation
 
-Connector enforcement requires at least one honest online cosigner. Phone plus
-all required online signing keys can bypass the program; that accepted
-limitation remains covered by the original counterexample tests. The later
-Guardian engine refactor must preserve both successful connector fixtures and
-these trust-boundary results.
+Stage and hash the Linux Guardian binary while the current service remains
+running. Preserve the existing client origin, RP ID, network and signer pins,
+database, and independent policy sequence. Take and verify a consistent SQLite
+backup; never roll the independent sequence backward.
 
-Existing funded wallets retain their scripts and recovery tooling. No connector
-enrollment or release activation follows from documentation or local tests.
+Guardian removes its plaintext signing key after loading it. Stopping it
+requires the operator to run the existing interactive unlock procedure before
+service can resume. Once the operator is present, stop the service, install the
+verified staged binary and run `/usr/local/sbin/vaulted-guardian-unlock` in a real
+SSH terminal. Passphrases belong only in those prompts.
+
+Require mainnet readiness with schema 5 and the new connector capability before
+promoting the paired wallet. Verify its compiled network policy and release
+identity, then check that an existing v1 wallet still opens correctly. Keep
+every enrolled contract intact throughout activation.
+
+Use a separate v2 enrollment for the funded Ledger qualification: compare the
+signer address, prepare the combined deposit, and wait for confirmation. Verify
+the displayed recipient, amount, change and fee during approval. Exercise a
+withdrawal and a reload or lost-response retry, confirm acceptance by the real
+broadcast endpoint, then spend the returned reserves again. Physical-device
+approval and production relay acceptance require this funded check.
+
+After a v2 enrollment or authorization has been issued, retain a Guardian
+version that understands it. Reverting only the web deployment does not erase
+those contracts or their operation history; an older runtime is not a safe
+rollback target.
