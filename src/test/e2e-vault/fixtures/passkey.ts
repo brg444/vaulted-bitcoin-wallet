@@ -906,10 +906,9 @@ export async function reachPasskeySetup(page: Page, inviteOnly = true) {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /Everyday spending/ })).toBeVisible()
   await page.getByRole('button', { name: 'Get started' }).click()
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.getByRole('button', { name: /^Standard/ }).click()
   await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
-  await page.getByRole('button', { name: 'Continue with Standard' }).click()
   await page.getByRole('button', { name: 'Review setup' }).click()
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: 'Continue' }).click()
@@ -921,10 +920,8 @@ export async function enrollVaultWithPasskey(page: Page, authorizer: FakePasskey
   await reachPasskeySetup(page, inviteOnly)
   if (inviteOnly) await page.getByTestId('enrollment-token').fill(authorizer.invite)
   await page.getByRole('button', { name: 'Create Vault' }).click()
-  await expect(page.getByRole('heading', { name: 'Your Vault was created', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Save Recovery Kit' }).click()
+  await expect(page.getByRole('button', { name: 'Download Recovery Kit' })).toBeVisible()
   await page.getByRole('button', { name: 'I’ll save a separate copy later' }).click()
-  await page.getByRole('button', { name: 'Open your Vault' }).click()
   await expect(page.getByTestId('account-switcher')).toBeVisible()
 }
 

@@ -51,19 +51,23 @@ describe('local encrypted recovery backup import', () => {
           <Component />
         </VaultContext.Provider>,
       )
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Restore backup' }))
       const input = screen.getByLabelText('Encrypted recovery backup file')
       const open = vi.spyOn(input, 'click')
       fireEvent.click(screen.getByRole('button', { name: 'Restore encrypted backup from a file' }))
       expect(open).toHaveBeenCalledOnce()
       choose(file())
       await waitFor(() => expect(restoreRecoveryArchive).toHaveBeenCalledWith(envelope))
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Restore encrypted backup from a file' })).toBeEnabled(),
-      )
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Restore backup' }))
       fireEvent.click(screen.getByRole('button', { name: 'Restore encrypted cloud backup' }))
       expect(restoreRecoveryArchive).toHaveBeenLastCalledWith()
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }))
       fireEvent.click(screen.getByRole('button', { name: 'Access and recovery help' }))
-      expect(screen.getByLabelText('Recovery Kit file')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'What do you still have access to?' })).toBeInTheDocument()
       expect(context.signIn).not.toHaveBeenCalled()
     },
   )

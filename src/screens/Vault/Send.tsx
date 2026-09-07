@@ -83,9 +83,8 @@ export default function VaultSend() {
   const [usdInput, setUsdInput] = useState('')
   const [amountRate, setAmountRate] = useState(fiatDisplayRate)
   const availableSpend = Math.max(0, Math.min(dailyRemaining, positions.spending.availableSats))
-  const used = Math.max(0, setup.dailyLimitSats - availableSpend)
-  const ratio = setup.dailyLimitSats > 0 ? Math.min(1, used / setup.dailyLimitSats) : 0
   const available = fromSavings ? positions.savings.availableSats : availableSpend
+  const maximum = Math.max(0, Math.min(available - Math.max(0, spend.fee), fromSavings ? available : setup.txCapSats))
   const pendingSend = !fromSavings && status?.vaultId ? loadPersistedVtxoSpend(status.vaultId) : undefined
   const resumingPayment = Boolean(pendingSend && isSameVtxoPayment(pendingSend, spend.address, spend.amount))
   const reservedSats = pendingSend?.reservedInputs?.reduce((total, input) => total + input.valueSats, 0)
@@ -162,6 +161,10 @@ export default function VaultSend() {
     return (
       <Scanner
         close={closeScan}
+        manual={() => {
+          clearSendScan()
+          setScan(false)
+        }}
         label={fromSavings ? 'Scan Bitcoin address' : 'Scan payment'}
         onData={(data) => {
           const next = payloadFromScan(data, !fromSavings)
@@ -173,7 +176,11 @@ export default function VaultSend() {
           clearSendScan()
           setScan(false)
         }}
-        onError={closeScan}
+        onError={() => {
+          toast('Camera unavailable. Enter the destination manually.')
+          clearSendScan()
+          setScan(false)
+        }}
       />
     )
   }
@@ -204,7 +211,7 @@ export default function VaultSend() {
           ) : null}
           <QgPrimary
             onClick={() => void reviewSpend()}
-            disabled={busy || Boolean(amountError) || spend.amount <= 0}
+            disabled={busy || Boolean(amountError) || spend.amount <= 0 || !spend.address.trim()}
             loading={busy}
             label={
               busy
@@ -251,9 +258,9 @@ export default function VaultSend() {
               type='button'
               className='qg-max'
               onClick={() => {
-                setSpendDraft({ amount: available })
+                setSpendDraft({ amount: maximum })
                 if (amountUnit === 'usd' && amountRate) {
-                  setUsdInput(usdFromSats(available, amountRate.pricePerBtc).toFixed(2))
+                  setUsdInput(usdFromSats(maximum, amountRate.pricePerBtc).toFixed(2))
                 }
               }}
             >
@@ -291,32 +298,11 @@ export default function VaultSend() {
       {fromSavings ? (
         <p className='qg-available'>₿{prettyNumber(positions.savings.availableSats, 0)} available to move</p>
       ) : (
-        <section className='qg-capacity' aria-label='Spending capacity'>
-          <div>
-            <span>{resumingPayment ? 'Payment in progress' : 'Available'}</span>
-            <strong>
-              {resumingPayment
-                ? `₿${prettyNumber(reservedSats || pendingSend?.amountSats || spend.amount, 0)} reserved`
-                : `₿${prettyNumber(positions.spending.availableSats, 0)}`}
-            </strong>
-          </div>
-          <div>
-            <span>Rolling 24-hour limit</span>
-            <strong>
-              {prettyNumber(availableSpend, 0)} of {prettyNumber(setup.dailyLimitSats, 0)} remaining
-            </strong>
-          </div>
-          <div
-            className='qg-meter'
-            role='progressbar'
-            aria-label='Rolling 24-hour limit used'
-            aria-valuenow={Math.round(ratio * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <span style={{ width: `${Math.round(ratio * 100)}%` }} />
-          </div>
-        </section>
+        <p className='qg-available' aria-label='Spending capacity'>
+          {resumingPayment
+            ? `₿${prettyNumber(reservedSats || pendingSend?.amountSats || spend.amount, 0)} reserved for this payment`
+            : `₿${prettyNumber(availableSpend, 0)} available within your rolling limit`}
+        </p>
       )}
       {fromSavings ? (
         <section className='qg-note'>
@@ -329,7 +315,7 @@ export default function VaultSend() {
       ) : (
         <p className='qg-helper'>
           {lightning
-            ? 'The solver and VTXO fees appear before approval.'
+            ? 'The payment fee appears before approval.'
             : `Up to ${prettyAmount(setup.txCapSats)} per payment. The fee appears before approval.`}
         </p>
       )}

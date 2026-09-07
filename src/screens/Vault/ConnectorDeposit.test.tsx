@@ -42,6 +42,7 @@ it('imports a funding draft, shows the split, verifies the signed file and requi
   await screen.findByText('98,000 sats')
   expect(screen.getByText('1,000 sats included')).toBeTruthy()
   expect(mocks.submit).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'Continue to signing' }))
   mocks.read.mockResolvedValue('signed')
   fireEvent.change(screen.getByLabelText('Signed deposit file'), {
     target: { files: [new File(['y'], 'signed.psbt')] },
@@ -52,7 +53,7 @@ it('imports a funding draft, shows the split, verifies the signed file and requi
   mocks.submit.mockResolvedValue('aa')
   mocks.load.mockReturnValue({ ...saved, draft: { signed: 'raw', submitted: true } })
   await user.click(screen.getByRole('button', { name: 'Submit deposit' }))
-  await screen.findByText(/Deposit submitted/)
+  await screen.findByRole('heading', { name: 'Deposit submitted' })
   expect(mocks.submit).toHaveBeenCalledWith(status, 'signed')
 })
 it('restores a lost broadcast for exact-byte retry and keeps its signed file fixed', async () => {
@@ -67,5 +68,6 @@ it('restores a lost broadcast for exact-byte retry and keeps its signed file fix
   expect(screen.queryByRole('button', { name: 'Import unsigned deposit' })).toBeNull()
   mocks.finish.mockResolvedValue('aa')
   await userEvent.click(screen.getByRole('button', { name: 'Check confirmation' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Done' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Import unsigned deposit' })).toBeTruthy())
 })

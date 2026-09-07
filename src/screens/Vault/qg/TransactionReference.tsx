@@ -26,10 +26,11 @@ export default function TransactionReference({
     }
   }
   return (
-    <section
-      className='qg-transaction-reference'
+    <details
+      className='qg-transaction-reference qg-guidance'
       aria-label={funding ? 'Funding transaction' : 'Transaction reference'}
     >
+      <summary>{funding ? 'View funding transaction' : 'View transaction'}</summary>
       <span>{funding ? 'Funding transaction ID' : 'Transaction ID'}</span>
       <code>{id}</code>
       <div className='qg-transaction-reference-actions'>
@@ -45,6 +46,6 @@ export default function TransactionReference({
         ) : null}
       </div>
       {copyFailed ? <p role='status'>Select the transaction ID above to copy it.</p> : null}
-    </section>
+    </details>
   )
 }

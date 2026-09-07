@@ -57,22 +57,21 @@ for (const viewport of [
       expect(bounds.mainScrollHeight).toBeLessThanOrEqual(bounds.mainHeight + 1)
       expect(bounds.footerTop).toBeGreaterThanOrEqual(bounds.mainBottom - 1)
       await page.screenshot({ path: testInfo.outputPath(`${entry}-${viewport.width}-content.png`) })
-      for (const name of [
-        'Access and recovery help',
-        'Restore encrypted cloud backup',
-        'Restore encrypted backup from a file',
-        entry === 'welcome' ? 'Get started' : 'Unlock with passkey',
-      ]) {
-        const button = root.getByRole('button', { name, exact: true })
+      const primary = root.getByRole('button', {
+        name: entry === 'welcome' ? 'Get started' : 'Unlock with passkey',
+        exact: true,
+      })
+      await expect(primary).toBeInViewport({ ratio: 1 })
+      await root.getByRole('button', { name: 'Help', exact: true }).click()
+      await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Wallet help' })
+      for (const name of ['Restore encrypted cloud backup', 'Restore encrypted backup from a file']) {
+        const button = dialog.getByRole('button', { name, exact: true })
         await button.scrollIntoViewIfNeeded()
         await expect(button).toBeInViewport({ ratio: 1 })
-        expect(
-          await button.evaluate((node) => {
-            const box = node.getBoundingClientRect()
-            return node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
-          }),
-        ).toBe(true)
       }
+      await page.getByRole('button', { name: 'Close help' }).click()
+      await expect(root.getByRole('button', { name: 'Help', exact: true })).toBeFocused()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await page.screenshot({ path: testInfo.outputPath(`${entry}-${viewport.width}-actions.png`) })
     })

@@ -196,7 +196,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   padding: max(2px, var(--qg-top-inset)) var(--qg-gutter) 6px;
 }
 
-.qg-header button {
+.qg-header > button {
   display: grid;
   width: 44px;
   height: 44px;
@@ -207,7 +207,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   color: var(--qg-ink);
 }
 
-.qg-header button svg {
+.qg-header > button svg {
   width: 18px;
   height: 18px;
 }
@@ -1960,7 +1960,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-screen-scan .qg-header,
-.qg-screen-scan .qg-header button,
+.qg-screen-scan .qg-header > button,
 .qg-screen-scan .qg-footer {
   background: #17151a;
   color: #fffdf9;
@@ -2564,7 +2564,7 @@ html.palette-dark .qg-progress {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  [data-testid='vault-app'] :is(.qg-header button, .qg-utilities button):hover {
+  [data-testid='vault-app'] :is(.qg-header > button, .qg-utilities button):hover {
     background: color-mix(in srgb, var(--qg-ink) 6%, transparent);
   }
   .qg-secondary:hover {
@@ -2779,4 +2779,216 @@ html.palette-dark .qg-progress {
 .qg-success-line strong,
 .qg-pending-label strong {
   font-size: var(--qg-body);
+}
+
+/* Focused flows keep navigation and the current action in the app frame. */
+.qg-header {
+  position: relative;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.qg-header > h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qg-header > small {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: var(--qg-gutter);
+  z-index: 1;
+  font-size: 11px;
+}
+.qg-header > .qg-header-aux {
+  position: absolute;
+  right: 94px;
+}
+.qg-header:has(> .qg-header-aux) > h2 {
+  padding-right: 44px;
+}
+.qg-help-trigger,
+.qg-header .qg-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 44px;
+  width: auto;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--qg-ink);
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.qg-help-trigger svg {
+  width: 18px;
+  height: 18px;
+}
+.qg-brand > .qg-help-trigger {
+  margin-left: auto;
+}
+.qg-brand > small {
+  display: none;
+}
+.qg-corner-help {
+  position: absolute;
+  z-index: 2;
+  top: max(8px, var(--qg-top-inset));
+  right: var(--qg-gutter);
+}
+.qg-screen {
+  position: relative;
+}
+.qg-screen-welcome {
+  grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(0, 1fr) auto;
+}
+.qg-screen-welcome .qg-main {
+  overflow: auto;
+  padding-block: 20px;
+}
+.qg-screen-unlock {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.qg-screen-unlock .qg-main {
+  overflow: auto;
+  padding-top: 60px;
+}
+.qg-main {
+  padding-top: 20px;
+}
+.qg-main > h1 {
+  font-size: clamp(24px, 6.8vw, 30px);
+  margin: 4px 0 14px;
+}
+.qg-main > .qg-copy + .qg-copy {
+  margin-top: 12px;
+}
+.qg-main > .qg-copy + .qg-field {
+  margin-top: 16px;
+}
+.qg-footer {
+  gap: 8px;
+  padding-top: 12px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+.qg-summary > div,
+.qg-details > div {
+  min-height: 40px;
+  padding-block: 9px;
+}
+.qg-full-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.qg-address-copy {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  margin-block: 16px;
+  text-align: left;
+  background: var(--qg-paper);
+  color: var(--qg-ink);
+  border: 1px solid var(--qg-line);
+  border-radius: 14px;
+}
+.qg-address-copy strong {
+  font-size: 13px;
+}
+.qg-help-dialog {
+  width: min(460px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--qg-line);
+  border-radius: 20px;
+  background: var(--qg-oat);
+  color: var(--qg-ink);
+  overflow: auto;
+}
+.qg-help-dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+.qg-help-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--qg-line);
+}
+.qg-help-heading button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+}
+.qg-help-body {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.qg-help-body p,
+.qg-help-body h2 {
+  margin: 0;
+}
+.qg-help-body .qg-install-notice {
+  margin: 0;
+}
+.qg-help-dialog > .qg-screen {
+  height: min(680px, calc(100dvh - 100px));
+}
+.qg-transaction-reference summary {
+  cursor: pointer;
+  padding-block: 12px;
+}
+.qg-transaction-reference:not([open]) {
+  display: block;
+  padding-block: 0;
+}
+.qg-receive .qg-qr {
+  width: min(220px, 48dvh, 100%);
+  margin-block: 12px;
+}
+.qg-receive .qg-qr canvas,
+.qg-receive .qg-qr svg {
+  max-width: 100%;
+  height: auto;
+}
+.qg-review-amount {
+  padding-block: 8px 12px;
+}
+.qg-methods {
+  margin-block: 16px;
+}
+@media (max-height: 740px) {
+  .qg-main {
+    padding-top: 16px;
+  }
+  .qg-main > h1 {
+    margin-bottom: 10px;
+  }
+  .qg-main > .qg-eyebrow {
+    display: none;
+  }
+  .qg-main > .qg-note {
+    margin-top: 12px;
+    padding: 12px;
+  }
+  .qg-device-key {
+    margin-block: 16px;
+  }
+  .qg-choice-list {
+    margin-block: 16px;
+  }
 }

@@ -19,6 +19,7 @@ function renderTx(selectedTx: VaultContextProps['selectedTx'], network = 'mutiny
       <VaultTx />
     </VaultContext.Provider>,
   )
+  fireEvent.click(screen.getByText(/View (funding )?transaction$/))
   return { retryLightningRefund }
 }
 

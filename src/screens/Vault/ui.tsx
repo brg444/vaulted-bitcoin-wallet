@@ -69,7 +69,11 @@ export function HubRow({
           ) : null}
         </span>
       ) : null}
-      {onClick && chevron !== false ? <span className='vault-hub-chevron'>›</span> : null}
+      {onClick && chevron !== false ? (
+        <span className='vault-hub-chevron' aria-hidden='true'>
+          ›
+        </span>
+      ) : null}
     </>
   )
   const className = danger ? 'vault-hub-row is-danger' : 'vault-hub-row'

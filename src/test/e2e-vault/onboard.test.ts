@@ -7,21 +7,16 @@ async function setupToThisDevice(page: Page) {
   await expect(page.getByRole('heading', { name: /Everyday spending/ })).toBeVisible()
   await page.getByRole('button', { name: 'Get started' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Everyday spending, protected savings' })).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.getByRole('button', { name: /^Standard/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Add your hardware key' })).toBeVisible()
   await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
 
-  await expect(page.getByRole('heading', { name: 'How should recovery work?' })).toBeVisible()
-  await page.getByRole('button', { name: 'Continue with Standard' }).click()
-
-  await expect(page.getByRole('heading', { name: 'Set comfortable limits' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Set your spending limits' })).toBeVisible()
   await page.getByRole('button', { name: 'Review setup' }).click()
 
   await expect(page.getByRole('heading', { name: 'Review your Vault' })).toBeVisible()
-  await expect(page.getByText('Not enrolled')).toBeVisible()
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: 'Continue' }).click()
 }

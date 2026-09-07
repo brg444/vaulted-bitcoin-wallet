@@ -4,7 +4,7 @@ import ErrorMessage from '../../../components/Error'
 import { pasteFromClipboard } from '../../../lib/clipboard'
 import { isPlatformPasskeyAvailable } from '../../../lib/vault/webauthn'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgPrimary, QgTextButton } from '../qg/QgScreen'
+import QgScreen, { QgPrimary } from '../qg/QgScreen'
 
 export default function VaultPasskey() {
   const { busy, enroll, enrollmentMode, error, navigate } = useContext(VaultContext)
@@ -37,15 +37,13 @@ export default function VaultPasskey() {
             icon={<Fingerprint />}
             label={busy ? 'Check your device…' : 'Create Vault'}
           />
-          <QgTextButton onClick={() => navigate('problem')} label='Having trouble?' />
         </>
       }
     >
-      <p className='qg-eyebrow'>Create access, then save your kit</p>
       <h1>Create your passkey</h1>
       <p className='qg-copy'>
-        Your passkey unlocks your device’s wallet key to approve payments. Use face recognition, a fingerprint, or your
-        device PIN when prompted. Biometric data stays on your device.
+        Approve with face recognition, a fingerprint, or your device PIN. Your passkey unlocks the wallet key; biometric
+        data stays on your device.
       </p>
       <section className='qg-device-key'>
         <Fingerprint />
@@ -66,6 +64,11 @@ export default function VaultPasskey() {
           </small>
         </span>
       </section>
+      {error ? (
+        <button type='button' className='qg-text' onClick={() => navigate('problem')}>
+          Setup help
+        </button>
+      ) : null}
       {passkeyAvailable === false ? <div data-testid='passkey-unavailable' className='qg-visually-hidden' /> : null}
       {enrollmentMode === 'loading' ? <p role='status'>Checking setup availability…</p> : null}
       {inviteOnly ? (

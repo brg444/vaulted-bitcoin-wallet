@@ -1,31 +1,19 @@
-import { useContext, useState } from 'react'
+import { useContext } from 'react'
 import { Fingerprint } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
 import { isCoarsePhone } from '../../lib/vault/webauthn'
 import { VaultContext } from '../../vault/context'
-import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
-
-import RecoveryHelp from './RecoveryHelp'
-import RecoveryFileImport from './RecoveryFileImport'
+import QgScreen, { QgPrimary } from './qg/QgScreen'
 
 export default function VaultUnlock() {
-  const { busy, error, signIn, restoreRecoveryArchive } = useContext(VaultContext)
+  const { busy, error, signIn } = useContext(VaultContext)
   const onPhone = isCoarsePhone()
-  const [showHelp, setShowHelp] = useState(false)
-
-  if (showHelp) return <RecoveryHelp onBack={() => setShowHelp(false)} />
 
   return (
     <QgScreen
       variant='unlock'
       footer={
         <>
-          <QgTextButton onClick={() => setShowHelp(true)} label='Access and recovery help' />
-          <QgTextButton
-            onClick={() => void restoreRecoveryArchive().catch(() => undefined)}
-            label='Restore encrypted cloud backup'
-          />
-          <RecoveryFileImport busy={busy} restore={restoreRecoveryArchive} />
           <ErrorMessage error={Boolean(error)} text={error} />
           <QgPrimary
             onClick={() => void signIn()}

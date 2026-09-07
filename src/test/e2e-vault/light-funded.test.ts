@@ -33,7 +33,7 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
   await page.getByLabel('Per-payment limit, in sats').fill('20000')
   await page.getByLabel('Rolling 24-hour limit, in sats').fill('50000')
   await page.getByRole('button', { name: 'Create passkey', exact: true }).click()
@@ -133,6 +133,7 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   if (process.env.VAULT_LIGHT_TEST_RENEWAL === '1') {
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
     await page.getByRole('button', { name: 'Security', exact: true }).click()
+    await page.getByRole('button', { name: /^Automatic renewal/ }).click()
     await page.getByRole('button', { name: 'Renew Spending', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Keep your Spending active', exact: true })).toBeVisible({
       timeout: 45000,
@@ -207,8 +208,10 @@ test('Light prepares recovery of funded change without a passkey', async ({ page
   expect(destination).toMatch(/^tb1p/)
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
-  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Use a local backup' }).click()
   await page
     .locator('input[type=file]')
     .setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved)) })
@@ -247,8 +250,10 @@ test('Light prepares recovery of funded change without a passkey', async ({ page
   // Reload before the outage drill so recovery depends on persisted data.
   await page.reload()
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
-  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Use a local backup' }).click()
   await page.locator('input[type=file]').setInputFiles({
     name: 'backup.json',
     mimeType: 'application/json',
@@ -293,8 +298,10 @@ test('Light explains and pauses an existing Bitcoin recovery delay', async ({ pa
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
-  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Use a local backup' }).click()
   await page.locator('input[type=file]').setInputFiles({
     name: 'saved-exit.json',
     mimeType: 'application/json',
@@ -302,6 +309,7 @@ test('Light explains and pauses an existing Bitcoin recovery delay', async ({ pa
   })
   await page.getByRole('button', { name: 'Recover directly to Bitcoin', exact: true }).click()
   await page.getByLabel('Recovery code', { exact: true }).fill(secret)
+  await page.getByRole('button', { name: 'Continue to fee funding', exact: true }).click()
   await page.getByRole('button', { name: 'Start Bitcoin recovery', exact: true }).click()
   await expect(page.getByRole('log')).toContainText('the owner-only delay ends around', { timeout: 45000 })
   await expect(page.getByRole('log')).not.toContainText('waiting_csv')

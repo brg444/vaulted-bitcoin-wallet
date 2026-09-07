@@ -62,35 +62,33 @@ describe('recovery preparation status', () => {
   })
 
   it.each([
-    [
-      'recover-initiate',
-      'Recovery transaction prepared',
-      false,
-      'The waiting period starts after Bitcoin confirmation.',
-    ],
-    [
-      'recover-clawback',
-      'Cancellation transaction prepared',
-      true,
-      'Recovery remains active until cancellation is confirmed.',
-    ],
-    ['recover-claim', 'Recovery transfer prepared', true, 'Preparing this transaction does not move your funds.'],
-  ] as const)('reports preparation without submission for %s', async (testId, heading, pending, nextStep) => {
+    ['recover-initiate', false],
+    ['recover-clawback', true],
+    ['recover-claim', true],
+  ] as const)('reports preparation without submission for %s', async (testId, pending) => {
     renderRecovery(pending)
     if (!pending) {
       fireEvent.click(screen.getByRole('radio', { name: 'I can’t use my passkey' }))
       fireEvent.click(screen.getByRole('button', { name: 'Review recovery preparation' }))
     }
     if (pending) {
-      expect(screen.getByText('Recovery detected on Savings.')).toBeTruthy()
+      expect(screen.getByText('Recovery detected on Savings')).toBeTruthy()
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: testId === 'recover-clawback' ? 'Cancel this recovery' : 'Claim after the waiting period',
+        }),
+      )
       fireEvent.change(screen.getByTestId('recover-claim-dest'), {
         target: { value: kit.descriptor.savings.address },
       })
     }
     fireEvent.click(screen.getByTestId(testId))
     const prepared = await screen.findByTestId('recovery-prepared')
-    expect(prepared).toHaveTextContent(heading)
-    expect(prepared).toHaveTextContent(nextStep)
+    expect(screen.getByTestId('screen-title')).toHaveTextContent(
+      testId === 'recover-clawback' ? 'Cancellation prepared' : 'Recovery transaction prepared',
+    )
+    expect(prepared).toHaveTextContent('Preparation has not moved funds')
+    expect(prepared).toHaveTextContent('Bitcoin confirmation')
     await waitFor(() => expect(mocks.copy).toHaveBeenCalledOnce())
     expect(mocks.copy.mock.calls[0][0]).toMatch(/^[0-9a-f]+$/)
     expect(mocks.broadcast).not.toHaveBeenCalled()

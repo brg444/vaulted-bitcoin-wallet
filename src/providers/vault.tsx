@@ -516,7 +516,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
             connectorPath: [...imported.path],
           },
         })
-        setScreen('recovery')
+        setScreen(setup.protectionTier === 'advanced' ? 'recovery' : 'conditions')
       } catch (err) {
         setError(humanizeVaultError(err))
       }
@@ -538,7 +538,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           throw new Error('This Mutinynet vault requires the hardware key already configured on the service')
         }
         persist({ ...setup, hardwarePub })
-        setScreen('recovery')
+        setScreen(setup.protectionTier === 'advanced' ? 'recovery' : 'conditions')
       } catch (err) {
         setError(humanizeVaultError(err))
       }

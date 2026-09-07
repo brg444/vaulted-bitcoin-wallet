@@ -28,16 +28,7 @@ Object.defineProperty(window, 'matchMedia', {
 beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
+    value: createMatchMedia,
   })
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -47,3 +38,11 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
 })
+
+// Model native dialog visibility; browser tests cover focus trapping and dismissal.
+HTMLDialogElement.prototype.showModal = function () {
+  this.setAttribute('open', '')
+}
+HTMLDialogElement.prototype.close = function () {
+  this.removeAttribute('open')
+}

@@ -59,11 +59,11 @@ describe('onboarding guidance', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download Recovery Kit' }))
     expect(context.navigate).not.toHaveBeenCalled()
     expect(screen.getByTestId('confirmed')).toHaveTextContent('false')
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Open your Vault' })).toBeDisabled()
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open your Vault' }))
     await waitFor(() => expect(screen.getByTestId('confirmed')).toHaveTextContent('true'))
-    expect(context.navigate).toHaveBeenCalledWith('ready')
+    expect(context.navigate).toHaveBeenCalledWith('home')
     const otherKit = buildRecoveryKit(buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, vaultId: '11'.repeat(16) }))
     rerender(
       <VaultContext.Provider value={value({ downloadRecoveryKit: () => JSON.stringify(otherKit) })}>
@@ -81,7 +81,7 @@ describe('onboarding guidance', () => {
       </VaultContext.Provider>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'I’ll save a separate copy later' }))
-    expect(context.navigate).toHaveBeenCalledWith('ready')
+    expect(context.navigate).toHaveBeenCalledWith('home')
     rerender(
       <VaultContext.Provider value={context}>
         <VaultReady />

@@ -1,6 +1,5 @@
 import { CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
 import { prettyAmount } from '../../lib/format'
@@ -30,8 +29,13 @@ export default function VaultReview() {
   const lightning = isVaultLightningInput(spend.address)
   const destinationType = movingToSpending ? 'Spending' : lightning ? 'Lightning invoice' : 'Address'
   const destinationValue = movingToSpending ? 'Spending' : spend.address
-  const destinationShown =
-    movingToSpending || lightning || revealed ? destinationValue : truncateAddress(destinationValue, 8)
+  const destinationShown = movingToSpending
+    ? destinationValue
+    : lightning
+      ? 'Lightning payment'
+      : revealed
+        ? destinationValue
+        : truncateAddress(destinationValue, 8)
 
   if (fromSavings && busy && !rebroadcastingConnector) {
     return (
@@ -141,49 +145,19 @@ export default function VaultReview() {
           <strong>{status?.network === 'mainnet' ? 'Bitcoin' : 'Mutinynet'}</strong>
         </div>
       </section>
-      {!rebroadcastingConnector && (
-        <section className='qg-approvals' aria-labelledby='qg-approvals-heading'>
-          <h3 id='qg-approvals-heading'>Next approval</h3>
-          {fromSavings ? (
-            <>
-              <div>
-                <b>1</b>
-                <span>
-                  <strong>Passkey on this device</strong>
-                  <small>Signs first</small>
-                </span>
-              </div>
-              <div>
-                <b>2</b>
-                <span>
-                  <strong>{status?.templateVersion === CONNECTOR_TEMPLATE ? 'External signer' : 'Hardware key'}</strong>
-                  <small>Signs next on the other device</small>
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <span className='qg-approval-mark'>1</span>
-                <p>
-                  <strong>You</strong>
-                  <small>Approve with passkey</small>
-                </p>
-              </div>
-              <div>
-                <span className='qg-approval-mark is-safe'>
-                  <ShieldCheck />
-                </span>
-                <p>
-                  <strong>Vault service</strong>
-                  <small>Automatic if this payment is within your limits</small>
-                </p>
-                <span className='qg-auto'>Automatic</span>
-              </div>
-            </>
-          )}
-        </section>
-      )}
+      {!rebroadcastingConnector ? (
+        <p className='qg-copy qg-approval-copy'>
+          {fromSavings
+            ? 'Approve with your passkey, then sign with your external wallet.'
+            : 'Approve with your passkey. The vault service checks your payment limits.'}
+        </p>
+      ) : null}
+      {lightning ? (
+        <details className='qg-guidance'>
+          <summary>View Lightning invoice</summary>
+          <p className='qg-full-value'>{spend.address}</p>
+        </details>
+      ) : null}
     </QgScreen>
   )
 }

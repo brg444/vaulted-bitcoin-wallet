@@ -6,7 +6,7 @@ import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { VaultContext } from '../../vault/context'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import TransactionReference from './qg/TransactionReference'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 export default function VaultTx() {
   const { busy, error, navigate, retryLightningRefund, selectedTx, status: vaultStatus } = useContext(VaultContext)
@@ -73,7 +73,7 @@ export default function VaultTx() {
               label='Return to Spending'
             />
           ) : null}
-          <QgPrimary onClick={() => navigate('home')} label='Back to Wallet' />
+          <QgSecondary onClick={() => navigate('home')} label='Back to Wallet' />
         </>
       }
     >
@@ -100,12 +100,6 @@ export default function VaultTx() {
         </h1>
       </div>
       <section className='qg-details'>
-        <div>
-          <span>{sent ? 'Sent' : 'Received'}</span>
-          <strong>
-            <QgAmount value={prettyAmount(amount)} />
-          </strong>
-        </div>
         {lightning && selectedTx?.fee !== undefined ? (
           <div>
             <span>Fee</span>
@@ -114,10 +108,6 @@ export default function VaultTx() {
             </strong>
           </div>
         ) : null}
-        <div>
-          <span>Status</span>
-          <strong>{status}</strong>
-        </div>
         <div>
           <span>When</span>
           <strong>{selectedTx?.blockTime ? prettyDate(selectedTx.blockTime) : 'Not available yet'}</strong>

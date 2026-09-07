@@ -99,6 +99,7 @@ function renderKit(extra: Partial<VaultContextProps> = {}) {
 
 async function startCancel(familyKey: FamilyKey) {
   renderLost(familyKey)
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel this recovery' }))
   fireEvent.change(screen.getByTestId('recover-claim-dest'), { target: { value: dest } })
   fireEvent.click(screen.getByTestId('recover-guardian-exit'))
   await screen.findByTestId('recover-guardian-signers')
@@ -199,8 +200,8 @@ describe('recovery archive failure feedback', () => {
     })
     expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible()
     expect(screen.getByText('Transaction recovery data saved on this device earlier')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Download encrypted recovery archive' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Download Recovery Kit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save encrypted backup file' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Recovery Kit.*On this device/ })).toBeEnabled()
   })
 
   it('reports a failed explicit export without claiming a new saved copy', async () => {
@@ -208,6 +209,7 @@ describe('recovery archive failure feedback', () => {
       .fn()
       .mockRejectedValue(new Error('Spending operation is missing its exact transaction bundle'))
     renderKit({ downloadRecoveryArchive, recoveryArchiveStatus: '', recoveryArchiveError: '' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save encrypted backup file' }))
     fireEvent.click(screen.getByRole('button', { name: 'Download encrypted recovery archive' }))
     await waitFor(() =>
       expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible(),

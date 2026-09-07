@@ -23,7 +23,7 @@ import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
 
-type View = 'menu' | 'theme' | 'about' | 'haptics' | 'logs' | 'reset'
+type View = 'menu' | 'theme' | 'about' | 'haptics' | 'logs' | 'reset' | 'diagnostics'
 
 const THEME_OPTIONS: { value: Themes; testId: string; label: (theme: Themes) => string }[] = [
   { value: Themes.Auto, testId: 'select-option-0', label: () => `Auto (${systemTheme()})` },
@@ -264,28 +264,10 @@ export default function VaultSettings() {
     )
   }
 
-  if (view === 'logs') return <LogsView onBack={() => setView('menu')} />
-  if (view === 'reset') return <ResetView onBack={() => setView('menu')} onReset={reset} />
-
-  return (
-    <QgScreen title='Settings' dismiss={() => navigate('home')}>
-      <div className='vault-security'>
-        <HubGroup label='General'>
-          <SettingsRow
-            label='Theme'
-            testId='settings-theme'
-            value={theme === Themes.Auto ? `Auto (${resolveVaultTheme(Themes.Auto)})` : theme}
-            onClick={() => setView('theme')}
-          />
-          <SettingsRow
-            label='Haptics'
-            testId='settings-haptics'
-            value={haptics ? 'On' : 'Off'}
-            onClick={() => setView('haptics')}
-          />
-          <SettingsRow label='About' testId='settings-about' onClick={() => setView('about')} />
-        </HubGroup>
-
+  if (view === 'diagnostics')
+    return (
+      <QgScreen title='Diagnostics' back={() => setView('menu')}>
+        {' '}
         <HubGroup label='Advanced'>
           <SettingsRow
             label={checkingUpdate ? 'Checking…' : 'Check for update'}
@@ -310,6 +292,34 @@ export default function VaultSettings() {
             }}
           />
           <SettingsRow label='Logs' testId='settings-logs' onClick={() => setView('logs')} />
+        </HubGroup>
+      </QgScreen>
+    )
+
+  if (view === 'logs') return <LogsView onBack={() => setView('diagnostics')} />
+  if (view === 'reset') return <ResetView onBack={() => setView('menu')} onReset={reset} />
+
+  return (
+    <QgScreen title='Settings' dismiss={() => navigate('home')}>
+      <div className='vault-security'>
+        <HubGroup label='General'>
+          <SettingsRow
+            label='Theme'
+            testId='settings-theme'
+            value={theme === Themes.Auto ? `Auto (${resolveVaultTheme(Themes.Auto)})` : theme}
+            onClick={() => setView('theme')}
+          />
+          <SettingsRow
+            label='Haptics'
+            testId='settings-haptics'
+            value={haptics ? 'On' : 'Off'}
+            onClick={() => setView('haptics')}
+          />
+          <SettingsRow label='About' testId='settings-about' onClick={() => setView('about')} />
+        </HubGroup>
+
+        <HubGroup>
+          <SettingsRow label='Diagnostics' testId='settings-diagnostics' onClick={() => setView('diagnostics')} />
         </HubGroup>
 
         <HubGroup label='This browser'>

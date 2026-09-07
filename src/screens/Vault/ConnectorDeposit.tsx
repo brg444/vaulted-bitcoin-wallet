@@ -11,11 +11,19 @@ import {
 import { readConnectorSignerFile } from '../../lib/vault/connectorSignerFile'
 import { copyToClipboard } from '../../lib/clipboard'
 import type { VaultStatus } from '../../lib/vault/types'
-import { QgPrimary, QgSecondary } from './qg/QgScreen'
+import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 type SavedFunding = NonNullable<ReturnType<typeof loadFunding>>
 
-export default function ConnectorDeposit({ status }: { status: VaultStatus }) {
+export default function ConnectorDeposit({
+  status,
+  onBack,
+  onAddress,
+}: {
+  status: VaultStatus
+  onBack?: () => void
+  onAddress?: () => void
+}) {
   const [saved, setSaved] = useState<SavedFunding | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -24,6 +32,7 @@ export default function ConnectorDeposit({ status }: { status: VaultStatus }) {
   const [confirmed, setConfirmed] = useState('')
   const [copied, setCopied] = useState(false)
   const [signed, setSigned] = useState('')
+  const [step, setStep] = useState<'review' | 'sign'>('review')
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => {
     try {
@@ -79,133 +88,228 @@ export default function ConnectorDeposit({ status }: { status: VaultStatus }) {
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
+  const check = () => {
+    setBusy(true)
+    setError('')
+    void finishFunding(status)
+      .then((id) => {
+        setConfirmed(id)
+        setSaved(null)
+        setSigned('')
+        setTxid('')
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setBusy(false))
+  }
+  const submission = Boolean(signed || saved?.draft.signed)
+  const title = abandon
+    ? 'Abandon deposit'
+    : confirmed
+      ? 'Deposit confirmed'
+      : txid
+        ? 'Deposit submitted'
+        : submission
+          ? 'Submit deposit'
+          : !saved
+            ? 'Fund Savings'
+            : step === 'review'
+              ? 'Review deposit'
+              : 'Sign deposit'
   return (
-    <section className='qg-note' aria-label='Fund Savings'>
-      <div>
-        <h2>Fund Savings in one transaction</h2>
-        {confirmed ? <p role='status'>Deposit confirmed: {confirmed}</p> : null}
-        {!saved ? (
-          <>
-            <p>
-              In your signing wallet, prepare a payment to the Savings address above and export it as an unsigned PSBT.
-              Import it here before signing. Use a native SegWit or Taproot wallet.
+    <QgScreen
+      title={title}
+      back={
+        busy
+          ? undefined
+          : abandon
+            ? () => setAbandon(false)
+            : saved && !submission && step === 'sign'
+              ? () => setStep('review')
+              : onBack
+      }
+      footer={
+        <>
+          {error ? (
+            <p role='alert' className='qg-footer-error'>
+              {error}
             </p>
-            <p>
-              Vaulted sets aside 1,000 sats from your first deposit for the signer reserve and adjusts the network fee.
-              The rest goes to Savings; your change stays in your signing wallet.
-            </p>
-            <QgPrimary label='Import unsigned deposit' onClick={() => input.current?.click()} loading={busy} />
-          </>
-        ) : (
-          <>
-            <dl>
-              <dt>To Savings</dt>
-              <dd>{saved.prepared.savings.toLocaleString()} sats</dd>
-              <dt>Signer reserve</dt>
-              <dd>
-                {saved.prepared.reserve ? `${saved.prepared.reserve.toLocaleString()} sats included` : 'Already funded'}
-              </dd>
-              <dt>Network fee</dt>
-              <dd>{saved.prepared.fee.toLocaleString()} sats</dd>
-            </dl>
-            {txid ? (
-              <p role='status'>
-                Deposit submitted. Savings and the reserve become available after Bitcoin confirmation. Transaction:{' '}
-                {txid}
-              </p>
-            ) : (
-              <>
-                <p>
-                  Open this prepared transaction in your signing wallet, review its outputs and approve it. Import the
-                  signed file here to submit it.
-                </p>
-                <QgSecondary label='Save deposit PSBT' onClick={download} disabled={busy} />
-                <QgSecondary
-                  label={copied ? 'Copied' : 'Copy deposit PSBT'}
-                  disabled={busy}
-                  onClick={() => {
-                    void copyToClipboard(base64.encode(hex.decode(saved.prepared.psbt)))
-                      .then(() => setCopied(true))
-                      .catch((err) => setError(err.message))
-                  }}
-                />
-                {!saved.draft.signed ? (
-                  <QgSecondary label='Import signed deposit' onClick={() => input.current?.click()} disabled={busy} />
-                ) : null}
-                {signed || saved.draft.signed ? (
-                  <QgPrimary
-                    label={saved.draft.signed ? 'Retry deposit submission' : 'Submit deposit'}
-                    onClick={() => void broadcast()}
-                    loading={busy}
-                  />
-                ) : null}
-              </>
-            )}
-            <QgSecondary
-              label='Check confirmation'
-              disabled={busy}
+          ) : null}
+          {abandon ? (
+            <QgPrimary
+              label='Abandon this deposit'
+              loading={busy}
               onClick={() => {
                 setBusy(true)
-                setError('')
-                void finishFunding(status)
-                  .then((id) => {
-                    setConfirmed(id)
+                void abandonFunding(status)
+                  .then(() => {
                     setSaved(null)
                     setSigned('')
                     setTxid('')
+                    setError('')
+                    setAbandon(false)
+                    setStep('review')
                   })
                   .catch((err) => setError(err.message))
                   .finally(() => setBusy(false))
               }}
             />
-          </>
-        )}
-        {saved || error ? (
-          <>
-            {abandon ? (
-              <>
+          ) : confirmed ? (
+            <QgPrimary label='Done' onClick={onBack || (() => setConfirmed(''))} />
+          ) : txid ? (
+            <QgPrimary label='Check confirmation' onClick={check} loading={busy} />
+          ) : submission ? (
+            <>
+              <QgPrimary
+                label={saved?.draft.signed ? 'Retry deposit submission' : 'Submit deposit'}
+                onClick={() => void broadcast()}
+                loading={busy}
+              />
+              <QgSecondary label='Check confirmation' onClick={check} disabled={busy} />
+            </>
+          ) : !saved ? (
+            <QgPrimary label='Import unsigned deposit' onClick={() => input.current?.click()} loading={busy} />
+          ) : step === 'review' ? (
+            <QgPrimary label='Continue to signing' onClick={() => setStep('sign')} />
+          ) : (
+            <QgPrimary label='Import signed deposit' onClick={() => input.current?.click()} loading={busy} />
+          )}
+        </>
+      }
+    >
+      {abandon ? (
+        <>
+          <h1>Check before starting over</h1>
+          <p className='qg-copy'>
+            Any transaction you already signed can still be broadcast and confirm. Abandon this deposit only after
+            checking its status in your signing wallet, and stop using the previous file.
+          </p>
+          <QgSecondary label='Keep saved deposit' disabled={busy} onClick={() => setAbandon(false)} />
+        </>
+      ) : confirmed ? (
+        <p role='status' className='qg-full-value'>
+          Deposit confirmed: {confirmed}
+        </p>
+      ) : (
+        <>
+          {!saved ? (
+            <>
+              <h1>Fund Savings in one transaction</h1>
+              <p className='qg-copy'>
+                In your signing wallet, prepare a payment to this Savings address. Export an unsigned PSBT and import it
+                here before signing.
+              </p>
+              <button
+                type='button'
+                className='qg-address-copy'
+                onClick={() =>
+                  void copyToClipboard(status.savingsAddress || '')
+                    .then(() => setCopied(true))
+                    .catch((err) => setError(err.message))
+                }
+              >
+                <span className='qg-full-value'>{status.savingsAddress}</span>
+                <strong>{copied ? 'Copied' : 'Copy Savings address'}</strong>
+              </button>
+              <p className='qg-copy'>
+                The first deposit includes a 1,000-sat signer reserve. The remaining amount, after fees, goes to
+                Savings. Your signing wallet keeps its change.
+              </p>
+              <details className='qg-guidance'>
+                <summary>Prepare the unsigned payment</summary>
                 <p>
-                  Any transaction you already signed can still be broadcast and confirm. Abandon this deposit only after
-                  checking its status in your signing wallet, and stop using the previous file.
+                  Use a native SegWit or Taproot wallet. In Sparrow, create the payment and save its PSBT before
+                  signing. Vaulted will show the adjusted outputs and fee for review.
                 </p>
-                <QgSecondary label='Keep saved deposit' disabled={busy} onClick={() => setAbandon(false)} />
-                <QgSecondary
-                  label='Abandon this deposit'
-                  disabled={busy}
-                  onClick={() => {
-                    setBusy(true)
-                    void abandonFunding(status)
-                      .then(() => {
-                        setSaved(null)
-                        setSigned('')
-                        setTxid('')
-                        setError('')
-                        setAbandon(false)
-                      })
-                      .catch((err) => setError(err.message))
-                      .finally(() => setBusy(false))
-                  }}
-                />
-              </>
-            ) : (
+              </details>
+              {onAddress ? (
+                <button type='button' className='qg-text' onClick={onAddress}>
+                  Show receiving QR code
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <section className='qg-summary' aria-label='Deposit details'>
+                <div>
+                  <span>To Savings</span>
+                  <strong>{saved.prepared.savings.toLocaleString()} sats</strong>
+                </div>
+                <div>
+                  <span>Signer reserve</span>
+                  <strong>
+                    {saved.prepared.reserve
+                      ? `${saved.prepared.reserve.toLocaleString()} sats included`
+                      : 'Already funded'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Network fee</span>
+                  <strong>{saved.prepared.fee.toLocaleString()} sats</strong>
+                </div>
+              </section>
+              {txid ? (
+                <>
+                  <p role='status' className='qg-copy'>
+                    Deposit submitted. Savings and the reserve become available after Bitcoin confirmation.
+                  </p>
+                  <details className='qg-guidance'>
+                    <summary>View transaction</summary>
+                    <p className='qg-full-value'>{txid}</p>
+                  </details>
+                </>
+              ) : submission ? (
+                <p className='qg-copy'>
+                  The signed deposit is verified before submission. A retry sends the same saved transaction.
+                </p>
+              ) : step === 'review' ? (
+                <p className='qg-copy'>
+                  Review this split, then open the prepared transaction in your signing wallet to check all outputs and
+                  approve it.
+                </p>
+              ) : (
+                <>
+                  <p className='qg-copy'>
+                    Open the prepared deposit in your signing wallet. Check the outputs and fee, sign, then import the
+                    signed file here.
+                  </p>
+                  <QgSecondary label='Save deposit PSBT' onClick={download} disabled={busy} />
+                  <details className='qg-guidance'>
+                    <summary>Copy transaction instead</summary>
+                    <QgSecondary
+                      label={copied ? 'Copied' : 'Copy deposit PSBT'}
+                      disabled={busy}
+                      onClick={() =>
+                        void copyToClipboard(base64.encode(hex.decode(saved.prepared.psbt)))
+                          .then(() => setCopied(true))
+                          .catch((err) => setError(err.message))
+                      }
+                    />
+                  </details>
+                </>
+              )}
+            </>
+          )}
+          {saved || error ? (
+            <details className='qg-guidance'>
+              <summary>Manage saved deposit</summary>
+              <p>Check the transaction in your signing wallet before abandoning it.</p>
               <QgSecondary label='Start over' disabled={busy} onClick={() => setAbandon(true)} />
-            )}
-          </>
-        ) : null}
-        <input
-          ref={input}
-          type='file'
-          hidden
-          aria-label={saved ? 'Signed deposit file' : 'Unsigned deposit file'}
-          accept='.psbt,.txn,.txt'
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            event.target.value = ''
-            if (file) void importFile(file)
-          }}
-        />
-        {error ? <p role='alert'>{error}</p> : null}
-      </div>
-    </section>
+            </details>
+          ) : null}
+        </>
+      )}
+      <input
+        ref={input}
+        type='file'
+        hidden
+        aria-label={saved ? 'Signed deposit file' : 'Unsigned deposit file'}
+        accept='.psbt,.txn,.txt'
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          if (file) void importFile(file)
+        }}
+      />
+    </QgScreen>
   )
 }

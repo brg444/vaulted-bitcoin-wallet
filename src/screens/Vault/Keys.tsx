@@ -1,4 +1,4 @@
-import { useContext, type ReactNode } from 'react'
+import { useContext, useState, type ReactNode } from 'react'
 import { Fingerprint, FileKey, Server, ShieldCheck } from 'lucide-react'
 import { prettyAmount } from '../../lib/format'
 import { shortKey } from '../../lib/vault/setupPlan'
@@ -63,6 +63,7 @@ export default function VaultKeys() {
     spendingArkAddress,
     status,
   } = useContext(VaultContext)
+  const [view, setView] = useState<'overview' | 'keys' | 'limits' | 'renewal'>('overview')
   const { confirmed } = useBackupConfirmation()
   const phoneCovered = Boolean(status?.enrolled)
   const devicesCovered = Boolean(status?.passkeyLoginAvailable)
@@ -86,74 +87,55 @@ export default function VaultKeys() {
   const vaultReady = phoneCovered && addressCovered && readiness.state === 'ready'
 
   return (
-    <QgScreen title='Security' dismiss={() => navigate('home')}>
-      <div className='vault-security'>
-        <section className='vault-security-hero' aria-label='Vault protection status'>
-          <div className='vault-security-hero-head'>
-            <strong>Vault protection</strong>
-            <span className={vaultReady ? 'is-ready' : 'is-attention'}>{vaultReady ? 'Ready' : 'Review'}</span>
-          </div>
-          <h2>{vaultReady ? 'Your vault is available.' : 'Review your vault.'}</h2>
-          <p>
-            {vaultReady
-              ? 'Spending uses your registered limits, and Savings transfers require your passkey and hardware wallet. Check your backup and recovery options below.'
-              : 'One or more safeguards needs attention. Check device access, wallet addresses, and service readiness.'}
-          </p>
-        </section>
-
-        <div className='vault-security-grid'>
-          <SecurityTile
-            icon={<Fingerprint />}
-            label='Protection tier'
-            value={protectionTier === 'advanced' ? 'Advanced' : 'Standard'}
-            detail={
-              protectionTier === 'advanced'
-                ? 'Separate key for delayed Savings recovery'
-                : 'Savings recovery with one remaining key'
-            }
-          />
-          <SecurityTile
-            icon={<FileKey />}
-            label='Recovery Kit'
-            value={confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'On this device' : 'Review'}
-            detail={
-              confirmed
-                ? 'You confirmed a separate kit copy'
-                : hasRecoveryKit
-                  ? 'Save a copy outside this device'
-                  : 'Retrieve your vault map'
-            }
-            onClick={() => openRecover('kit', 'keys')}
-            testId='security-kit'
-          />
-          <SecurityTile
-            icon={<ShieldCheck />}
-            label='Spending limits'
-            value={`${prettyAmount(perPayment)} each`}
-            detail={`${prettyAmount(limit)} / rolling 24 hours`}
-          />
-          <SecurityTile
-            icon={<Server />}
-            label='Vault service'
-            value={readinessLabel}
-            detail='Enforces limits and assists recovery'
-            testId='security-readiness'
-          />
-        </div>
-
-        <div className='vault-security-groups'>
+    <QgScreen
+      title={
+        view === 'overview'
+          ? 'Security'
+          : view === 'keys'
+            ? 'Keys and access'
+            : view === 'limits'
+              ? 'Spending limits'
+              : 'Automatic renewal'
+      }
+      dismiss={view === 'overview' ? () => navigate('home') : undefined}
+      back={view !== 'overview' ? () => setView('overview') : undefined}
+    >
+      {view === 'overview' ? (
+        <>
+          <p className='qg-copy'>{vaultReady ? 'Your vault is available.' : 'Check the items that need attention.'}</p>
+          <HubGroup>
+            <HubRow
+              title='Keys and access'
+              status={protectionTier === 'advanced' ? 'Advanced' : 'Standard'}
+              onClick={() => setView('keys')}
+            />
+            <HubRow
+              title='Backups'
+              status={confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'Save a separate copy' : 'Needed'}
+              onClick={() => openRecover('kit', 'keys')}
+              testId='security-kit'
+            />
+            <HubRow
+              title='Spending limits'
+              status={`${prettyAmount(perPayment)} each`}
+              onClick={() => setView('limits')}
+            />
+            <HubRow
+              title='Automatic renewal'
+              status={spendingRenewals?.error ? 'Needs attention' : readinessLabel}
+              onClick={() => setView('renewal')}
+              testId='security-readiness'
+            />
+            <HubRow title='I lost a key' onClick={() => openRecover('lost', 'keys')} testId='security-lost' />
+          </HubGroup>
+        </>
+      ) : view === 'keys' ? (
+        <>
           <HubGroup label='Keys'>
             <HubRow
               icon={<Fingerprint />}
               title='Your passkey'
               status={!phoneCovered ? 'Needed' : devicesCovered ? 'Ready' : 'This device only'}
-              onClick={
-                canEnableOther
-                  ? () => {
-                      if (!busy) void enablePasskeyLogin()
-                    }
-                  : undefined
-              }
             />
             <HubRow
               icon={<ShieldCheck />}
@@ -170,8 +152,40 @@ export default function VaultKeys() {
               />
             ) : null}
           </HubGroup>
-
+          {canEnableOther ? (
+            <button type='button' className='qg-primary' disabled={busy} onClick={() => void enablePasskeyLogin()}>
+              {busy ? 'Waiting for passkey…' : 'Use on another device'}
+            </button>
+          ) : null}
           <RecoveryExplanation advanced={protectionTier === 'advanced'} mainnet={status?.network === 'mainnet'} />
+          {!addressCovered && status?.enrolled ? (
+            <p className='qg-copy'>Vault addresses are not restored on this device. Sign in again to restore them.</p>
+          ) : null}
+        </>
+      ) : view === 'limits' ? (
+        <>
+          <section className='qg-summary'>
+            <div>
+              <span>Per payment</span>
+              <strong>{prettyAmount(perPayment)}</strong>
+            </div>
+            <div>
+              <span>Rolling 24 hours</span>
+              <strong>{prettyAmount(limit)}</strong>
+            </div>
+          </section>
+          <p className='qg-copy'>
+            These limits were fixed during setup. Each payment leaves the rolling allowance after 24 hours.
+          </p>
+        </>
+      ) : (
+        <>
+          <SecurityTile
+            icon={<Server />}
+            label='Vault service'
+            value={readinessLabel}
+            detail='Enforces limits and assists recovery'
+          />
           {spendingRenewals?.available ? (
             <SecurityTile
               icon={<Server />}
@@ -182,27 +196,15 @@ export default function VaultKeys() {
                   : `${Object.values(spendingRenewals.operations).filter((operation) => operation.status?.state === 'armed' && operation.status.expiresAt * 1000 > Date.now()).length} scheduled`
               }
               detail='Guardian renews authorized Spending outputs while this wallet is closed.'
-              tone={spendingRenewals.error ? 'orange' : 'green'}
               testId='spending-renewal-status'
             />
-          ) : null}
-          <HubGroup label='Recovery and access'>
-            <HubRow title='I lost a key' onClick={() => openRecover('lost', 'keys')} testId='security-lost' />
-            {canEnableOther ? (
-              <HubRow
-                title={busy ? 'Waiting for passkey…' : 'Use on another device'}
-                onClick={() => {
-                  if (!busy) void enablePasskeyLogin()
-                }}
-              />
-            ) : null}
-          </HubGroup>
-        </div>
-
-        {!addressCovered && status?.enrolled ? (
-          <p className='qg-copy'>Vault addresses are not restored on this device. Sign in again to restore them.</p>
-        ) : null}
-      </div>
+          ) : (
+            <p className='qg-copy'>
+              Automatic renewal is unavailable for this wallet. Keep the app open to check the status of your Spending.
+            </p>
+          )}
+        </>
+      )}
     </QgScreen>
   )
 }

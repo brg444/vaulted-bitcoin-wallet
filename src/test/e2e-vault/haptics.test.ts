@@ -27,6 +27,6 @@ test('iOS haptics preserve native touch targets and scrolling', async ({ browser
   expect(directTarget).toBe(true)
   await button.tap()
 
-  await expect(page.getByRole('heading', { name: 'How it works' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Choose your Vault' })).toBeVisible()
   await context.close()
 })

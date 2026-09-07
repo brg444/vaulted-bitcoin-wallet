@@ -87,7 +87,7 @@ test('creates and resumes a Savings connector handoff through the passkey-backed
   await page.getByRole('button', { name: 'Open navigation' }).click()
   await page.getByTestId('account-savings').click()
   await expect(page.getByTestId('vault-balance')).toContainText('51,500')
-  await page.getByRole('button', { name: 'Spending', exact: true }).click()
+  await page.getByRole('button', { name: 'Move to Spending', exact: true }).click()
   await page.getByTestId('vault-send-amount').fill('50000')
   await page.getByRole('button', { name: 'Review move' }).click()
 
@@ -98,6 +98,7 @@ test('creates and resumes a Savings connector handoff through the passkey-backed
   await page.getByRole('button', { name: 'Sign on this device' }).click()
 
   await expect(page.getByRole('heading', { name: 'Signer next' })).toBeVisible()
+  await page.getByText('Other signing methods', { exact: true }).click()
   await page.getByRole('button', { name: 'Copy PSBT' }).click()
   const phoneSigned = await page.evaluate(() => navigator.clipboard.readText())
   const hardwareSecret = connectorTestSecret()

@@ -80,7 +80,7 @@ describe('Vault home account boundaries', () => {
   it('starts Savings to Spending at the pinned boarding address', async () => {
     const user = userEvent.setup()
     const value = renderHome({ account: 'savings' })
-    await user.click(screen.getByRole('button', { name: 'Spending' }))
+    await user.click(screen.getByRole('button', { name: 'Move to Spending' }))
     expect(value.clearSpendDraft).toHaveBeenCalled()
     expect(value.setSpendDraft).toHaveBeenCalledWith({ address: value.boardingAddress })
     expect(value.navigate).toHaveBeenCalledWith('send')
@@ -97,7 +97,7 @@ describe('Vault home account boundaries', () => {
 
   it('keeps the Savings actions explicit without adding send instructions to Home', () => {
     renderHome({ account: 'savings' })
-    expect(screen.getByRole('button', { name: 'Spending' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Move to Spending' })).toBeTruthy()
     expect(screen.getAllByRole('button', { name: 'Deposit' })).toHaveLength(2)
     expect(screen.queryByText(/hardware key/i)).toBeNull()
   })
@@ -160,7 +160,7 @@ describe('Vault home account boundaries', () => {
     })
     expect(screen.queryByText('Available to spend')).toBeNull()
     expect(screen.getByTestId('vault-balance')).toHaveTextContent('₿128,000')
-    expect(screen.getByTestId('spending-pending')).toHaveTextContent('₿48,000 arriving')
+    expect(screen.getByText(/48,000 pending/)).toBeVisible()
     expect(screen.queryByTestId('spending-total')).toBeNull()
     expect(screen.queryByText(/currently spendable/i)).toBeNull()
   })

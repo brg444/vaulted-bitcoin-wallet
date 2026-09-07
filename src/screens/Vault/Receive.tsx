@@ -8,7 +8,7 @@ import { copyToClipboard } from '../../lib/clipboard'
 import { encodeVaultBip21 } from '../../lib/vault/bip21'
 import { truncateAddress } from '../../lib/vault/policy'
 import { VaultContext } from '../../vault/context'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 function AddressRow({
   label,
@@ -39,6 +39,7 @@ export default function VaultReceive() {
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
+  const [deposit, setDeposit] = useState(account === 'savings' && status?.templateVersion === CONNECTOR_TEMPLATE)
   const unified = useMemo(
     () =>
       boardingAddress && spendingArkAddress
@@ -71,6 +72,9 @@ export default function VaultReceive() {
     }
     await copy(request, spending ? 'Payment request' : 'Savings address')
   }
+
+  if (deposit && status)
+    return <ConnectorDeposit status={status} onBack={() => navigate('home')} onAddress={() => setDeposit(false)} />
 
   return (
     <QgScreen
@@ -132,7 +136,7 @@ export default function VaultReceive() {
         ) : null}
       </div>
       {!spending && status?.templateVersion === CONNECTOR_TEMPLATE ? (
-        <ConnectorDeposit key={status.vaultId} status={status} />
+        <QgSecondary label='Prepare a Savings deposit' onClick={() => setDeposit(true)} />
       ) : null}
     </QgScreen>
   )

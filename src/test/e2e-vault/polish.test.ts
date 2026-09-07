@@ -53,7 +53,7 @@ test('@polish welcome is accessible and visually stable', async ({ page }) => {
   await page.reload()
 
   await page.getByRole('button', { name: 'Get started' }).click()
-  await expect(page.getByRole('heading', { name: 'How it works' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Choose your Vault' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('onboarding-how-it-works.png', { animations: 'disabled', fullPage: true })
 })
@@ -74,7 +74,9 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
 
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started' }).click()
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await expectNoBlockingAxeViolations(page)
+  await expect(page).toHaveScreenshot('onboarding-protection-choice.png', { animations: 'disabled' })
+  await page.getByRole('button', { name: /^Advanced/ }).click()
   await expect(page.getByRole('heading', { name: 'Hardware key', exact: true })).toBeVisible()
   const hardwarePub = page.getByTestId('hardware-pub')
   await hardwarePub.fill(CONNECTOR_TEST_DESCRIPTOR)
@@ -83,21 +85,12 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
   await expect(page).toHaveScreenshot('onboarding-hardware.png', { animations: 'disabled', fullPage: true })
 
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
-  await expect(page.getByRole('heading', { name: 'Protection', exact: true })).toBeVisible()
-  await expectNoBlockingAxeViolations(page)
-  await expect(page).toHaveScreenshot('onboarding-protection-standard.png', {
-    animations: 'disabled',
-    fullPage: true,
-  })
-  await page.getByTestId('protection-advanced').click()
   await expect(page.getByTestId('recovery-pub')).toBeVisible()
   await expectNoBlockingAxeViolations(page)
-  await expect(page).toHaveScreenshot('onboarding-protection-advanced.png', {
-    animations: 'disabled',
-    fullPage: true,
-  })
-  await page.getByTestId('protection-standard').click()
-  await page.getByRole('button', { name: 'Continue with Standard' }).click()
+  await expect(page).toHaveScreenshot('onboarding-protection-advanced.png', { animations: 'disabled', fullPage: true })
+  await page.getByRole('button', { name: 'Change protection' }).click()
+  await page.getByRole('button', { name: /^Standard/ }).click()
+  await page.getByRole('button', { name: 'Use this hardware key' }).click()
 
   await expect(page.getByRole('heading', { name: 'Spending limits', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
@@ -140,7 +133,7 @@ test('@polish render failures are safe, accessible, and visually stable', async 
   })
   await page.goto('/')
   await expect(page.getByText('Vaulted could not display this screen.')).toBeVisible()
-  await expect(page.getByText(/^Incident reference: VLT-/)).toBeVisible()
+  await expect(page.getByText(/^VLT-/)).toBeVisible()
   await expect(page.getByText(/raw render payload/)).toHaveCount(0)
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('render-error.png', { animations: 'disabled', fullPage: true })

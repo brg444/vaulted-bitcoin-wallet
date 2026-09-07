@@ -48,7 +48,6 @@ export default class VaultErrorBoundary extends Component<Props, State> {
               <p>{this.state.incidentReference}</p>
             </div>
           </section>
-          <p className='qg-copy'>Incident reference: {this.state.incidentReference}</p>
         </QgScreen>
       </div>
     )

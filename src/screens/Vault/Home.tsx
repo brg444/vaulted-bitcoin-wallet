@@ -152,6 +152,24 @@ export default function VaultHome() {
           </div>
         </header>
 
+        {initiateAlert ? (
+          <button
+            type='button'
+            className='qg-recovery-alert'
+            data-testid='initiate-alert'
+            onClick={() => openRecover('lost', 'home')}
+          >
+            <span>
+              <ShieldAlert />
+            </span>
+            <div>
+              <strong>Savings recovery detected</strong>
+              <p>{initiateAlert}</p>
+            </div>
+            <ChevronRight />
+          </button>
+        ) : null}
+
         <button
           type='button'
           className='qg-balance'
@@ -175,6 +193,11 @@ export default function VaultHome() {
           </strong>
           {balancesLoaded && balance.unit ? <span>{balance.unit}</span> : null}
         </button>
+        {balancesLoaded && position.pendingSats > 0 ? (
+          <p className='qg-available'>
+            ₿{prettyNumber(position.availableSats)} available · ₿{prettyNumber(position.pendingSats)} pending
+          </p>
+        ) : null}
         <div className='qg-actions'>
           <button
             type='button'
@@ -188,7 +211,7 @@ export default function VaultHome() {
           >
             <span>
               <ArrowUpRight />
-              <b>{spending ? 'Send' : 'Spending'}</b>
+              <b>{spending ? 'Send' : 'Move to Spending'}</b>
             </span>
           </button>
           <button
@@ -236,42 +259,18 @@ export default function VaultHome() {
           </p>
         ) : null}
 
-        {balancesLoaded && spending && positions.spending.pendingSats > 0 ? (
-          <section className='qg-arrival' aria-label='Funds pending' data-testid='spending-pending'>
-            <span className='qg-status-icon' aria-hidden>
-              <Clock3 />
-            </span>
-            <div>
-              <strong>
-                ₿{prettyNumber(positions.spending.pendingSats)} {pendingPayments.length ? 'pending' : 'arriving'}
-              </strong>
-              <p>
-                {pendingPayments.length
-                  ? 'Includes funds reserved for the pending payment and change awaiting completion.'
-                  : 'Available after Bitcoin confirmation.'}
-              </p>
-            </div>
-          </section>
-        ) : null}
-
-        {initiateAlert ? (
+        {!spending ? (
           <button
             type='button'
-            className='qg-recovery-alert'
-            data-testid='initiate-alert'
-            onClick={() => openRecover('lost', 'home')}
+            className='qg-text'
+            onClick={() => {
+              clearSpendDraft()
+              navigate('send')
+            }}
           >
-            <span>
-              <ShieldAlert />
-            </span>
-            <div>
-              <strong>Savings recovery detected</strong>
-              <p>{initiateAlert}</p>
-            </div>
-            <ChevronRight />
+            Send to a Bitcoin address
           </button>
         ) : null}
-
         <VaultHistory />
       </main>
     </Content>

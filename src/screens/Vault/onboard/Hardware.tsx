@@ -10,7 +10,6 @@ export default function VaultHardware() {
   const { applyConnectorDescriptor, applyHardware, error, navigate, setup, status } = useContext(VaultContext)
   const required = status?.externalOwnerWalletPub || ''
   const [value, setValue] = useState(required || setup.connector?.descriptor || '')
-  const connector = setup.connector
 
   const ready = Boolean(required || value.trim())
 
@@ -32,12 +31,11 @@ export default function VaultHardware() {
         </>
       }
     >
-      <p className='qg-eyebrow'>Protect Savings</p>
       <h1>Add your hardware key</h1>
       <p className='qg-copy'>
         {required
           ? 'This vault already has a hardware key. Check that you can still use the hardware wallet that holds it.'
-          : 'Savings transfers need approval from your signing wallet as well as your passkey. Paste the public output descriptor from Sparrow: the app derives the signer reserve address and never asks for a seed phrase or private key.'}
+          : 'Paste your public wallet descriptor from Sparrow. This wallet will provide the second approval for Savings transfers.'}
       </p>
       <label className='qg-field'>
         <span>Wallet descriptor</span>
@@ -50,21 +48,8 @@ export default function VaultHardware() {
           onChange={(event) => setValue(event.target.value)}
           rows={3}
         />
-        <small>wpkh or tr descriptor with a fingerprint origin, available from Sparrow</small>
+        <small>Supports native SegWit (wpkh) and Taproot (tr) descriptors</small>
       </label>
-      {connector ? (
-        <section className='qg-note' data-testid='connector-import-result'>
-          <div>
-            <strong>Signer reserve address</strong>
-            <p data-testid='connector-import-address'>{connector.address}</p>
-            <p>{connector.selectedPath}</p>
-            <p>
-              Your first Savings deposit can fund this reserve in the same transaction. Prepare the deposit from Savings
-              → Deposit after setup.
-            </p>
-          </div>
-        </section>
-      ) : null}
       {required ? null : (
         <button
           type='button'

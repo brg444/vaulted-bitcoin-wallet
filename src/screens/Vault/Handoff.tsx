@@ -2,7 +2,7 @@ import { readConnectorSignerFile } from '../../lib/vault/connectorSignerFile'
 import { CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import QgAmount from './qg/QgAmount'
 import { useContext, useMemo, useRef, useState } from 'react'
-import { Check, Clipboard, Clock3, Copy, QrCode, ScanLine, Share2, TriangleAlert, Upload } from 'lucide-react'
+import { Clipboard, ScanLine, TriangleAlert, Upload } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
@@ -14,7 +14,7 @@ import PsbtQr from './PsbtQr'
 import Scanner from './Scanner'
 import QgScreen, { QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
 
-type HandoffView = 'export' | 'import' | 'ready' | 'problem'
+type HandoffView = 'export' | 'import' | 'paste' | 'ready' | 'problem'
 
 export default function VaultHandoff() {
   const { busy, cancelSavingsHandoff, completeSavingsHandoff, error, handoffPsbt, navigate, spend, status } =
@@ -90,10 +90,33 @@ export default function VaultHandoff() {
     )
   }
 
-  if (view === 'import') {
+  if (showQr)
     return (
-      <QgScreen title='Return signed transaction' back={() => setView('export')} footer={null}>
-        <p className='qg-eyebrow'>Approval 2 of 2</p>
+      <QgScreen
+        title='Scan transaction'
+        back={() => setShowQr(false)}
+        footer={
+          frames.length > 1 ? (
+            <QgPrimary label='Next QR' onClick={() => setFrame((n) => (n + 1) % frames.length)} />
+          ) : undefined
+        }
+      >
+        <PsbtQr value={current} />
+        <p className='qg-copy'>Scan with your signing wallet. Then return to import the signed transaction.</p>
+      </QgScreen>
+    )
+
+  if (view === 'import' || view === 'paste') {
+    return (
+      <QgScreen
+        title={view === 'paste' ? 'Paste signed transaction' : 'Return signed transaction'}
+        back={() => setView(view === 'paste' ? 'import' : 'export')}
+        footer={
+          view === 'paste' ? (
+            <QgPrimary onClick={() => setView('ready')} disabled={!pasted.trim()} label='Use this PSBT' />
+          ) : undefined
+        }
+      >
         <h1>Bring the signed PSBT back</h1>
         <p className='qg-copy'>Choose the method that matches your signing wallet.</p>
         <input
@@ -117,45 +140,47 @@ export default function VaultHandoff() {
               })
           }}
         />
-        <div className='qg-methods'>
-          <button type='button' onClick={() => fileInput.current?.click()}>
-            <Upload />
-            <span>
-              <strong>Upload file</strong>
-              <small>Choose a signed .psbt file</small>
-            </span>
-          </button>
-          <button type='button' onClick={() => setScan(true)}>
-            <ScanLine />
-            <span>
-              <strong>Scan QR</strong>
-              <small>Scan the signed transaction</small>
-            </span>
-          </button>
-          <button
-            type='button'
-            onClick={() => {
-              const next = window.prompt('Paste signed PSBT (base64 or hex)')
-              if (next) acceptSigned(next)
-            }}
-          >
-            <Clipboard />
-            <span>
-              <strong>Paste</strong>
-              <small>Base64 or hexadecimal PSBT</small>
-            </span>
-          </button>
-        </div>
-        <label className='qg-field'>
-          <span>Signed PSBT</span>
-          <input
-            value={pasted}
-            data-testid='savings-signed-psbt-paste'
-            placeholder='Paste signed PSBT (base64 or hex)'
-            onChange={(event) => setPasted(event.target.value)}
-          />
-        </label>
-        {pasted.trim() ? <QgPrimary onClick={() => setView('ready')} label='Use this PSBT' /> : null}
+        {view === 'import' ? (
+          <div className='qg-methods'>
+            <button type='button' onClick={() => fileInput.current?.click()}>
+              <Upload />
+              <span>
+                <strong>Upload file</strong>
+                <small>Choose a signed .psbt file</small>
+              </span>
+            </button>
+            <button type='button' onClick={() => setScan(true)}>
+              <ScanLine />
+              <span>
+                <strong>Scan QR</strong>
+                <small>Scan the signed transaction</small>
+              </span>
+            </button>
+            <button
+              type='button'
+              onClick={() => {
+                setView('paste')
+              }}
+            >
+              <Clipboard />
+              <span>
+                <strong>Paste</strong>
+                <small>Base64 or hexadecimal PSBT</small>
+              </span>
+            </button>
+          </div>
+        ) : null}
+        {view === 'paste' ? (
+          <label className='qg-field'>
+            <span>Signed PSBT</span>
+            <input
+              value={pasted}
+              data-testid='savings-signed-psbt-paste'
+              placeholder='Paste signed PSBT (base64 or hex)'
+              onChange={(event) => setPasted(event.target.value)}
+            />
+          </label>
+        ) : null}
       </QgScreen>
     )
   }
@@ -260,22 +285,11 @@ export default function VaultHandoff() {
         </>
       }
     >
-      <div className='qg-status-line'>
-        <b>1</b>
-        <span>
-          <strong>Passkey approved</strong>
-          <small>The pending transfer is saved on this device.</small>
-        </span>
-        <Check />
-      </div>
-      <p className='qg-eyebrow'>Approval 2 of 2</p>
-      <h1>
-        {connector ? 'Move the transaction to your signing wallet' : 'Move the transaction to your hardware signer'}
-      </h1>
+      <h1>Approve with your signer</h1>
       <p className='qg-copy'>
         {connector
-          ? 'Copy or show the PSBT, check the destination and amount in your signing wallet, then return the signed transaction here.'
-          : 'Copy or show the PSBT, sign it with your hardware key, then return the signed transaction here.'}
+          ? 'Save the PSBT, check the destination and amount in your signing wallet, then return the signed file here.'
+          : 'Save the PSBT, sign it with your hardware key, then return the signed file here.'}
       </p>
       <section className='qg-transfer'>
         <span>₿{prettyNumber(spend.amount, 0)}</span>
@@ -295,43 +309,27 @@ export default function VaultHandoff() {
           </div>
         </section>
       ) : null}
-      {canShareFile ? (
-        <button type='button' className='qg-primary' onClick={() => void sharePsbt()}>
-          <Share2 />
-          Share PSBT
-        </button>
-      ) : null}
-      <button
-        type='button'
-        className={canShareFile ? 'qg-secondary' : 'qg-primary'}
+      <QgSecondary
+        label={canShareFile ? 'Share PSBT' : 'Save PSBT file'}
         onClick={() => {
-          void (async () => {
-            await copyToClipboard(payload)
-            toast('PSBT copied')
-          })()
+          if (canShareFile) {
+            void sharePsbt()
+            return
+          }
+          if (!psbtFile) return
+          const url = URL.createObjectURL(psbtFile)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = psbtFile.name
+          link.click()
+          setTimeout(() => URL.revokeObjectURL(url), 1000)
         }}
-      >
-        <Copy />
-        Copy PSBT
-      </button>
-      <button type='button' className='qg-paste' onClick={() => setShowQr((open) => !open)}>
-        <QrCode />
-        {showQr ? 'Hide QR' : 'Show QR instead'}
-      </button>
-      {showQr ? (
-        <>
-          <PsbtQr value={current} />
-          {frames.length > 1 ? (
-            <button type='button' className='qg-paste' onClick={() => setFrame((n) => (n + 1) % frames.length)}>
-              Next QR
-            </button>
-          ) : null}
-        </>
-      ) : null}
-      <p className='qg-resume'>
-        <Clock3 />
-        You can close this screen and resume from Wallet.
-      </p>
+      />
+      <details className='qg-guidance'>
+        <summary>Other signing methods</summary>
+        <QgSecondary label='Copy PSBT' onClick={() => void copyToClipboard(payload).then(() => toast('PSBT copied'))} />
+        <QgSecondary label='Show QR instead' onClick={() => setShowQr(true)} />
+      </details>
     </QgScreen>
   )
 }

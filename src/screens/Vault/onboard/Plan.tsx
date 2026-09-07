@@ -2,7 +2,6 @@ import { useContext, useState } from 'react'
 import { prettyNumber } from '../../../lib/format'
 import { fingerprint } from '../../../lib/vault/hex'
 import { VaultContext } from '../../../vault/context'
-import RecoveryExplanation from '../qg/RecoveryExplanation'
 import QgScreen, { QgPrimary } from '../qg/QgScreen'
 
 function shortPub(pub: string) {
@@ -21,18 +20,17 @@ export default function VaultPlan() {
       back={() => navigate('conditions')}
       footer={<QgPrimary onClick={finishPlan} disabled={!consented} label='Continue' />}
     >
-      <p className='qg-eyebrow'>Your setup</p>
       <h1>Review your Vault</h1>
       {setup.connector ? (
-        <section className='qg-note'>
-          <div>
-            <strong>Signer reserve · 1,000 sats</strong>
+        <details className='qg-guidance'>
+          <summary>Verify signer reserve address · 1,000 sats</summary>
+          <div className='qg-guidance-body'>
             <p style={{ overflowWrap: 'anywhere' }} data-testid='plan-connector-address'>
               {setup.connector.address}
             </p>
             <p>Compare this address with your signing wallet. Savings deposits use a separate address after setup.</p>
           </div>
-        </section>
+        </details>
       ) : null}
       <section className='qg-summary'>
         <div>
@@ -48,8 +46,8 @@ export default function VaultPlan() {
           <strong>{shortPub(setup.hardwarePub)}</strong>
         </div>
         <div>
-          <span>Recovery key</span>
-          <strong>{advanced ? shortPub(setup.recoveryPub) : 'Not enrolled'}</strong>
+          <span>Recovery</span>
+          <strong>{advanced ? shortPub(setup.recoveryPub) : 'One remaining key'}</strong>
         </div>
         <div>
           <span>Per payment</span>
@@ -59,23 +57,14 @@ export default function VaultPlan() {
           <span>Rolling 24 hours</span>
           <strong>{prettyNumber(setup.dailyLimitSats, 0)} sats</strong>
         </div>
-        <div>
-          <span>Savings</span>
-          <strong>Passkey and hardware wallet</strong>
-        </div>
-        <div>
-          <span>Recovery</span>
-          <strong>{advanced ? 'Separate recovery key' : 'One remaining normal key'}</strong>
-        </div>
-        <div>
-          <span>Spending</span>
-          <strong>Limits enforced</strong>
-        </div>
       </section>
+      <p className='qg-copy'>Check the key identifiers against your saved public keys.</p>
       <p className='qg-copy'>
-        The short hardware and recovery codes identify the keys you chose. Check them against your saved public keys.
+        {advanced
+          ? 'The separate recovery key can recover Savings if both normal keys are lost.'
+          : 'If both normal keys are lost, Standard has no separate recovery key.'}{' '}
+        Starting delayed recovery requires the recovery services.
       </p>
-      <RecoveryExplanation advanced={advanced} mainnet={networkLabel === 'Bitcoin'} />
       <label className='qg-consent'>
         <input type='checkbox' checked={consented} onChange={(event) => setConsented(event.target.checked)} />
         <span>I understand that this protection choice and these Spending limits cannot be changed after setup.</span>

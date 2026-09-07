@@ -533,8 +533,7 @@ test('renders an exact reviewed VTXO send before approval', async ({ page }) => 
   await seedReviewedSpend(page, status, destination, 12_000, 500, 7_500)
 
   await page.getByRole('button', { name: 'Send', exact: true }).click()
-  await expect(page.getByText('Rolling 24-hour limit')).toBeVisible()
-  await expect(page.getByText('20,000 of 100,000 remaining')).toBeVisible()
+  await expect(page.getByText('₿20,000 available within your rolling limit')).toBeVisible()
   await page.getByTestId('vault-send-amount').fill('12000')
   await page.getByPlaceholder('Payment address or Lightning invoice').fill(destination)
   await page.getByRole('button', { name: 'Resume payment' }).click()
@@ -547,8 +546,7 @@ test('renders an exact reviewed VTXO send before approval', async ({ page }) => 
   )
   await expect(page.getByText('₿500', { exact: true })).toBeVisible()
   await expect(page.getByText('₿12,500', { exact: true })).toBeVisible()
-  await expect(page.getByText('Vault service', { exact: true })).toBeVisible()
-  await expect(page.getByText('Automatic if this payment is within your limits')).toBeVisible()
+  await expect(page.getByText('Approve with your passkey. The vault service checks your payment limits.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Approve payment' })).toBeVisible()
 })
 
@@ -629,7 +627,7 @@ test('shows a pending boarding deposit, then replaces it with the confirmed VTXO
   const { state, status } = await openVault(page, { boardingUtxos: [pending] })
 
   await expect(page.getByTestId('vault-balance')).toContainText('50,000')
-  await expect(page.getByTestId('spending-pending')).toContainText('₿50,000 arriving')
+  await expect(page.getByText(/available ·.*pending/)).toContainText('₿50,000 pending')
   await expect(page.getByTestId('spending-total')).toHaveCount(0)
   await expect(page.getByTestId(`vault-tx-${BOARDING_TXID}`)).toContainText('Pending')
 
@@ -678,7 +676,7 @@ test('never treats visible boarding value as spendable VTXO balance', async ({ p
   await setOperatorVtxos([await wireVtxo(page, status, { amount: 20_000, txid: VTXO_TXID })])
   await refreshHome(page)
   await expect(page.getByTestId('vault-balance')).toContainText('70,000')
-  await expect(page.getByTestId('spending-pending')).toContainText('₿50,000 arriving')
+  await expect(page.getByText(/available ·.*pending/)).toContainText('₿50,000 pending')
   await expect(page.getByTestId('spending-total')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Send', exact: true }).click()
@@ -698,8 +696,8 @@ test('validates a pasted Recovery Kit against its committed descriptor', async (
   await page.getByRole('button', { name: 'Open navigation' }).click()
   await page.getByTestId('tab-vault').click()
   await page.getByTestId('security-kit').click()
-  await expect(page.getByRole('heading', { name: 'Recovery Kit', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'I already have a kit file' }).click()
+  await expect(page.getByRole('heading', { name: 'Backups', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Check a saved Recovery Kit' }).click()
 
   const input = page.getByTestId('recovery-kit-json')
   await input.fill(JSON.stringify(tampered))
@@ -760,6 +758,7 @@ test('starts recovery only from a confirmed Savings coin and fences a second des
     inputVout: 0,
   })
 
+  await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByTestId('recover-key-phone').click()
   await page.getByTestId('recover-initiate').click()
   await expect(page.getByText('second dest for this outpoint')).toBeVisible()
@@ -779,7 +778,7 @@ test('surfaces a mature recovery and preserves claimant-aware guardian cancellat
   const alert = page.getByTestId('initiate-alert')
   await expect(alert).toContainText('Savings recovery detected')
   await alert.click()
-  await expect(page.getByRole('heading', { name: 'Recovery', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Claim after the waiting period' }).click()
   await expect(page.getByRole('region', { name: 'Recovery status' })).toContainText('In process')
 
   await page.getByTestId('recover-claim-dest').fill(status.savingsAddress)
@@ -800,6 +799,9 @@ test('surfaces a mature recovery and preserves claimant-aware guardian cancellat
     feeSats: 500,
   })
 
+  await page.getByRole('button', { name: 'Go back' }).click()
+  await page.getByRole('button', { name: 'Go back' }).click()
+  await page.getByRole('button', { name: 'Cancel this recovery' }).click()
   await page.getByTestId('recover-guardian-exit').click()
   await expect(page.getByTestId('recover-guardian-signers')).toContainText('This device and Recovery')
   await expect(page.getByTestId('recover-guardian-signers')).not.toContainText('Hardware and')
@@ -947,7 +949,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await refreshHome(page)
 
   await expect(page.getByTestId('vault-balance')).toContainText('128,000')
-  await expect(page.getByTestId('spending-pending')).toContainText('₿48,000 arriving')
+  await expect(page.getByText(/available ·.*pending/)).toContainText('₿48,000 pending')
   await expect(page.getByTestId('spending-total')).toHaveCount(0)
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('home-with-pending.png', { animations: 'disabled', fullPage: true })
@@ -980,8 +982,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page.getByRole('heading', { name: 'Scan payment' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('payment-scanner.png', { animations: 'disabled', fullPage: true })
-  const cancelScanner = page.getByRole('button', { name: 'Cancel' })
-  if (await cancelScanner.isVisible()) await cancelScanner.click()
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await expect(page.getByTestId('account-switcher')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Send' })).toHaveCount(0)
 
@@ -1011,7 +1012,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page.getByText('Mutinynet', { exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('send-review.png', { animations: 'disabled', fullPage: true })
-  await expectReachableAbove(page, '.qg-approvals', '.qg-footer')
+  await expectReachableAbove(page, '.qg-approval-copy', '.qg-footer')
 
   await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByRole('button', { name: 'Go back' }).click()
@@ -1025,12 +1026,12 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page.getByTestId('security-lost')).toBeVisible()
 
   await page.getByTestId('security-kit').click()
-  await expect(page.getByRole('heading', { name: 'Recovery Kit', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Backups', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   // Archive capture is asynchronous and independent of this navigation tour.
   // Its failure/retained-copy states are tested in Recover and useRecoveryArchive.
-  await expect(page.getByRole('button', { name: 'Download encrypted recovery archive', exact: true })).toBeVisible()
-  await expect(page.getByTestId('download-recovery-kit')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save encrypted backup file', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Recovery Kit/ })).toBeVisible()
   await page.getByRole('button', { name: /I lost a key/ }).click()
   await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
@@ -1071,10 +1072,12 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('settings-about.png', { animations: 'disabled', fullPage: true })
   await page.getByRole('button', { name: 'Go back' }).click()
+  await page.getByRole('button', { name: /Diagnostics/ }).click()
   await page.getByTestId('settings-logs').click()
   await expect(page.getByRole('heading', { name: 'Logs' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('settings-logs.png', { animations: 'disabled', fullPage: true })
+  await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByTestId('settings-signout').click()
   await expect(page.getByRole('heading', { name: 'Sign out', exact: true })).toBeVisible()
@@ -1088,6 +1091,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page.getByRole('heading', { name: 'Transaction' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expect(page.getByRole('img', { name: 'Confirmed status' })).toHaveClass(/lucide-circle-check/)
+  await page.getByText('View transaction', { exact: true }).click()
   await expect(page.getByText(VTXO_TXID, { exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'View on Arkade Space' })).toHaveAttribute(
     'href',
@@ -1096,7 +1100,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page).toHaveScreenshot('transaction-received.png', { animations: 'disabled', fullPage: true })
   const originalViewport = page.viewportSize()!
   await page.setViewportSize({ width: 320, height: 740 })
-  const reference = page.getByRole('region', { name: 'Transaction reference' })
+  const reference = page.locator('details[aria-label="Transaction reference"]')
   await expect(reference.locator('code')).toBeVisible()
   expect(await reference.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true)
   await page.setViewportSize(originalViewport)
@@ -1115,7 +1119,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('receive-savings.png', { animations: 'disabled', fullPage: true })
   await page.getByRole('button', { name: 'Go back' }).click()
-  await page.getByRole('button', { name: 'Spending', exact: true }).click()
+  await page.getByRole('button', { name: 'Move to Spending', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Move to Spending' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expect(page).toHaveScreenshot('send-savings.png', { animations: 'disabled', fullPage: true })
@@ -1237,7 +1241,7 @@ test.describe('interaction quality', () => {
     ).toBeGreaterThan(0)
     await page.getByRole('button', { name: 'Scan destination', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Scan payment', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await page.getByRole('button', { name: /^(Cancel|Enter manually)$/ }).click()
     await expect(input).toHaveValue('example destination')
     await input.focus()
     await expect(input).toHaveCSS('outline-style', 'none')
@@ -1369,7 +1373,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'Send', exact: true }).click()
     await page.getByTestId('vault-send-amount').fill('100000000')
     await page.getByTestId('vault-send-amount').blur()
-    await expect(page.locator('.qg-capacity')).toHaveCSS('border-top-width', '0px')
+    await expect(page.locator('.qg-available')).toHaveCSS('border-top-width', '0px')
     await contained('.qg-dest-field, .qg-amount-entry')
     const amount = page.getByTestId('vault-send-amount')
     expect(await amount.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
@@ -1386,8 +1390,8 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByRole('heading', { name: 'Review payment' })).toBeVisible()
     await contained('.qg-review-amount strong, .qg-details')
     await capture('review')
-    await page.locator('.qg-approvals > div').last().scrollIntoViewIfNeeded()
-    const approval = await page.locator('.qg-approvals > div').last().boundingBox()
+    await page.locator('.qg-approval-copy').last().scrollIntoViewIfNeeded()
+    const approval = await page.locator('.qg-approval-copy').last().boundingBox()
     const footer = await page.locator('.qg-footer').boundingBox()
     expect(approval!.y + approval!.height).toBeLessThanOrEqual(footer!.y + 1)
     await page.getByRole('button', { name: 'Go back' }).click()
@@ -1395,10 +1399,8 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'Open navigation' }).click()
     await page.getByTestId('tab-vault').click()
     await expect(page.getByRole('heading', { name: 'Security', exact: true })).toBeVisible()
-    await expect(page.locator('.vault-security-tile')).toHaveCount(4)
-    await expect(page.locator('.vault-security-tile').first()).toHaveCSS('border-radius', '0px')
-    await contained('.vault-security-grid, .vault-security-tile')
-    await expect(page.locator('.vault-security .vault-hub').first()).toHaveCSS('border-radius', '0px')
+    await expect(page.locator('.vault-hub-row')).toHaveCount(5)
+    await contained('.vault-hub')
     await capture('security')
     await page.getByRole('button', { name: 'Go back' }).click()
     await page.getByTestId('account-receive').click()
@@ -1413,14 +1415,12 @@ for (const theme of ['light', 'dark'] as const) {
     await page.evaluate((dark) => document.documentElement.classList.toggle('palette-dark', dark), theme === 'dark')
     await page.screenshot({ path: testInfo.outputPath('welcome.png'), animations: 'disabled' })
     await page.getByRole('button', { name: 'Get started' }).click()
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('button', { name: /^Advanced/ }).click()
     await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
     await page.getByRole('button', { name: 'Use this hardware key' }).click()
-    await expect(page.getByRole('heading', { name: 'Protection', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Recovery key', exact: true })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('protection.png'), animations: 'disabled' })
-    await page.getByTestId('protection-advanced').click()
     await expect(page.getByTestId('recovery-pub')).toBeVisible()
-    await expect(page.locator('.qg-note')).toHaveCSS('border-bottom-width', '0px')
     await page.screenshot({ path: testInfo.outputPath('protection-advanced.png'), animations: 'disabled' })
   })
 }
@@ -1495,7 +1495,9 @@ test('@interaction Home camera returns to its originating account on cancel and 
           exact: true,
         }),
       ).toBeVisible()
-      await page.getByRole('button', { name: action, exact: true }).click()
+      const cancel = page.getByRole('button', { name: action, exact: true })
+      if (await cancel.isVisible()) await cancel.click()
+      else await page.getByRole('button', { name: 'Go back', exact: true }).click()
       await expect(page.getByTestId('account-switcher')).toHaveText(accountName)
       await expect(page.locator('.qg-camera')).toHaveCount(0)
     }

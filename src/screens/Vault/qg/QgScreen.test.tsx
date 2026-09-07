@@ -121,3 +121,23 @@ describe('sheet gesture intent', () => {
     expect(dismiss).toHaveBeenCalledOnce()
   })
 })
+
+it('keeps an in-progress form mounted while Help opens and closes', () => {
+  const dismiss = vi.fn()
+  render(
+    <QgScreen title='Send' dismiss={dismiss}>
+      <input aria-label='Draft destination' />
+    </QgScreen>,
+  )
+  const input = screen.getByLabelText('Draft destination')
+  fireEvent.change(input, { target: { value: 'saved-destination' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Help' }))
+  expect(screen.getByRole('dialog')).toBeVisible()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(dismiss).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Close help' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.getByLabelText('Draft destination')).toBe(input)
+  expect(input).toHaveValue('saved-destination')
+  expect(screen.getByRole('button', { name: 'Help' })).toHaveFocus()
+})

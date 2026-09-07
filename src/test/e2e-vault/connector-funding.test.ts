@@ -58,6 +58,7 @@ test('funds Savings and its reserve in one signed deposit and resumes after relo
   await page.reload()
   await expect(page.getByTestId('account-switcher')).toBeVisible()
   await openDeposit()
+  await page.getByRole('button', { name: 'Continue to signing' }).click()
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save deposit PSBT' }).click()
   const download = await downloadPromise
@@ -76,6 +77,6 @@ test('funds Savings and its reserve in one signed deposit and resumes after relo
   await expect(page.getByRole('button', { name: 'Submit deposit' })).toBeVisible()
   expect(broadcast).toBe('')
   await page.getByRole('button', { name: 'Submit deposit' }).click()
-  await expect(page.getByText(/Deposit submitted/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Deposit submitted' })).toBeVisible()
   expect(Transaction.fromRaw(hex.decode(broadcast)).id).toBe(approved.id)
 })

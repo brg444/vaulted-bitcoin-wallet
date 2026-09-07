@@ -50,7 +50,7 @@ export default function VaultConditions() {
     <QgScreen
       title='Spending limits'
       stepLabel='4 of 6'
-      back={() => navigate('recovery')}
+      back={() => navigate(setup.protectionTier === 'advanced' ? 'recovery' : 'hardware')}
       footer={
         <>
           <ErrorMessage error={Boolean(error)} text={error || ''} />
@@ -58,11 +58,9 @@ export default function VaultConditions() {
         </>
       }
     >
-      <p className='qg-eyebrow'>Your guardrails</p>
-      <h1>Set comfortable limits</h1>
+      <h1>Set your spending limits</h1>
       <p className='qg-copy'>
-        Set the most you want Spending to authorize per payment and over a rolling 24 hours. These limits reduce the
-        impact of a compromised device and are fixed after setup.
+        Choose a maximum per payment and per rolling 24 hours. These limits are fixed after setup.
       </p>
       <label className='qg-money-field'>
         <span>Per payment</span>
@@ -90,18 +88,8 @@ export default function VaultConditions() {
           />
         </div>
       </label>
-      <p className='qg-copy'>
-        Amounts are in satoshis (sats), the smallest unit of bitcoin. 100,000 sats is 0.001 BTC.
-      </p>
-      {selected ? (
-        <section className='qg-note'>
-          <Clock3 />
-          <div>
-            <strong>The allowance replenishes continuously</strong>
-            <p>It does not reset at midnight.</p>
-          </div>
-        </section>
-      ) : (
+      <p className='qg-copy'>100,000 sats = 0.001 BTC. Each payment leaves the rolling allowance after 24 hours.</p>
+      {selected ? null : (
         <section className='qg-note'>
           <Clock3 />
           <div>

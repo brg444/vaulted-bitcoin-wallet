@@ -94,3 +94,12 @@ jobs:
         run: corepack pnpm test:e2e
         env:
           CI: true
+
+      - name: Browser failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-screenshots
+          path: test-results/**/*.png
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1,17 +1,13 @@
-import { useContext, useState } from 'react'
+import { useContext } from 'react'
 import { Fingerprint } from 'lucide-react'
 import ErrorMessage from '../../../components/Error'
 import { isCoarsePhone } from '../../../lib/vault/webauthn'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgPrimary, QgTextButton } from '../qg/QgScreen'
-
-import RecoveryHelp from '../RecoveryHelp'
+import QgScreen, { QgPrimary } from '../qg/QgScreen'
 
 export default function VaultSignIn() {
   const { busy, error, navigate, signIn } = useContext(VaultContext)
   const onPhone = isCoarsePhone()
-  const [showHelp, setShowHelp] = useState(false)
-  if (showHelp) return <RecoveryHelp onBack={() => setShowHelp(false)} />
 
   return (
     <QgScreen
@@ -19,7 +15,6 @@ export default function VaultSignIn() {
       back={() => navigate('welcome')}
       footer={
         <>
-          <QgTextButton onClick={() => setShowHelp(true)} label='Access and recovery help' />
           <ErrorMessage error={Boolean(error)} text={error} />
           <QgPrimary
             onClick={() => void signIn()}

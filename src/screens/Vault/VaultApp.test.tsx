@@ -58,21 +58,13 @@ describe('VaultApp onboarding', () => {
     expect(screen.getByRole('button', { name: 'Sign in to an existing vault' })).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Get started' }))
 
-    expect(await screen.findByRole('heading', { name: 'Everyday spending, protected savings' })).toBeTruthy()
-    expect(screen.getByTestId('screen-title')).toHaveTextContent('How it works')
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(await screen.findByRole('button', { name: /^Standard/ }))
 
     expect(await screen.findByRole('heading', { name: 'Add your hardware key' })).toBeTruthy()
     fireEvent.change(screen.getByTestId('hardware-pub'), { target: { value: signerDescriptor } })
     await user.click(screen.getByRole('button', { name: 'Use this hardware key' }))
 
-    expect(await screen.findByRole('heading', { name: 'How should recovery work?' })).toBeTruthy()
-    expect(screen.getByTestId('protection-standard')).toBeTruthy()
-    expect(screen.getByTestId('protection-advanced')).toBeTruthy()
-    expect(screen.queryByTestId('recovery-pub')).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Continue with Standard' }))
-
-    expect(await screen.findByRole('heading', { name: 'Set comfortable limits' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Set your spending limits' })).toBeTruthy()
     expect(screen.getByTestId('policy-tx-cap')).toBeTruthy()
     expect(screen.getByTestId('policy-period-allowance')).toBeTruthy()
     expect(screen.queryByTestId('policy-fee-cap')).toBeNull()
@@ -81,7 +73,6 @@ describe('VaultApp onboarding', () => {
 
     expect(await screen.findByRole('heading', { name: 'Review your Vault' })).toBeTruthy()
     expect(screen.getByText('50,000 sats')).toBeTruthy()
-    expect(screen.getByText('Not enrolled')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
     await user.click(screen.getByRole('checkbox'))
     await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -99,20 +90,19 @@ describe('VaultApp onboarding', () => {
     const user = userEvent.setup()
     renderVault()
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
-    await user.click(await screen.findByRole('button', { name: 'Continue' }))
+    await user.click(await screen.findByRole('button', { name: /^Advanced/ }))
     fireEvent.change(await screen.findByTestId('hardware-pub'), {
       target: { value: signerDescriptor },
     })
     await user.click(screen.getByRole('button', { name: 'Use this hardware key' }))
 
-    await user.click(await screen.findByTestId('protection-advanced'))
-    expect(screen.getByRole('button', { name: 'Continue with Advanced' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Use this recovery key' })).toBeDisabled()
     fireEvent.change(screen.getByTestId('recovery-pub'), { target: { value: PROGRAM_FIXTURE.recoveryPub } })
-    await user.click(screen.getByRole('button', { name: 'Continue with Advanced' }))
+    await user.click(screen.getByRole('button', { name: 'Use this recovery key' }))
     await user.click(await screen.findByRole('button', { name: 'Review setup' }))
 
     expect(await screen.findByText('Advanced')).toBeTruthy()
-    expect(screen.getByText('Recovery key')).toBeTruthy()
+    expect(screen.getByText(/The separate recovery key/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
   }, 20_000)
 })

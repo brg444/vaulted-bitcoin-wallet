@@ -11,12 +11,14 @@ function ScanFrame({
   error,
   onClose,
   onSwitch,
+  onManual,
   video,
 }: {
   label: string
   error: boolean
   onClose: () => void
   onSwitch: () => void
+  onManual?: () => void
   video: ReactNode
 }) {
   return (
@@ -27,7 +29,9 @@ function ScanFrame({
       aux={<SlidersHorizontal />}
       auxAriaLabel='Try another scanner'
       auxOnClick={onSwitch}
-      footer={<QgSecondary onClick={onClose} label='Cancel' />}
+      footer={
+        <QgSecondary onClick={error ? onManual || onClose : onClose} label={error ? 'Enter manually' : 'Cancel'} />
+      }
     >
       <ErrorMessage error={error} text='Camera not available' />
       <div id='video-wrapper' className='qg-camera'>
@@ -46,6 +50,7 @@ function ScanFrame({
 
 interface ScannerProps {
   close: () => void
+  manual?: () => void
   label: string
   onData: (value: string) => void
   onError: (error: string) => void
@@ -53,21 +58,23 @@ interface ScannerProps {
   calculateScanRegion?: (video: HTMLVideoElement) => QrScanner.ScanRegion
 }
 
-export default function VaultScanner({ close, label, onData, onError }: ScannerProps) {
+export default function VaultScanner({ close, manual, label, onData, onError }: ScannerProps) {
   const [implementation, setImplementation] = useState<'qr' | 'qrmini' | 'mills'>('qr')
   const next = () =>
     setImplementation(implementation === 'qr' ? 'qrmini' : implementation === 'qrmini' ? 'mills' : 'qr')
 
   if (implementation === 'qr') {
-    return <ScannerQr close={close} label={label} onData={onData} onError={onError} onSwitch={next} />
+    return <ScannerQr close={close} manual={manual} label={label} onData={onData} onError={onError} onSwitch={next} />
   }
   if (implementation === 'qrmini') {
-    return <ScannerQrMini close={close} label={label} onData={onData} onError={onError} onSwitch={next} />
+    return (
+      <ScannerQrMini close={close} manual={manual} label={label} onData={onData} onError={onError} onSwitch={next} />
+    )
   }
-  return <ScannerMills close={close} label={label} onData={onData} onError={onError} onSwitch={next} />
+  return <ScannerMills close={close} manual={manual} label={label} onData={onData} onError={onError} onSwitch={next} />
 }
 
-function ScannerMills({ close, label, onData, onError, onSwitch }: ScannerProps) {
+function ScannerMills({ close, manual, label, onData, onError, onSwitch }: ScannerProps) {
   const [error, setError] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const cameraRef = useRef<any>(null)
@@ -130,15 +137,19 @@ function ScannerMills({ close, label, onData, onError, onSwitch }: ScannerProps)
       label={label}
       error={error}
       onClose={closeScanner}
+      onManual={() => {
+        stop()
+        ;(manual || close)()
+      }}
       onSwitch={switchScanner}
       video={<video className='qg-scanner-video' ref={videoRef} />}
     />
   )
 }
 
-function ScannerQr({ calculateScanRegion, close, label, onData, onError, onSwitch }: ScannerProps) {
+function ScannerQr({ calculateScanRegion, close, manual, label, onData, onError, onSwitch }: ScannerProps) {
   const [error, setError] = useState(false)
-  const [hasCamera, setHasCamera] = useState(false)
+  const [hasCamera, setHasCamera] = useState<boolean | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const scannerRef = useRef<QrScanner | null>(null)
 
@@ -152,7 +163,9 @@ function ScannerQr({ calculateScanRegion, close, label, onData, onError, onSwitc
   }
 
   useEffect(() => {
-    void QrScanner.hasCamera().then(setHasCamera)
+    void QrScanner.hasCamera()
+      .then(setHasCamera)
+      .catch(() => setHasCamera(false))
   }, [])
 
   useEffect(() => {
@@ -187,8 +200,12 @@ function ScannerQr({ calculateScanRegion, close, label, onData, onError, onSwitc
   return (
     <ScanFrame
       label={label}
-      error={error}
+      error={error || hasCamera === false}
       onClose={closeScanner}
+      onManual={() => {
+        stop()
+        ;(manual || close)()
+      }}
       onSwitch={switchScanner}
       video={<video id='qr-scanner' ref={videoRef} className='qg-scanner-video' />}
     />

@@ -10,6 +10,8 @@ describe('Transaction reference', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { clipboard: { writeText } })
     render(<TransactionReference txid={txid} explorer={null} />)
+    expect(screen.getByText('ab'.repeat(32))).not.toBeVisible()
+    fireEvent.click(screen.getByText('View transaction'))
     fireEvent.click(screen.getByRole('button', { name: 'Copy transaction ID' }))
     await waitFor(() => expect(screen.getByText('Copied')).toBeVisible())
     expect(writeText).toHaveBeenCalledExactlyOnceWith(txid)
@@ -18,6 +20,8 @@ describe('Transaction reference', () => {
   it('keeps the full ID selectable when clipboard access is unavailable', async () => {
     vi.stubGlobal('navigator', {})
     render(<TransactionReference txid={'ab'.repeat(32)} explorer={null} />)
+    expect(screen.getByText('ab'.repeat(32))).not.toBeVisible()
+    fireEvent.click(screen.getByText('View transaction'))
     fireEvent.click(screen.getByRole('button', { name: 'Copy transaction ID' }))
     await screen.findByRole('status')
     expect(screen.queryByText('Copied')).toBeNull()
