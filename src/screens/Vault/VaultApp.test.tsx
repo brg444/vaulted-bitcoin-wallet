@@ -61,6 +61,7 @@ describe('VaultApp onboarding', () => {
     await user.click(await screen.findByRole('button', { name: /^Standard/ }))
 
     expect(await screen.findByRole('heading', { name: 'Add your hardware key' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Paste' }))
     fireEvent.change(screen.getByTestId('hardware-pub'), { target: { value: signerDescriptor } })
     await user.click(screen.getByRole('button', { name: 'Use this hardware key' }))
 
@@ -91,6 +92,7 @@ describe('VaultApp onboarding', () => {
     renderVault()
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.click(await screen.findByRole('button', { name: /^Advanced/ }))
+    await user.click(await screen.findByRole('button', { name: 'Paste' }))
     fireEvent.change(await screen.findByTestId('hardware-pub'), {
       target: { value: signerDescriptor },
     })

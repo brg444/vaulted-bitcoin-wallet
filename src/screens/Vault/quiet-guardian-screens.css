@@ -499,12 +499,6 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   opacity: 1;
 }
 
-.qg-field .qg-descriptor-input:focus {
-  border-color: var(--qg-purple);
-  outline: 2px solid var(--qg-purple);
-  outline-offset: 2px;
-}
-
 .qg-field small {
   color: var(--qg-muted);
   font-size: 12px;
@@ -3043,8 +3037,4 @@ html.palette-dark .qg-progress {
 .qg-import-actions svg {
   width: 16px;
   height: 16px;
-}
-.qg-import-actions button:focus-visible {
-  outline: 2px solid var(--qg-purple);
-  outline-offset: 2px;
 }
