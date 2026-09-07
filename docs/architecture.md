@@ -1,97 +1,77 @@
 # Architecture
 
-Vaulted has three active runtime roles:
+The browser wallet communicates through same-origin routes with the Guardian,
+Arkade Operator, and Bitcoin data services. Each component verifies the facts
+needed for its own signing or transaction role.
 
-```text
-browser wallet
-  -> same-origin /v1 -> Vault service
-  -> same-origin Arkade routes -> Arkade Operator
-  -> Bitcoin data routes -> Esplora and the Arkade indexer
-```
+| Component       | Responsibility                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Browser wallet  | Passkeys, program reconstruction, transaction review, external signing handoff, and encrypted backups                        |
+| Scoped worker   | Persistent SDK wallet, contract and transaction repositories, VTXO updates, and boarding coordination                        |
+| Guardian        | Authenticated enrollment, policy ledger, constrained service signatures, recovery archives, and authorized renewal execution |
+| Arkade Operator | VTXO indexing, collaborative transactions, and Batch Output coordination                                                     |
+| Emulator        | Independently evaluates the named Savings connector program before providing its constrained signature                       |
 
-| Role            | Authority                                                                                                                                  |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Browser wallet  | Holds the wrapped phone key, builds transactions, verifies server facts, requests user authorization, and coordinates external signatures. |
-| Vault service   | Holds the tenant VaultCosigner, immutable Vault Program record, authenticated allowance ledger, and policy sequence.                       |
-| Arkade Operator | Coordinates VTXO batches and supplies the Operator signatures pinned by the release.                                                       |
+## Source map
 
-The wallet and service independently rebuild every current program from public
-enrollment facts. Neither side accepts an address, script, checkpoint closure,
-or signing role merely because another component supplied it.
+`src/index.tsx` starts the wallet. `src/VaultApp.tsx` and the Vault
+provider compose navigation and state; `src/screens/Vault` contains the flows.
+Program construction, validation, persistence, and transaction coordination
+live under `src/lib/vault`. Network selection and build checks reject
+inconsistent app, worker, and Guardian configurations.
 
-## Application boundary
+Light and full-wallet account screens share `AccountHome`; Security shares
+`SecurityOverview`. Mode-specific data supplies the supported capabilities and current account state
+to those shared components. [Interface components](interface-system.md) describes the
+layout and accessibility checks.
 
-`src/index.tsx` composes the Vault-only application. `VaultApp.tsx` owns
-navigation, `src/providers/vault.tsx` coordinates authenticated application
-state, `src/screens/Vault` contains the user flows, and `src/lib/vault`
-contains program construction, transaction validation, persistence adapters,
-and VTXO lifecycle coordinators. The production graph excludes the deleted
-general-wallet entrypoint and its unrelated swaps, assets, notes, and lending.
-The disabled Lightning send adapter delegates invoice, RFQ, VHTLC, and contract
-registration to `@arkade-os/swap`; it does not create another wallet or
-transaction lifecycle.
+## Keys and worker ownership
 
-Each VTXO send has a client-generated operation ID that is persisted before
-the first mutation. The phone signs the canonical reserve request before the
-wallet contacts the service. Vault-service authorization, checkpoint, and
-receipt responses reconcile through that server operation after a lost
-response. Before the first Operator submission, the wallet also persists a
-phone-and-VaultCosigner proof for the exact reserved inputs. If the submission
-response is ambiguous, the wallet uses the official SDK pending-transaction
-interface to recover the exact transaction and checkpoints. It never submits
-the operation a second time. An empty or mismatched result remains locked for
-manual resolution.
+A passkey PRF unwraps the device or Light owner key for a bounded operation.
+The page clears unlocked key material afterward. Hardware and recovery keys
+stay in external signers; requests and replies exchange validated PSBTs.
 
-SDK wallet and contract data use a versioned IndexedDB database per vault.
-Intent state uses a separate per-vault database. Ordinary send recovery uses a
-versioned local record bound to the same vault, destination, amount, and
-operation ID.
+Each enrolled wallet uses scoped worker messages and isolated IndexedDB
+repositories. For full-wallet boarding, a separate deterministic key is
+provisioned after PRF unlock and remains in the worker's scoped storage. It
+cannot authorize an arbitrary recipient: boarding requires the Guardian and
+Operator and pays the enrolled Spending program. The Light worker holds public
+wallet data and rejects owner-signing requests.
 
-VTXO state follows the official SDK worker architecture. Each enrolled vault
-has an opaque service-worker scope and message tag, plus isolated wallet,
-contract, and intent databases. The worker registers the exact
-`vault-policy-v1` Spending contract and publishes contract, balance, activity,
-and UTXO updates to the page.
+The vendored SDK owns Wallet, Contract Manager, VTXO state, intent persistence,
+and batch coordination. Vaulted adapters enforce named program boundaries.
+Generic SDK spending cannot select protected `vault-policy-v1` outputs;
+ordinary payments use the Guardian-authorized operation flow.
 
-The sole `vault-board-v1` program uses the SDK's worker-owned identity mode. A
-deterministic boarding key is derived only after the existing PRF unlock
-succeeds, bound to the vault, network, and named program, and stored in a
-separate per-vault IndexedDB database. The key never crosses `postMessage`.
-Inside the worker, the official SDK owns Wallet, Contract Manager, VtxoManager,
-intent persistence, batch participation, settlement, polling, and retry. The
-page owns no parallel boarding lifecycle.
+## Durable operations
 
-The SDK's generic spend, renewal, and sweep paths cannot select
-`vault-policy-v1` VTXOs. A custom Contract Manager handler reconstructs the
-enrolled script and declares it unavailable for generic spending. Vault sends
-continue through the transaction-bound VaultCosigner authorization flow.
+A Spending operation is persisted before its authenticated reservation. The
+wallet binds its destination, amount, fee policy, selected inputs, and signing
+proofs to the same operation ID. Before Operator submission it retains the
+required pending-transaction proof. Ambiguous responses reconcile the exact
+operation and transaction; an unknown outcome does not authorize a replacement
+payment.
 
-The boarding adapter is narrower than the Spending cosigner API. It prepares
-one exact confirmed input and fixed Spending recipient, verifies and submits
-registration or release proofs, and verifies SDK-validated final batch
-evidence. The Vault service never returns its boarding signature. It calls only
-the stock public Operator endpoints, so the architecture requires no modified
-`arkd` or private Operator lifecycle API.
+Savings retains the enrollment-specific transaction and partial signatures.
+Connector v2 requests hardware approval first, then persists the completed
+candidate before device and service approval. [Programs](program.md) describes
+v1 compatibility and the v2 commitment rules.
 
-Onchain Savings and recovery use `@scure/btc-signer` for Bitcoin addresses,
-Taproot, PSBTs, signing, and finalization. A narrow Esplora adapter discovers
-the fixed program outputs and broadcasts completed transactions. Vault code
-owns only deterministic selection and the versioned Vault-specific transaction
-shapes. The boundary stops before general onchain wallet behavior. Fee
-estimation, descriptor discovery, reorg-aware transaction state, general coin
-control, or address derivation require an established wallet engine such as
-BDK or the corresponding implementation from Arkade Wallet.
+Outbound Lightning uses `@arkade-os/swap` for quotes, VHTLCs, and payment state.
+Funding passes through ordinary Spending authorization, while refunds require
+the appropriate owner ceremony and exact enrolled destination.
 
-## Trust boundary
+## Renewal and backups
 
-The same-origin gateway secret authenticates the web deployment to the private
-service; it is not user authorization. Passkey proofs, phone signatures, and
-complete transaction verification authorize user mutations. The Vault service
-and its ledger remain one protected component so the VaultCosigner cannot sign
-without observing authoritative allowance state.
+Guardian renewal executes finite owner-presigned requests. It cannot create
+new owner authority after the wallet locks. Replacement recovery paths are
+validated before import into the SDK repository. On the next unlock, the wallet reconciles those paths with the encrypted archive
+that contains its saved transaction and key-unlock data.
 
-The release candidate is Mutinynet-only. Mainnet uses `https://arkade.computer`
-through the official Arkade SDK. The mainnet signer endpoint is configured privately; its advertised signer matches the SDK pin,
-but the corresponding Contract Pack pins remain to be frozen and qualified.
-Mainnet Vault Program and policy choices are a later release gate, not part of
-the current lifecycle cleanup.
+Cloud storage holds ciphertext and an authenticated public header. A backup
+session cannot authorize payment. Capture, revision checks, and the last
+complete archive prevent an incomplete update from silently replacing a
+complete copy. A closed browser cannot continuously upload new encrypted data.
+
+See [security](security.md), [backup synchronization](light-automatic-backup.md),
+and [dependencies](upstream-alignment.md) for the corresponding boundaries.

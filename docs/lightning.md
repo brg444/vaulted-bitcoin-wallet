@@ -45,7 +45,7 @@ broadcast response does not prove that no funds moved.
 
 ## Refunds
 
-The initial send posture matches the current Arkade Wallet integration. The
+The
 VHTLC's noninteractive refund path uses the server, solver, and mainnet
 Emulator to return value directly to `vault-policy-v1`. Package-level tests
 rebuild the persisted contract and verify that this leaf contains the exact
@@ -54,40 +54,10 @@ Spending script.
 Reload and focus reconciliation are watch-only. They can recognize settlement
 or show that a refund is available, but they cannot sign one. Returning an
 expired payment to Spending requires a separate Face ID approval; only that
-bounded operation installs the package refunder. Mainnet enablement still
-requires real immediate-failure and delayed-refund tests against the approved
-service and solver configuration.
+bounded operation installs the package refunder. Payment and refund availability depend on the configured solver and required services.
 
-## Lightning receive
+## Build capability
 
-Lightning receive is not part of this release. Arkade Wallet PR 918 is the
-reference integration for persisted receive claims and cross-tab ownership,
-but its reload, claim, and refund behavior has not completed live Mutinynet
-qualification for the Vault.
-
-Receive remains disabled until a published package contains the current
-receive fixes, the solver route and covenant claim service are deployed, and a
-low-value proof confirms payment to the exact Spending script through reload,
-underfunding, Operator outage, claim, solver refund, and unilateral recovery.
-
-## Release gates
-
-The Mutinynet send UI is disabled unless `VITE_VAULT_LIGHTNING_SEND` is exactly
-`true`. Its first deployment uses the bundled, signature-verified Mutinynet
-solver card and the published SDK and swap packages. Lightning receive remains
-disabled independently.
-
-Mutinynet solver deployment, caps, and the remaining external operator
-actions are in `docs/lightning-mutinynet-operator.md`.
-
-Mainnet send enablement requires all of the following:
-
-1. ordinary mainnet VTXO Spending is qualified against `arkade.computer`;
-2. the mainnet Emulator and Vault Program pins are frozen;
-3. one signed solver card, relay set, amount range, and rotation procedure are
-   approved, because the public mainnet registry currently advertises no
-   Lightning market;
-4. quote expiry and ordinary reservation expiry are coordinated and covered by
-   reload and lost-response tests;
-5. a real invoice exercises pay, immediate failure refund, delayed status, and
-   ambiguous funding recovery with bounded value.
+`VITE_VAULT_LIGHTNING_SEND=true` enables outbound Lightning. The mainnet build
+sets it explicitly; other builds must opt in. Solver cards are bundled and
+signature-verified. Lightning receive is not implemented in the wallet.

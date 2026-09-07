@@ -11,11 +11,8 @@ Vaulted independently verifies every returned Emulator signature.
 The [Ledger approval contract](LEDGER.md) describes the hardware-first flow and
 independent Bitcoin sighash verification in connector v2.
 
-The first run rejected every candidate because the wallet had dropped both
-proprietary parent-transaction fields. In btc-signer 2.0.1, `addInput` discards
-unknown metadata even with `allowUnknown: true`; `updateInput` respects that
-option. The builder now attaches the fields through `updateInput`, and unit
-tests check their exact bytes before and after hardware handoff.
+The exported PSBT retains both proprietary parent-transaction fields through
+`updateInput`. Tests verify their exact bytes before and after hardware handoff.
 
 ## Source and test boundary
 
@@ -26,9 +23,8 @@ The test uses these exact source revisions:
 - [Go SDK f29d9e7](https://github.com/arkade-os/go-sdk/tree/f29d9e77d5c70cc898136b8536b95c5006104062):
   the exact revision referenced by the emulator's module replacement.
 
-The Go downloader could not retrieve the SDK revision during qualification;
-Git fetched the same commit successfully. A temporary modfile points to that
-local source, leaving both repositories' tracked dependency files unchanged.
+The reproduction command uses a temporary modfile pointing to the exact local
+SDK source, leaving tracked dependency files unchanged.
 The fixture adapter changes service construction only: it supplies public test
 key 15 and a distinct Operator fixture key, without starting an Operator client
 or opening a real wallet. The gateway, handler, interpreter, and signer remain

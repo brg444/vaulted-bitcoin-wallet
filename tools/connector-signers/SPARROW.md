@@ -1,7 +1,7 @@
 # Sparrow connector qualification
 
-The onchain Savings connector is the active integration candidate; see
-[implementation and deployment status](DEPLOYMENT.md).
+These tests exercise the v1 Savings connector with one signer reserve. Dual-reserve v2 compatibility requires its own tests. See the [current signer guide](../../docs/connector-signers.md)
+for the enrolled transaction family.
 
 Sparrow 2.5.4's software wallet signs the connector Savings PSBT using native
 SegWit (BIP84) or Taproot (BIP86) keys. Eight cases cover both key types,

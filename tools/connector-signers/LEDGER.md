@@ -11,10 +11,10 @@ A prepared first deposit creates two 500-sat signer reserves. Withdrawals spend
 those reserves at inputs 0 and 1, followed by Savings at input 2. The reserves
 return to the enrolled signer for reuse.
 
-| Withdrawal | Outputs, in order |
-| --- | --- |
-| Partial | Recipient, Savings change, reserve A, reserve B, 240-sat anchor, program packet |
-| Full | Recipient, reserve A, reserve B, 240-sat anchor, program packet |
+| Withdrawal | Outputs, in order                                                               |
+| ---------- | ------------------------------------------------------------------------------- |
+| Partial    | Recipient, Savings change, reserve A, reserve B, 240-sat anchor, program packet |
+| Full       | Recipient, reserve A, reserve B, 240-sat anchor, program packet                 |
 
 The hardware PSBT contains every monetary output. Its view omits the final,
 zero-value program packet, which exceeds Ledger's accepted OP_RETURN size.
@@ -30,12 +30,7 @@ three reserved outpoints.
 
 ## Independent verification
 
-Ledger's generic non-default sighash warning also appears for `SIGHASH_NONE`.
-An initial, unshipped prototype checked the hardware sighash only in the wallet
-and Guardian. Qualification reproduced a valid Ledger `NONE` approval followed
-by recipient substitution that this prototype's Emulator program accepted.
-
-The corrected program independently reconstructs the Bitcoin BIP341 or BIP143
+The program independently reconstructs the Bitcoin BIP341 or BIP143
 `SINGLE` digest for each hardware input and verifies the corresponding signature
 with `OP_CHECKSIGFROMSTACK`. A signature made with `NONE` or `ANYONECANPAY`
 cannot satisfy that check. The device warning is informational; the program
