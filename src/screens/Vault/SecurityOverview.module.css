@@ -58,12 +58,13 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(8rem, calc((100% - 1px) / 2))), 1fr));
   grid-auto-rows: 1fr;
+  gap: 1px;
   border: 1px solid var(--qg-line);
   border-radius: var(--qg-surface-radius);
   overflow: hidden;
-  background: color-mix(in srgb, var(--qg-paper) 50%, var(--qg-oat));
+  background: var(--qg-line);
 }
 
 .tile {
@@ -76,19 +77,11 @@
   padding: var(--qg-space-16);
   border: 0;
   border-radius: 0;
-  background: transparent;
+  background: color-mix(in srgb, var(--qg-paper) 50%, var(--qg-oat));
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.tile:nth-child(2n) {
-  border-inline-start: 1px solid var(--qg-line);
-}
-
-.tile:nth-child(n + 3) {
-  border-top: 1px solid var(--qg-line);
 }
 
 .tile:hover,
@@ -153,5 +146,9 @@
 @media (max-width: 359px) {
   .hero {
     padding: var(--qg-space-16);
+  }
+
+  .tile {
+    padding: var(--qg-space-12);
   }
 }

@@ -1421,8 +1421,9 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'Open navigation' }).click()
     await page.getByTestId('tab-vault').click()
     await expect(page.getByRole('heading', { name: 'Security', exact: true })).toBeVisible()
-    await expect(page.locator('.vault-hub-row')).toHaveCount(5)
-    await contained('.vault-hub')
+    await expect(page.getByTestId('security-grid').getByRole('button')).toHaveCount(4)
+    await expect(page.getByTestId('security-lost')).toBeVisible()
+    await contained('[data-testid="security-overview"]')
     await capture('security')
     await page.getByRole('button', { name: 'Go back' }).click()
     await page.getByTestId('account-receive').click()
@@ -1684,9 +1685,13 @@ for (const mode of ['standard', 'light'] as const) {
         const boxes = await tiles.evaluateAll((elements) =>
           elements.map((el) => {
             const r = el.getBoundingClientRect()
-            return { width: r.width, height: r.height }
+            return { x: r.x, y: r.y, width: r.width, height: r.height }
           }),
         )
+        expect(boxes[0].y).toBeCloseTo(boxes[1].y, 0)
+        expect(boxes[2].y).toBeCloseTo(boxes[3].y, 0)
+        expect(boxes[0].x).toBeCloseTo(boxes[2].x, 0)
+        expect(boxes[2].y).toBeGreaterThan(boxes[0].y)
         for (const box of boxes) {
           expect(box.width).toBeCloseTo(boxes[0].width, 0)
           expect(box.height).toBeCloseTo(boxes[0].height, 0)
