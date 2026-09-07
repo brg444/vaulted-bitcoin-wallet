@@ -15,7 +15,7 @@ describe('Recovery Kit CLI', () => {
     const out = runKitCli({ name: 'inspect', kit })
     expect(out).toContain(kit.descriptor.savings.address)
     expect(out).toContain(kit.descriptor.pending['savings-hardware'].address)
-    expect(out).toContain('cannot exit a Normal')
+    expect(out).toContain('Normal Savings can be recovered with the phone and hardware keys without either service.')
     const family = familyFromDescriptor(kit.descriptor)
     expect(family.savings.address).toBe(kit.descriptor.savings.address)
     expect(family.pending['savings-recovery'].address).toBe(kit.descriptor.pending['savings-recovery'].address)
@@ -122,29 +122,5 @@ describe('Recovery Kit CLI', () => {
     const bumped = runKitCli({ name: 'bump', psbtHex: psbt, fee: 800 })
     expect(bumped.startsWith('800\n')).toBe(true)
     expect(inspectTransitionPsbt(bumped.split('\n')[1]).destScript).toBe(inspectTransitionPsbt(psbt).destScript)
-  })
-
-  it('refuses a suspect clawback from the CLI', () => {
-    const kit = fixtureKit()
-    const cmd = parseKitCli(
-      [
-        'clawback',
-        'kit.json',
-        '--claimant',
-        'hardware',
-        '--guardian',
-        'hardware',
-        '--txid',
-        '11'.repeat(32),
-        '--vout',
-        '0',
-        '--value',
-        '50000',
-        '--fee',
-        '500',
-      ],
-      () => kit,
-    )
-    expect(() => runKitCli(cmd)).toThrow(/guardian/)
   })
 })

@@ -2,7 +2,7 @@
 @import 'tw-animate-css';
 @import '@fontsource-variable/geist';
 
-/* Dark mode: use html.palette-dark class (matches tokens.css and config.tsx) */
+/* Dark mode: use html.palette-dark class */
 @custom-variant dark (&:where(html.palette-dark, html.palette-dark *));
 
 @theme {

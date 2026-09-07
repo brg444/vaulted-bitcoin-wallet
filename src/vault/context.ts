@@ -1,3 +1,4 @@
+import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
 import { createContext } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { emptySetupPlan, type VaultSetupPlan } from '../lib/vault/setupPlan'
@@ -49,16 +50,23 @@ export interface VaultSpend {
 export interface VaultContextProps {
   acceptDesign: (tier?: 'standard' | 'advanced') => void
   account: VaultAccount
+  spendingRenewals?: SpendingRenewalJournal | null
   positions: VaultAccountPositions
   applyHardware: (raw: string) => void
+  applyConnectorDescriptor: (raw: string) => void
   applyRecovery: (raw: string) => void
   setProtectionTier: (tier: ProtectionTier) => void
   skipRecovery: () => void
   downloadRecoveryKit: () => string
+  backupRecoveryArchive: () => Promise<void>
+  downloadRecoveryArchive: () => Promise<string>
+  recoveryArchiveStatus: string
+  recoveryArchiveError: string
   backupRecoveryKit: () => Promise<boolean>
   balanceError: string
   balancesLoaded: boolean
   boardingAddress: string
+  restoreRecoveryArchive: (raw?: unknown) => Promise<void>
   restoreRecoveryKit: () => Promise<void>
   signGuardianExitWithDevice: (psbtHex: string) => Promise<string>
   hasRecoveryKit: boolean
@@ -107,6 +115,7 @@ export interface VaultContextProps {
   refreshingBalance: boolean
   reset: () => void
   reviewSpend: () => Promise<void>
+  rebroadcastingConnector: boolean
   resumingPayment: boolean
   pendingPayments: { operationId: string; amountSats: number; authorized: boolean }[]
   openPendingPayment: (operationId: string) => Promise<void>
@@ -133,14 +142,20 @@ export const VaultContext = createContext<VaultContextProps>({
   account: 'spend',
   positions: EMPTY_VAULT_POSITIONS,
   applyHardware: () => {},
+  applyConnectorDescriptor: () => {},
   applyRecovery: () => {},
   setProtectionTier: () => {},
   skipRecovery: () => {},
   downloadRecoveryKit: () => '',
+  backupRecoveryArchive: async () => {},
+  downloadRecoveryArchive: async () => '',
+  recoveryArchiveStatus: '',
+  recoveryArchiveError: '',
   backupRecoveryKit: async () => false,
   balanceError: '',
   balancesLoaded: false,
   boardingAddress: '',
+  restoreRecoveryArchive: async () => {},
   restoreRecoveryKit: async () => {},
   signGuardianExitWithDevice: async () => '',
   hasRecoveryKit: false,
@@ -189,6 +204,7 @@ export const VaultContext = createContext<VaultContextProps>({
   refreshingBalance: false,
   reset: () => {},
   reviewSpend: async () => {},
+  rebroadcastingConnector: false,
   resumingPayment: false,
   pendingPayments: [],
   openPendingPayment: async () => {},

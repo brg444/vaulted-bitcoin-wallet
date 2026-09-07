@@ -1,6 +1,7 @@
 [
   {
     "name": "with-recovery",
+    "protectionTier": "advanced",
     "recovery": true,
     "descriptorHash": "b387fdb5ddc5ed25ab75ceff00103bd587fe0de4aa521a14aa8f006d37793fe0",
     "savings": {
@@ -38,6 +39,7 @@
   },
   {
     "name": "without-recovery",
+    "protectionTier": "standard",
     "recovery": false,
     "descriptorHash": "fa29ea123948397ad3059f34679aba0195e966bfbb4879a60530c8c29d46d090",
     "savings": {

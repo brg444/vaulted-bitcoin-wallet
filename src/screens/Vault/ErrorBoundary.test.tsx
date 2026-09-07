@@ -23,7 +23,7 @@ describe('Vault error boundary', () => {
     )
 
     expect(screen.getByText('Vaulted could not display this screen.')).toBeTruthy()
-    expect(screen.getByText(/^Incident reference: VLT-/)).toBeTruthy()
+    expect(screen.getByText(/^VLT-/)).toBeTruthy()
     expect(document.body).not.toHaveTextContent(raw)
     expect(document.body).not.toHaveTextContent('Nothing was sent')
     expect(document.body).not.toHaveTextContent('This device was not changed')

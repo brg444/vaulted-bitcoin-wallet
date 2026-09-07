@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import defaultDeployment from '../../../vercel.json'
+import mainnetDeployment from '../../../vercel.mainnet.json'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import gatewayHandler, {
   allowAuthorizerPath,
@@ -56,6 +59,23 @@ function expectLocalNoStore(result: ReturnType<typeof gatewayResponse>) {
 }
 
 describe('same-origin authorizer gateway', () => {
+  it.each([
+    ['default', defaultDeployment],
+    ['mainnet', mainnetDeployment],
+  ] as const)('routes %s deployment delegation requests through the bounded gateway', (_network, config) => {
+    for (const program of ['light', 'vtxo']) {
+      const routeIndex = config.rewrites.findIndex((route) => route.source === `/v1/${program}/delegate/:phase`)
+      expect(routeIndex).toBeGreaterThanOrEqual(0)
+      expect(routeIndex).toBeLessThan(config.rewrites.findIndex((route) => route.source === '/v1/:path*'))
+      for (const phase of ['info', 'schedule', 'list', 'status', 'cancel']) {
+        const destination = config.rewrites[routeIndex].destination.replace(':phase', phase)
+        const path = publicAuthorizerPath(destination)
+        expect(path).toBe(`/v1/${program}/delegate/${phase}`)
+        expect(allowAuthorizerPath(path)).toBe(true)
+      }
+    }
+  })
+
   it('maps function URLs back to authorizer paths', () => {
     expect(publicAuthorizerPath('/api/health')).toBe('/health')
     expect(publicAuthorizerPath('/api/ready')).toBe('/ready')
@@ -103,6 +123,34 @@ describe('same-origin authorizer gateway', () => {
       expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-renew&phase=${phase}`))).toBe(false)
     }
   })
+  it('routes only the five native Guardian delegation phases', () => {
+    for (const phase of ['info', 'schedule', 'list', 'status', 'cancel'])
+      expect(publicAuthorizerPath(`/api/gateway?route=light-delegate&phase=${phase}`)).toBe(
+        `/v1/light/delegate/${phase}`,
+      )
+    for (const phase of ['', 'sign', '../schedule', 'status/extra'])
+      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-delegate&phase=${phase}`))).toBe(false)
+  })
+
+  it('preserves connector operation queries and all four Light backup aliases', () => {
+    expect(publicAuthorizerPath('/api/v1/connector-operation?vaultId=a&operationId=b')).toBe(
+      '/v1/connector/operation?vaultId=a&operationId=b',
+    )
+    expect(publicAuthorizerPath('/api/v1/connector-withdraw-authorize?operationId=b')).toBe(
+      '/v1/connector/withdraw/authorize?operationId=b',
+    )
+    for (const phase of ['challenge', 'open', 'read', 'write']) {
+      expect(publicAuthorizerPath(`/api/gateway?route=recovery-archive&phase=${phase}`)).toBe(
+        `/v1/recovery-archive/${phase}`,
+      )
+      expect(publicAuthorizerPath(`/api/gateway?route=light-backup&phase=${phase}`)).toBe(`/v1/light/backup/${phase}`)
+    }
+    for (const phase of ['', 'delete', '../write', 'write/extra'])
+      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=recovery-archive&phase=${phase}`))).toBe(
+        false,
+      )
+    expect(allowAuthorizerPath(publicAuthorizerPath('/api/gateway?route=light-backup&phase=sign'))).toBe(false)
+  })
 
   it('only proxies health, readiness, and /v1', () => {
     expect(allowAuthorizerPath('/health')).toBe(true)
@@ -137,6 +185,116 @@ describe('same-origin authorizer gateway', () => {
     for (let i = 0; i < 60; i++) expect(allowGatewayRate(key, 1)).toBe(true)
     expect(allowGatewayRate(key, 1)).toBe(false)
     expect(allowGatewayRate(key, 61_000)).toBe(true)
+  })
+
+  it.each([
+    ['POST', '/api/v1/passkey/challenge', JSON.stringify({ vaultId: '  victim\t' })],
+    ['POST', '/api/v1/light/backup/challenge', JSON.stringify({ VaultID: '\u0085victim\u0085' })],
+    ['GET', '/api/v1/vtxo-operation?vaultId=%20victim%09', ''],
+    ['GET', '/api/v1/status?vault=%C2%85victim%C2%85', ''],
+    ['GET', '/api/v1/connector-operation?vaultId=%20%09&vault=%C2%85victim%C2%85', ''],
+    ['GET', '/api/v1/map?vault=%20victim%20', '', ' victim '],
+    ['GET', '/api/v1/map?vault=victim?question', '', 'victim?question'],
+    ['GET', '/api/v1/status??vault=decoy&vault=victim', ''],
+    ['GET', '/api/v1/map??vault=decoy&vault=victim', ''],
+    ['GET', '/api/v1/vtxo-operation??vaultId=decoy&vaultId=victim', ''],
+    ['GET', '/api/v1/connector-operation??vaultId=decoy&vaultId=victim', ''],
+    ['GET', '/api/v1/map?vault=victim%3Bvalue', '', 'victim;value'],
+    ['POST', '/api/v1/passkey/challenge', JSON.stringify({ vaultId: '\ufeffvictim\ufeff' }), '\ufeffvictim\ufeff'],
+    ['GET', '/api/v1/status?vault=%EF%BB%BFvictim%EF%BB%BF', '', '\ufeffvictim\ufeff'],
+    ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"vaultId":"victim"}'],
+    ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"VaultID":"victim"}'],
+    ['POST', '/api/v1/light/backup/challenge?vaultId=decoy', '{"vaultId":"victim"}'],
+    ['GET', '/api/v1/status?vault=victim&vaultId=decoy', '{"vaultId":"decoy"}'],
+    ['GET', '/api/v1/map?vault=victim&vaultId=decoy', ''],
+    ['GET', '/api/v1/connector-operation?vault=decoy&vaultId=victim', ''],
+    ['GET', '/api/v1/vtxo-operation?vault=decoy&vaultId=victim', ''],
+  ])('charges the actual Guardian vault for %s %s', async (method, url, body, expectedVault = 'victim') => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-rate-secret')
+    const victimKey = createHash('sha256').update(expectedVault).digest('hex').slice(0, 32)
+    const fetchMock = vi.fn().mockImplementation(async (target: string, init: RequestInit) => {
+      if (target !== 'https://redis.example/pipeline') return Response.json({ ok: true })
+      const commands = JSON.parse(String(init.body)) as string[][]
+      return Response.json(
+        commands.map(([command, key]) => ({
+          result: command === 'INCR' && key.includes(`:vault:${victimKey}:`) ? 61 : 1,
+        })),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(gatewayRequest({ method, url, body, headers: { host: 'rc.getvaulted.xyz' } }), result.response)
+    expect(result.response.statusCode).toBe(429)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expectLocalNoStore(result)
+  })
+
+  it.each([
+    '/api/v1/%73tatus?vault=victim',
+    '/api/v1/%6dap?vault=victim',
+    '/api/v1/unused/../status?vault=victim',
+    '/api/v1/unused/%2e%2e/status?vault=victim',
+    '/api/v1//status?vault=victim',
+  ])('rejects noncanonical paths before rate lookup or forwarding: %s', async (url) => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({ method: 'GET', url, headers: { host: 'rc.getvaulted.xyz' } }),
+      result.response,
+    )
+    expect(result.response.statusCode).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectLocalNoStore(result)
+  })
+
+  it.each([
+    '/api/v1/status?vault=decoy;ignored&vault=victim',
+    '/api/v1/vtxo-operation?vaultId=decoy%zz&vaultId=victim',
+    '/api/v1/map?vault=victim#decoy',
+    '/api/v1/status?vault=vic\ttim',
+  ])('rejects query parser ambiguity before rate lookup or forwarding: %s', async (url) => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({ method: 'GET', url, headers: { host: 'rc.getvaulted.xyz' } }),
+      result.response,
+    )
+    expect(result.response.statusCode).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectLocalNoStore(result)
+  })
+
+  it('rejects conflicting case aliases before charging or forwarding a mainnet request', async () => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
+    vi.stubEnv('VAULT_RELEASE_NETWORK', 'mainnet')
+    vi.stubEnv('AUTHORIZER_GATEWAY_SECRET', 'test-gateway-secret')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({
+        method: 'POST',
+        url: '/api/v1/passkey/challenge?vault=decoy',
+        body: '{"VaultID":"earlier","vaultId":"decoy","VaultID":"victim"}',
+        headers: { host: 'rc.getvaulted.xyz' },
+      }),
+      result.response,
+    )
+    expect(result.response.statusCode).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectLocalNoStore(result)
   })
 
   it('uses a shared durable counter for mainnet client and vault limits', async () => {
@@ -242,6 +400,52 @@ describe('gateway response cache policy', () => {
     expect(result.body()?.toString()).toBe(JSON.stringify({ ok: false, arkadeOrigin: 'configured' }))
   })
 
+  it('allows large backup payloads without increasing connector or challenge request limits', async () => {
+    const body = 'a'.repeat(MAX_GATEWAY_BYTES + 1)
+    const fetchMock = vi.fn().mockImplementation(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    for (const url of [
+      '/v1/light/backup/write?request=1',
+      '/api/gateway?route=light-backup&phase=write',
+      '/v1/recovery-archive/write?request=1',
+      '/api/gateway?route=recovery-archive&phase=write',
+    ]) {
+      const result = gatewayResponse()
+      await gatewayHandler(gatewayRequest({ method: 'POST', url, body }), result.response)
+      expect(result.response.statusCode).toBe(200)
+    }
+    fetchMock.mockClear()
+    for (const url of ['/api/v1/connector-withdraw-authorize', '/v1/light/backup/challenge', '/v1/light/backup/open']) {
+      const result = gatewayResponse()
+      await gatewayHandler(gatewayRequest({ method: 'POST', url, body }), result.response)
+      expect(result.response.statusCode).toBe(413)
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('bounds large backup responses by route even when the request has a query', async () => {
+    const payload = 'a'.repeat(MAX_GATEWAY_BYTES + 1)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => new Response(payload)),
+    )
+    for (const phase of ['open', 'read', 'write']) {
+      const result = gatewayResponse()
+      await gatewayHandler(
+        gatewayRequest({ method: 'POST', url: `/v1/light/backup/${phase}?request=1`, body: '{}' }),
+        result.response,
+      )
+      expect(result.response.statusCode).toBe(200)
+      expect(result.body()?.length).toBe(payload.length)
+    }
+    const connector = gatewayResponse()
+    await gatewayHandler(
+      gatewayRequest({ url: '/api/v1/connector-operation?vaultId=a&operationId=b' }),
+      connector.response,
+    )
+    expect(connector.response.statusCode).toBe(502)
+  })
+
   it('forwards open enrollment through the flat gateway without a user invite', async () => {
     const session = JSON.stringify({ token: 'public-session', expiresAt: '2026-09-05T12:10:00Z' })
     const fetchMock = vi
@@ -259,6 +463,23 @@ describe('gateway response cache policy', () => {
     )
     expect(result.response.statusCode).toBe(200)
     expect(result.body()?.toString()).toBe(session)
+    expect(result.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it.each([
+    ['GET', '/api/v1/connector-operation?vaultId=x&operationId=y', '/v1/connector/operation?vaultId=x&operationId=y'],
+    ['POST', '/api/v1/connector-withdraw-authorize', '/v1/connector/withdraw/authorize'],
+  ])('forwards the connector %s request with its operation identity and body', async (method, url, target) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { headers: { 'Cache-Control': 'no-store' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = gatewayResponse()
+    const body = JSON.stringify({ vaultId: 'x', psbt: 'fixture-candidate' })
+    await gatewayHandler(gatewayRequest({ method, url, ...(method === 'POST' ? { body } : {}) }), result.response)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://authorizer.example' + target,
+      expect.objectContaining({ method, body: method === 'POST' ? Buffer.from(body) : undefined }),
+    )
+    expect(result.response.statusCode).toBe(200)
     expect(result.headers.get('cache-control')).toBe('no-store')
   })
 

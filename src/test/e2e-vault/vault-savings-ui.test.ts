@@ -159,6 +159,7 @@ test('@polish persists a phone-signed Savings PSBT and completes a real hardware
   await expect(page.getByRole('heading', { name: 'Hardware next' })).toBeVisible()
   await expect(page).toHaveScreenshot('savings-hardware-handoff.png', { animations: 'disabled', fullPage: true })
 
+  await page.getByText('Other signing methods', { exact: true }).click()
   await page.getByRole('button', { name: 'Copy PSBT' }).click()
   const copied = await page.evaluate(() => navigator.clipboard.readText())
   expect(copied).toBe(Buffer.from(phoneSigned, 'hex').toString('base64'))
@@ -175,7 +176,8 @@ test('@polish persists a phone-signed Savings PSBT and completes a real hardware
   await expect(page.getByRole('heading', { name: 'Savings transfer submitted' })).toBeVisible()
   await expect(page.getByText('Bitcoin confirmation is next')).toBeVisible()
   await expect(page.getByText('PSBT copied')).toBeHidden()
-  const reference = page.getByRole('region', { name: 'Transaction reference' })
+  await page.getByText('View transaction', { exact: true }).click()
+  const reference = page.locator('details[aria-label="Transaction reference"]')
   const txid = await reference.locator('code').innerText()
   expect(txid).toMatch(/^[0-9a-f]{64}$/)
   await expect(reference.getByRole('link', { name: 'View on Bitcoin explorer' })).toHaveAttribute(

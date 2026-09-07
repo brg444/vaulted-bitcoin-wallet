@@ -241,6 +241,7 @@ export function buildVaultProgramFamily(input: {
   templateVersion?: string
   absoluteFeeCapSats: number
   feerateCapSatPerV: number
+  serverFreeClawback?: boolean
 }) {
   const phoneDirect = hexToBytes(input.phoneDirectP256)
   const bases = [input.phonePub, input.hardwarePub, input.vaultCosignerBase, input.arkadeCosignerBase]
@@ -254,7 +255,7 @@ export function buildVaultProgramFamily(input: {
   const clawbackAuth = {} as Record<FamilyKey, Uint8Array>
   const pendingTweaks = {} as Record<FamilyKey, ReturnType<typeof tweakPair>>
   const templateVersion = input.templateVersion
-  const serverFreeClawback = templateVersion === SAVINGS_TEMPLATE
+  const serverFreeClawback = input.serverFreeClawback ?? templateVersion === SAVINGS_TEMPLATE
   const expectedClawbackWitness = clawbackWitnessBytes(serverFreeClawback, hasRecovery)
   for (const claimant of claimants) {
     const key = `savings-${claimant}` as FamilyKey

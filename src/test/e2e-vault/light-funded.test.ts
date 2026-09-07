@@ -14,6 +14,7 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   await writeFile(join(directory, 'funded-enrollment-started'), new Date().toISOString(), { mode: 0o600, flag: 'wx' })
   const save = async (name: string, value: unknown) =>
     writeFile(join(directory, name), JSON.stringify(value, null, 2), { mode: 0o600 })
+  const backups: { revision: number; payload: string }[] = []
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/v1/**', async (route) => {
@@ -27,20 +28,37 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
       headers: request.headers(),
       data: request.postData() || undefined,
     })
+    if (url.pathname === '/v1/light/backup/write' && response.ok()) backups.push(await response.json())
     await route.fulfill({ response })
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
   await page.getByLabel('Per-payment limit, in sats').fill('20000')
   await page.getByLabel('Rolling 24-hour limit, in sats').fill('50000')
   await page.getByRole('button', { name: 'Create passkey', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Keep two things safe' })).toBeVisible()
-  const secret = (await page.locator('.light-secret').innerText()).trim()
-  const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Download recovery file', exact: true }).click()
-  const path = await (await downloadPromise).path()
-  const saved = JSON.parse(await readFile(path!, 'utf8'))
+  await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 45000 })
+  // Generate a compatibility fixture for the two legacy recovery-code drills.
+  // This is an opt-in Mutinynet test only; the product never exports this code.
+  const { saved, secret } = await page.evaluate(async () => {
+    const base = '/src/lib/vault/light/'
+    const { unlockLightWithPasskey } = await import(base + 'passkey.ts')
+    const { wrapLightOwnerKey } = await import(base + 'keyBackup.ts')
+    const record = JSON.parse(localStorage.getItem('vaulted-light:enrollment-v1')!)
+    if (record.descriptor.network !== 'mutinynet') throw new Error('Test-only Mutinynet backup')
+    const owner = await unlockLightWithPasskey(record)
+    const material = crypto.getRandomValues(new Uint8Array(32))
+    try {
+      const recoveryBackup = await wrapLightOwnerKey(owner, material, 'recovery-secret', record.descriptor)
+      return {
+        saved: { ...record, recoveryBackup, name: 'vaulted-light-recovery', version: 1 },
+        secret: Array.from(material, (b) => b.toString(16).padStart(2, '0')).join(''),
+      }
+    } finally {
+      owner.fill(0)
+      material.fill(0)
+    }
+  })
   const destinationKey = schnorr.utils.randomSecretKey()
   const destination = p2tr(schnorr.getPublicKey(destinationKey), undefined, getNetwork('mutinynet')).address!
   await save('browser-owner-backup.json', {
@@ -51,9 +69,39 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
     destinationKey: hex.encode(destinationKey),
   })
   destinationKey.fill(0)
-  await page.getByLabel('Choose the saved recovery file to verify it').setInputFiles(path!)
-  await page.getByLabel('Enter your saved secret to verify').fill(secret)
-  await page.getByRole('button', { name: 'Verify backup and create wallet' }).click()
+  const checkAutomaticBackup = async (amount: number, phase: string, previous: string[] = []) => {
+    let evidence: { amount: number; outpoints: string[]; transactionCount: number } | undefined
+    await expect
+      .poll(
+        async () => {
+          const latest = backups.at(-1)
+          if (!latest) return false
+          evidence = await page.evaluate(async (payload) => {
+            const base = '/src/lib/vault/light/'
+            const { openLocalLightBackup } = await import(base + 'backupCodec.ts')
+            const { validateLightRecoveryArchive } = await import(base + 'recoveryArchive.ts')
+            const { file } = await openLocalLightBackup(JSON.parse(payload))
+            const { coins } = validateLightRecoveryArchive(file.archive, file.descriptor)
+            return {
+              amount: coins.reduce((n: number, v: { value: number }) => n + v.value, 0),
+              outpoints: coins.map((v: { txid: string; vout: number }) => `${v.txid}:${v.vout}`).sort(),
+              transactionCount: Object.keys(file.archive.transactions).length,
+            }
+          }, latest.payload)
+          return (
+            evidence?.amount === amount &&
+            evidence.transactionCount > 0 &&
+            evidence.outpoints.every((id) => !previous.includes(id))
+          )
+        },
+        { timeout: 90000, intervals: [1000, 3000, 5000] },
+      )
+      .toBe(true)
+    await save(`browser-${phase}-cloud-backup.json`, JSON.parse(backups.at(-1)!.payload))
+    await save(`browser-${phase}-paths.json`, { ...evidence, revision: backups.at(-1)!.revision })
+    return evidence!.outpoints
+  }
+
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 45000 })
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
   const address = (await page.locator('.light-address').innerText()).trim()
@@ -62,6 +110,9 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
     data: { address, amount: 50000 },
   })
   expect(funded.ok()).toBe(true)
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await expect(page.getByTestId('vault-balance').filter({ hasText: '₿50,000' })).toBeVisible({ timeout: 60000 })
+  const receivedPaths = await checkAutomaticBackup(50000, 'received')
   await page.reload()
   await page.getByRole('button', { name: 'Unlock with passkey', exact: true }).click()
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿50,000' })).toBeVisible({ timeout: 60000 })
@@ -77,10 +128,12 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   })
   await save('browser-payment-evidence.json', { text: await page.locator('.light-app').innerText(), errors })
   expect(errors).toEqual([])
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  const changePaths = await checkAutomaticBackup(40000, 'change', receivedPaths)
   if (process.env.VAULT_LIGHT_TEST_RENEWAL === '1') {
-    await page.getByRole('button', { name: 'Done', exact: true }).click()
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
     await page.getByRole('button', { name: 'Security', exact: true }).click()
+    await page.getByRole('button', { name: /^Automatic renewal/ }).click()
     await page.getByRole('button', { name: 'Renew Spending', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Keep your Spending active', exact: true })).toBeVisible({
       timeout: 45000,
@@ -95,8 +148,56 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
     await expect(page.getByTestId('vault-balance').filter({ hasText: '₿40,000' })).toBeVisible({ timeout: 60000 })
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
     await page.getByRole('button', { name: 'Security', exact: true }).click()
+    await checkAutomaticBackup(40000, 'renewed', changePaths)
     await page.screenshot({ path: join(directory, 'renewed-light-security.png'), fullPage: true })
   }
+
+  // Leave the normal wallet before measuring recovery requests, so its balance
+  // and backup timers cannot contaminate the independent recovery check.
+  if (!(await page.getByRole('button', { name: 'Lock wallet', exact: true }).isVisible())) {
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+    await page.getByRole('button', { name: 'Security', exact: true }).click()
+  }
+  await page.getByRole('button', { name: 'Lock wallet', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Unlock with passkey', exact: true })).toBeVisible()
+  await page.route('**/__light-offline-test', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Offline recovery qualification</title>' }),
+  )
+  await page.goto('/__light-offline-test')
+
+  // Prepare the latest automatically saved paths after disabling both services.
+  const forbiddenRequests: string[] = []
+  for (const pattern of ['**/v1/**', 'https://mutinynet.arkade.sh/**']) {
+    await page.route(pattern, (route) => {
+      forbiddenRequests.push(new URL(route.request().url()).pathname)
+      return route.abort()
+    })
+  }
+  const prepared = await page.evaluate(
+    async ({ payload, destination }) => {
+      const base = '/src/lib/vault/light/'
+      const { openLocalLightBackup } = await import(base + 'backupCodec.ts')
+      const { unlockLightWithPasskey } = await import(base + 'passkey.ts')
+      const { prepareLightRecoveryWithOwner } = await import(base + 'recovery.ts')
+      const { file } = await openLocalLightBackup(JSON.parse(payload))
+      const owner = await unlockLightWithPasskey(file)
+      try {
+        return await prepareLightRecoveryWithOwner(file, owner, destination, file.archive, true)
+      } finally {
+        owner.fill(0)
+      }
+    },
+    { payload: backups.at(-1)!.payload, destination },
+  )
+  expect(prepared.exitPackage.vtxos.reduce((n: number, v: { value: number }) => n + v.value, 0)).toBe(40000)
+  expect(prepared.exitPackage.vtxos.every((v: { skipped?: boolean }) => !v.skipped)).toBe(true)
+  expect(forbiddenRequests).toEqual([])
+  await save('browser-automatic-offline-recovery.json', prepared)
+  await save('browser-automatic-offline-evidence.json', {
+    outputs: prepared.exitPackage.vtxos,
+    forbiddenRequests,
+    errors,
+  })
 })
 
 test('Light prepares recovery of funded change without a passkey', async ({ page }) => {
@@ -105,15 +206,18 @@ test('Light prepares recovery of funded change without a passkey', async ({ page
     await readFile(join(directory, 'browser-owner-backup.json'), 'utf8'),
   )
   expect(destination).toMatch(/^tb1p/)
-  await page.addInitScript(() => localStorage.setItem('vaulted:active-setup', 'light'))
   await page.goto('/')
-  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Use a local backup' }).click()
   await page
     .locator('input[type=file]')
     .setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved)) })
-  await page.getByRole('button', { name: 'I no longer have my passkey', exact: true }).click()
+  await page.getByRole('button', { name: 'Recover directly to Bitcoin', exact: true }).click()
   await page.getByLabel('Bitcoin address to recover to').fill(destination)
-  await page.getByLabel('Recovery secret', { exact: true }).fill(secret)
+  await page.getByLabel('Recovery code', { exact: true }).fill(secret)
   const downloaded = page.waitForEvent('download', { timeout: 90000 })
   await page.getByRole('button', { name: 'Prepare emergency exit', exact: true }).click()
   const file = await downloaded
@@ -145,15 +249,19 @@ test('Light prepares recovery of funded change without a passkey', async ({ page
   )
   // Reload before the outage drill so recovery depends on persisted data.
   await page.reload()
-  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Use a local backup' }).click()
   await page.locator('input[type=file]').setInputFiles({
     name: 'backup.json',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify(saved)),
   })
-  await page.getByRole('button', { name: 'I no longer have my passkey', exact: true }).click()
+  await page.getByRole('button', { name: 'Recover directly to Bitcoin', exact: true }).click()
   await page.getByLabel('Bitcoin address to recover to').fill(destination)
-  await page.getByLabel('Recovery secret', { exact: true }).fill(secret)
+  await page.getByLabel('Recovery code', { exact: true }).fill(secret)
   await page.getByLabel('Use saved recovery data without contacting the Operator').check()
   const operatorRequests: string[] = []
   await page.route('https://mutinynet.arkade.sh/**', (route) => {
@@ -188,16 +296,20 @@ test('Light explains and pauses an existing Bitcoin recovery delay', async ({ pa
     }
     return route.continue()
   })
-  await page.addInitScript(() => localStorage.setItem('vaulted:active-setup', 'light'))
   await page.goto('/')
-  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Use a local backup' }).click()
   await page.locator('input[type=file]').setInputFiles({
     name: 'saved-exit.json',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify(saved)),
   })
-  await page.getByRole('button', { name: 'I no longer have my passkey', exact: true }).click()
-  await page.getByLabel('Recovery secret', { exact: true }).fill(secret)
+  await page.getByRole('button', { name: 'Recover directly to Bitcoin', exact: true }).click()
+  await page.getByLabel('Recovery code', { exact: true }).fill(secret)
+  await page.getByRole('button', { name: 'Continue to fee funding', exact: true }).click()
   await page.getByRole('button', { name: 'Start Bitcoin recovery', exact: true }).click()
   await expect(page.getByRole('log')).toContainText('the owner-only delay ends around', { timeout: 45000 })
   await expect(page.getByRole('log')).not.toContainText('waiting_csv')
@@ -208,7 +320,7 @@ test('Light explains and pauses an existing Bitcoin recovery delay', async ({ pa
   )
   await page.getByRole('button', { name: 'Stop and resume later', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('Recovery paused')
-  await expect(page.getByLabel('Recovery secret', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('Recovery code', { exact: true })).toHaveValue('')
   expect(broadcasts).toEqual([])
   await page.screenshot({ path: join(directory, 'recovery-wait-paused.png'), fullPage: true })
 })

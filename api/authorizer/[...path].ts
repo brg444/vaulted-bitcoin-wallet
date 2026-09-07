@@ -22,7 +22,9 @@ const RATE_WINDOW_MS = 60_000
 const RATE_LIMIT = 60
 const LOCAL_CACHE_CONTROL = 'no-store, max-age=0'
 
-const FLAT_VTXO_PATHS: Record<string, string> = {
+const FLAT_AUTHORIZER_PATHS: Record<string, string> = {
+  '/api/v1/connector-operation': '/v1/connector/operation',
+  '/api/v1/connector-withdraw-authorize': '/v1/connector/withdraw/authorize',
   '/api/v1/vtxo-operation': '/v1/vtxo/operation',
   '/api/v1/vtxo-reserve': '/v1/vtxo/reserve',
   '/api/v1/vtxo-abort': '/v1/vtxo/abort',
@@ -48,6 +50,10 @@ export function isMainnetGatewayRelease(value = process.env.VAULT_RELEASE_NETWOR
 }
 
 export function allowAuthorizerPath(path: string): boolean {
+  // Wallet API paths are canonical ASCII segments. Escapes and dot segments
+  // can select a different upstream route after URL/ServeMux normalization.
+  if (/[\\%?#\u0000-\u0020\u007f]/.test(path) || path.includes('//') || /(?:^|\/)\.{1,2}(?:\/|$)/.test(path))
+    return false
   return path === '/health' || path === '/ready' || path === '/v1' || path.startsWith('/v1/')
 }
 
@@ -94,17 +100,45 @@ function rateIdentity(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 32)
 }
 
-function requestVaultId(pathAndQuery: string, body?: Buffer): string {
-  const query = new URLSearchParams(pathAndQuery.split('?')[1] || '')
-  const fromQuery = query.get('vault') || query.get('vaultId') || ''
-  if (fromQuery) return fromQuery
+// Go strings.TrimSpace uses Unicode White_Space, not JavaScript's trim set.
+function guardianTrimSpace(value: string): string {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '')
+}
+
+function requestVaultId(method: string | undefined, pathAndQuery: string, body?: Buffer): string | null {
+  const separator = pathAndQuery.indexOf('?')
+  const path = separator < 0 ? pathAndQuery : pathAndQuery.slice(0, separator)
+  const search = separator < 0 ? '' : pathAndQuery.slice(separator + 1)
+  if (method === 'GET' || method === 'HEAD') {
+    // Reject query forms Go discards or fetch rewrites, rather than charging
+    // a different first value from the one the upstream handler receives.
+    if (/[;#\u0000-\u0020\u007f]/.test(search) || /%(?![0-9a-f]{2})/i.test(search)) return null
+    const query = new URLSearchParams('?' + search)
+    // Match the Guardian read handlers; ignored aliases must not change the bucket.
+    if (path === '/v1/connector/operation')
+      return guardianTrimSpace(query.get('vaultId') || '') || guardianTrimSpace(query.get('vault') || '')
+    if (path === '/v1/vtxo/operation') return guardianTrimSpace(query.get('vaultId') || '')
+    if (path === '/v1/status') return guardianTrimSpace(query.get('vault') || '')
+    if (path === '/v1/map') return query.get('vault') || ''
+    return ''
+  }
   if (!body?.byteLength) return ''
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(body.toString('utf8')) as { vaultId?: unknown }
-    return typeof parsed.vaultId === 'string' ? parsed.vaultId : ''
+    parsed = JSON.parse(body.toString('utf8'))
   } catch {
     return ''
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  // Go accepts case-insensitive JSON field names. Charge a single alias too,
+  // and reject conflicting aliases rather than guessing their decode order.
+  const identities = new Set<string>()
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key.toLowerCase() !== 'vaultid') continue
+    if (typeof value !== 'string') return null
+    identities.add(value)
+  }
+  return identities.size > 1 ? null : guardianTrimSpace([...identities][0] || '')
 }
 
 export async function allowMainnetGatewayRate(
@@ -166,7 +200,7 @@ export function publicAuthorizerPath(url = ''): string {
   const raw = (url.split('?')[0] || '/').replace(/\/+$/, '') || '/'
   if (raw === '/api/health' || raw === '/health') return '/health' + q
   if (raw === '/api/ready' || raw === '/ready') return '/ready' + q
-  if (FLAT_VTXO_PATHS[raw]) return FLAT_VTXO_PATHS[raw] + q
+  if (FLAT_AUTHORIZER_PATHS[raw]) return FLAT_AUTHORIZER_PATHS[raw] + q
   if (raw.startsWith('/api/authorizer/')) return raw.slice('/api/authorizer'.length) + q
   if (raw === '/api/authorizer') return '/' + q
   if (raw === '/api/gateway') {
@@ -176,8 +210,16 @@ export function publicAuthorizerPath(url = ''): string {
     if (route === 'ready') return '/ready'
     if (route === 'enroll-session') return '/v1/enroll/session'
     const phase = params.get('phase') || ''
+    if (route === 'vtxo-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
+      return `/v1/vtxo/delegate/${phase}`
+    if (route === 'light-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
+      return `/v1/light/delegate/${phase}`
     if (route === 'light-renew' && new Set(['prepare', 'register', 'final', 'status', 'release']).has(phase))
       return `/v1/light/renew/${phase}`
+    if (route === 'light-backup' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
+      return `/v1/light/backup/${phase}`
+    if (route === 'recovery-archive' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
+      return `/v1/recovery-archive/${phase}`
     if (route === 'light-enroll' && new Set(['start', 'propose', 'finish']).has(phase))
       return `/v1/light/enroll/${phase}`
     if (route === 'board' && BOARD_PHASES.has(phase)) return `/v1/vtxo/board/${phase}`
@@ -300,19 +342,23 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
 
   let body: Buffer | undefined
   try {
-    body = await readBoundedRequest(req)
+    body = await readBoundedRequest(
+      req,
+      /^\/v1\/(light\/backup|recovery-archive)\/write$/.test(pathOnly) ? 3_100_000 : MAX_GATEWAY_BYTES,
+    )
   } catch {
     jsonError(res, 413, 'API request too large')
     return
   }
   if (pathOnly !== '/health' && pathOnly !== '/ready') {
+    const vaultId = mainnet ? requestVaultId(req.method, pathAndQuery, body) : ''
+    if (vaultId === null) {
+      jsonError(res, 400, 'ambiguous or invalid vault identity')
+      return
+    }
     try {
       const allowed = mainnet
-        ? await allowMainnetGatewayRate(
-            clientAddress(req.headers),
-            requestVaultId(pathAndQuery, body),
-            pathOnly === '/v1/enroll/session',
-          )
+        ? await allowMainnetGatewayRate(clientAddress(req.headers), vaultId, pathOnly === '/v1/enroll/session')
         : allowGatewayRate(clientAddress(req.headers))
       if (!allowed) {
         jsonError(res, 429, 'too many requests')
@@ -337,7 +383,14 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
   }
   let payload: Buffer
   try {
-    payload = await readBoundedUpstream(upstream)
+    payload = await readBoundedUpstream(
+      upstream,
+      pathOnly === '/v1/light/delegate/status' || pathOnly === '/v1/vtxo/delegate/status'
+        ? 12_500_000
+        : /^\/v1\/(light\/backup|recovery-archive)\/(open|read|write)$/.test(pathOnly)
+          ? 3_100_000
+          : MAX_GATEWAY_BYTES,
+    )
   } catch {
     jsonError(res, 502, 'API response too large')
     return

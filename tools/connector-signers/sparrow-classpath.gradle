@@ -1,0 +1,10 @@
+// Qualification task only; the release source and signing code stay unchanged.
+gradle.projectsEvaluated {
+    def target = System.getenv('CONNECTOR_SPARROW_UI') == '1' ? gradle.rootProject : gradle.rootProject.project(':drongo')
+    target.tasks.register('connectorClasspath') {
+        dependsOn target.tasks.named('classes')
+        doLast {
+            new File(System.getenv('CONNECTOR_SPARROW_CLASSPATH_FILE')).text = target.sourceSets.main.runtimeClasspath.asPath
+        }
+    }
+}

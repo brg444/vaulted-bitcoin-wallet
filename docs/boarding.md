@@ -44,7 +44,7 @@ same enrolled facts.
 ## SDK ownership
 
 The scoped service worker owns one persistent SDK Wallet, Contract Manager,
-VtxoManager, intent repository, batch lifecycle, and retry loop. The page uses
+VtxoManager, intent repository, batch lifecycle, and retry loop. The browser uses
 the SDK service-worker proxy for balances, activity, contract state, and reload
 events. It does not build registration proofs, poll the Operator, call
 `settle`, or maintain a second boarding state machine.
@@ -102,7 +102,7 @@ wakes the official SDK lifecycle and resumes from persisted intent state.
 
 ## Delayed recovery
 
-After the 604672-second recovery delay matures, the Recovery Kit screen may
+After the 604672-second recovery delay matures, the Backups screen may
 offer an explicit recovery action for current, confirmed, unspent
 `vault-board-v1` outputs. Face ID unlocks the enrolled phone key for that action
 only. The wallet calls the SDK's `recoverBoardingProgram` helper, which verifies
@@ -112,15 +112,3 @@ cleared when the helper returns or fails.
 
 This path is not automatic and does not construct a parallel Vault transaction
 lifecycle. It does not recover an immature, foreign, or already-spent output.
-
-## Release qualification
-
-The program must pass fresh enrollment, local key staging and activation,
-reload, fresh-browser recovery, worker suspension and wake, offline recovery,
-two tabs, response loss at every Vault phase, retained-intent release, both
-balance propagation orders, exact history convergence, and recovery after the
-CSV cutoff.
-
-Mainnet board-key registration, device revocation, delay, Operator identity,
-and policy values remain explicit release decisions. The Mutinynet program is
-not promoted by changing a URL.

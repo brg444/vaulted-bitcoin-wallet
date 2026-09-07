@@ -13,12 +13,6 @@
   --qg-green-soft: #e0eadf;
   --qg-orange: #a84421;
   --qg-orange-soft: #f9e4d4;
-  --qg-gutter: 24px;
-  --qg-caption: 12px;
-  --qg-body: 14px;
-  --qg-title: 16px;
-  --qg-surface-radius: 18px;
-  --qg-field-radius: 14px;
 }
 
 [data-testid='vault-app'] {
@@ -58,6 +52,8 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 
 .qg-screen {
   --qg-top-inset: var(--vault-safe-area-top, env(safe-area-inset-top, 0px));
+  font-size: var(--qg-body);
+  line-height: 1.5;
   display: grid;
   grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(0, 1fr) auto;
   flex: 1 1 auto;
@@ -70,7 +66,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 }
 
 .qg-screen-welcome {
-  grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(0, 1fr) auto;
+  overflow-y: auto;
 }
 
 .qg-screen-success,
@@ -78,28 +74,31 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
+.qg-screen-unlock {
+  overflow-y: auto;
+}
+
 .qg-screen-unlock .qg-main {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 32px var(--qg-gutter);
-  overflow: auto;
+  padding: var(--qg-space-32) var(--qg-gutter);
 }
 
 .qg-unlock {
   display: grid;
   justify-items: start;
-  gap: 10px;
+  gap: var(--qg-space-8);
 }
 
 .qg-unlock-mark {
   display: grid;
   width: 52px;
   height: 52px;
-  margin-bottom: 14px;
+  margin-bottom: var(--qg-space-16);
   place-items: center;
   border: 1px solid var(--qg-line);
-  border-radius: 16px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
   color: var(--qg-ink);
 }
@@ -112,7 +111,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 
 .qg-screen-unlock h1 {
   margin: 0;
-  font-size: 34px;
+  font-size: var(--qg-heading);
 }
 
 .qg-screen-progress {
@@ -139,13 +138,13 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--qg-space-8);
   padding: max(4px, var(--qg-top-inset)) var(--qg-gutter) 12px;
 }
 
 .qg-brand strong {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--qg-body);
+  font-weight: var(--qg-weight-strong);
 }
 
 .qg-brand small {
@@ -185,12 +184,11 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 
 .qg-header {
   display: grid;
-  grid-template-columns: 44px 1fr 44px;
   align-items: center;
   padding: max(2px, var(--qg-top-inset)) var(--qg-gutter) 6px;
 }
 
-.qg-header button {
+.qg-header > button {
   display: grid;
   width: 44px;
   height: 44px;
@@ -201,7 +199,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   color: var(--qg-ink);
 }
 
-.qg-header button svg {
+.qg-header > button svg {
   width: 18px;
   height: 18px;
 }
@@ -211,13 +209,13 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   margin: 0;
   text-align: center;
   font-size: var(--qg-body);
-  font-weight: 550;
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-header small {
   color: var(--qg-muted);
   text-align: right;
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-header-sheet {
@@ -249,7 +247,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 .qg-main {
   min-height: 0;
   overflow: auto;
-  padding: 24px var(--qg-gutter) 16px;
+  padding: var(--qg-space-24) var(--qg-gutter) var(--qg-space-16);
 }
 
 .has-vault-navigation > .qg-screen .qg-main {
@@ -260,14 +258,13 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   display: flex;
   flex-direction: column;
   justify-content: safe center;
-  padding: 32px var(--qg-gutter);
-  overflow: auto;
+  padding: var(--qg-space-32) var(--qg-gutter);
 }
 
 .qg-screen h1 {
-  margin: 12px 0 16px;
-  font-size: 32px;
-  font-weight: 550;
+  margin: var(--qg-space-12) 0 var(--qg-space-16);
+  font-size: var(--qg-heading);
+  font-weight: var(--qg-weight-medium);
   line-height: 1.12;
   letter-spacing: -0.035em;
   text-wrap: balance;
@@ -278,14 +275,14 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 }
 
 .qg-main h1 {
-  font-size: 32px;
+  font-size: var(--qg-heading);
 }
 
 .qg-eyebrow {
   margin: 0;
   color: var(--qg-purple);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--qg-caption);
+  font-weight: var(--qg-weight-strong);
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
@@ -294,14 +291,14 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 .qg-copy {
   margin: 0;
   color: var(--qg-muted);
-  font-size: 14px;
+  font-size: var(--qg-body);
   line-height: 1.5;
 }
 
 .qg-assurances {
   display: flex;
-  gap: 12px 24px;
-  margin-top: 24px;
+  gap: var(--qg-space-12) var(--qg-space-24);
+  margin-top: var(--qg-space-24);
   color: var(--qg-muted);
   font-size: var(--qg-body);
   flex-wrap: wrap;
@@ -310,7 +307,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 .qg-assurances span {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--qg-space-8);
 }
 
 .qg-assurances svg {
@@ -321,7 +318,6 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
 
 .qg-footer {
   display: grid;
-  gap: 12px;
   padding: 16px var(--qg-gutter) max(24px, calc(16px + var(--vault-safe-area-bottom, env(safe-area-inset-bottom, 0px))));
   background: linear-gradient(180deg, transparent, var(--qg-oat) 20%);
 }
@@ -330,19 +326,19 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   margin: 0;
   color: var(--qg-muted);
   text-align: center;
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-footer-error,
 .qg-footer .qg-footer-error {
-  padding: 12px 14px;
+  padding: var(--qg-space-12) var(--qg-space-16);
   border: 1px solid #efc2b2;
-  border-radius: 14px;
+  border-radius: var(--qg-field-radius);
   background: var(--qg-orange-soft);
   color: var(--qg-ink);
   text-align: left;
   font-size: var(--qg-body);
-  font-weight: 600;
+  font-weight: var(--qg-weight-strong);
   line-height: 1.4;
 }
 
@@ -366,13 +362,10 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-primary,
 .qg-secondary {
   display: flex;
-  min-height: 54px;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  border-radius: 16px;
+  gap: var(--qg-space-8);
   font: inherit;
-  font-weight: 600;
   cursor: pointer;
 }
 
@@ -402,7 +395,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-text {
-  min-height: 44px;
+  min-height: var(--qg-touch-target);
   border: 0;
   background: transparent;
   color: var(--qg-muted);
@@ -413,7 +406,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-role-list {
   display: grid;
-  margin-top: 26px;
+  margin-top: var(--qg-space-24);
   border-top: 1px solid var(--qg-line);
 }
 
@@ -422,7 +415,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 72px;
   grid-template-columns: 34px 1fr;
   align-items: center;
-  gap: 12px;
+  gap: var(--qg-space-12);
   border-bottom: 1px solid var(--qg-line);
 }
 
@@ -446,49 +439,71 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   stroke-width: 1.7;
 }
 
+/* Every editable form, including Light, uses the same label and control rules. */
+.qg-fields {
+  display: grid;
+  gap: var(--qg-space-16);
+  margin-block: var(--qg-section-gap);
+}
 .qg-field {
   display: grid;
-  gap: 8px;
-  margin-top: 32px;
+  gap: var(--qg-space-8);
+  min-width: 0;
+  margin-top: var(--qg-section-gap);
+  color: var(--qg-muted);
+  font-size: var(--qg-body);
+  line-height: 1.5;
 }
-
+.qg-fields > .qg-field {
+  margin-top: 0;
+}
 .qg-field > span,
 .qg-money-field > span {
+  color: var(--qg-muted);
+  font-size: var(--qg-body);
+}
+.qg-field input:not([type='checkbox']),
+.qg-field textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--qg-control-height);
+  padding: var(--qg-space-16);
+  border: 1px solid var(--qg-field-border);
+  border-radius: var(--qg-field-radius);
+  background: var(--qg-paper);
+  color: var(--qg-ink);
+  font-family: inherit;
+  font-size: var(--qg-title);
+  line-height: 1.5;
+}
+.qg-field textarea {
+  min-height: 104px;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+.qg-field :is(input, textarea)::placeholder {
+  color: var(--qg-muted);
+  opacity: 1;
+}
+.qg-field small {
   color: var(--qg-muted);
   font-size: var(--qg-caption);
 }
 
-.qg-field input {
-  width: 100%;
-  height: 58px;
-  padding: 0 16px;
-  border: 1px solid var(--qg-line);
-  border-radius: 14px;
-  outline: none;
-  background: var(--qg-paper);
-  color: var(--qg-ink);
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 16px;
-}
-
-.qg-field small {
-  color: var(--qg-muted);
-  font-size: 12px;
-}
-
 .qg-paste {
   display: flex;
-  min-height: 44px;
+  min-height: var(--qg-touch-target);
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-space-8);
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--qg-purple);
   font: inherit;
   font-size: var(--qg-caption);
-  font-weight: 600;
+  font-weight: var(--qg-weight-strong);
   cursor: pointer;
 }
 
@@ -500,9 +515,9 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-note {
   display: grid;
   grid-template-columns: 28px 1fr;
-  gap: 10px;
-  margin-top: 24px;
-  padding: 16px 0;
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-section-gap);
+  padding: var(--qg-space-16) 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -515,7 +530,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-note p {
-  margin: 4px 0 0;
+  margin: var(--qg-space-4) 0 0;
   color: var(--qg-muted);
   font-size: var(--qg-body);
   line-height: 1.45;
@@ -523,11 +538,11 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-setup-options {
   display: grid;
-  gap: 0.75rem;
-  margin-block: 1.5rem;
+  gap: var(--qg-space-12);
+  margin-block: var(--qg-space-24);
 }
 .qg-setup-options button {
-  padding: 1rem;
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
   border-radius: 1rem;
   text-align: left;
@@ -542,7 +557,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   font-size: 1rem;
 }
 .qg-setup-options small {
-  margin-top: 0.5rem;
+  margin-top: var(--qg-space-8);
   font-size: var(--qg-body);
   line-height: 1.5;
   color: var(--qg-muted);
@@ -550,8 +565,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-choice-list {
   display: grid;
-  gap: 12px;
-  margin-top: 32px;
+  gap: var(--qg-space-12);
+  margin-top: var(--qg-section-gap);
 }
 
 .qg-choice-list.is-keys button {
@@ -566,11 +581,11 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) 20px;
   align-items: center;
-  gap: 12px;
+  gap: var(--qg-space-12);
   min-height: 104px;
-  padding: 16px;
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 18px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
   color: var(--qg-ink);
   text-align: left;
@@ -598,12 +613,12 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-choice-list button > span:nth-child(2) {
   display: grid;
-  gap: 8px;
+  gap: var(--qg-space-8);
   min-width: 0;
 }
 
 .qg-choice-list strong {
-  font-size: 15px;
+  font-size: var(--qg-title);
 }
 
 .qg-choice-list small {
@@ -623,21 +638,21 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 76px;
   grid-template-columns: 38px 1fr;
   align-items: center;
-  gap: 12px;
-  margin-top: 24px;
-  padding: 14px 16px;
+  gap: var(--qg-space-12);
+  margin-top: var(--qg-section-gap);
+  padding: var(--qg-space-16) var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 16px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
 }
 
 .qg-device-key > span {
   display: grid;
-  gap: 4px;
+  gap: var(--qg-space-4);
 }
 
 .qg-device-key strong {
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-device-key small {
@@ -648,19 +663,19 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-money-field {
   display: grid;
   width: 100%;
-  gap: 8px;
-  margin-top: 18px;
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-space-16);
 }
 
 .qg-money-field div {
   display: flex;
-  min-height: 54px;
+  min-height: var(--qg-control-height);
   align-items: center;
-  gap: 12px;
+  gap: var(--qg-space-12);
   overflow: hidden;
-  padding: 10px 16px;
-  border: 1px solid var(--qg-line);
-  border-radius: 15px;
+  padding: var(--qg-space-8) var(--qg-space-16);
+  border: 1px solid var(--qg-field-border);
+  border-radius: var(--qg-field-radius);
   background: var(--qg-paper);
 }
 
@@ -672,8 +687,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   outline: 0;
   background: transparent;
   color: var(--qg-ink);
-  font-size: 20px;
-  font-weight: 520;
+  font-size: var(--qg-subheading);
+  font-weight: var(--qg-weight-medium);
   letter-spacing: -0.02em;
 }
 
@@ -683,7 +698,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-summary {
-  margin-top: 20px;
+  margin-top: var(--qg-section-gap);
   border-top: 1px solid var(--qg-line);
 }
 
@@ -692,26 +707,29 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 48px;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--qg-space-16);
   border-bottom: 1px solid var(--qg-line);
 }
 
 .qg-summary span {
   color: var(--qg-muted);
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-summary strong {
+  min-width: 0;
+  max-width: 62%;
+  overflow-wrap: anywhere;
   text-align: right;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--qg-caption);
+  font-weight: var(--qg-weight-strong);
 }
 
 .qg-consent {
   display: grid;
   grid-template-columns: 20px 1fr;
-  gap: 10px;
-  margin-top: 18px;
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-space-16);
   color: var(--qg-muted);
   font-size: var(--qg-body);
   line-height: 1.45;
@@ -741,7 +759,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-spinner {
   width: 34px;
   height: 34px;
-  margin-bottom: 34px;
+  margin-bottom: var(--qg-space-32);
   border: 2px solid var(--qg-line);
   border-top-color: var(--qg-purple);
   border-radius: 50%;
@@ -757,7 +775,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-progress {
   width: 100%;
   height: 5px;
-  margin-top: 35px;
+  margin-top: var(--qg-space-32);
   overflow: hidden;
   border-radius: 5px;
   background: var(--qg-line);
@@ -771,7 +789,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-progress-screen > small {
-  margin-top: 10px;
+  margin-top: var(--qg-space-8);
   color: var(--qg-muted);
   font-size: var(--qg-caption);
 }
@@ -790,8 +808,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-success-label {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 12px;
+  gap: var(--qg-space-8);
+  margin-bottom: var(--qg-space-12);
   color: var(--qg-green);
 }
 
@@ -812,7 +830,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-success-label p {
   margin: 0;
   font-size: var(--qg-caption);
-  font-weight: 650;
+  font-weight: var(--qg-weight-strong);
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
@@ -820,23 +838,23 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-next {
   display: grid;
   width: 100%;
-  gap: 13px;
-  margin-top: 30px;
-  padding: 18px;
+  gap: var(--qg-space-12);
+  margin-top: var(--qg-space-32);
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 17px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
   text-align: left;
 }
 
 .qg-next strong {
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-next span {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--qg-space-8);
   color: var(--qg-muted);
   font-size: var(--qg-caption);
 }
@@ -851,22 +869,22 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   display: grid;
   grid-template-columns: 36px 1fr 24px;
   align-items: center;
-  gap: 12px;
+  gap: var(--qg-space-12);
   min-height: 82px;
-  margin-top: 28px;
-  padding: 16px;
+  margin-top: var(--qg-space-24);
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 17px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
 }
 
 .qg-document > div {
   display: grid;
-  gap: 4px;
+  gap: var(--qg-space-4);
 }
 
 .qg-document strong {
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-document small {
@@ -876,8 +894,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-checks {
   display: grid;
-  gap: 12px;
-  margin-top: 24px;
+  gap: var(--qg-space-12);
+  margin-top: var(--qg-space-24);
   color: var(--qg-muted);
   font-size: var(--qg-caption);
 }
@@ -885,7 +903,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-checks span {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--qg-space-8);
 }
 
 .qg-checks svg {
@@ -907,11 +925,11 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-alert {
   display: grid;
   grid-template-columns: 36px 1fr;
-  gap: 12px;
-  margin-top: 28px;
-  padding: 18px;
+  gap: var(--qg-space-12);
+  margin-top: var(--qg-space-24);
+  padding: var(--qg-space-16);
   border: 1px solid #efc2b2;
-  border-radius: 17px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-orange-soft);
   color: var(--qg-orange);
 }
@@ -922,7 +940,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-alert p {
-  margin: 5px 0 0;
+  margin: var(--qg-space-4) 0 0;
   color: var(--qg-muted);
   font-size: var(--qg-caption);
   line-height: 1.45;
@@ -946,14 +964,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-screen .vault-security {
   display: grid;
-  gap: 24px;
-  padding-bottom: 0.25rem;
+  gap: var(--qg-space-24);
+  padding-bottom: var(--qg-space-4);
 }
 
 .qg-screen .vault-security-hero {
-  padding: 24px;
+  padding: var(--qg-space-24);
   border: 0;
-  border-radius: 18px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
   box-shadow: 0 4px 16px -12px rgb(17 16 21 / 20%);
   color: var(--qg-ink);
@@ -961,12 +979,12 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-screen .vault-security-hero-head > strong {
   font-size: var(--qg-body);
-  font-weight: 600;
+  font-weight: var(--qg-weight-strong);
 }
 
 .qg-screen .vault-security-hero-head > span {
   color: var(--qg-muted);
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-screen .vault-security-hero-head > span::before {
@@ -978,10 +996,10 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-screen .vault-security-hero h2 {
-  margin: 24px 0 12px;
+  margin: var(--qg-space-24) 0 var(--qg-space-12);
   color: var(--qg-ink);
-  font-size: 28px;
-  font-weight: 500;
+  font-size: var(--qg-heading);
+  font-weight: var(--qg-weight-medium);
   letter-spacing: -0.04em;
   line-height: 1.15;
 }
@@ -989,7 +1007,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-screen .vault-security-hero p {
   margin: 0;
   color: var(--qg-muted);
-  font-size: 14px;
+  font-size: var(--qg-body);
   line-height: 1.45;
 }
 
@@ -1014,8 +1032,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   background: transparent;
   color: var(--qg-ink);
   box-shadow: none;
-  padding: 16px;
-  gap: 12px;
+  padding: var(--qg-space-16);
+  gap: var(--qg-space-12);
   justify-content: flex-start;
 }
 
@@ -1038,14 +1056,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   color: var(--qg-ink);
   overflow-wrap: normal;
   font-size: var(--qg-title);
-  font-weight: 550;
+  font-weight: var(--qg-weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
 .qg-screen .vault-section-label {
   color: var(--qg-muted);
   font-size: var(--qg-body);
-  font-weight: 600;
+  font-weight: var(--qg-weight-strong);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1063,8 +1081,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   background: transparent;
   border-color: var(--qg-line);
   color: var(--qg-ink);
-  padding: 16px 0;
-  gap: 12px;
+  padding: var(--qg-space-16) 0;
+  gap: var(--qg-space-12);
   min-height: 64px;
 }
 
@@ -1149,52 +1167,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   }
 }
 
-.qg-home-content,
-.qg-home-content .content-shell {
-  background: var(--qg-oat);
-}
-
-.content.qg-home-content > .content-shell {
-  padding: 0;
-}
-
-.qg-home {
-  min-height: 0;
-  padding: 0 var(--qg-gutter) 88px;
-  container-type: inline-size;
-}
-
-.qg-account-bar {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.qg-account {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  pointer-events: none;
-}
-
-.qg-account .qg-mark {
-  width: 23px;
-  height: 23px;
-}
-
 .qg-account small {
   color: var(--qg-muted);
-}
-
-.qg-account strong {
-  font-size: 16px;
-  font-weight: 500;
 }
 
 .qg-account-chevron {
@@ -1223,12 +1197,12 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-account-menu {
   display: grid;
-  gap: 4px;
-  padding: 6px;
+  gap: var(--qg-space-4);
+  padding: var(--qg-space-8);
   overflow: hidden;
   isolation: isolate;
   border: 1px solid var(--qg-line, #d8d1c8);
-  border-radius: 18px;
+  border-radius: var(--qg-surface-radius);
   background: #fffdf9;
   box-shadow: 0 18px 40px -24px rgb(17 16 21 / 28%);
   color: var(--qg-ink, #111015);
@@ -1240,10 +1214,10 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 72px;
   grid-template-columns: 1fr 28px;
   align-items: start;
-  gap: 4px 12px;
-  padding: 16px 18px;
+  gap: var(--qg-space-4) var(--qg-space-12);
+  padding: var(--qg-space-16) var(--qg-space-16);
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--qg-field-radius);
   background: transparent;
   color: var(--qg-ink, #111015);
   font: inherit;
@@ -1257,13 +1231,13 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-account-option-copy {
   display: grid;
-  gap: 4px;
+  gap: var(--qg-space-4);
   min-width: 0;
 }
 
 .qg-account-option-name {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--qg-title);
+  font-weight: var(--qg-weight-strong);
   letter-spacing: -0.02em;
   color: var(--qg-ink);
 }
@@ -1275,10 +1249,10 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-account-option-amt {
-  margin-top: 8px;
+  margin-top: var(--qg-space-8);
   color: var(--qg-ink);
   font-size: var(--qg-body);
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1313,51 +1287,11 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   }
 }
 
-.qg-utilities {
-  display: flex;
-  gap: 2px;
-}
-
-.qg-utilities button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--qg-muted);
-}
-
-.qg-utilities .qg-recovery-shortcut {
-  position: relative;
-  color: var(--qg-ink);
-}
-
-.qg-recovery-shortcut span {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 7px;
-  height: 7px;
-  border: 2px solid var(--qg-oat);
-  border-radius: 50%;
-  background: var(--qg-orange);
-}
-
-.qg-utility-divider {
-  width: 1px;
-  height: 20px;
-  align-self: center;
-  margin: 0 3px;
-  background: var(--qg-line);
-}
-
 .qg-balance {
   display: flex;
   align-items: baseline;
   gap: 0;
-  margin-top: 32px;
+  margin-top: var(--qg-space-32);
   padding: 0;
   border: 0;
   background: transparent;
@@ -1376,7 +1310,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   max-width: 100%;
   font-size: min(3.5rem, calc((100cqi - 8px) / var(--qg-amount-length, 6) * 1.6));
   font-variant-numeric: tabular-nums;
-  font-weight: 450;
+  font-weight: var(--qg-weight-regular);
   letter-spacing: -0.035em;
   line-height: 1.15;
   white-space: nowrap;
@@ -1388,20 +1322,20 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-balance span {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--qg-body);
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 32px;
+  gap: var(--qg-space-12);
+  margin-top: var(--qg-section-gap);
 }
 
 .qg-actions button {
   display: grid;
-  min-height: 56px;
+  min-height: var(--qg-control-height);
   place-items: center;
   padding: 0;
   border: 1px solid var(--qg-ink);
@@ -1414,7 +1348,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--qg-space-8);
   line-height: 1;
 }
 
@@ -1431,8 +1365,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-actions button b {
-  font-size: 15px;
-  font-weight: 550;
+  font-size: var(--qg-title);
+  font-weight: var(--qg-weight-medium);
   line-height: 1;
   letter-spacing: -0.01em;
 }
@@ -1451,11 +1385,11 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 104px;
   grid-template-columns: 42px 1fr;
   align-items: center;
-  gap: 14px;
-  margin-top: 24px;
-  padding: 16px;
+  gap: var(--qg-space-16);
+  margin-top: var(--qg-space-24);
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 18px;
+  border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
 }
 
@@ -1471,19 +1405,19 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-arrival div {
   display: grid;
-  gap: 4px;
+  gap: var(--qg-space-4);
 }
 
 .qg-arrival strong {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--qg-body);
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-arrival p,
 .qg-arrival small {
   margin: 0;
   color: var(--qg-muted);
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-arrival small {
@@ -1496,11 +1430,11 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 86px;
   grid-template-columns: 38px 1fr 18px;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 14px;
+  gap: var(--qg-space-12);
+  margin-top: var(--qg-space-12);
+  padding: var(--qg-space-16);
   border: 1px solid color-mix(in srgb, var(--qg-orange) 32%, var(--qg-line));
-  border-radius: 17px;
+  border-radius: var(--qg-surface-radius);
   background: color-mix(in srgb, var(--qg-orange) 8%, var(--qg-paper));
   color: inherit;
   text-align: left;
@@ -1516,12 +1450,12 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-recovery-alert div {
   display: grid;
-  gap: 4px;
+  gap: var(--qg-space-4);
 }
 
 .qg-recovery-alert strong {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--qg-caption);
+  font-weight: var(--qg-weight-strong);
 }
 
 .qg-recovery-alert p {
@@ -1532,15 +1466,15 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-home .vault-history {
-  margin-top: 32px;
+  margin-top: var(--qg-section-gap);
 }
 
 .qg-home .vault-history-head h2,
 .qg-home #vault-activity-title {
-  margin: 0 0 4px;
+  margin: 0 0 var(--qg-space-4);
   color: var(--qg-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--qg-caption);
+  font-weight: var(--qg-weight-medium);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -1551,8 +1485,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 72px;
   grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 16px 0;
+  gap: var(--qg-space-12);
+  padding: var(--qg-space-16) 0;
   border: 0;
   border-bottom: 1px solid var(--qg-line);
   background: transparent;
@@ -1561,20 +1495,24 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-amount-entry {
-  padding: 8px 0 32px;
+  padding: var(--qg-space-16);
+  margin-bottom: var(--qg-section-gap);
+  border: 1px solid var(--qg-field-border);
+  border-radius: var(--qg-field-radius);
+  background: var(--qg-paper);
   container-type: inline-size;
 }
 
 .qg-amount-entry label {
   color: var(--qg-muted);
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-amount-entry div {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-space-12);
 }
 
 .qg-amount-entry input {
@@ -1594,16 +1532,16 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-amount-entry span,
 .qg-denomination {
-  font-size: 22px;
-  font-weight: 500;
+  font-size: var(--qg-subheading);
+  font-weight: var(--qg-weight-medium);
   min-width: 36px;
-  min-height: 44px;
+  min-height: var(--qg-touch-target);
   padding: 0;
   flex: 0 0 auto;
 }
 
 .qg-denomination {
-  padding: 8px 2px;
+  padding: var(--qg-space-8) 2px;
   border: 0;
   background: transparent;
   color: var(--qg-purple);
@@ -1614,25 +1552,25 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-capacity {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  gap: 16px;
-  padding: 24px 0 0;
+  gap: var(--qg-space-16);
+  padding: var(--qg-space-24) 0 0;
   border: 0;
-  margin-top: 24px;
+  margin-top: var(--qg-space-24);
 }
 
 .qg-capacity > div {
   display: grid;
-  gap: 8px;
+  gap: var(--qg-space-8);
 }
 
 .qg-capacity span {
   color: var(--qg-muted);
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-capacity strong {
   font-size: var(--qg-body);
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
@@ -1654,44 +1592,44 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-available {
-  margin: 24px 0 0;
+  margin: var(--qg-space-24) 0 0;
   color: var(--qg-muted);
   font-size: var(--qg-body);
 }
 
 .qg-dest-field {
   display: grid;
-  gap: 12px;
+  gap: var(--qg-space-8);
   margin-top: 0;
 }
 
 .qg-dest-field > span {
   color: var(--qg-muted);
-  font-size: var(--qg-caption);
+  font-size: var(--qg-body);
 }
 
 .qg-dest-field > div {
   display: grid;
-  min-height: 58px;
+  min-height: var(--qg-control-height);
   grid-template-columns: 1fr 48px;
   align-items: center;
   overflow: hidden;
-  border: 1px solid var(--qg-line);
+  border: 1px solid var(--qg-field-border);
   border-radius: var(--qg-field-radius);
   background: var(--qg-paper);
 }
 
 .qg-dest-field input {
   align-self: stretch;
-  min-height: 56px;
+  min-height: var(--qg-control-height);
   min-width: 0;
-  padding: 0 16px;
+  padding: 0 var(--qg-space-16);
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--qg-ink);
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 16px;
+  font-family: inherit;
+  font-size: var(--qg-title);
 }
 
 .qg-dest-field button {
@@ -1711,14 +1649,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-helper {
-  margin: 24px 0 0;
+  margin: var(--qg-space-24) 0 0;
   color: var(--qg-muted);
   font-size: var(--qg-body);
   line-height: 1.45;
 }
 
 .qg-review-amount {
-  padding: 8px 0 32px;
+  padding: var(--qg-space-8) 0 var(--qg-space-32);
   text-align: center;
   container-type: inline-size;
 }
@@ -1727,14 +1665,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-review-amount p {
   color: var(--qg-muted);
   font-size: var(--qg-body);
-  margin: 12px 0 0;
+  margin: var(--qg-space-12) 0 0;
 }
 
 .qg-review-amount strong {
   display: block;
-  margin-top: 12px;
+  margin-top: var(--qg-space-12);
   font-size: min(3.5rem, calc((100cqi - 8px) / var(--qg-amount-length, 6) * 1.6));
-  font-weight: 400;
+  font-weight: var(--qg-weight-regular);
   letter-spacing: -0.04em;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
@@ -1742,29 +1680,29 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-review-amount strong span {
-  font-size: 12px;
+  font-size: var(--qg-caption);
   letter-spacing: 0;
 }
 
 .qg-review-amount p {
-  margin: 4px 0 0;
+  margin: var(--qg-space-4) 0 0;
   font-size: var(--qg-caption);
 }
 
 .qg-details {
-  margin-top: 8px;
+  margin-top: var(--qg-space-8);
   border-top: 1px solid var(--qg-line);
 }
 
 .qg-details div {
   display: flex;
-  min-height: 56px;
+  min-height: var(--qg-control-height);
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--qg-space-16);
   border-bottom: 1px solid var(--qg-line);
   font-size: var(--qg-body);
-  padding: 12px 0;
+  padding: var(--qg-space-12) 0;
 }
 
 .qg-details span {
@@ -1775,20 +1713,20 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-details strong {
   max-width: 62%;
   text-align: right;
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 .qg-approvals {
-  margin-top: 32px;
+  margin-top: var(--qg-section-gap);
 }
 
 .qg-approvals h3 {
-  margin: 0 0 5px;
+  margin: 0 0 var(--qg-space-4);
   color: var(--qg-muted);
   font-size: var(--qg-caption);
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -1798,9 +1736,9 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 72px;
   grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: var(--qg-space-12);
   border-bottom: 1px solid var(--qg-line);
-  padding: 12px 0;
+  padding: var(--qg-space-12) 0;
 }
 
 .qg-approvals b,
@@ -1829,13 +1767,13 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-approvals strong {
   font-size: var(--qg-body);
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-approvals small,
 .qg-auto {
   color: var(--qg-muted);
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-receive {
@@ -1850,19 +1788,19 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-protected {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 9px;
+  gap: var(--qg-space-4);
+  padding: var(--qg-space-8) var(--qg-space-8);
   border-radius: 999px;
   background: var(--qg-green-soft);
   color: var(--qg-green);
   font-size: var(--qg-caption);
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-receive-copy h3 {
-  margin: 10px 0 4px;
-  font-size: 20px;
-  font-weight: 500;
+  margin: var(--qg-space-8) 0 var(--qg-space-4);
+  font-size: var(--qg-subheading);
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-receive-copy p {
@@ -1873,7 +1811,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-qr {
   width: min(100%, 340px);
-  margin: 18px auto 8px;
+  margin: var(--qg-space-16) auto var(--qg-space-8);
 }
 
 .qg-qr .vault-receive-qr,
@@ -1883,9 +1821,9 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   height: auto;
   aspect-ratio: 1;
   margin: 0;
-  padding: 12px;
+  padding: var(--qg-space-12);
   border: 1px solid var(--qg-line);
-  border-radius: 22px;
+  border-radius: var(--qg-surface-radius);
   background: #fff;
 }
 
@@ -1903,10 +1841,10 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-addresses button {
   display: flex;
   width: 100%;
-  min-height: 56px;
+  min-height: var(--qg-control-height);
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--qg-space-16);
   padding: 0 2px;
   border: 0;
   border-bottom: 1px solid var(--qg-line);
@@ -1919,7 +1857,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   display: flex;
   min-width: 0;
   align-items: baseline;
-  gap: 10px;
+  gap: var(--qg-space-8);
 }
 
 .qg-addresses small {
@@ -1932,19 +1870,19 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--qg-body);
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-addresses b {
   color: var(--qg-purple);
   font-size: var(--qg-body);
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-receive-addr {
-  margin-top: 12px;
+  margin-top: var(--qg-space-12);
   color: var(--qg-muted);
-  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-family: inherit;
   font-size: var(--qg-caption);
 }
 
@@ -1954,7 +1892,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-screen-scan .qg-header,
-.qg-screen-scan .qg-header button,
+.qg-screen-scan .qg-header > button,
 .qg-screen-scan .qg-footer {
   background: #17151a;
   color: #fffdf9;
@@ -1995,28 +1933,28 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   inset: 0 auto auto 0;
   border-top: 3px solid;
   border-left: 3px solid;
-  border-radius: 14px 0 0;
+  border-radius: var(--qg-field-radius) 0 0;
 }
 
 .qg-scan-guide i:nth-child(2) {
   inset: 0 0 auto auto;
   border-top: 3px solid;
   border-right: 3px solid;
-  border-radius: 0 14px 0 0;
+  border-radius: 0 var(--qg-field-radius) 0 0;
 }
 
 .qg-scan-guide i:nth-child(3) {
   inset: auto auto 0 0;
   border-bottom: 3px solid;
   border-left: 3px solid;
-  border-radius: 0 0 0 14px;
+  border-radius: 0 0 0 var(--qg-field-radius);
 }
 
 .qg-scan-guide i:nth-child(4) {
   inset: auto 0 0 auto;
   border-right: 3px solid;
   border-bottom: 3px solid;
-  border-radius: 0 0 14px;
+  border-radius: 0 0 var(--qg-field-radius);
 }
 
 .qg-camera p {
@@ -2036,7 +1974,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-methods {
   display: grid;
-  margin-top: 28px;
+  margin-top: var(--qg-section-gap);
   border-top: 1px solid var(--qg-line);
 }
 
@@ -2045,7 +1983,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 72px;
   grid-template-columns: 30px 1fr 18px;
   align-items: center;
-  gap: 12px;
+  gap: var(--qg-space-12);
   padding: 0;
   border: 0;
   border-bottom: 1px solid var(--qg-line);
@@ -2056,7 +1994,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-methods button span {
   display: grid;
-  gap: 4px;
+  gap: var(--qg-space-4);
 }
 
 .qg-methods strong {
@@ -2075,8 +2013,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   min-height: 72px;
   grid-template-columns: 34px 1fr 20px;
   align-items: center;
-  gap: 11px;
-  margin-bottom: 24px;
+  gap: var(--qg-space-12);
+  margin-bottom: var(--qg-space-24);
   border-bottom: 1px solid var(--qg-line);
 }
 
@@ -2100,7 +2038,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-status-line strong,
 .qg-success-line strong,
 .qg-pending-label strong {
-  font-size: 12px;
+  font-size: var(--qg-caption);
 }
 
 .qg-status-line small,
@@ -2131,10 +2069,10 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 24px 0 14px;
-  padding: 16px;
+  margin: var(--qg-space-24) 0 var(--qg-space-16);
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 15px;
+  border-radius: var(--qg-field-radius);
   background: var(--qg-paper);
 }
 
@@ -2144,15 +2082,15 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-transfer strong {
   color: var(--qg-muted);
-  font-size: 9px;
+  font-size: var(--qg-caption);
   text-transform: uppercase;
 }
 
 .qg-resume {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 10px 0 0;
+  gap: var(--qg-space-8);
+  margin: var(--qg-space-8) 0 0;
   color: var(--qg-muted);
   font-size: var(--qg-caption);
 }
@@ -2160,25 +2098,25 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-main > .qg-primary,
 .qg-main > .qg-secondary {
   width: 100%;
-  margin-top: 9px;
+  margin-top: var(--qg-space-8);
 }
 
 .qg-model {
-  margin-top: 32px;
+  margin-top: var(--qg-section-gap);
   border-top: 1px solid var(--qg-line);
 }
 
 .qg-model-row {
   display: grid;
   min-height: 64px;
-  gap: 8px;
-  padding: 16px 0;
+  gap: var(--qg-space-8);
+  padding: var(--qg-space-16) 0;
   border-bottom: 1px solid var(--qg-line);
 }
 
 .qg-model-row strong {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--qg-title);
+  font-weight: var(--qg-weight-strong);
 }
 
 .qg-model-row span {
@@ -2188,19 +2126,19 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-model-note {
-  margin: 14px 0 0;
+  margin: var(--qg-space-16) 0 0;
   color: var(--qg-muted);
   font-size: var(--qg-body);
   line-height: 1.45;
 }
 
 .qg-model.is-compact {
-  margin-top: 20px;
+  margin-top: var(--qg-space-24);
 }
 
 .qg-model.is-compact .qg-model-row {
   min-height: 52px;
-  padding: 10px 0;
+  padding: var(--qg-space-8) 0;
 }
 
 .qg-model.is-compact .qg-model-row strong {
@@ -2215,14 +2153,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   color: var(--qg-purple);
   font: inherit;
   font-size: var(--qg-body);
-  font-weight: 600;
+  font-weight: var(--qg-weight-strong);
   min-width: 44px;
-  min-height: 44px;
+  min-height: var(--qg-touch-target);
   flex: 0 0 auto;
 }
 
 .qg-field-error {
-  margin: 8px 0 0;
+  margin: var(--qg-space-8) 0 0;
   color: var(--qg-orange);
   font-size: var(--qg-body);
 }
@@ -2230,15 +2168,15 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-dest-type {
   display: block;
   color: var(--qg-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--qg-caption);
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-detail-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 16px;
-  min-height: 56px;
+  gap: var(--qg-space-16);
+  min-height: var(--qg-control-height);
   border-bottom: 1px solid var(--qg-line);
 }
 
@@ -2282,10 +2220,9 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   place-items: center;
   border: 1px solid var(--qg-line);
   border-right: 0;
-  border-radius: 18px 0 0 18px;
+  border-radius: var(--qg-surface-radius) 0 0 var(--qg-surface-radius);
   background: var(--qg-paper);
   color: var(--qg-ink);
-  box-shadow: -10px 0 22px -18px rgb(20 18 15 / 55%);
   pointer-events: auto;
   cursor: pointer;
 }
@@ -2344,14 +2281,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   bottom: max(52px, calc(28px + var(--vault-safe-area-bottom, env(safe-area-inset-bottom, 0px))));
   display: grid;
   justify-items: end;
-  gap: 14px;
+  gap: var(--qg-space-16);
 }
 
 .qg-launcher-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 8px 0 0;
+  gap: var(--qg-space-12);
+  padding: 0 var(--qg-space-8) 0 0;
   border: 0;
   background: transparent;
   color: var(--qg-ink);
@@ -2371,15 +2308,15 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-launcher-label {
-  font-size: 17px;
-  font-weight: 600;
+  font-size: var(--qg-section);
+  font-weight: var(--qg-weight-strong);
   letter-spacing: -0.02em;
 }
 
 .qg-launcher-amt {
   color: var(--qg-ink);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--qg-caption);
+  font-weight: var(--qg-weight-medium);
 }
 
 .qg-launcher-icon {
@@ -2475,15 +2412,15 @@ html.palette-dark .qg-progress {
 }
 
 .qg-header > h2 {
-  font-size: 15px;
+  font-size: var(--qg-title);
 }
 
 .qg-primary,
 .qg-secondary {
-  min-height: 56px;
+  min-height: var(--qg-control-height);
   border-radius: 999px;
-  font-size: 16px;
-  font-weight: 550;
+  font-size: var(--qg-title);
+  font-weight: var(--qg-weight-medium);
 }
 
 [data-testid='vault-app'] .qg-main,
@@ -2558,7 +2495,7 @@ html.palette-dark .qg-progress {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  [data-testid='vault-app'] :is(.qg-header button, .qg-utilities button):hover {
+  [data-testid='vault-app'] :is(.qg-header > button, .qg-utilities button):hover {
     background: color-mix(in srgb, var(--qg-ink) 6%, transparent);
   }
   .qg-secondary:hover {
@@ -2634,7 +2571,7 @@ html.palette-dark .qg-progress {
   display: inline-block;
   margin-right: 0.2em;
   font-size: 0.42em;
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
   letter-spacing: 0;
   vertical-align: baseline;
 }
@@ -2643,14 +2580,14 @@ html.palette-dark .qg-progress {
 }
 .qg-main .qg-transaction-amount h1 {
   font-size: min(3.5rem, calc((100cqi - 8px) / var(--qg-amount-length, 6) * 1.6));
-  font-weight: 450;
+  font-weight: var(--qg-weight-regular);
 }
 .qg-home .vault-history-amt {
   max-width: none;
   white-space: nowrap;
   overflow-wrap: normal;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--qg-body);
+  font-weight: var(--qg-weight-medium);
   font-variant-numeric: tabular-nums;
 }
 .qg-home .vault-history-unit {
@@ -2684,7 +2621,7 @@ html.palette-dark .qg-progress {
   font-size: var(--qg-caption);
 }
 .qg-screen .vault-security-tile-copy small {
-  margin-top: 8px;
+  margin-top: var(--qg-space-8);
   font-size: var(--qg-caption);
   line-height: 1.5;
 }
@@ -2696,7 +2633,7 @@ html.palette-dark .qg-progress {
   font-size: var(--qg-caption);
 }
 .qg-screen .vault-security-groups {
-  gap: 32px;
+  gap: var(--qg-space-32);
 }
 .qg-auto {
   grid-column: 2;
@@ -2733,23 +2670,23 @@ html.palette-dark .qg-progress {
 }
 @media (max-width: 359px) {
   [data-testid='vault-app'] {
-    --qg-gutter: 20px;
+    --qg-gutter: var(--qg-space-16);
   }
   .qg-home .vault-history-row {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    gap: var(--qg-space-8);
   }
   .qg-home .vault-history-icon {
     display: none;
   }
   .qg-account {
-    gap: 4px;
+    gap: var(--qg-space-4);
   }
   .qg-utilities {
     gap: 0;
   }
   .qg-screen .vault-security-tile {
-    padding: 12px;
+    padding: var(--qg-space-12);
   }
 }
 
@@ -2773,4 +2710,270 @@ html.palette-dark .qg-progress {
 .qg-success-line strong,
 .qg-pending-label strong {
   font-size: var(--qg-body);
+}
+
+/* Focused flows keep navigation and the current action in the app frame. */
+.qg-header {
+  position: relative;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: var(--qg-space-8);
+}
+.qg-header > h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qg-header > small {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: var(--qg-gutter);
+  z-index: 1;
+  font-size: var(--qg-caption);
+}
+.qg-header > .qg-header-aux {
+  position: absolute;
+  right: 94px;
+}
+.qg-header:has(> .qg-header-aux) > h2 {
+  padding-right: 44px;
+}
+.qg-help-trigger,
+.qg-header .qg-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--qg-space-4);
+  min-height: var(--qg-touch-target);
+  width: auto;
+  padding: 0 var(--qg-space-8);
+  border: 0;
+  background: transparent;
+  color: var(--qg-ink);
+  border-radius: var(--qg-field-radius);
+  font-size: var(--qg-caption);
+  cursor: pointer;
+}
+.qg-help-trigger svg {
+  width: 18px;
+  height: 18px;
+}
+.qg-brand > .qg-help-trigger {
+  margin-left: auto;
+}
+.qg-brand > small {
+  display: none;
+}
+.qg-corner-help {
+  position: absolute;
+  z-index: 2;
+  top: max(8px, var(--qg-top-inset));
+  right: var(--qg-gutter);
+}
+.qg-screen {
+  position: relative;
+}
+.qg-screen-welcome {
+  grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(0, 1fr) auto;
+}
+.qg-screen-welcome .qg-main {
+  overflow: auto;
+  padding-block: var(--qg-space-24);
+}
+.qg-screen-unlock {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.qg-screen-unlock .qg-main {
+  overflow: auto;
+  padding-top: var(--qg-space-64);
+}
+.qg-main {
+  padding-top: var(--qg-space-24);
+}
+.qg-main > h1 {
+  font-size: var(--qg-heading);
+  margin: 0 0 var(--qg-space-16);
+}
+.qg-main > .qg-copy + .qg-copy {
+  margin-top: var(--qg-space-12);
+}
+.qg-main > .qg-copy + .qg-field {
+  margin-top: var(--qg-section-gap);
+}
+.qg-footer {
+  gap: var(--qg-space-8);
+  padding-top: var(--qg-space-12);
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+.qg-summary > div,
+.qg-details > div {
+  min-height: 40px;
+  padding-block: var(--qg-space-8);
+}
+.qg-full-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: var(--qg-body);
+  line-height: 1.5;
+}
+.qg-address-copy {
+  display: grid;
+  gap: var(--qg-space-8);
+  width: 100%;
+  padding: var(--qg-space-16);
+  margin-block: var(--qg-space-16);
+  text-align: left;
+  background: var(--qg-paper);
+  color: var(--qg-ink);
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-field-radius);
+}
+.qg-address-copy strong {
+  font-size: var(--qg-body);
+}
+.qg-help-dialog {
+  width: min(460px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-surface-radius);
+  background: var(--qg-oat);
+  color: var(--qg-ink);
+  overflow: auto;
+}
+.qg-help-dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+.qg-help-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--qg-space-8) var(--qg-space-16);
+  border-bottom: 1px solid var(--qg-line);
+}
+.qg-help-heading button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--qg-field-radius);
+  background: transparent;
+  color: inherit;
+}
+.qg-help-body {
+  display: grid;
+  gap: var(--qg-space-16);
+  padding: var(--qg-space-24);
+  font-size: var(--qg-body);
+  line-height: 1.5;
+}
+.qg-help-body p,
+.qg-help-body h2 {
+  margin: 0;
+}
+.qg-help-body .qg-install-notice {
+  margin: 0;
+}
+.qg-help-dialog > .qg-screen {
+  height: min(680px, calc(100dvh - 100px));
+}
+.qg-transaction-reference summary {
+  cursor: pointer;
+  padding-block: var(--qg-space-12);
+}
+.qg-transaction-reference:not([open]) {
+  display: block;
+  padding-block: 0;
+}
+.qg-receive .qg-qr {
+  width: min(220px, 48dvh, 100%);
+  margin-block: var(--qg-space-12);
+}
+.qg-receive .qg-qr canvas,
+.qg-receive .qg-qr svg {
+  max-width: 100%;
+  height: auto;
+}
+.qg-review-amount {
+  padding-block: var(--qg-space-8) var(--qg-space-12);
+}
+.qg-methods {
+  margin-block: var(--qg-space-16);
+}
+@media (max-height: 740px) {
+  .qg-main {
+    padding-top: var(--qg-space-16);
+  }
+  .qg-main > h1 {
+    margin-bottom: var(--qg-space-8);
+  }
+  .qg-main > .qg-eyebrow {
+    display: none;
+  }
+  .qg-main > .qg-note {
+    margin-top: var(--qg-section-gap);
+    padding: var(--qg-space-12);
+  }
+  .qg-device-key {
+    margin-block: var(--qg-space-16);
+  }
+  .qg-choice-list {
+    margin-block: var(--qg-space-16);
+  }
+}
+
+.qg-import-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr));
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-space-12);
+}
+.qg-import-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--qg-space-8);
+  min-height: var(--qg-touch-target);
+  padding: var(--qg-space-8);
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-field-radius);
+  color: var(--qg-ink);
+  background: var(--qg-paper);
+  font-size: var(--qg-body);
+}
+.qg-import-actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Keyboard cues use text and surface changes, in keeping with the wallet's
+   focus decoration policy. Focus never changes control geometry. */
+[data-testid='vault-app'] :is(button, a, summary):focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+[data-testid='vault-app'] :is(.qg-header > button, .qg-utilities button):focus-visible {
+  background: color-mix(in srgb, var(--qg-ink) 12%, var(--qg-oat));
+}
+.qg-field:focus-within > span,
+.qg-dest-field:focus-within > span,
+.qg-amount-entry:focus-within > label {
+  color: var(--qg-ink);
+}
+.qg-field input:focus,
+.qg-field textarea:focus,
+.qg-dest-field:focus-within > div,
+.qg-amount-entry:focus-within {
+  background: color-mix(in srgb, var(--qg-purple) 4%, var(--qg-paper));
+}
+.qg-consent,
+.light-checkbox {
+  min-height: var(--qg-touch-target);
+  cursor: pointer;
+}
+
+.qg-main > :is(.qg-money-field, .qg-summary, .qg-field) + .qg-copy {
+  margin-top: var(--qg-space-12);
 }

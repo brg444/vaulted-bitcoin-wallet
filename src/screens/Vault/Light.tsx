@@ -1,21 +1,41 @@
+import TransactionReference from './qg/TransactionReference'
+import { WalletHelpContext } from './qg/Help'
+import { syncCompleteLightBackup as syncLightCloudBackup } from '../../lib/vault/recovery/capture'
+import { lightBackupScheduler } from '../../lib/vault/light/backupScheduler'
+import { openLightCloudBackup, type LightBackupSession } from '../../lib/vault/light/cloudBackup'
+import { encryptLightBackup, openLocalLightBackup, lightBackupKey } from '../../lib/vault/light/backupCodec'
+import { unlockLightWithPasskey } from '../../lib/vault/light/passkey'
 import type { ExecutorEvent } from '@arkade-os/sdk'
 import { networkPins } from '../../lib/vault/networkPins'
 import { lightExitDelayLabel, lightRecoveryProgress } from '../../lib/vault/light/recoveryProgress'
 import { checkLightRenewal, renewLightSpending } from '../../lib/vault/light/renewal'
 import type { LightRenewalPlan } from '../../lib/vault/light/renewalTypes'
 import { lightRenewalTiming } from '../../lib/vault/light/renewalTiming'
-import { captureLightRecoveryArchive, validateLightRecoveryArchive } from '../../lib/vault/light/recoveryArchive'
 import {
-  prepareLightRecoveryFile,
+  authorizeGuardianRenewals,
+  refreshGuardianRenewals,
+  clearGuardianDelegationReads,
+  guardianRenewalCoverage,
+} from '../../lib/vault/light/guardianDelegation'
+import { guardianRenewalSpendUnlocker } from '../../lib/vault/light/delegationCeremony'
+import type { GuardianDelegationJournal } from '../../lib/vault/light/delegationStore'
+import {
+  captureLightRecoveryArchive,
+  loadLightRecoveryArchive,
+  storeLightRecoveryArchive,
+  validateLightRecoveryArchive,
+} from '../../lib/vault/light/recoveryArchive'
+import {
+  prepareLightRecoveryWithOwner,
+  executeLightRecoveryWithOwner,
   prepareLightRecoveryWithSecret,
   validateLightRecoveryFile,
   executeLightRecovery,
   type LightRecoveryFile,
 } from '../../lib/vault/light/recovery'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { prettyAmount } from '../../lib/format'
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
   Check,
   Clock3,
   Copy,
@@ -23,16 +43,21 @@ import {
   Fingerprint,
   ShieldCheck,
   Shield,
-  QrCode as QrIcon,
   Plus,
   Pencil,
+  Settings as SettingsIcon,
 } from 'lucide-react'
-import Content from './Content'
+import AccountHome from './AccountHome'
+import SecurityOverview from './SecurityOverview'
+import { HubGroup, HubRow } from './ui'
+import homeStyles from './AccountHome.module.css'
+import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
 import { VaultHistoryList } from './History'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
-import { prettyNumber } from '../../lib/format'
-import QgScreen, { QgMark, QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
+import DestinationField from './qg/DestinationField'
+import VaultSettings from './Settings'
+import QgScreen, { QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
 import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
 import { fetchPublicStatus, fetchVaultStatusUnpinned } from '../../lib/vault/status'
@@ -57,7 +82,6 @@ import {
   saveWatchedSavings,
   type WatchedSavingsAddress,
 } from '../../lib/vault/light/watchSavings'
-import { unlockPhoneBip340 } from '../../lib/vault/savingsSpend'
 import {
   fetchVaultWalletVtxoSnapshot,
   subscribeVaultWalletEvents,
@@ -82,6 +106,7 @@ import './light.css'
 type View =
   | 'setup'
   | 'backup'
+  | 'auto-backup'
   | 'unlock'
   | 'home'
   | 'receive'
@@ -90,6 +115,8 @@ type View =
   | 'success'
   | 'savings'
   | 'savings-address'
+  | 'scan-send'
+  | 'settings'
   | 'security'
   | 'restore'
   | 'tx'
@@ -106,7 +133,13 @@ function downloadJSON(value: unknown, name: string) {
 
 export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [record, setRecord] = useState<LightEnrollment | null>(null)
+  const [securitySection, setSecuritySection] = useState<'overview' | 'access' | 'renewal' | 'backup'>('overview')
+  const [restoreMethod, setRestoreMethod] = useState<'choose' | 'file'>('choose')
+  const [backupStep, setBackupStep] = useState<'file' | 'secret'>('file')
+  const [exitStep, setExitStep] = useState<'review' | 'fund'>('review')
+  const [recoveryReturn, setRecoveryReturn] = useState<'restore' | 'security'>('restore')
   const [view, setView] = useState<View>('setup')
+  const [settingsReturn, setSettingsReturn] = useState<'home' | 'savings'>('home')
   const [status, setStatus] = useState<VaultStatus | null>(null)
   const [policy, setPolicy] = useState<LightPolicy>(defaultLightPolicy('mainnet'))
   const [mode, setMode] = useState<string | null>(null)
@@ -116,6 +149,16 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [pending, setPending] = useState<PendingLightEnrollment | null>(null)
   const [setupExpired, setSetupExpired] = useState(false)
   const restoreRead = useRef(0)
+  const cloudSession = useRef<LightBackupSession | null>(null)
+  const [cloudSavedAt, setCloudSavedAt] = useState('')
+  const [cloudError, setCloudError] = useState('')
+  const [passkeyRecovery, setPasskeyRecovery] = useState(false)
+  useEffect(
+    () => () => {
+      cloudSession.current = null
+    },
+    [],
+  )
   const backupRead = useRef(0)
   const [recoverySecret, setRecoverySecret] = useState('')
   const [confirmation, setConfirmation] = useState('')
@@ -146,40 +189,74 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [useSavedRecovery, setUseSavedRecovery] = useState(false)
   const [recoveryDataDate, setRecoveryDataDate] = useState('')
   const [renewalTiming, setRenewalTiming] = useState<ReturnType<typeof lightRenewalTiming> | null>(null)
+  const [delegations, setDelegations] = useState<GuardianDelegationJournal | null>(null)
+  const coverage =
+    record && snapshot?.recoveryVtxos
+      ? guardianRenewalCoverage(record.descriptor, delegations, snapshot?.recoveryVtxos || [])
+      : null
+  const authorizeRenewals = async (owner: Uint8Array, saved: LightEnrollment) => {
+    setDelegations(await authorizeGuardianRenewals(saved.descriptor, owner))
+  }
+  useEffect(() => {
+    if (!record) return
+    return () => clearGuardianDelegationReads(record.descriptor.vaultId)
+  }, [record?.descriptor.vaultId])
+  useEffect(() => {
+    if (record && (view === 'unlock' || view === 'emergency')) clearGuardianDelegationReads(record.descriptor.vaultId)
+  }, [record?.descriptor.vaultId, view === 'unlock', view === 'emergency'])
   const [recoveryDataError, setRecoveryDataError] = useState('')
   const recoveryController = useRef<AbortController | null>(null)
   useEffect(() => () => recoveryController.current?.abort(), [])
   useEffect(() => {
     if (!record || !status || view === 'unlock' || view === 'emergency') return
     let active = true
-    const capture = () => {
-      if (document.visibilityState === 'hidden') return
-      void captureLightRecoveryArchive(record.descriptor)
-        .then((archive) => {
+    const scheduler = lightBackupScheduler(
+      async () => {
+        if (document.visibilityState === 'hidden') return
+        const renewalState = await refreshGuardianRenewals(record.descriptor)
+        if (active) setDelegations(renewalState)
+        const current = await fetchVaultWalletVtxoSnapshot(status)
+        if (!current.recoveryVtxos) throw new Error('Wallet output snapshot is unavailable')
+        const archive = await captureLightRecoveryArchive(record.descriptor, current.recoveryVtxos)
+        const coins = validateLightRecoveryArchive(archive, record.descriptor).coins
+        if (!active) return
+        setRecoveryDataDate(archive.capturedAt)
+        setRenewalTiming(lightRenewalTiming(coins))
+        setRecoveryDataError('')
+        const session = cloudSession.current
+        if (session) {
+          const saved = await syncLightCloudBackup(session, archive)
           if (active) {
-            setRecoveryDataDate(archive.capturedAt)
-            setRenewalTiming(lightRenewalTiming(validateLightRecoveryArchive(archive, record.descriptor).coins))
-            setRecoveryDataError('')
+            setCloudSavedAt(saved.createdAt)
+            setCloudError('')
           }
-        })
-        .catch(() => {
-          if (active) {
-            setRenewalTiming(null)
-            setRecoveryDataError(
-              'Recovery data could not be updated. Keep this wallet open and reconnect before updating your recovery file.',
-            )
-          }
-        })
-    }
-    capture()
-    const timer = window.setInterval(capture, 30_000)
-    window.addEventListener('focus', capture)
+        }
+      },
+      (error) => {
+        if (active) {
+          setRecoveryDataError(
+            error instanceof Error ? error.message : 'Transaction recovery data could not be updated',
+          )
+          setCloudError('Backup update is waiting for complete transaction paths or a cloud connection.')
+        }
+      },
+    )
+    scheduler.request()
+    const unsubscribe = subscribeVaultWalletEvents(status, scheduler.request)
+    const timer = window.setInterval(scheduler.request, 30_000)
+    window.addEventListener('focus', scheduler.request)
+    window.addEventListener('online', scheduler.request)
+    document.addEventListener('visibilitychange', scheduler.request)
     return () => {
       active = false
+      scheduler.dispose()
+      unsubscribe()
       window.clearInterval(timer)
-      window.removeEventListener('focus', capture)
+      window.removeEventListener('focus', scheduler.request)
+      window.removeEventListener('online', scheduler.request)
+      document.removeEventListener('visibilitychange', scheduler.request)
     }
-  }, [record, status?.vaultId, view === 'unlock', view === 'emergency', snapshot])
+  }, [record, status?.vaultId, view === 'unlock', view === 'emergency'])
 
   useScreenMotion(root, renewalReview ? 'renewal-review' : view)
   const intent = useIntentPress(renewalReview ? 'renewal-review' : view)
@@ -187,6 +264,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     if (busyRef.current) return
     setError('')
     setNotice('')
+    if (next === 'security') setSecuritySection('overview')
     setView(next)
   }
   const run = async (action: () => Promise<void>) => {
@@ -217,7 +295,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const staged = loadPendingLightEnrollment()
         if (staged) {
           setPending(staged)
-          setView('backup')
+          setView(staged.recoveryBackup ? 'backup' : 'auto-backup')
         }
       }
     } catch (e) {
@@ -277,6 +355,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       window.removeEventListener('focus', update)
     }
   }, [record, status?.vaultId, view === 'unlock', refresh]) // wallet identity changes only after an explicit restore
+  const captureCurrent = async (saved: LightEnrollment, currentStatus: VaultStatus) => {
+    const current = await fetchVaultWalletVtxoSnapshot(currentStatus)
+    if (!current.recoveryVtxos) throw new Error('Wallet output snapshot is unavailable')
+    return captureLightRecoveryArchive(saved.descriptor, current.recoveryVtxos)
+  }
   const unlock = () =>
     run(async () => {
       if (!record) throw new Error('Import your Light recovery file first')
@@ -284,12 +367,81 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
         record.descriptor,
       )
-      const secret = await unlockPhoneBip340(record.enrollment, st)
-      secret.fill(0)
+      const session = await openLightCloudBackup(record, authorizeRenewals)
+      cloudSession.current = session
+      const archive = await captureCurrent(record, st)
+      const saved = await syncLightCloudBackup(session, archive)
+      setCloudSavedAt(saved.createdAt)
+      setCloudError('')
       setStatus(st)
-      setWatched(loadWatchedSavings(st.vaultId, record.descriptor.network))
       setView('home')
       await refresh()
+    })
+  const activateAutomaticBackup = async (staged: PendingLightEnrollment) => {
+    const next = await finishLightEnrollment(staged)
+    setRecord(next.record)
+    const session = await openLightCloudBackup(next.record, authorizeRenewals)
+    cloudSession.current = session
+    const archive = await captureCurrent(next.record, next.status)
+    const saved = await syncLightCloudBackup(session, archive)
+    setCloudSavedAt(saved.createdAt)
+    setCloudError('')
+    setStatus(next.status)
+    setPending(null)
+    setView('home')
+  }
+  const restoreCloud = () =>
+    run(async () => {
+      const session = await openLightCloudBackup(undefined, authorizeRenewals)
+      if (!session.file)
+        throw new Error('No cloud backup was found. Open this wallet on its original device to enable backup.')
+      const st = lightStatusMatchesDescriptor(
+        await fetchVaultStatusUnpinned(undefined, session.record.descriptor.vaultId),
+        session.record.descriptor,
+      )
+      localStorage.setItem(LIGHT_LOCAL_STORE, JSON.stringify(session.record))
+      cloudSession.current = session
+      setRecord(session.record)
+      setStatus(st)
+      setCloudSavedAt(session.file.createdAt)
+      setCloudError('')
+      setView('home')
+    })
+  const saveLocalBackup = () =>
+    run(async () => {
+      if (!record) return
+      const owner = await unlockLightWithPasskey(record)
+      try {
+        const key = await lightBackupKey(owner, record)
+        if (!status) throw new Error('Open the wallet before saving a backup')
+        const archive = await captureCurrent(record, status)
+        const saved = await encryptLightBackup(
+          { ...record, name: 'vaulted-light-recovery', version: 1, createdAt: archive.capturedAt, archive },
+          key,
+        )
+        downloadJSON(saved, `vaulted-light-${record.descriptor.vaultId.slice(0, 8)}.json`)
+        setNotice('Encrypted backup saved with current Bitcoin exit paths')
+      } finally {
+        owner.fill(0)
+      }
+    })
+  const unlockLocally = () =>
+    run(async () => {
+      if (!record) return
+      const key = await unlockLightWithPasskey(record)
+      try {
+        await authorizeRenewals(key, record)
+      } finally {
+        key.fill(0)
+      }
+      const st = lightStatusMatchesDescriptor(
+        await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
+        record.descriptor,
+      )
+      cloudSession.current = null
+      setStatus(st)
+      setCloudError('Cloud backup is paused. Open Security to reconnect.')
+      setView('home')
     })
   const backup = (saved: LightEnrollment) => {
     downloadJSON(
@@ -298,10 +450,18 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
     setDownloaded(true)
   }
+  useEffect(() => {
+    if (!record) return
+    try {
+      setWatched(loadWatchedSavings(record.descriptor.vaultId, record.descriptor.network))
+    } catch {
+      setWatched(null)
+      setError('The saved Savings address could not be loaded. Add it again in Savings.')
+    }
+  }, [record])
   const openSavings = () =>
     run(async () => {
       setView('savings')
-      setSavings(null)
       if (record && watched) setSavings(await fetchWatchedSavings(watched, record.descriptor.network))
     })
   const openTransaction = (tx: VaultHistoryItem) => {
@@ -315,40 +475,17 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const activity = (rows: VaultHistoryItem[], account: 'spend' | 'savings' = 'spend', loaded = true) => (
     <VaultHistoryList account={account} balancesLoaded={loaded} history={rows} openTx={openTransaction} />
   )
-  const accountHeader = (account: 'Spending' | 'Savings') => (
-    <header className='qg-account-bar vault-account-bar'>
-      <div className='qg-account'>
-        <QgMark />
-        <strong>{account}</strong>
-      </div>
-      <div className='qg-utilities'>
-        <button type='button' disabled={busy} aria-label='Open Security' onClick={() => navigate('security')}>
-          <Shield />
-        </button>
-        {account === 'Spending' ? (
-          <button type='button' aria-label='Receive to Spending' disabled={!status} onClick={() => navigate('receive')}>
-            <QrIcon />
-          </button>
-        ) : null}
-      </div>
-    </header>
-  )
-  const balance = (value: number | null, account: string) => {
-    const amount = value === null ? '—' : `₿${prettyNumber(value)}`
-    return (
-      <div
-        className='qg-balance light-account-balance'
-        data-testid='vault-balance'
-        aria-live='polite'
-        aria-label={`${account} balance: ${value === null ? 'loading' : sats(value)}`}
-        style={amountSizeStyle(amount)}
-      >
-        <strong>
-          <QgAmount value={amount} />
-        </strong>
-      </div>
-    )
-  }
+  const lock = () =>
+    run(async () => {
+      if (!record) return
+      cloudSession.current = null
+      setCloudSavedAt('')
+      await shutdownVaultWalletWorker(record.descriptor.vaultId)
+      setSnapshot(null)
+      setSavings(null)
+      setStatus(null)
+      setView('unlock')
+    })
   let content: React.ReactNode
   if (view === 'setup')
     content = (
@@ -364,25 +501,25 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               loading={busy}
               onClick={() =>
                 void run(async () => {
-                  const next = await beginLightEnrollment(policy, invite)
+                  const next = await beginLightEnrollment(policy, invite, true)
                   setPending(next.pending)
                   setRecoverySecret(next.recoverySecret)
                   setConfirmation('')
                   setDownloaded(false)
                   setBackupFileVerified(false)
-                  setView('backup')
+                  setView('auto-backup')
+                  await activateAutomaticBackup(next.pending)
                 })
               }
             />
-            <QgTextButton label='Restore a Light wallet' onClick={() => navigate('restore')} />
           </>
         }
       >
         <p className='qg-eyebrow'>Light</p>
         <h1>Set your spending limits</h1>
         <p className='qg-copy'>Use your passkey for payments, within the limits you choose.</p>
-        <div className='light-fields'>
-          <label>
+        <div className='qg-fields'>
+          <label className='qg-field'>
             Per-payment limit, in sats
             <input
               inputMode='numeric'
@@ -392,7 +529,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               onChange={(e) => setPolicy({ ...policy, txRecipientCapSats: Number(e.target.value) })}
             />
           </label>
-          <label>
+          <label className='qg-field'>
             Rolling 24-hour limit, in sats
             <input
               inputMode='numeric'
@@ -403,14 +540,15 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             />
           </label>
           {mode === 'token' ? (
-            <label>
+            <label className='qg-field'>
               Invite code
               <input autoComplete='off' value={invite} onChange={(e) => setInvite(e.target.value)} />
             </label>
           ) : null}
         </div>
         <p className='qg-copy'>
-          These limits are fixed when you create your wallet. Next, you’ll save and verify your recovery backup.
+          Your encrypted wallet backup is saved automatically. Keep access to the passkey provider you choose so you can
+          restore on another device.
         </p>
         <details className='light-details'>
           <summary>About Light</summary>
@@ -423,27 +561,56 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         {mode !== null && !available ? <p className='qg-copy'>Light is not available on this deployment yet.</p> : null}
       </QgScreen>
     )
+  else if (view === 'auto-backup' && pending)
+    content = (
+      <QgScreen
+        title='Protect your access'
+        back={busy ? undefined : onExit}
+        footer={
+          <QgPrimary
+            label='Finish automatic backup'
+            loading={busy}
+            onClick={() => void run(() => activateAutomaticBackup(pending))}
+          />
+        }
+      >
+        <h1>Saving your wallet backup</h1>
+        <p className='qg-copy'>
+          Approve with your passkey to finish saving your encrypted backup. Your wallet opens once the saved copy has
+          been verified.
+        </p>
+      </QgScreen>
+    )
   else if (view === 'backup' && pending)
     content = (
       <QgScreen
         title='Protect your access'
+        back={busy ? undefined : backupStep === 'secret' ? () => setBackupStep('file') : onExit}
         footer={
-          <QgPrimary
-            label='Verify backup and create wallet'
-            loading={busy}
-            disabled={setupExpired || !backupFileVerified || !confirmation}
-            onClick={() =>
-              void run(async () => {
-                const next = await finishLightEnrollment(pending, confirmation)
-                setRecord(next.record)
-                setStatus(next.status)
-                setRecoverySecret('')
-                setConfirmation('')
-                setPending(null)
-                setView('home')
-              })
-            }
-          />
+          backupStep === 'file' ? (
+            <QgPrimary
+              label='Continue to recovery secret'
+              disabled={!backupFileVerified || setupExpired}
+              onClick={() => setBackupStep('secret')}
+            />
+          ) : (
+            <QgPrimary
+              label='Verify backup and create wallet'
+              loading={busy}
+              disabled={setupExpired || !backupFileVerified || !confirmation}
+              onClick={() =>
+                void run(async () => {
+                  const next = await finishLightEnrollment(pending, confirmation)
+                  setRecord(next.record)
+                  setStatus(next.status)
+                  setRecoverySecret('')
+                  setConfirmation('')
+                  setPending(null)
+                  setView('home')
+                })
+              }
+            />
+          )
         }
       >
         {setupExpired ? (
@@ -456,6 +623,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               setRecoverySecret('')
               setConfirmation('')
               setBackupFileVerified(false)
+              setBackupStep('file')
               setDownloaded(false)
               setSetupExpired(false)
               navigate('setup')
@@ -467,63 +635,71 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <p className='qg-copy'>
           Save this recovery file, then write down the secret separately. Anyone with both can recover your wallet key.
         </p>
-        <QgSecondary
-          label={downloaded ? 'Download recovery file again' : 'Download recovery file'}
-          onClick={() => backup(pending)}
-        />
-        <label className='light-field'>
-          Choose the saved recovery file to verify it
-          <input
-            type='file'
-            accept='.json,application/json'
-            onChange={(e) => {
-              const read = ++backupRead.current
-              setBackupFileVerified(false)
-              const chosen = e.target.files?.[0]
-              if (!chosen) return
-              if (chosen.size > 200000) {
-                setError('Choose the original Light recovery file')
-                return
-              }
-              void run(async () => {
-                const raw = await chosen.text()
-                if (read !== backupRead.current) return
-                verifySavedLightRecoveryFile(JSON.parse(raw), pending)
-                setBackupFileVerified(true)
-                setNotice('Recovery file verified')
-              })
-            }}
-          />
-        </label>
-        {recoverySecret ? (
-          <div className='light-secret-label'>
-            Recovery secret<code className='light-secret'>{recoverySecret}</code>
-          </div>
-        ) : (
-          <p className='qg-copy'>Use the secret you saved before closing setup.</p>
-        )}
-        <p className='qg-copy'>
-          The secret is shown during setup and is not saved in your browser. Keep it somewhere you can reach if you lose
-          this device.
-        </p>
-        <label className='light-field'>
-          Enter your saved secret to verify
-          <textarea
-            value={confirmation}
-            onChange={(e) => setConfirmation(e.target.value)}
-            autoComplete='off'
-            spellCheck={false}
-          />
-        </label>
-        <p className='qg-copy'>
-          Keep the file and secret separately; both are needed if you lose your passkey. Emergency Bitcoin recovery
-          works independently of Vaulted’s approval and these payment limits, and requires current transaction paths,
-          Bitcoin for network fees
-          {setupExitDelay
-            ? `, and a waiting period of ${lightExitDelayLabel(setupExitDelay)} after the required Bitcoin transactions confirm`
-            : ''}
-          .
-        </p>
+        {backupStep === 'file' ? (
+          <>
+            <QgSecondary
+              label={downloaded ? 'Download recovery file again' : 'Download recovery file'}
+              onClick={() => backup(pending)}
+            />
+            <label className='qg-field'>
+              Choose the saved recovery file to verify it
+              <input
+                type='file'
+                accept='.json,application/json'
+                onChange={(e) => {
+                  const read = ++backupRead.current
+                  setBackupFileVerified(false)
+                  const chosen = e.target.files?.[0]
+                  if (!chosen) return
+                  if (chosen.size > 200000) {
+                    setError('Choose the original Light recovery file')
+                    return
+                  }
+                  void run(async () => {
+                    const raw = await chosen.text()
+                    if (read !== backupRead.current) return
+                    verifySavedLightRecoveryFile(JSON.parse(raw), pending)
+                    setBackupFileVerified(true)
+                    setNotice('Recovery file verified')
+                  })
+                }}
+              />
+            </label>
+          </>
+        ) : null}
+        {backupStep === 'secret' ? (
+          <>
+            {recoverySecret ? (
+              <div className='light-secret-label'>
+                Recovery secret<code className='light-secret'>{recoverySecret}</code>
+              </div>
+            ) : (
+              <p className='qg-copy'>Use the secret you saved before closing setup.</p>
+            )}
+            <p className='qg-copy'>
+              The secret is shown during setup and is not saved in your browser. Keep it somewhere you can reach if you
+              lose this device.
+            </p>
+            <label className='qg-field'>
+              Enter your saved secret to verify
+              <textarea
+                value={confirmation}
+                onChange={(e) => setConfirmation(e.target.value)}
+                autoComplete='off'
+                spellCheck={false}
+              />
+            </label>
+            <p className='qg-copy'>
+              Keep the file and secret separately; both are needed if you lose your passkey. Emergency Bitcoin recovery
+              works independently of Vaulted’s approval and these payment limits, and requires current transaction
+              paths, Bitcoin for network fees
+              {setupExitDelay
+                ? `, and a waiting period of ${lightExitDelayLabel(setupExitDelay)} after the required Bitcoin transactions confirm`
+                : ''}
+              .
+            </p>
+          </>
+        ) : null}
       </QgScreen>
     )
   else if (view === 'unlock')
@@ -537,84 +713,131 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       >
         <h1>Welcome back</h1>
         <p className='qg-copy'>Use face recognition, a fingerprint or your device PIN to unlock your wallet key.</p>
-        <QgTextButton label='Restore from a recovery file' onClick={() => navigate('restore')} />
+        <details className='qg-guidance'>
+          <summary>Use a local passkey</summary>
+          <p>Use the wallet access already saved on this device.</p>
+          <QgTextButton label='Unlock on this device' onClick={() => void unlockLocally()} />
+        </details>
       </QgScreen>
     )
   else if (view === 'restore')
     content = (
       <QgScreen
         title='Restore Light'
-        back={() => navigate(record ? 'unlock' : 'setup')}
+        back={() => (restoreMethod === 'file' ? setRestoreMethod('choose') : navigate(record ? 'unlock' : 'setup'))}
         footer={
-          <QgPrimary
-            label='Verify file and unlock'
-            loading={busy}
-            disabled={!restoreRaw}
-            onClick={() =>
-              void run(async () => {
-                const restored = validateLightEnrollment(JSON.parse(restoreRaw))
-                const st = lightStatusMatchesDescriptor(
-                  await fetchVaultStatusUnpinned(undefined, restored.descriptor.vaultId),
-                  restored.descriptor,
-                )
-                const key = await unlockPhoneBip340(restored.enrollment, st)
-                key.fill(0)
-                localStorage.setItem(LIGHT_LOCAL_STORE, JSON.stringify(restored))
-                setRecord(restored)
-                setStatus(st)
-                setView('home')
-                setRestoreRaw('')
-              })
-            }
-          />
+          restoreMethod === 'file' ? (
+            <QgPrimary
+              label='Verify file and unlock'
+              loading={busy}
+              disabled={!restoreRaw}
+              onClick={() =>
+                void run(async () => {
+                  const parsed = JSON.parse(restoreRaw)
+                  const opened =
+                    parsed.name === 'vaulted-light-backup'
+                      ? await openLocalLightBackup(parsed, authorizeRenewals)
+                      : null
+                  const restored = opened ? validateLightEnrollment(opened.file) : validateLightEnrollment(parsed)
+                  const st = lightStatusMatchesDescriptor(
+                    await fetchVaultStatusUnpinned(undefined, restored.descriptor.vaultId),
+                    restored.descriptor,
+                  )
+                  if (!opened) {
+                    const key = await unlockLightWithPasskey(restored)
+                    try {
+                      await authorizeRenewals(key, restored)
+                    } finally {
+                      key.fill(0)
+                    }
+                  }
+                  if (opened?.file.archive) await storeLightRecoveryArchive(opened.file.archive, restored.descriptor)
+                  localStorage.setItem(LIGHT_LOCAL_STORE, JSON.stringify(restored))
+                  cloudSession.current = null
+                  setCloudError('Local backup restored. Open Security to reconnect cloud backup.')
+                  setRecord(restored)
+                  setStatus(st)
+                  setView('home')
+                  setRestoreRaw('')
+                })
+              }
+            />
+          ) : undefined
         }
       >
         <h1>Restore your wallet</h1>
-        <p className='qg-copy'>
-          Choose your Light recovery file and approve with the same passkey. Your receiving address and spending limits
-          stay the same.
-        </p>
-        <input
-          ref={file}
-          type='file'
-          accept='.json,application/json'
-          onChange={(e) => {
-            const read = ++restoreRead.current
-            setRestoreRaw('')
-            const selected = e.target.files?.[0]
-            if (selected) {
-              if (selected.size > 32_000_000) {
+        {restoreMethod === 'choose' ? (
+          <>
+            <QgPrimary
+              label='Restore with passkey'
+              loading={busy}
+              icon={<Fingerprint />}
+              onClick={() => void restoreCloud()}
+            />
+            <p className='qg-copy'>
+              Use the passkey saved with your passkey provider to open your encrypted cloud backup.
+            </p>
+            <QgSecondary label='Use a local backup' onClick={() => setRestoreMethod('file')} />
+          </>
+        ) : (
+          <>
+            <h2>Use a local backup</h2>
+            <p className='qg-copy'>
+              Choose your Light recovery file and approve with the same passkey. Your receiving address and spending
+              limits stay the same.
+            </p>
+            <input
+              ref={file}
+              aria-label='Light recovery file'
+              type='file'
+              accept='.json,application/json'
+              onChange={(e) => {
+                const read = ++restoreRead.current
                 setRestoreRaw('')
-                setError('This file is too large')
-                return
+                const selected = e.target.files?.[0]
+                if (selected) {
+                  if (selected.size > 32_000_000) {
+                    setRestoreRaw('')
+                    setError('This file is too large')
+                    return
+                  }
+                  void selected
+                    .text()
+                    .then((raw) => {
+                      if (read === restoreRead.current) setRestoreRaw(raw)
+                    })
+                    .catch(() => {
+                      if (read === restoreRead.current) setError('This file could not be read')
+                    })
+                }
+              }}
+            />
+            <QgSecondary
+              label='Recover directly to Bitcoin'
+              disabled={!restoreRaw}
+              onClick={() =>
+                void run(async () => {
+                  const parsed = JSON.parse(restoreRaw)
+                  const encrypted = parsed.name === 'vaulted-light-backup'
+                  const saved = encrypted
+                    ? (await openLocalLightBackup(parsed)).file
+                    : validateLightRecoveryFile(parsed)
+                  setPasskeyRecovery(encrypted || !saved.recoveryBackup)
+                  setUseSavedRecovery(Boolean(saved.archive))
+                  setRecoveryFile(saved)
+                  setRecoveryReturn('restore')
+                  setConfirmation('')
+                  setExitStep('review')
+                  setView('emergency')
+                })
               }
-              void selected
-                .text()
-                .then((raw) => {
-                  if (read === restoreRead.current) setRestoreRaw(raw)
-                })
-                .catch(() => {
-                  if (read === restoreRead.current) setError('This file could not be read')
-                })
-            }
-          }}
-        />
-        <QgSecondary
-          label='I no longer have my passkey'
-          disabled={!restoreRaw}
-          onClick={() =>
-            void run(async () => {
-              const saved = validateLightRecoveryFile(JSON.parse(restoreRaw))
-              setRecoveryFile(saved)
-              setConfirmation('')
-              setView('emergency')
-            })
-          }
-        />
-        <p className='qg-copy'>
-          If you no longer have the passkey, use your recovery secret with the emergency recovery tools. A recovery
-          secret does not create a replacement passkey for this wallet.
-        </p>
+            />
+            <p className='qg-copy'>
+              Your local backup includes the saved paths for a Bitcoin exit without Vaulted’s approval or the Operator.
+              Keep access to your original passkey to unlock it. Older recovery files can still use their recovery code.
+            </p>
+          </>
+        )}
       </QgScreen>
     )
   else if (view === 'emergency' && recoveryFile)
@@ -622,23 +845,33 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       <QgScreen
         title='Emergency Bitcoin recovery'
         back={() => {
-          if (!busyRef.current) navigate('restore')
+          if (busyRef.current) return
+          if (exitStep === 'fund') setExitStep('review')
+          else navigate(recoveryReturn)
         }}
         footer={
-          recoveryFile.exitPackage ? (
+          recoveryFile.exitPackage && exitStep === 'review' ? (
+            <QgPrimary label='Continue to fee funding' onClick={() => setExitStep('fund')} />
+          ) : recoveryFile.exitPackage ? (
             <QgPrimary
               label='Start Bitcoin recovery'
               loading={busy}
-              disabled={!confirmation}
+              disabled={!passkeyRecovery && !confirmation}
               onClick={() =>
                 void run(async () => {
                   const controller = new AbortController()
                   recoveryController.current = controller
                   setRecoveryEvents([])
                   try {
-                    await executeLightRecovery(recoveryFile, confirmation, controller.signal, (event) =>
-                      setRecoveryEvents((prev) => [...prev.slice(-7), event]),
-                    )
+                    const onEvent = (event: ExecutorEvent) => setRecoveryEvents((prev) => [...prev.slice(-7), event])
+                    if (passkeyRecovery) {
+                      const owner = await unlockLightWithPasskey(recoveryFile)
+                      try {
+                        await executeLightRecoveryWithOwner(recoveryFile, owner, controller.signal, onEvent)
+                      } finally {
+                        owner.fill(0)
+                      }
+                    } else await executeLightRecovery(recoveryFile, confirmation, controller.signal, onEvent)
                     setNotice('Bitcoin recovery completed')
                   } catch (error) {
                     if (!(error instanceof Error) || error.name !== 'AbortError') throw error
@@ -654,16 +887,32 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             <QgPrimary
               label='Prepare emergency exit'
               loading={busy}
-              disabled={!confirmation}
+              disabled={!passkeyRecovery && !confirmation}
               onClick={() =>
                 void run(async () => {
-                  const next = await prepareLightRecoveryWithSecret(
-                    recoveryFile,
-                    confirmation,
-                    recoveryDestination.trim(),
-                    useSavedRecovery,
-                  )
+                  let next: LightRecoveryFile
+                  if (passkeyRecovery) {
+                    const owner = await unlockLightWithPasskey(recoveryFile)
+                    try {
+                      next = await prepareLightRecoveryWithOwner(
+                        recoveryFile,
+                        owner,
+                        recoveryDestination.trim(),
+                        recoveryFile.archive,
+                        useSavedRecovery,
+                      )
+                    } finally {
+                      owner.fill(0)
+                    }
+                  } else
+                    next = await prepareLightRecoveryWithSecret(
+                      recoveryFile,
+                      confirmation,
+                      recoveryDestination.trim(),
+                      useSavedRecovery,
+                    )
                   if (!next.exitPackage) throw new Error('No unspent Light outputs were found')
+                  setExitStep('review')
                   setRecoveryFile(next)
                   downloadJSON(next, `vaulted-light-exit-${next.descriptor.vaultId.slice(0, 8)}.json`)
                 })
@@ -675,12 +924,14 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <p className='qg-eyebrow'>Owner recovery</p>
         <h1>Recover to Bitcoin</h1>
         <p className='qg-copy'>
-          Use the secret you saved during setup to recover without your passkey. A prepared exit needs only a Bitcoin
-          explorer. To prepare a new exit while the Operator is unavailable, use recovery data previously saved on this
-          device or included in your file.
+          {passkeyRecovery
+            ? 'Use your passkey to unlock the backup and recover directly to Bitcoin.'
+            : 'Use your saved recovery code to recover without your passkey.'}{' '}
+          A prepared exit needs only a Bitcoin explorer. Saved transaction paths let you prepare an exit while the
+          Operator is unavailable.
         </p>
         {!recoveryFile.exitPackage ? (
-          <label className='light-field'>
+          <label className='qg-field'>
             Bitcoin address to recover to
             <input
               value={recoveryDestination}
@@ -696,7 +947,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           </>
         )}
         {!recoveryFile.exitPackage ? (
-          <label className='light-field light-checkbox'>
+          <label className='qg-field light-checkbox'>
             <input
               type='checkbox'
               checked={useSavedRecovery}
@@ -710,15 +961,17 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             after that time are not covered by this file.
           </p>
         ) : null}
-        <label className='light-field'>
-          Recovery secret
-          <textarea
-            value={confirmation}
-            onChange={(e) => setConfirmation(e.target.value)}
-            autoComplete='off'
-            spellCheck={false}
-          />
-        </label>
+        {!passkeyRecovery ? (
+          <label className='qg-field'>
+            Recovery code
+            <textarea
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              autoComplete='off'
+              spellCheck={false}
+            />
+          </label>
+        ) : null}
         {recoveryFile.exitPackage ? (
           <>
             <div className='light-panel'>
@@ -735,19 +988,26 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 </p>
               </div>
             </div>
-            <p className='light-address'>{recoveryFile.feeFundingAddress}</p>
-            <QgSecondary label='Copy fee funding address' onClick={() => void copy(recoveryFile.feeFundingAddress!)} />
-            <p className='qg-copy'>
-              The fee address belongs to your recovered owner key. Recovery broadcasts Bitcoin transactions and waits
-              for confirmations and the exit delay. Keep this page open, or reopen the saved file later to resume.
-              Stopping does not undo transactions already broadcast.
-            </p>
-            <QgSecondary
-              label='Save prepared exit file'
-              onClick={() =>
-                downloadJSON(recoveryFile, `vaulted-light-exit-${recoveryFile.descriptor.vaultId.slice(0, 8)}.json`)
-              }
-            />
+            {exitStep === 'fund' ? (
+              <>
+                <p className='light-address'>{recoveryFile.feeFundingAddress}</p>
+                <QgSecondary
+                  label='Copy fee funding address'
+                  onClick={() => void copy(recoveryFile.feeFundingAddress!)}
+                />
+                <p className='qg-copy'>
+                  The fee address belongs to your recovered owner key. Recovery broadcasts Bitcoin transactions and
+                  waits for confirmations and the exit delay. Keep this page open, or reopen the saved file later to
+                  resume. Stopping does not undo transactions already broadcast.
+                </p>
+                <QgSecondary
+                  label='Save prepared exit file'
+                  onClick={() =>
+                    downloadJSON(recoveryFile, `vaulted-light-exit-${recoveryFile.descriptor.vaultId.slice(0, 8)}.json`)
+                  }
+                />
+              </>
+            ) : null}
           </>
         ) : (
           <p className='qg-copy'>
@@ -758,85 +1018,93 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         {busy && recoveryController.current ? (
           <QgSecondary label='Stop and resume later' onClick={() => recoveryController.current?.abort()} />
         ) : null}
-        <div className='light-recovery-log' role='log' aria-live='polite'>
-          {Array.from(
-            new Map(
-              recoveryEvents.map((event) => [`${event.stepIndex}:${event.status}:${event.txid ?? ''}`, event]),
-            ).entries(),
-          ).map(([key, event]) => {
-            const explorer = event.txid
-              ? vaultTransactionExplorer(event.txid, 'onchain', recoveryFile.descriptor.network)
-              : null
-            return (
-              <div key={key}>
-                <p className='qg-copy'>{lightRecoveryProgress(event)}</p>
-                {explorer ? (
-                  <a className='light-address' href={explorer.url} target='_blank' rel='noopener noreferrer'>
-                    {event.txid}
-                  </a>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
+        <details className='qg-guidance'>
+          <summary>Recovery progress and transactions</summary>
+          <div className='light-recovery-log' role='log' aria-live='polite'>
+            {Array.from(
+              new Map(
+                recoveryEvents.map((event) => [`${event.stepIndex}:${event.status}:${event.txid ?? ''}`, event]),
+              ).entries(),
+            ).map(([key, event]) => {
+              const explorer = event.txid
+                ? vaultTransactionExplorer(event.txid, 'onchain', recoveryFile.descriptor.network)
+                : null
+              return (
+                <div key={key}>
+                  <p className='qg-copy'>{lightRecoveryProgress(event)}</p>
+                  {explorer ? (
+                    <a className='light-address' href={explorer.url} target='_blank' rel='noopener noreferrer'>
+                      {event.txid}
+                    </a>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </details>
       </QgScreen>
     )
   else if (view === 'home' && record)
     content = (
-      <Content className='qg-home-content' noRefresh>
-        <main className='qg-home'>
-          {accountHeader('Spending')}
-          {balance(snapshot?.balance ?? null, 'Spending')}
-          <div className='qg-actions'>
-            <button type='button' disabled={busy || !status || !snapshot?.balance} onClick={() => navigate('send')}>
-              <span>
-                <ArrowUpRight />
-                <b>Send</b>
-              </span>
-            </button>
-            <button type='button' disabled={busy || !status} onClick={() => navigate('receive')}>
-              <span>
-                <ArrowDownLeft />
-                <b>Receive</b>
-              </span>
-            </button>
-          </div>
-          {snapshot?.pendingBalance ? <p className='qg-copy'>{sats(snapshot.pendingBalance)} pending</p> : null}
-          <p className='qg-copy light-allowance'>
-            {status ? sats(status.periodRemaining) : '…'} remaining in your limit
+      <AccountHome
+        account='Spending'
+        totalSats={snapshot ? snapshot.balance + (snapshot.pendingBalance || 0) : 0}
+        availableSats={snapshot?.balance || 0}
+        pendingSats={snapshot?.pendingBalance || 0}
+        balancesLoaded={snapshot !== null}
+        onRefresh={() => run(refresh)}
+        security={{ label: 'Open Security', disabled: busy, onClick: () => navigate('security') }}
+        onScan={() => navigate('scan-send')}
+        onReceive={() => navigate('receive')}
+        utilitiesDisabled={busy || !status}
+        primaryAction={{
+          label: 'Send',
+          disabled: busy || !status || !snapshot?.balance,
+          onClick: () => navigate('send'),
+        }}
+        secondaryAction={{ label: 'Receive', disabled: busy || !status, onClick: () => navigate('receive') }}
+      >
+        {coverage?.cancelling ? (
+          <p className='qg-copy' role='status'>
+            Guardian is resolving a previous renewal. Payments may be temporarily unavailable.
           </p>
-          {renewalTiming?.due ? (
-            <div className='light-panel'>
-              <Clock3 />
-              <div>
-                <strong>{renewalTiming.expired ? 'Check expired Spending' : 'Spending needs renewal soon'}</strong>
-                <p>
-                  {renewalTiming.expired
-                    ? 'Some Spending has expired. Open Security to check your recovery options.'
-                    : `The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to renew before then.`}
-                </p>
-              </div>
+        ) : null}
+        {cloudError ? (
+          <p className='qg-copy' role='status'>
+            Cloud backup needs attention. Open Security to retry.
+          </p>
+        ) : null}
+        {renewalTiming?.due && (!coverage?.available || coverage.pending > 0) ? (
+          <div className='light-panel'>
+            <Clock3 />
+            <div>
+              <strong>{renewalTiming.expired ? 'Check expired Spending' : 'Spending needs renewal soon'}</strong>
+              <p>
+                {renewalTiming.expired
+                  ? 'Some Spending has expired. Open Security to check your recovery options.'
+                  : `Some funds still need renewal authorization. The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to check coverage.`}
+              </p>
             </div>
-          ) : null}
-          {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
-          {activity(snapshot?.history || [], 'spend', snapshot !== null)}
-          {status && loadPersistedVtxoSpend(status.vaultId) ? (
-            <QgSecondary
-              label='Resume pending payment'
-              onClick={() =>
-                void run(async () => {
-                  await refresh()
-                  const p = loadPersistedVtxoSpend(status.vaultId)
-                  if (p) {
-                    setQuote(quoteFromPersistedVtxoSpend(p))
-                    setView('review')
-                  } else setNotice('Payment reconciled')
-                })
-              }
-            />
-          ) : null}
-        </main>
-      </Content>
+          </div>
+        ) : null}
+        {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
+        {status && loadPersistedVtxoSpend(status.vaultId) ? (
+          <QgSecondary
+            label='Resume pending payment'
+            onClick={() =>
+              void run(async () => {
+                await refresh()
+                const p = loadPersistedVtxoSpend(status.vaultId)
+                if (p) {
+                  setQuote(quoteFromPersistedVtxoSpend(p))
+                  setView('review')
+                } else setNotice('Payment reconciled')
+              })
+            }
+          />
+        ) : null}
+        {activity(snapshot?.history || [], 'spend', snapshot !== null)}
+      </AccountHome>
     )
   else if (view === 'receive' && status)
     content = (
@@ -861,6 +1129,19 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         </div>
       </QgScreen>
     )
+  else if (view === 'scan-send')
+    content = (
+      <Scanner
+        label='Scan address'
+        close={() => navigate('send')}
+        manual={() => navigate('send')}
+        onError={() => setError('Camera unavailable. Enter the address manually.')}
+        onData={(value) => {
+          setAddress(value.trim())
+          navigate('send')
+        }}
+      />
+    )
   else if (view === 'send' && status && record)
     content = (
       <QgScreen
@@ -881,29 +1162,34 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <h1>Send bitcoin</h1>
-        <div className='light-fields'>
-          <label>
-            Arkade address
-            <textarea
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              autoComplete='off'
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            Amount, in sats
+        <section className='qg-amount-entry' style={amountSizeStyle(amount)}>
+          <label htmlFor='light-send-amount'>Amount, in sats</label>
+          <div>
+            <span aria-hidden='true'>₿</span>
             <input
+              id='light-send-amount'
               inputMode='numeric'
               type='number'
               min='330'
+              placeholder='20,000'
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
-          </label>
-        </div>
-        <p className='qg-copy'>
+          </div>
+        </section>
+        <DestinationField
+          label='Arkade address'
+          value={address}
+          placeholder='Payment address'
+          onChange={(e) => setAddress(e.target.value)}
+          scanLabel='Scan address'
+          onScan={() => navigate('scan-send')}
+        />
+        <p className='qg-available'>
+          {sats(Math.max(0, Math.min(snapshot?.balance ?? 0, status.periodRemaining)))} available within your rolling
+          limit
+        </p>
+        <p className='qg-helper'>
           Up to {sats(status.txCap)} per payment. You will see the network fee before approving.
         </p>
       </QgScreen>
@@ -919,7 +1205,12 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             loading={busy}
             onClick={() =>
               void run(async () => {
-                const result = await sendVaultVtxo(record.enrollment, status, quote)
+                const result = await sendVaultVtxo(
+                  record.enrollment,
+                  status,
+                  quote,
+                  guardianRenewalSpendUnlocker(record.descriptor),
+                )
                 setLastTx(result.txid)
                 setView('success')
                 setAddress('')
@@ -931,17 +1222,27 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <p className='qg-eyebrow'>You are sending</p>
-        <h1>{sats(quote.amountSats)}</h1>
-        <div className='light-panel'>
+        <section className='qg-review-amount' style={amountSizeStyle(quote.amountSats.toLocaleString('en-US'))}>
+          <small>You are sending</small>
+          <strong>
+            <QgAmount value={`₿${quote.amountSats.toLocaleString('en-US')}`} />
+          </strong>
+        </section>
+        <div className='qg-details'>
           <div>
-            <small>To</small>
-            <p className='light-address'>{quote.destAddress}</p>
-            <p>Network fee: {sats(quote.feeSats)}</p>
-            <strong>Total: {sats(quote.amountSats + quote.feeSats)}</strong>
+            <span>To</span>
+            <strong className='light-address'>{quote.destAddress}</strong>
+          </div>
+          <div>
+            <span>Network fee</span>
+            <strong>{sats(quote.feeSats)}</strong>
+          </div>
+          <div>
+            <span>Total</span>
+            <strong>{sats(quote.amountSats + quote.feeSats)}</strong>
           </div>
         </div>
-        <p className='qg-copy'>Approve with your passkey to send this payment.</p>
+        <p className='qg-helper'>Approve with your passkey to send this payment.</p>
       </QgScreen>
     )
   else if (view === 'success')
@@ -954,54 +1255,45 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           <Check />
         </span>
         <h1>Payment sent</h1>
-        <p className='light-address'>{lastTx}</p>
-        {status && vaultTransactionExplorer(lastTx, 'arkade', status.network) ? (
-          <a
-            target='_blank'
-            rel='noopener noreferrer'
-            href={vaultTransactionExplorer(lastTx, 'arkade', status.network)!.url}
-          >
-            View on Arkade Space
-          </a>
-        ) : null}
+        <TransactionReference
+          txid={lastTx}
+          explorer={status ? vaultTransactionExplorer(lastTx, 'arkade', status.network) : null}
+        />
       </QgScreen>
     )
   else if (view === 'savings' && record)
     content = (
-      <Content className='qg-home-content' noRefresh>
-        <main className='qg-home'>
-          {accountHeader('Savings')}
-          {watched ? balance(savings?.balance ?? null, 'Savings') : null}
-          <p className='qg-copy light-allowance'>
-            <Eye size={16} aria-hidden /> Watch only
-          </p>
-          {!watched ? <p className='qg-copy'>See Savings held in another Bitcoin wallet.</p> : null}
-          <div className='qg-actions'>
-            <button
-              type='button'
-              disabled={busy}
-              onClick={() => {
-                setWatchAddress(watched?.address || '')
-                navigate('savings-address')
-              }}
-            >
-              <span>
-                {watched ? <Pencil /> : <Plus />}
-                <b>{watched ? 'Edit address' : 'Add address'}</b>
-              </span>
-            </button>
-            {watched ? (
-              <button type='button' onClick={() => void run(() => copy(watched.address))}>
-                <span>
-                  <Copy />
-                  <b>Copy address</b>
-                </span>
-              </button>
-            ) : null}
-          </div>
-          {watched ? activity(savings?.history || [], 'savings', savings !== null) : null}
-        </main>
-      </Content>
+      <AccountHome
+        account='Savings'
+        totalSats={watched ? (savings?.balance ?? 0) : undefined}
+        balancesLoaded={savings !== null}
+        onRefresh={openSavings}
+        security={{ label: 'Open Security', disabled: busy, onClick: () => navigate('security') }}
+        description={
+          <>
+            <p className='qg-copy'>
+              <Eye size={16} aria-hidden /> Watch only
+            </p>
+            {!watched ? <p className='qg-copy'>See Savings held in another Bitcoin wallet.</p> : null}
+          </>
+        }
+        primaryAction={{
+          label: watched ? 'Edit address' : 'Add address',
+          icon: watched ? <Pencil /> : <Plus />,
+          disabled: busy,
+          onClick: () => {
+            setWatchAddress(watched?.address || '')
+            navigate('savings-address')
+          },
+        }}
+        secondaryAction={
+          watched
+            ? { label: 'Copy address', icon: <Copy />, onClick: () => void run(() => copy(watched.address)) }
+            : undefined
+        }
+      >
+        {watched ? activity(savings?.history || [], 'savings', savings !== null) : null}
+      </AccountHome>
     )
   else if (view === 'savings-address' && record)
     content = (
@@ -1034,7 +1326,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <p className='qg-copy'>
           Add a receiving address from another Bitcoin wallet. That wallet controls spending and recovery.
         </p>
-        <label className='light-field'>
+        <label className='qg-field'>
           Bitcoin receiving address
           <input
             value={watchAddress}
@@ -1049,148 +1341,258 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         </p>
       </QgScreen>
     )
+  else if (view === 'settings' && record)
+    content = (
+      <VaultSettings
+        light={{
+          status,
+          busy,
+          onClose: () => navigate(settingsReturn),
+          refresh: () =>
+            run(async () => {
+              await refresh()
+              if (watched) setSavings(await fetchWatchedSavings(watched, record.descriptor.network))
+              setNotice('Balance updated')
+            }),
+          lock: () => void lock(),
+        }}
+      />
+    )
   else if (view === 'security' && record)
     content = (
       <QgScreen
-        title='Security'
-        back={() => navigate('home')}
-        footer={
-          <QgSecondary
-            label='Lock wallet'
-            onClick={() =>
-              void run(async () => {
-                await shutdownVaultWalletWorker(record.descriptor.vaultId)
-                setSnapshot(null)
-                setStatus(null)
-                setView('unlock')
-              })
-            }
-          />
+        title={
+          securitySection === 'overview'
+            ? 'Security'
+            : securitySection === 'access'
+              ? 'Access and limits'
+              : securitySection === 'renewal'
+                ? 'Renewal'
+                : 'Backups'
         }
+        back={() => (securitySection === 'overview' ? navigate('home') : setSecuritySection('overview'))}
+        footer={<QgSecondary label='Lock wallet' onClick={() => void lock()} />}
       >
-        <h1>Access and limits</h1>
-        <div className='light-panel'>
-          <ShieldCheck />
-          <div>
-            <strong>Spending limits</strong>
-            <p>
-              {sats(record.descriptor.spendingPolicy.txRecipientCapSats)} per payment
-              <br />
-              {sats(record.descriptor.spendingPolicy.periodAllowanceSats)} in a rolling 24 hours
+        {securitySection === 'overview' ? (
+          <SecurityOverview
+            title='Light wallet'
+            description='Passkey access'
+            notice={
+              cloudError
+                ? 'Check your wallet backup'
+                : cloudSavedAt
+                  ? 'Encrypted cloud backup saved'
+                  : 'Save a wallet backup'
+            }
+            attention={Boolean(cloudError) || !cloudSavedAt}
+            access={{ value: 'Passkey', onClick: () => setSecuritySection('access') }}
+            backup={{
+              value: cloudError ? 'Needs attention' : cloudSavedAt ? 'Cloud copy saved' : 'Needed',
+              attention: Boolean(cloudError) || !cloudSavedAt,
+              onClick: () => setSecuritySection('backup'),
+              testId: 'security-kit',
+            }}
+            limits={{
+              value: `${prettyAmount(record.descriptor.spendingPolicy.txRecipientCapSats)} each`,
+              onClick: () => setSecuritySection('access'),
+            }}
+            renewal={{
+              value: coverage?.error
+                ? 'Needs attention'
+                : coverage?.available
+                  ? `${coverage.scheduled} of ${coverage.total} scheduled`
+                  : 'Check coverage',
+              attention: Boolean(coverage?.error),
+              onClick: () => setSecuritySection('renewal'),
+              testId: 'security-readiness',
+            }}
+          >
+            <HubGroup>
+              <HubRow
+                title='Recover directly to Bitcoin'
+                onClick={() =>
+                  void run(async () => {
+                    const archive = await loadLightRecoveryArchive(record.descriptor)
+                    if (!archive) throw new Error('Import a current backup to recover')
+                    setRecoveryFile({
+                      ...record,
+                      name: 'vaulted-light-recovery',
+                      version: 1,
+                      createdAt: archive.capturedAt,
+                      archive,
+                    })
+                    setPasskeyRecovery(true)
+                    setRecoveryReturn('security')
+                    setUseSavedRecovery(true)
+                    setExitStep('review')
+                    setView('emergency')
+                  })
+                }
+              />
+              <HubRow title='Switch wallet' onClick={onExit} />
+            </HubGroup>
+          </SecurityOverview>
+        ) : null}
+        {securitySection === 'access' ? (
+          <>
+            <div className='light-panel'>
+              <ShieldCheck />
+              <div>
+                <strong>Spending limits</strong>
+                <p>
+                  {sats(record.descriptor.spendingPolicy.txRecipientCapSats)} per payment
+                  <br />
+                  {sats(record.descriptor.spendingPolicy.periodAllowanceSats)} in a rolling 24 hours
+                </p>
+              </div>
+            </div>
+            <p className='qg-copy'>
+              Your passkey unlocks the owner key on this device. Vaulted checks normal payments before cosigning. The
+              delayed Bitcoin exit belongs to the owner key and does not enforce these payment limits.
             </p>
-          </div>
-        </div>
-        <p className='qg-copy'>
-          Your passkey unlocks the owner key on this device. Vaulted checks normal payments before cosigning. The
-          delayed Bitcoin exit belongs to the owner key and does not enforce these payment limits.
-        </p>
-        <div className='light-panel'>
-          <Clock3 />
-          <div>
-            <strong>Keep Spending active</strong>
-            <p>
-              {renewalTiming?.expiresAt
-                ? `Next expiry: ${new Date(renewalTiming.expiresAt).toLocaleString()}.`
-                : snapshot?.balance
-                  ? 'Checking the next expiry…'
-                  : 'Expiry dates appear after you receive bitcoin.'}
+          </>
+        ) : null}
+        {securitySection === 'renewal' ? (
+          <>
+            <div className='light-panel'>
+              <Clock3 />
+              <div>
+                <strong>Automatic renewal</strong>
+                <p>
+                  {coverage?.available
+                    ? `${coverage.scheduled} of ${coverage.total} outputs scheduled; ${coverage.renewing} awaiting renewal confirmation.`
+                    : 'Guardian automatic renewal is not currently available for this wallet.'}
+                </p>
+                {coverage?.checkedAt ? <p>Last checked: {new Date(coverage.checkedAt).toLocaleString()}.</p> : null}
+                {coverage?.cancelling ? (
+                  <p>
+                    {coverage.cancelling} outputs awaiting cancellation confirmation. Guardian retains the reservation
+                    while the outcome is uncertain.
+                  </p>
+                ) : null}
+                {coverage?.pending ? (
+                  <p>
+                    {coverage.pending} outputs need authorization or complete transaction paths. Eligible outputs are
+                    authorized during your next normal unlock or payment.
+                  </p>
+                ) : null}
+                {coverage?.error ? <p role='status'>{coverage.error}</p> : null}
+                <details className='qg-guidance'>
+                  <summary>How renewal works</summary>
+                  <p>
+                    Scheduled outputs can renew while this wallet is closed. New receipts and replacement outputs need
+                    your next normal unlock or payment before another renewal can be scheduled.
+                  </p>
+                  <p>
+                    {renewalTiming?.expiresAt
+                      ? `Next expiry: ${new Date(renewalTiming.expiresAt).toLocaleString()}.`
+                      : snapshot?.balance
+                        ? 'Checking the next expiry…'
+                        : 'Expiry dates appear after you receive bitcoin.'}
+                  </p>
+                  {renewalTiming?.incomplete ? (
+                    <p>Some expiry dates are unavailable. Reconnect to check them.</p>
+                  ) : null}
+                  <p>The same spending limits apply. You can also renew here when needed.</p>
+                </details>
+              </div>
+            </div>
+            <QgSecondary
+              label='Renew Spending'
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  if (!status) throw new Error('Unlock the wallet first')
+                  const result = await renewLightSpending(
+                    record,
+                    status,
+                    (plan) =>
+                      new Promise<boolean>((resolve) => {
+                        setNotice('')
+                        setRenewalReview(plan)
+                        renewalApproval.current = (accepted) => {
+                          renewalApproval.current = null
+                          setRenewalReview(null)
+                          resolve(accepted)
+                        }
+                      }),
+                    setNotice,
+                  )
+                  await refresh()
+                  setNotice(
+                    result.state === 'confirmed'
+                      ? 'Spending renewed'
+                      : ['cancelled', 'released', 'rejected'].includes(result.state)
+                        ? 'Renewal stopped. Your bitcoin stays in this wallet.'
+                        : 'Renewal submitted. Use Check renewal to confirm it has completed.',
+                  )
+                })
+              }
+            />
+            <QgSecondary
+              label='Check renewal'
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const result = await checkLightRenewal(record)
+                  await refresh()
+                  setNotice(
+                    !result
+                      ? 'No renewal is waiting'
+                      : result.state === 'confirmed'
+                        ? 'Spending renewed'
+                        : ['cancelled', 'released', 'rejected'].includes(result.state)
+                          ? 'The earlier renewal is closed. You can start again.'
+                          : result.state === 'waiting_expiry'
+                            ? 'The earlier request is expiring. Check again in a few minutes.'
+                            : 'The earlier renewal is still being checked. Your funds remain reserved until its outcome is known.',
+                  )
+                })
+              }
+            />
+          </>
+        ) : null}
+        {securitySection === 'backup' ? (
+          <>
+            <h2>Wallet backup</h2>
+            <p className='qg-copy'>
+              {cloudError ||
+                (cloudSavedAt
+                  ? `Encrypted cloud backup saved ${new Date(cloudSavedAt).toLocaleString()}.`
+                  : 'Unlock with your passkey to enable automatic cloud backup.')}
             </p>
-            {renewalTiming?.incomplete ? <p>Some expiry dates are unavailable. Reconnect to check them.</p> : null}
-            <p>Renew before expiry to keep payments available. The same spending limits still apply.</p>
-          </div>
-        </div>
-        <QgSecondary
-          label='Renew Spending'
-          disabled={busy}
-          onClick={() =>
-            void run(async () => {
-              if (!status) throw new Error('Unlock the wallet first')
-              const result = await renewLightSpending(
-                record,
-                status,
-                (plan) =>
-                  new Promise<boolean>((resolve) => {
-                    setNotice('')
-                    setRenewalReview(plan)
-                    renewalApproval.current = (accepted) => {
-                      renewalApproval.current = null
-                      setRenewalReview(null)
-                      resolve(accepted)
-                    }
-                  }),
-                setNotice,
-              )
-              await refresh()
-              setNotice(
-                result.state === 'confirmed'
-                  ? 'Spending renewed'
-                  : ['cancelled', 'released', 'rejected'].includes(result.state)
-                    ? 'Renewal stopped. Your bitcoin stays in this wallet.'
-                    : 'Renewal submitted. Use Check renewal to confirm it has completed.',
-              )
-            })
-          }
-        />
-        <QgSecondary
-          label='Check renewal'
-          disabled={busy}
-          onClick={() =>
-            void run(async () => {
-              const result = await checkLightRenewal(record)
-              await refresh()
-              setNotice(
-                !result
-                  ? 'No renewal is waiting'
-                  : result.state === 'confirmed'
-                    ? 'Spending renewed'
-                    : ['cancelled', 'released', 'rejected'].includes(result.state)
-                      ? 'The earlier renewal is closed. You can start again.'
-                      : result.state === 'waiting_expiry'
-                        ? 'The earlier request is expiring. Check again in a few minutes.'
-                        : 'The earlier renewal is still being checked. Your funds remain reserved until its outcome is known.',
-              )
-            })
-          }
-        />
-        <label className='light-field'>
-          Bitcoin recovery destination
-          <input
-            value={recoveryDestination}
-            onChange={(e) => setRecoveryDestination(e.target.value)}
-            autoComplete='off'
-            spellCheck={false}
-          />
-        </label>
-        <p className='qg-copy'>
-          Use a receiving address from another wallet you control. The prepared emergency exit will send your recovered
-          bitcoin there.
-        </p>
-        <QgSecondary
-          label='Download recovery file'
-          onClick={() =>
-            void run(async () => {
-              if (!status) throw new Error('Unlock the wallet first')
-              const file = await prepareLightRecoveryFile(record, status, recoveryDestination.trim())
-              downloadJSON(file, `vaulted-light-${record.descriptor.vaultId.slice(0, 8)}.json`)
-              setNotice(
-                file.exitPackage
-                  ? 'Recovery file updated for your current balance'
-                  : 'Recovery file saved. Update it after receiving funds.',
-              )
-            })
-          }
-        />
-        <p className='qg-copy'>
-          The file contains encrypted keys. Keep your recovery secret separately. Emergency recovery also needs current
-          transaction paths and Bitcoin network fees. Download a new file after receiving, paying, or renewing.
-        </p>
-        <p className='qg-copy'>
-          {recoveryDataError ||
-            (recoveryDataDate
-              ? `Recovery data saved on this device ${new Date(recoveryDataDate).toLocaleString()}. Keep an updated file elsewhere in case you lose this device.`
-              : 'Saving recovery data on this device…')}
-        </p>
-        <QgTextButton label='Switch wallet' onClick={onExit} />
+            <QgSecondary
+              label='Update cloud backup'
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const session = await openLightCloudBackup(record, authorizeRenewals)
+                  cloudSession.current = session
+                  if (!status) throw new Error('Open the wallet before saving a backup')
+                  const archive = await captureCurrent(record, status)
+                  const saved = await syncLightCloudBackup(session, archive)
+                  setCloudSavedAt(saved.createdAt)
+                  setCloudError('')
+                })
+              }
+            />
+            <QgSecondary label='Save a local backup' disabled={busy} onClick={() => void saveLocalBackup()} />
+            <p className='qg-copy'>
+              Your backup includes the saved transaction paths for a unilateral Bitcoin exit. Your passkey unlocks it;
+              Vaulted cannot decrypt it. Keep access to your passkey provider.
+            </p>
+            <p className='qg-copy'>
+              A local file covers activity up to the time it was saved. Bitcoin recovery requires network fees and the
+              exit waiting period.
+            </p>
+            <p className='qg-copy'>
+              {recoveryDataError ||
+                (recoveryDataDate
+                  ? `Transaction paths saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
+                  : 'Saving transaction paths…')}
+            </p>
+          </>
+        ) : null}
       </QgScreen>
     )
   else if (view === 'tx' && selectedTx && record) {
@@ -1204,14 +1606,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <span className='light-success'>{selectedTx.confirmed ? <Check /> : <Clock3 />}</span>
         <h1>{selectedTx.confirmed ? 'Confirmed' : 'Pending'}</h1>
         <p className='qg-copy'>
-          {selectedTx.type === 'sent' ? 'Sent' : 'Received'} · {sats(selectedTx.amount)}
+          {selectedTx.type === 'sent' ? 'Sent' : 'Received'} · {sats(selectedTx.displayAmount ?? selectedTx.amount)}
         </p>
-        <p className='light-address'>{selectedTx.txid}</p>
-        {link ? (
-          <a href={link.url} target='_blank' rel='noopener noreferrer'>
-            {link.label}
-          </a>
-        ) : null}
+        <TransactionReference txid={selectedTx.txid} explorer={link} />
       </QgScreen>
     )
   } else
@@ -1249,44 +1646,67 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       </QgScreen>
     )
   return (
-    <div ref={root} className='light-app' data-testid='vault-light' {...intent}>
-      {content}
-      {record && !renewalReview && (view === 'home' || view === 'savings') ? (
-        <VaultLauncher
-          disabled={busy}
-          account={view === 'savings' ? 'savings' : 'spend'}
-          balances={{ spending: snapshot?.balance ?? null, savings: watched ? (savings?.balance ?? null) : 0 }}
-          onAccount={(account) => {
-            if (account === 'savings') void openSavings()
-            else navigate('home')
-          }}
-          actions={[
-            {
-              id: 'security',
-              label: 'Security',
-              testId: 'tab-vault',
-              icon: <Shield />,
-              onClick: () => navigate('security'),
-            },
-          ]}
-        />
-      ) : null}
-      {error ? (
-        <div className='light-message' role='alert'>
-          <span>{error}</span>
-          <button type='button' aria-label='Dismiss error' onClick={() => setError('')}>
-            ×
-          </button>
-        </div>
-      ) : null}
-      {notice ? (
-        <div className='light-message' role='status'>
-          <span>{notice}</span>
-          <button type='button' aria-label='Dismiss notice' onClick={() => setNotice('')}>
-            ×
-          </button>
-        </div>
-      ) : null}
-    </div>
+    <WalletHelpContext.Provider
+      value={{
+        light: true,
+        restore: () => {
+          setRestoreMethod('choose')
+          navigate('restore')
+        },
+      }}
+    >
+      <div ref={root} className={`light-app ${homeStyles.surface}`} data-testid='vault-light' {...intent}>
+        {content}
+        {record && !renewalReview && (view === 'home' || view === 'savings') ? (
+          <VaultLauncher
+            disabled={busy}
+            account={view === 'savings' ? 'savings' : 'spend'}
+            balances={{
+              spending: snapshot ? snapshot.balance + (snapshot.pendingBalance || 0) : null,
+              savings: watched ? (savings?.balance ?? null) : 0,
+            }}
+            onAccount={(account) => {
+              if (account === 'savings') void openSavings()
+              else navigate('home')
+            }}
+            actions={[
+              {
+                id: 'security',
+                label: 'Security',
+                testId: 'tab-vault',
+                icon: <Shield />,
+                onClick: () => navigate('security'),
+              },
+              {
+                id: 'settings',
+                label: 'Settings',
+                testId: 'tab-settings',
+                icon: <SettingsIcon />,
+                onClick: () => {
+                  setSettingsReturn(view === 'savings' ? 'savings' : 'home')
+                  navigate('settings')
+                },
+              },
+            ]}
+          />
+        ) : null}
+        {error ? (
+          <div className='light-message' role='alert'>
+            <span>{error}</span>
+            <button type='button' aria-label='Dismiss error' onClick={() => setError('')}>
+              ×
+            </button>
+          </div>
+        ) : null}
+        {notice ? (
+          <div className='light-message' role='status'>
+            <span>{notice}</span>
+            <button type='button' aria-label='Dismiss notice' onClick={() => setNotice('')}>
+              ×
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </WalletHelpContext.Provider>
   )
 }

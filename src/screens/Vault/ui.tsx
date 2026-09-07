@@ -2,19 +2,9 @@ import { useState, type ReactNode } from 'react'
 import Text from '../../components/Text'
 import { prettyAmount } from '../../lib/format'
 import { waitLabel } from '../../lib/vault/policy'
-import { shortKey } from '../../lib/vault/setupPlan'
 
 export function IconBubble({ children, small }: { children: ReactNode; small?: boolean }) {
   return <div className={small ? 'vault-icon sm' : 'vault-icon'}>{children}</div>
-}
-
-export function Section({ label, children }: { label?: string; children: ReactNode }) {
-  return (
-    <div className='vault-section'>
-      {label ? <p className='vault-section-label'>{label}</p> : null}
-      {children}
-    </div>
-  )
 }
 
 export function HubGroup({ label, children }: { label?: string; children: ReactNode }) {
@@ -79,7 +69,11 @@ export function HubRow({
           ) : null}
         </span>
       ) : null}
-      {onClick && chevron !== false ? <span className='vault-hub-chevron'>›</span> : null}
+      {onClick && chevron !== false ? (
+        <span className='vault-hub-chevron' aria-hidden='true'>
+          ›
+        </span>
+      ) : null}
     </>
   )
   const className = danger ? 'vault-hub-row is-danger' : 'vault-hub-row'
@@ -127,111 +121,6 @@ export function Panel({
   )
 }
 
-export function StepRail({ step, total = 6 }: { step: number; total?: number }) {
-  return (
-    <div
-      className='vault-rail'
-      role='progressbar'
-      aria-label='Vault setup progress'
-      aria-valuemin={1}
-      aria-valuemax={total}
-      aria-valuenow={step}
-      aria-valuetext={`Step ${step} of ${total}`}
-    >
-      {Array.from({ length: total }, (_, i) => (
-        <span key={i} className={i < step ? 'vault-rail-dot on' : 'vault-rail-dot'} aria-hidden='true' />
-      ))}
-    </div>
-  )
-}
-
-export function Pill({ children }: { children: ReactNode }) {
-  return (
-    <span className='vault-pill'>
-      <Text color='neutral-600' tiny>
-        {children}
-      </Text>
-    </span>
-  )
-}
-
-export function Meter({ ratio, label }: { ratio: number; label: string }) {
-  const width = Math.max(0, Math.min(100, Math.round(ratio * 100)))
-  return (
-    <div
-      className='vault-meter'
-      role='progressbar'
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={width}
-      aria-valuetext={`${width}% used`}
-    >
-      <span style={{ width: `${width}%` }} />
-    </div>
-  )
-}
-
-export function KeyCard({
-  icon,
-  title,
-  role,
-  status,
-  fingerprint,
-  amount,
-  onClick,
-  testId,
-}: {
-  icon?: ReactNode
-  title: string
-  role?: string
-  status?: string
-  fingerprint?: string
-  amount?: string
-  onClick?: () => void
-  testId?: string
-}) {
-  return (
-    <Panel onClick={onClick} testId={testId}>
-      <div className='vault-key-card'>
-        {icon ? <IconBubble small>{icon}</IconBubble> : null}
-        <div className='vault-key-card-copy'>
-          <Text small bold>
-            {title}
-          </Text>
-          {role ? (
-            <Text color='neutral-600' tiny wrap>
-              {role}
-            </Text>
-          ) : null}
-        </div>
-        <div className='vault-key-card-end'>
-          {amount ? <span className='vault-row-amt'>{amount}</span> : null}
-          {!amount && status ? (
-            <Text color='neutral-600' tiny>
-              {status}
-            </Text>
-          ) : null}
-          {!amount && fingerprint ? (
-            <Text color='neutral-600' tiny>
-              {shortKey(fingerprint)}
-            </Text>
-          ) : null}
-        </div>
-      </div>
-    </Panel>
-  )
-}
-
-export function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className='vault-row'>
-      <span className='vault-row-k'>{label}</span>
-      <span className={mono ? 'vault-row-v vault-mono' : 'vault-row-v'}>{value}</span>
-    </div>
-  )
-}
-
 export function Reveal({
   label,
   children,
@@ -250,35 +139,6 @@ export function Reveal({
         </Text>
       </button>
       <div className={open ? 'vault-reveal-content is-open' : 'vault-reveal-content'}>{children}</div>
-    </div>
-  )
-}
-
-export function SignerRow({
-  title,
-  detail,
-  state,
-  mark,
-}: {
-  title: string
-  detail: string
-  state: 'you' | 'auto' | 'unused'
-  mark?: string
-}) {
-  const glyph = mark ?? (state === 'you' ? '1' : state === 'auto' ? '✓' : null)
-  return (
-    <div className='vault-signer-row'>
-      <div className={state === 'unused' ? 'vault-check wait' : 'vault-check on'}>
-        {glyph ?? <span className='vault-check-line' />}
-      </div>
-      <div>
-        <Text small bold>
-          {title}
-        </Text>
-        <Text color='neutral-600' tiny wrap>
-          {detail}
-        </Text>
-      </div>
     </div>
   )
 }

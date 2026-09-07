@@ -99,6 +99,7 @@ function renderKit(extra: Partial<VaultContextProps> = {}) {
 
 async function startCancel(familyKey: FamilyKey) {
   renderLost(familyKey)
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel this recovery' }))
   fireEvent.change(screen.getByTestId('recover-claim-dest'), { target: { value: dest } })
   fireEvent.click(screen.getByTestId('recover-guardian-exit'))
   await screen.findByTestId('recover-guardian-signers')
@@ -188,5 +189,32 @@ describe('mature boarding recovery', () => {
 
     await waitFor(() => expect(recoverMatureBoarding).toHaveBeenCalledOnce())
     await waitFor(() => expect(screen.queryByTestId('recover-mature-boarding')).toBeNull())
+  })
+})
+
+describe('recovery archive failure feedback', () => {
+  it('shows the failed update while retaining the last saved-copy status and recovery actions', () => {
+    renderKit({
+      recoveryArchiveStatus: 'Transaction recovery data saved on this device earlier',
+      recoveryArchiveError: 'Spending operation is missing its exact transaction bundle',
+    })
+    expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible()
+    expect(screen.getByText('Transaction recovery data saved on this device earlier')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Save encrypted backup file' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Recovery Kit.*On this device/ })).toBeEnabled()
+  })
+
+  it('reports a failed explicit export without claiming a new saved copy', async () => {
+    const downloadRecoveryArchive = vi
+      .fn()
+      .mockRejectedValue(new Error('Spending operation is missing its exact transaction bundle'))
+    renderKit({ downloadRecoveryArchive, recoveryArchiveStatus: '', recoveryArchiveError: '' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save encrypted backup file' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Download encrypted recovery archive' }))
+    await waitFor(() =>
+      expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible(),
+    )
+    expect(downloadRecoveryArchive).toHaveBeenCalledOnce()
+    expect(screen.queryByText(/Transaction recovery data saved/)).toBeNull()
   })
 })

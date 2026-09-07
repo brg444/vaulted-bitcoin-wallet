@@ -7,7 +7,12 @@ import type { VaultStatus } from '../lib/vault/types'
 import { useVaultSession } from './useVaultSession'
 
 const mocks = vi.hoisted(() => ({
+  renew: vi.fn(),
+  setupRenewal: vi.fn(),
   discover: vi.fn(),
+  openArchive: vi.fn(),
+  restoreArchive: vi.fn(),
+  liveStatus: vi.fn(),
   enable: vi.fn(),
   enroll: vi.fn(),
   loadPin: vi.fn(),
@@ -18,11 +23,26 @@ const mocks = vi.hoisted(() => ({
   unlock: vi.fn(),
 }))
 
+vi.mock('../lib/vault/recovery/backupCodec', async (original) => ({
+  ...(await original<typeof import('../lib/vault/recovery/backupCodec')>()),
+  openLocalRecoveryBackup: mocks.openArchive,
+}))
+vi.mock('../lib/vault/recovery/restore', () => ({ restoreVaultRecoveryFile: mocks.restoreArchive }))
+vi.mock('../lib/vault/status', async (original) => ({
+  ...(await original<typeof import('../lib/vault/status')>()),
+  fetchVaultStatus: mocks.liveStatus,
+}))
+
 vi.mock('../lib/vault/pin', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/vault/pin')>()),
   loadAddressPin: mocks.loadPin,
   pinFromEnrolledStatus: mocks.makePin,
   saveAddressPin: mocks.savePin,
+}))
+
+vi.mock('../lib/vault/vtxo/renewalCeremony', () => ({
+  renewFromLocalUnlock: mocks.renew,
+  setupSpendingRenewals: mocks.setupRenewal,
 }))
 
 vi.mock('../lib/vault/signIn', () => ({
@@ -115,7 +135,7 @@ describe('Vault session program-pin recovery', () => {
 
     await act(async () => hook.result.current.signIn())
 
-    expect(mocks.unlock).toHaveBeenCalledExactlyOnceWith(enrollment)
+    expect(mocks.unlock).toHaveBeenCalledExactlyOnceWith(enrollment, expect.any(Function))
     expect(mocks.recover).not.toHaveBeenCalled()
     expect(hook.setStatus).toHaveBeenCalledWith(status)
     expect(hook.setScreen).toHaveBeenCalledWith('home')
@@ -147,7 +167,7 @@ describe('Vault session program-pin recovery', () => {
 
     await act(async () => hook.result.current.signIn())
 
-    expect(mocks.recover).toHaveBeenCalledExactlyOnceWith('vault-a')
+    expect(mocks.recover).toHaveBeenCalledExactlyOnceWith('vault-a', expect.any(Function))
     expect(hook.setEnrollment).toHaveBeenCalledWith(enrollment)
     expect(hook.setAddressPin).toHaveBeenCalledWith(pin)
     expect(hook.setStatus).toHaveBeenCalledWith(status)
@@ -165,37 +185,115 @@ describe('Vault session enrollment passkey install', () => {
     acceptedDesign: true,
     hardwarePub: '02' + '11'.repeat(32),
     complete: true,
+    connector: {
+      descriptor: 'fixture',
+      address: 'fixture',
+      selectedPath: 'fixture',
+      connectorPub: '02' + '11'.repeat(32),
+      connectorType: 'p2wpkh',
+      connectorFingerprint: 1,
+      connectorPath: [0x80000054, 0x80000001, 0x80000000, 0, 0],
+    },
   }
 
-  it('pins the enrolled program even when other-device passkey install fails twice', async () => {
-    mocks.enroll.mockResolvedValue({ enrollment, status })
-    mocks.enable.mockRejectedValue(new Error('authorizer did not persist passkey sign-in recovery data'))
-    mocks.makePin.mockReturnValue(pin)
-    const state = {
-      reportError: vi.fn(),
-      sealPlan: vi.fn(() => readySetup),
-      setAddressPin: vi.fn(),
-      setBusy: vi.fn(),
-      setEnrollment: vi.fn(),
-      setLocked: vi.fn(),
-      setScreen: vi.fn(),
-      setStatus: vi.fn(),
-    }
+  it('requires a new descriptor even when a previous vault is enrolled', async () => {
+    const reportError = vi.fn()
+    const setScreen = vi.fn()
     const hook = renderHook(() =>
       useVaultSession({
-        enrollment: null,
-        ...state,
-        setup: readySetup,
-        status: null,
+        enrollment,
+        status,
+        setup: { ...readySetup, connector: undefined },
+        reportError,
+        setScreen,
+        sealPlan: vi.fn(() => readySetup),
+        setAddressPin: vi.fn(),
+        setBusy: vi.fn(),
+        setEnrollment: vi.fn(),
+        setLocked: vi.fn(),
+        setStatus: vi.fn(),
       }),
     )
+    await act(async () => hook.result.current.enroll())
+    expect(mocks.enroll).not.toHaveBeenCalled()
+    expect(setScreen).toHaveBeenCalledWith('hardware')
+    expect(reportError).toHaveBeenCalledWith(expect.stringContaining('public wallet descriptor'))
+  })
 
-    await act(async () => hook.result.current.enroll('a'.repeat(32)))
+  it.each([null, { ...status, externalOwnerWalletPub: '03' + '22'.repeat(32) }])(
+    'enrolls the new descriptor independently of a previous vault status %j',
+    async (previousStatus) => {
+      mocks.enroll.mockResolvedValue({ enrollment, status })
+      mocks.enable.mockRejectedValue(new Error('authorizer did not persist passkey sign-in recovery data'))
+      mocks.makePin.mockReturnValue(pin)
+      const state = {
+        reportError: vi.fn(),
+        sealPlan: vi.fn(() => readySetup),
+        setAddressPin: vi.fn(),
+        setBusy: vi.fn(),
+        setEnrollment: vi.fn(),
+        setLocked: vi.fn(),
+        setScreen: vi.fn(),
+        setStatus: vi.fn(),
+      }
+      const hook = renderHook(() =>
+        useVaultSession({
+          enrollment: null,
+          ...state,
+          setup: readySetup,
+          status: previousStatus,
+        }),
+      )
 
-    expect(mocks.enable).toHaveBeenCalledTimes(2)
-    expect(state.setAddressPin).toHaveBeenCalledWith(pin)
-    expect(state.setScreen).toHaveBeenCalledWith('created')
-    expect(state.setScreen).not.toHaveBeenCalledWith('problem')
-    expect(state.reportError).toHaveBeenCalledWith(expect.stringMatching(/sign-in after a restart is not on yet/i))
+      await act(async () => hook.result.current.enroll('a'.repeat(32)))
+
+      expect(mocks.enroll).toHaveBeenCalledWith(
+        'a'.repeat(32),
+        expect.objectContaining({
+          hardwarePub: readySetup.hardwarePub,
+          connector: expect.objectContaining({ connectorPub: readySetup.hardwarePub }),
+        }),
+      )
+      expect(mocks.enable).toHaveBeenCalledTimes(2)
+      expect(state.setAddressPin).toHaveBeenCalledWith(pin)
+      expect(state.setScreen).toHaveBeenCalledWith('created')
+      expect(state.setScreen).not.toHaveBeenCalledWith('problem')
+      expect(state.reportError).toHaveBeenCalledWith(expect.stringMatching(/sign-in after a restart is not on yet/i))
+    },
+  )
+})
+
+describe('local archive restore with unavailable live status', () => {
+  it('retains imported data without publishing an empty unlocked session, then retries online', async () => {
+    const file = { header: { enrollment, status, binding: { vaultId: enrollment.vaultId } } }
+    mocks.restoreArchive.mockImplementation(async () => {
+      localStorage.setItem('restored-archive-fixture', JSON.stringify(file))
+    })
+    mocks.openArchive.mockImplementation(async (_raw, restore) => {
+      await restore(file, new Uint8Array(32))
+      return file
+    })
+    mocks.liveStatus.mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValueOnce(status)
+    const hook = setupHook({ enrollment: null, status: null })
+    await act(async () => {
+      await expect(hook.result.current.restoreRecoveryArchive({ name: 'encrypted-fixture' })).rejects.toThrow(
+        'Failed to fetch',
+      )
+    })
+    expect(mocks.restoreArchive).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('restored-archive-fixture')).toBe(JSON.stringify(file))
+    expect(hook.setEnrollment).not.toHaveBeenCalled()
+    expect(hook.setAddressPin).not.toHaveBeenCalled()
+    expect(hook.setLocked).not.toHaveBeenCalled()
+    expect(hook.setStatus).not.toHaveBeenCalled()
+    expect(hook.setScreen).not.toHaveBeenCalled()
+    expect(hook.reportError).toHaveBeenLastCalledWith(
+      'Recovery data is saved on this device. Live balances could not be loaded.',
+    )
+    expect(hook.setBusy).toHaveBeenLastCalledWith(false)
+    await act(async () => hook.result.current.restoreRecoveryArchive({ name: 'encrypted-fixture' }))
+    expect(hook.setEnrollment).toHaveBeenCalledWith(enrollment)
+    expect(hook.setStatus).toHaveBeenCalledWith(status)
+    expect(hook.setScreen).toHaveBeenCalledWith('home')
   })
 })

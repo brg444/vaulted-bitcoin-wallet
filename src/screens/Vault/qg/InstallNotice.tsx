@@ -7,6 +7,16 @@ type InstallEvent = Event & {
   prompt: () => Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+let pendingInstall: InstallEvent | null = null
+window.addEventListener('beforeinstallprompt', (event) => {
+  if (typeof (event as InstallEvent).prompt !== 'function') return
+  event.preventDefault()
+  pendingInstall = event as InstallEvent
+})
+window.addEventListener('appinstalled', () => {
+  pendingInstall = null
+})
+
 const DISMISSED_KEY = 'vaulted:ios-install-dismissed'
 
 function dismissedThisSession() {
@@ -21,10 +31,10 @@ const installedMode = () =>
   window.matchMedia('(display-mode: standalone)').matches ||
   Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
 
-export default function InstallNotice() {
+export default function InstallNotice({ autoOffer = true }: { autoOffer?: boolean }) {
   const [installed, setInstalled] = useState(installedMode)
   const [open, setOpen] = useState(false)
-  const [prompt, setPrompt] = useState<InstallEvent | null>(null)
+  const [prompt, setPrompt] = useState<InstallEvent | null>(pendingInstall)
   const [installing, setInstalling] = useState(false)
   const [installError, setInstallError] = useState(false)
   const dialog = useRef<HTMLDialogElement>(null)
@@ -47,10 +57,10 @@ export default function InstallNotice() {
   }
 
   useEffect(() => {
-    if (!ios || installed || open || dismissed.current || dismissedThisSession()) return
+    if (!autoOffer || !ios || installed || open || dismissed.current || dismissedThisSession()) return
     const timer = window.setTimeout(() => setOpen(true), 600)
     return () => window.clearTimeout(timer)
-  }, [ios, installed, open])
+  }, [autoOffer, ios, installed, open])
 
   useEffect(() => {
     const mode = window.matchMedia('(display-mode: standalone)')
@@ -93,6 +103,7 @@ export default function InstallNotice() {
     }
     // The browser event can be used once, including when installation is dismissed.
     const event = prompt
+    pendingInstall = null
     setPrompt(null)
     setInstalling(true)
     setOpen(false)

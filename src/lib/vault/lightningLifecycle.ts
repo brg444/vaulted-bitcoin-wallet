@@ -250,7 +250,7 @@ export function vaultLightningSwapStorageName(vaultId: string): string {
   return `${VAULT_LIGHTNING_STORAGE_PREFIX}:${encodeURIComponent(id)}:rfq-swaps`
 }
 
-function storedLightningProfile(record: RfqSwapRecord): StoredVaultLightningProfile {
+export function storedLightningProfile(record: RfqSwapRecord): StoredVaultLightningProfile {
   const value = record.profile[VAULT_LIGHTNING_PROFILE] as Partial<StoredVaultLightningProfile> | undefined
   const quote = value?.quote
   if (

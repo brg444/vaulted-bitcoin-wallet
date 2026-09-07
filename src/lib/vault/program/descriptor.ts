@@ -1,3 +1,4 @@
+import { buildConnectorFamily, isConnectorTemplate, type ConnectorKind } from './connector'
 import { p256 } from '@noble/curves/nist.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -35,6 +36,7 @@ export interface ProgramTreeRef {
 }
 
 export interface VaultProgramDescriptor {
+  connectorType?: ConnectorKind
   schema: typeof PROGRAM_SCHEMA
   network: VaultNetwork
   vaultId: string
@@ -98,6 +100,7 @@ export interface VaultProgramDescriptorInput {
     version: string
   }
   templateVersion?: string
+  connectorType?: ConnectorKind
   protectionTier: ProtectionTier
   spendingPolicy?: SpendingPolicy
 }
@@ -199,7 +202,7 @@ export function buildVaultProgramDescriptor(input: VaultProgramDescriptorInput):
     input.network,
   )
   const protectionTier = requireProtectionTierMatchesRecovery(input.protectionTier, keys.recovery)
-  const family = buildVaultProgramFamily({
+  const family = buildDescriptorFamily({
     vaultId: input.vaultId,
     phonePub: keys.phoneBip340,
     hardwarePub: keys.hardware,
@@ -209,6 +212,7 @@ export function buildVaultProgramDescriptor(input: VaultProgramDescriptorInput):
     arkadeCosignerBase: keys.arkadeCosignerBase,
     network: input.network,
     templateVersion: input.templateVersion || SAVINGS_TEMPLATE,
+    ...(input.connectorType ? { connectorType: input.connectorType } : {}),
     absoluteFeeCapSats: selectedPolicy.absoluteFeeCapSats,
     feerateCapSatPerV: selectedPolicy.feerateCapSatPerV,
   })
@@ -233,6 +237,7 @@ export function buildVaultProgramDescriptor(input: VaultProgramDescriptorInput):
     network: input.network,
     vaultId: input.vaultId,
     templateVersion: input.templateVersion || SAVINGS_TEMPLATE,
+    ...(input.connectorType ? { connectorType: input.connectorType } : {}),
     policyVersion: POLICY_VERSION,
     protectionTier,
     keys,
@@ -269,7 +274,8 @@ export function validateVaultProgramDescriptor(d: VaultProgramDescriptor): Vault
   if (d.schema !== PROGRAM_SCHEMA) throw new Error('unsupported vault schema')
   if (!SUPPORTED_NETWORKS.includes(d.network)) throw new Error(`unsupported network ${d.network}`)
   if (!d.vaultId || String(d.vaultId).trim() === '') throw new Error('vault id required')
-  if (!isSavingsTemplate(d.templateVersion)) throw new Error('template version is not this release')
+  if (!isSavingsTemplate(d.templateVersion) && !isConnectorTemplate(d.templateVersion))
+    throw new Error('template version is not this release')
   if (d.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   requireProtectionTierMatchesRecovery(d.protectionTier, d.keys.recovery)
   if (
@@ -313,7 +319,7 @@ export function validateVaultProgramDescriptor(d: VaultProgramDescriptor): Vault
   for (const key of keys) {
     requirePair(d.tweaks.pending[key], `pending.${key}`)
   }
-  const rebuilt = buildVaultProgramFamily({
+  const rebuilt = buildDescriptorFamily({
     vaultId: d.vaultId,
     phonePub: d.keys.phoneBip340,
     hardwarePub: d.keys.hardware,
@@ -323,6 +329,7 @@ export function validateVaultProgramDescriptor(d: VaultProgramDescriptor): Vault
     arkadeCosignerBase: d.keys.arkadeCosignerBase,
     network: d.network,
     templateVersion: d.templateVersion,
+    connectorType: d.connectorType,
     absoluteFeeCapSats: selectedPolicy.absoluteFeeCapSats,
     feerateCapSatPerV: selectedPolicy.feerateCapSatPerV,
   })
@@ -371,7 +378,14 @@ export function validateVaultProgramDescriptor(d: VaultProgramDescriptor): Vault
 }
 
 export function encodeVaultProgramDescriptor(input: VaultProgramDescriptor): Uint8Array {
-  const d = validateVaultProgramDescriptor(input)
+  return encodeRawVaultProgramDescriptor(validateVaultProgramDescriptor(input))
+}
+
+// Raw big-endian canonical encoding without validation. The connector
+// enrollment path assembles a descriptor with the connector template and the
+// actual enrolled Savings tree, which the legacy validator does not accept;
+// hashing it here must use this exact same byte layout.
+export function encodeRawVaultProgramDescriptor(d: VaultProgramDescriptor): Uint8Array {
   const parts: Uint8Array[] = []
   appendText(parts, d.schema, 'schema')
   appendText(parts, d.network, 'network')
@@ -436,7 +450,7 @@ export function hashVaultProgramDescriptor(d: VaultProgramDescriptor): string {
 
 export function familyFromDescriptor(d: VaultProgramDescriptor) {
   const valid = validateVaultProgramDescriptor(d)
-  return buildVaultProgramFamily({
+  return buildDescriptorFamily({
     vaultId: valid.vaultId,
     phonePub: valid.keys.phoneBip340,
     hardwarePub: valid.keys.hardware,
@@ -446,9 +460,23 @@ export function familyFromDescriptor(d: VaultProgramDescriptor) {
     arkadeCosignerBase: valid.keys.arkadeCosignerBase,
     network: valid.network,
     templateVersion: valid.templateVersion,
+    connectorType: valid.connectorType,
     absoluteFeeCapSats: valid.policy.absoluteFeeCapSats,
     feerateCapSatPerV: valid.policy.feerateCapSatVb,
   })
 }
 
 export type { Claimant, FamilyKey }
+
+// Recovery uses the same initiate, pending and quarantine machinery. Only
+// the normal Savings leaf and its control proof differ for connector vaults.
+function buildDescriptorFamily(
+  input: Parameters<typeof buildVaultProgramFamily>[0] & { connectorType?: ConnectorKind },
+) {
+  if (!isConnectorTemplate(input.templateVersion)) {
+    if (input.connectorType !== undefined) throw new Error('connector type on a legacy descriptor')
+    return buildVaultProgramFamily(input)
+  }
+  if (input.connectorType !== 'p2tr' && input.connectorType !== 'p2wpkh') throw new Error('connector type required')
+  return buildConnectorFamily({ ...input, connectorType: input.connectorType })
+}

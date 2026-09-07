@@ -1,3 +1,5 @@
+import { isConnectorTemplate } from './program/connector'
+import { loadConnectorEnrollmentPin, verifyConnectorStatus } from './program/connectorEnroll'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { deriveDirectP256, signDirectP256, zeroBytes } from './ceremony/directauth'
 import { vaultCosignerClient } from './cosignerClient'
@@ -16,6 +18,7 @@ import type { VaultStatus } from './types'
 import { allowPasskey, isCoarsePhone, passkeyGetOptions, prfExtension, prfFrom } from './webauthn'
 import { provisionBoardingKey } from './vtxo/board'
 import { requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
+import type { VtxoSpendPasskey } from './vtxo/spend'
 
 const PRF_SALT = new TextEncoder().encode('arkade-2fa-vault/prf/v1')
 const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
@@ -45,7 +48,7 @@ async function deriveKEK(prf: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
   )
 }
 
-async function decryptPhoneSecret(
+export async function decryptPhoneSecret(
   prf: Uint8Array<ArrayBuffer>,
   nonceHex: string,
   ciphertextHex: string,
@@ -72,11 +75,16 @@ async function decryptPhoneSecret(
 }
 
 export async function beginPasskeySession(
-  purpose: 'recover' | 'install-envelope' | 'transition' | 'map-write',
+  purpose: 'recover' | 'install-envelope' | 'transition' | 'map-write' | 'connector-withdraw',
   status: VaultStatus,
   allowCredentialId?: string,
+  candidateTxid?: string,
 ) {
-  const issued = await vaultCosignerClient.recovery.challenge({ purpose, vaultId: status.vaultId })
+  const issued = await vaultCosignerClient.recovery.challenge({
+    purpose,
+    vaultId: status.vaultId,
+    ...(candidateTxid ? { candidateTxid } : {}),
+  })
   const challenge = hexToBytes(issued.challenge)
   if (challenge.length !== 32) throw new Error('authorizer returned a malformed passkey challenge')
   const expectedCred = allowCredentialId || issued.allowCredentialId
@@ -131,6 +139,14 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     if (!vaultId) throw new Error('vault id required')
     const status = await vaultCosignerClient.enrollment.status(vaultId)
     if (!status.enrolled) throw new Error('vault is not enrolled')
+    const connectorPin = loadConnectorEnrollmentPin(vaultId)
+    if (connectorPin) verifyConnectorStatus(status, connectorPin)
+    else if (isConnectorTemplate(status.templateVersion)) {
+      // A lost browser pin must come from the existing signed recovery binding,
+      // never from signing a replacement binding supplied by the service.
+      if (status.passkeyLoginAvailable) return (await signInWithPasskey(vaultId)).status
+      throw new Error('connector enrollment pin required before installing passkey sign-in')
+    }
     session = await beginPasskeySession('install-envelope', status, rec.credId)
     phoneSecret = await decryptPhoneSecret(session.prf, rec.nonce, rec.ciphertext)
     const bindingResponse = await vaultCosignerClient.enrollment.binding({
@@ -171,6 +187,7 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     if (!live.passkeyLoginAvailable) {
       throw new Error('authorizer did not persist passkey sign-in recovery data')
     }
+    assertRecoveryBindingMatchesStatus(bindingResponse.binding, live)
     // Validate the complete program pin without making authentication depend
     // on durable browser storage. The session coordinator persists it after
     // the verified session is already live.
@@ -184,6 +201,12 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
 
 export async function unlockLocalEnrollment(
   rec: EnrollmentSecrets,
+  withRenewalAuth?: (
+    status: VaultStatus,
+    auth: VtxoSpendPasskey,
+    canAuthorizeNew: boolean,
+    enrollment: EnrollmentSecrets,
+  ) => Promise<void>,
 ): Promise<{ enrollment: EnrollmentSecrets; status: VaultStatus }> {
   const publicStatus = await vaultCosignerClient.enrollment.publicStatus()
   const rpId = String(publicStatus.rpId || location.hostname).toLowerCase()
@@ -191,6 +214,7 @@ export async function unlockLocalEnrollment(
     throw new Error('deployment RP ID does not match this signing client host')
   }
   const live = await vaultCosignerClient.enrollment.status(rec.vaultId)
+  if (isConnectorTemplate(live.templateVersion)) return signInWithPasskey(rec.vaultId, withRenewalAuth)
   pinEnrolledStatus(live)
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({
@@ -212,6 +236,36 @@ export async function unlockLocalEnrollment(
     const secret = await decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
     try {
       await provisionBoardingKey(secret, live)
+      if (withRenewalAuth) {
+        const direct = await deriveDirectP256(prf)
+        try {
+          if (
+            bytesToHex(direct.pub) !== rec.phoneDirectP256 ||
+            bytesToHex(direct.pub) !== live.phoneDirectP256 ||
+            bytesToHex(new Uint8Array(got.rawId)) !== rec.credId ||
+            bytesToHex(schnorr.getPublicKey(secret)) !== String(live.phoneBip340Pub).slice(2)
+          )
+            throw new Error('Renewal ceremony identity changed')
+          const response = got.response as AuthenticatorAssertionResponse
+          await withRenewalAuth(
+            live,
+            {
+              phoneSecret: secret,
+              scalar: direct.scalar,
+              assertion: {
+                credentialId: rec.credId,
+                clientDataJSON: bytesToHex(new Uint8Array(response.clientDataJSON)),
+                authenticatorData: bytesToHex(new Uint8Array(response.authenticatorData)),
+                signature: bytesToHex(new Uint8Array(response.signature)),
+              },
+            },
+            true,
+            rec,
+          )
+        } finally {
+          zeroBytes(direct.scalar)
+        }
+      }
       return { enrollment: rec, status: live }
     } finally {
       zeroBytes(secret)
@@ -248,6 +302,12 @@ export async function discoverVaultIdFromPasskey(): Promise<string> {
 
 export async function signInWithPasskey(
   vaultId: string,
+  withRenewalSync?: (
+    status: VaultStatus,
+    auth: VtxoSpendPasskey,
+    canAuthorizeNew: boolean,
+    enrollment: EnrollmentSecrets,
+  ) => Promise<void>,
 ): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets }> {
   let session: Awaited<ReturnType<typeof beginPasskeySession>> | undefined
   let phoneSecret: Uint8Array | undefined
@@ -293,6 +353,17 @@ export async function signInWithPasskey(
     // private browsing cannot turn a valid recovery into a failed login.
     pinFromEnrolledStatus(status)
     await provisionBoardingKey(phoneSecret, status)
+    if (withRenewalSync)
+      await withRenewalSync(
+        status,
+        {
+          phoneSecret,
+          scalar: session.scalar,
+          assertion: session.assertion,
+        },
+        false,
+        recordFromRecoveryBinding(verified),
+      )
     return { status, enrollment: recordFromRecoveryBinding(verified) }
   } finally {
     zeroBytes(session?.prf as Uint8Array, session?.scalar as Uint8Array, phoneSecret as Uint8Array)

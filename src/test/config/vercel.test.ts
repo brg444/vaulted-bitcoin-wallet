@@ -59,6 +59,29 @@ describe('Vercel worker caching', () => {
         source: '/v1/light/enroll/:phase',
         destination: '/api/gateway?route=light-enroll&phase=:phase',
       })
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/recovery-archive/:phase',
+        destination: '/api/gateway?route=recovery-archive&phase=:phase',
+      })
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/light/backup/:phase',
+        destination: '/api/gateway?route=light-backup&phase=:phase',
+      })
+    },
+  )
+
+  it.each(['vercel.json', 'vercel.mainnet.json'])(
+    'routes connector authorization and operation reads through flat functions in %s',
+    (file) => {
+      const config = JSON.parse(readFileSync(file, 'utf8'))
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/connector/operation',
+        destination: '/api/v1/connector-operation',
+      })
+      expect(config.rewrites).toContainEqual({
+        source: '/v1/connector/withdraw/authorize',
+        destination: '/api/v1/connector-withdraw-authorize',
+      })
     },
   )
 

@@ -19,7 +19,11 @@ vi.mock('./vtxo/board', () => ({
   provisionBoardingKey: mocks.provision,
 }))
 
-import { unlockLocalEnrollment } from './signIn'
+import { enablePasskeyLogin, unlockLocalEnrollment } from './signIn'
+import { CONNECTOR_TEMPLATE } from './program/connector'
+import { deriveDirectP256 } from './ceremony/directauth'
+import { schnorr } from '@noble/curves/secp256k1.js'
+import { hex } from '@scure/base'
 
 const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
 
@@ -48,6 +52,75 @@ describe('local vault unlock', () => {
     mocks.status.mockReset()
     mocks.pin.mockReset()
     mocks.provision.mockReset()
+    localStorage.clear()
+  })
+
+  it.each([false, true])(
+    'shares only the unconsumed local ceremony and wipes keys when callback failure=%s',
+    async (fail) => {
+      const prf = new Uint8Array(32).fill(9),
+        secret = new Uint8Array(32).fill(3)
+      const direct = await deriveDirectP256(prf)
+      const status = {
+        enrolled: true,
+        vaultId: 'ab'.repeat(32),
+        network: 'mutinynet',
+        rpId: location.hostname,
+        clientOrigin: location.origin,
+        phoneBip340Pub: `02${hex.encode(schnorr.getPublicKey(secret))}`,
+        phoneDirectP256: hex.encode(direct.pub),
+      } as VaultStatus
+      direct.scalar.fill(0)
+      const record = {
+        vaultId: status.vaultId,
+        credId: '01',
+        webauthnP256: '02',
+        phoneDirectP256: status.phoneDirectP256!,
+        phoneBip340Pub: status.phoneBip340Pub!,
+        ...(await envelope(prf, secret)),
+      }
+      mocks.publicStatus.mockResolvedValue(status)
+      mocks.status.mockResolvedValue(status)
+      const get = vi.fn(async () => ({
+        rawId: Uint8Array.of(1).buffer,
+        response: {
+          clientDataJSON: Uint8Array.of(2).buffer,
+          authenticatorData: Uint8Array.of(3).buffer,
+          signature: Uint8Array.of(4).buffer,
+        },
+        getClientExtensionResults: () => ({ prf: { results: { first: prf.buffer } } }),
+      }))
+      Object.defineProperty(navigator, 'credentials', { configurable: true, value: { get } })
+      let keys: Uint8Array[] = []
+      const callback = vi.fn(async (live, auth, canAuthorizeNew, enrollment) => {
+        expect(live).toBe(status)
+        expect(canAuthorizeNew).toBe(true)
+        expect(enrollment).toBe(record)
+        expect(auth.assertion).toEqual({
+          credentialId: '01',
+          clientDataJSON: '02',
+          authenticatorData: '03',
+          signature: '04',
+        })
+        keys = [auth.phoneSecret, auth.scalar]
+        expect(keys.every((key) => key.some((b) => b !== 0))).toBe(true)
+        if (fail) throw new Error('callback failed')
+      })
+      const result = unlockLocalEnrollment(record, callback)
+      if (fail) await expect(result).rejects.toThrow('callback failed')
+      else await expect(result).resolves.toMatchObject({ status })
+      expect(get).toHaveBeenCalledOnce()
+      expect(callback).toHaveBeenCalledOnce()
+      expect(keys.every((key) => key.every((b) => b === 0))).toBe(true)
+    },
+  )
+
+  it('does not sign a replacement connector binding when its independent enrollment pin is missing', async () => {
+    mocks.status.mockResolvedValue({ enrolled: true, vaultId: 'vault-a', templateVersion: CONNECTOR_TEMPLATE })
+    await expect(
+      enablePasskeyLogin({ vaultId: 'vault-a' } as Parameters<typeof enablePasskeyLogin>[0]),
+    ).rejects.toThrow('connector enrollment pin required')
+    expect(mocks.provision).not.toHaveBeenCalled()
   })
 
   it('fetches and verifies the enrolled status before decrypting the phone scalar', async () => {

@@ -1,0 +1,5 @@
+/* Hidden date headings must not introduce gaps between transactions. */
+.groups {
+  display: grid;
+  gap: 0;
+}

@@ -1,3 +1,4 @@
+import { DUAL_CONNECTOR_TEMPLATE } from './program/connector'
 import type { LightKeyBackup } from './light/keyBackup'
 import { clearOpenEnrollmentSession, openEnrollmentToken } from './openEnrollmentSession'
 import { p256 } from '@noble/curves/nist.js'
@@ -13,6 +14,17 @@ import {
   type StagedEnrollment,
 } from './enrollmentStore'
 import { requireProposedBoardingDescriptor } from './program/enroll'
+import {
+  buildConnectorRecoveryKit,
+  preflightConnectorEnrollment,
+  requireProposedConnectorDescriptor,
+  saveConnectorEnrollmentPin,
+  saveConnectorRecoveryKit,
+  verifyConnectorStatus,
+  type ConnectorEnrollmentPin,
+  type VerifiedConnectorProposal,
+} from './program/connectorEnroll'
+import { fetchVaultReadiness } from './status'
 import { saveLocalKit } from './program/kitStore'
 import { buildRecoveryKit } from './program/kit'
 import { pinEnrolledStatus, pinFromEnrolledStatus, requireStatusMatchesPin, saveAddressPin } from './pin'
@@ -84,6 +96,63 @@ export interface EnrollmentRoles {
   hardwarePub: string
   recoveryPub?: string
   spendingPolicy: SpendingPolicy
+  connector?: {
+    connectorPub: string
+    connectorType: 'p2wpkh' | 'p2tr'
+    connectorFingerprint: number
+    connectorPath: number[]
+  }
+}
+
+function connectorPinFromStaged(staged: {
+  descriptorHash?: string
+  vaultId: string
+  connectorPub?: string
+  connectorType?: 'p2wpkh' | 'p2tr'
+  connectorFingerprint?: number
+  connectorPath?: number[]
+  connectorDescriptorHash?: string
+  connectorSavingsAddress?: string
+  connectorSavingsScript?: string
+  connectorNetwork?: 'mainnet' | 'mutinynet'
+  protectionTier: ProtectionTier
+}): ConnectorEnrollmentPin {
+  const {
+    connectorPub,
+    connectorType,
+    connectorFingerprint,
+    connectorPath,
+    connectorDescriptorHash,
+    connectorSavingsAddress,
+    connectorSavingsScript,
+    connectorNetwork,
+  } = staged
+  if (
+    !connectorPub ||
+    (connectorType !== 'p2wpkh' && connectorType !== 'p2tr') ||
+    typeof connectorFingerprint !== 'number' ||
+    !Number.isInteger(connectorFingerprint) ||
+    !Array.isArray(connectorPath) ||
+    !connectorDescriptorHash ||
+    !staged.descriptorHash ||
+    !connectorSavingsAddress ||
+    !connectorSavingsScript ||
+    (connectorNetwork !== 'mainnet' && connectorNetwork !== 'mutinynet')
+  )
+    throw new Error('staged connector enrollment is incomplete')
+  return {
+    vaultId: staged.vaultId,
+    network: connectorNetwork,
+    connectorPub,
+    connectorType,
+    connectorFingerprint,
+    connectorPath: [...connectorPath],
+    enrollmentDigest: connectorDescriptorHash,
+    descriptorHash: staged.descriptorHash,
+    savingsAddress: connectorSavingsAddress,
+    savingsScript: connectorSavingsScript,
+    protectionTier: staged.protectionTier,
+  }
 }
 
 export async function enrollWithPasskey(
@@ -110,9 +179,29 @@ export async function beginTenantEnrollment(
   if (publicStatus.vtxoBoardingProgram !== BOARDING_PROGRAM) {
     throw new Error('vault service does not advertise the required boarding program')
   }
+  const connector = roles.connector
   const hardwareXOnly = xOnly(roles.hardwarePub)
   const recoveryXOnly = wantRecovery ? xOnly(roles.recoveryPub || '') : ''
   if (wantRecovery && hardwareXOnly === recoveryXOnly) throw new Error('Recovery must be a different key')
+  if (connector) {
+    if (xOnly(connector.connectorPub) !== hardwareXOnly) throw new Error('connector key does not match hardware key')
+    if (connector.connectorType !== 'p2wpkh' && connector.connectorType !== 'p2tr')
+      throw new Error('connector type must be p2tr or p2wpkh')
+  }
+  const enrollmentNetwork =
+    publicStatus.network === 'mainnet' || publicStatus.network === 'mutinynet' ? publicStatus.network : null
+  let arkadeOrigin = ''
+  let arkadeVersion = ''
+  if (connector) {
+    if (!enrollmentNetwork) throw new Error('unsupported enrollment network')
+    // Capability preflight BEFORE passkey creation: everything the public
+    // status advertises is checked here. Connector support itself is proven at
+    // propose time (unknown fields fail closed) before finish.
+    preflightConnectorEnrollment(publicStatus, enrollmentNetwork, selectedPolicy)
+    const readiness = await fetchVaultReadiness()
+    if (readiness.state !== 'ready') throw new Error('vault service is not ready for enrollment')
+    arkadeVersion = readiness.status.arkadeVersion
+  }
   const rpId = requireRPID(publicStatus)
   if (!token) {
     if (publicStatus.enrollmentMode !== 'open') throw new Error('setup code required')
@@ -175,7 +264,8 @@ export async function beginTenantEnrollment(
   let enrollment!: EnrollmentSecrets
   let stagedBoard!: Awaited<ReturnType<typeof stageBoardingKey>>
   let proposed!: Awaited<ReturnType<typeof vaultCosignerClient.enrollment.propose>>
-  let composite!: ReturnType<typeof requireProposedBoardingDescriptor>
+  let composite!: { savings: VaultProgramDescriptor; boarding: unknown }
+  let connectorVerified: VerifiedConnectorProposal | null = null
   let descriptor!: VaultProgramDescriptor
   try {
     stagedBoard = await stageBoardingKey({ vaultId: start.vaultId, phoneSecret, network: publicStatus.network })
@@ -210,6 +300,14 @@ export async function beginTenantEnrollment(
       vaultId: start.vaultId,
       externalOwnerWalletXOnly: hardwareXOnly,
       ...(recoveryXOnly ? { recoveryXOnly } : {}),
+      ...(connector
+        ? {
+            connectorType: connector.connectorType,
+            connectorPub: connector.connectorPub.toLowerCase(),
+            connectorFingerprint: connector.connectorFingerprint,
+            connectorPath: [...connector.connectorPath],
+          }
+        : {}),
       vtxoBoardingProgram: BOARDING_PROGRAM,
       vaultBoardingBip340Pub: xOnly(stagedBoard.boardingPub),
       protectionTier,
@@ -221,13 +319,45 @@ export async function beginTenantEnrollment(
     prf.fill(0)
     phoneSecret.fill(0)
     proposed = await vaultCosignerClient.enrollment.propose(token, enrollmentRequest)
-    composite = requireProposedBoardingDescriptor(proposed.descriptor, proposed.descriptorHash, {
-      vaultId: start.vaultId,
-      phonePub: enrollment.phoneBip340Pub,
-      boardingPub: stagedBoard.boardingPub,
-      network: publicStatus.network,
-    })
-    descriptor = composite.savings
+    if (connector && enrollmentNetwork) {
+      try {
+        connectorVerified = requireProposedConnectorDescriptor(proposed.descriptor, proposed.descriptorHash, {
+          templateVersion: DUAL_CONNECTOR_TEMPLATE,
+          vaultId: start.vaultId,
+          network: enrollmentNetwork,
+          phonePub: enrollment.phoneBip340Pub,
+          phoneDirectP256: enrollment.phoneDirectP256,
+          ...(recoveryXOnly ? { recoveryPub: roles.recoveryPub || '' } : {}),
+          protectionTier,
+          spendingPolicy: selectedPolicy,
+          spendingPolicyDigest: selectedPolicyDigest,
+          origin: {
+            connectorPub: connector.connectorPub.toLowerCase(),
+            connectorType: connector.connectorType,
+            connectorFingerprint: connector.connectorFingerprint,
+            connectorPath: [...connector.connectorPath],
+          },
+          boardingPub: stagedBoard.boardingPub,
+          arkadeVersion,
+        })
+      } catch (error) {
+        if (error instanceof Error && /unknown field/i.test(error.message)) {
+          throw new Error('Guardian does not support connector enrollment')
+        }
+        throw error
+      }
+      composite = { savings: connectorVerified.preview.descriptor, boarding: connectorVerified.boarding }
+      arkadeOrigin = connectorVerified.preview.descriptor.arkadeCosigner.origin
+      descriptor = connectorVerified.preview.descriptor
+    } else {
+      composite = requireProposedBoardingDescriptor(proposed.descriptor, proposed.descriptorHash, {
+        vaultId: start.vaultId,
+        phonePub: enrollment.phoneBip340Pub,
+        boardingPub: stagedBoard.boardingPub,
+        network: publicStatus.network,
+      })
+      descriptor = composite.savings
+    }
   } finally {
     prf.fill(0)
     phoneSecret.fill(0)
@@ -245,16 +375,23 @@ export async function beginTenantEnrollment(
   if (descriptor.protectionTier !== protectionTier) {
     throw new Error('proposed protection tier does not match this setup')
   }
-  const proposedPolicy = validateSpendingPolicy({
-    program: descriptor.policy.program,
-    schema: descriptor.policy.schema,
-    period: descriptor.policy.period,
-    periodAllowanceSats: descriptor.policy.periodAllowanceSats,
-    txRecipientCapSats: descriptor.policy.recipientCapSats,
-    absoluteFeeCapSats: descriptor.policy.absoluteFeeCapSats,
-    feerateCapSatPerV: descriptor.policy.feerateCapSatVb,
-  })
-  if (!sameSpendingPolicy(proposedPolicy, selectedPolicy) || descriptor.policy.digest !== selectedPolicyDigest) {
+  const proposedPolicy = validateSpendingPolicy(
+    {
+      program: descriptor.policy.program,
+      schema: descriptor.policy.schema,
+      period: descriptor.policy.period,
+      periodAllowanceSats: descriptor.policy.periodAllowanceSats,
+      txRecipientCapSats: descriptor.policy.recipientCapSats,
+      absoluteFeeCapSats: descriptor.policy.absoluteFeeCapSats,
+      feerateCapSatPerV: descriptor.policy.feerateCapSatVb,
+    },
+    connector ? (enrollmentNetwork ?? undefined) : undefined,
+  )
+  const policiesMatch = connector
+    ? spendingPolicyDigest(proposedPolicy, enrollmentNetwork ?? undefined) ===
+      spendingPolicyDigest(selectedPolicy, enrollmentNetwork ?? undefined)
+    : sameSpendingPolicy(proposedPolicy, selectedPolicy)
+  if (!policiesMatch || descriptor.policy.digest !== selectedPolicyDigest) {
     throw new Error('proposed spending policy does not match this setup')
   }
   const staged: StagedEnrollment = {
@@ -270,14 +407,43 @@ export async function beginTenantEnrollment(
     descriptorHash: proposed.descriptorHash,
     boardingPub: stagedBoard.boardingPub,
     boardingDescriptor: composite.boarding,
-    boardingDescriptorHash: proposed.descriptorHash,
+    boardingDescriptorHash: connectorVerified?.boardingHash ?? proposed.descriptorHash,
     savingsAddress: descriptor.savings.address,
     savingsScript: descriptor.savings.script,
     protectionTier,
     spendingPolicy: selectedPolicy,
     spendingPolicyDigest: selectedPolicyDigest,
+    ...(connector && enrollmentNetwork && connectorVerified
+      ? {
+          connectorPub: connector.connectorPub.toLowerCase(),
+          connectorType: connector.connectorType,
+          connectorFingerprint: connector.connectorFingerprint,
+          connectorPath: [...connector.connectorPath],
+          connectorDescriptorHash: connectorVerified.digest,
+          connectorSavingsAddress: connectorVerified.savingsAddress,
+          connectorSavingsScript: connectorVerified.savingsScript,
+          connectorNetwork: enrollmentNetwork,
+          connectorArkadeOrigin: arkadeOrigin,
+          connectorArkadeVersion: arkadeVersion,
+        }
+      : {}),
   }
   saveStagedEnrollment(staged)
+  if (connector && connectorVerified) {
+    saveConnectorRecoveryKit(
+      buildConnectorRecoveryKit(connectorVerified.preview, {
+        vaultId: start.vaultId,
+        network: connectorVerified.preview.descriptor.network as 'mainnet' | 'mutinynet',
+        origin: {
+          connectorPub: connector.connectorPub.toLowerCase(),
+          connectorType: connector.connectorType,
+          connectorFingerprint: connector.connectorFingerprint,
+          connectorPath: [...connector.connectorPath],
+        },
+        boarding: connectorVerified.boarding,
+      }),
+    )
+  }
   saveLocalKit(buildRecoveryKit(descriptor))
   return { enrollment, descriptor, enrollmentToken: token }
 }
@@ -305,6 +471,14 @@ export async function finishTenantEnrollment(
     vaultId: staged.vaultId,
     externalOwnerWalletXOnly: staged.hardwareXOnly,
     ...(staged.recoveryXOnly ? { recoveryXOnly: staged.recoveryXOnly } : {}),
+    ...(staged.connectorPub && staged.connectorType
+      ? {
+          connectorType: staged.connectorType,
+          connectorPub: staged.connectorPub,
+          connectorFingerprint: staged.connectorFingerprint,
+          connectorPath: staged.connectorPath ? [...staged.connectorPath] : [],
+        }
+      : {}),
     descriptorHash: staged.descriptorHash,
     vtxoBoardingProgram: BOARDING_PROGRAM,
     vaultBoardingBip340Pub: xOnly(staged.boardingPub),
@@ -315,6 +489,10 @@ export async function finishTenantEnrollment(
   await vaultCosignerClient.enrollment.finish(token, finishRequest)
   const live = await vaultCosignerClient.enrollment.status(staged.vaultId)
   requireBoardingStatus(live, String(staged.boardingPub || ''))
+  if (staged.connectorPub) {
+    verifyConnectorStatus(live, connectorPinFromStaged(staged), { boardingPub: String(staged.boardingPub || '') })
+    saveConnectorEnrollmentPin(connectorPinFromStaged(staged))
+  }
   await activateBoardingKey({
     vaultId: staged.vaultId,
     descriptorHash: String(live.vtxoBoardingDescriptorHash || staged.boardingDescriptorHash || ''),
@@ -342,6 +520,10 @@ export async function reconcileStagedEnrollment(
   const live = await vaultCosignerClient.enrollment.status(staged.vaultId)
   if (!live.enrolled) return null
   requireBoardingStatus(live, String(staged.boardingPub || ''))
+  if (staged.connectorPub) {
+    verifyConnectorStatus(live, connectorPinFromStaged(staged), { boardingPub: String(staged.boardingPub || '') })
+    saveConnectorEnrollmentPin(connectorPinFromStaged(staged))
+  }
   await activateBoardingKey({
     vaultId: staged.vaultId,
     descriptorHash: String(live.vtxoBoardingDescriptorHash || staged.boardingDescriptorHash || ''),

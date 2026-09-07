@@ -43,22 +43,37 @@ export default function RecoveryHelp({
           : null
 
   return (
-    <QgScreen title='Access and recovery' back={onBack} dismiss={onDismiss}>
-      <p className='qg-eyebrow'>Find your next step</p>
-      <h1>What do you still have access to?</h1>
-      <p className='qg-copy'>
-        Keep any working device, key backups, and your Recovery Kit. Avoid clearing app data while you work out how to
-        regain access.
-      </p>
-      <div className='qg-choice-list is-keys qg-help-choices' role='radiogroup' aria-label='Access problem'>
-        {SCENARIOS.map(({ id, label }) => (
-          <button key={id} type='button' role='radio' aria-checked={scenario === id} onClick={() => setScenario(id)}>
-            <span>
-              <strong>{label}</strong>
-            </span>
-          </button>
-        ))}
-      </div>
+    <QgScreen
+      help={false}
+      title={scenario ? SCENARIOS.find((item) => item.id === scenario)?.label : 'Access and recovery'}
+      back={scenario ? () => setScenario(null) : onBack}
+      dismiss={scenario ? undefined : onDismiss}
+    >
+      {!scenario ? (
+        <>
+          <p className='qg-eyebrow'>Find your next step</p>
+          <h1>What do you still have access to?</h1>
+          <p className='qg-copy'>
+            Keep any working device, key backups, and your Recovery Kit. Avoid clearing app data while you work out how
+            to regain access.
+          </p>
+          <div className='qg-choice-list is-keys qg-help-choices' role='radiogroup' aria-label='Access problem'>
+            {SCENARIOS.map(({ id, label }) => (
+              <button
+                key={id}
+                type='button'
+                role='radio'
+                aria-checked={scenario === id}
+                onClick={() => setScenario(id)}
+              >
+                <span>
+                  <strong>{label}</strong>
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
       {scenario ? (
         <section className='qg-guidance-body qg-backup-status' aria-label='Recovery guidance' aria-live='polite'>
           {scenario === 'passkey' ? (
@@ -123,7 +138,7 @@ export default function RecoveryHelp({
           ) : null}
         </section>
       ) : null}
-      {!protectionTier ? (
+      {scenario && !protectionTier ? (
         <details className='qg-guidance'>
           <summary>Check a saved Recovery Kit</summary>
           <div className='qg-guidance-body'>

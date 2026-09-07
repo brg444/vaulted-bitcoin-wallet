@@ -1,3 +1,5 @@
+import { lightExitRepository, lightExitCapture } from './lib/vault/light/exitRepository'
+import { vaultExitRepository, vaultExitCapture } from './lib/vault/vtxo/exitRepository'
 import { loadLightWorkerDescriptor, lightObserverIdentity } from './lib/vault/light/workerIdentity'
 import { registerLightContractHandler, lightContract } from './lib/vault/light/contractHandler'
 import { lightStatusMatchesDescriptor } from './lib/vault/light/status'
@@ -44,6 +46,11 @@ const walletRepository = new IndexedDBWalletRepository(vaultWalletDatabaseForNam
 const contractRepository = new IndexedDBContractRepository(vaultWalletDatabaseForNamespace(namespace))
 const intentRepository = new IndexedDBIntentRepository(vaultWalletIntentDatabaseForNamespace(namespace))
 
+// Like the wallet and contract stores, this repository belongs to the worker.
+// Reuse it across STOP/reinitialize instead of opening another IDB connection.
+let lightVirtualTxRepository: ReturnType<typeof lightExitRepository> | undefined
+let virtualTxRepository: ReturnType<typeof vaultExitRepository> | undefined
+
 const bus = new MessageBus(walletRepository, contractRepository, {
   messageHandlers: [new WalletMessageHandler({ messageTag: vaultWalletUpdaterTagForNamespace(namespace) })],
   tickIntervalMs: 5_000,
@@ -68,7 +75,13 @@ const bus = new MessageBus(walletRepository, contractRepository, {
         arkServerPublicKey: config.arkServer.publicKey,
         indexerUrl: config.indexerUrl,
         esploraUrl: config.esploraUrl,
-        storage: { walletRepository, contractRepository, intentRepository },
+        storage: {
+          walletRepository,
+          contractRepository,
+          intentRepository,
+          virtualTxRepository: (lightVirtualTxRepository ??= lightExitRepository(lightDescriptor)),
+          exitDataCapture: lightExitCapture,
+        },
         walletMode: 'static',
         settlementConfig: { boardingUtxoSweep: false, deprecatedSignerMigration: false, autoRenewVtxos: false },
       })
@@ -120,7 +133,13 @@ const bus = new MessageBus(walletRepository, contractRepository, {
         arkServerPublicKey: config.arkServer.publicKey,
         indexerUrl: config.indexerUrl,
         esploraUrl: config.esploraUrl,
-        storage: { walletRepository, contractRepository, intentRepository },
+        storage: {
+          walletRepository,
+          contractRepository,
+          intentRepository,
+          virtualTxRepository: (virtualTxRepository ??= vaultExitRepository(active.vaultId, active.network)),
+          exitDataCapture: vaultExitCapture,
+        },
         walletMode: 'static',
         boardingProgram: {
           name: BOARDING_PROGRAM,

@@ -1,9 +1,11 @@
 import VaultLight from './screens/Vault/Light'
+import { loadLightEnrollment } from './lib/vault/light/enrollment'
 import { useContext, useEffect, useRef, useState } from 'react'
 import { VaultContext } from './vault/context'
 import './screens/Vault/vault.css'
 import './screens/Vault/vault-system.css'
 import './screens/Vault/quiet-guardian-flows.css'
+import './screens/Vault/qg/layout.css'
 import './screens/Vault/quiet-guardian-screens.css'
 import VaultHome from './screens/Vault/Home'
 import VaultReceive from './screens/Vault/Receive'
@@ -37,7 +39,15 @@ import { useIntentPress } from './screens/Vault/qg/useIntentPress'
 import { useScreenMotion } from './screens/Vault/qg/useScreenMotion'
 
 export default function VaultApp() {
-  const [lightActive, setLightActive] = useState(() => localStorage.getItem('vaulted:active-setup') === 'light')
+  const [lightActive, setLightActive] = useState(() => {
+    try {
+      // A setup preference is not a wallet. Resume unfinished setup only after
+      // the user chooses Light, leaving existing vault sign-in accessible.
+      return localStorage.getItem('vaulted:active-setup') === 'light' && Boolean(loadLightEnrollment())
+    } catch {
+      return false
+    }
+  })
   const { screen, account } = useContext(VaultContext)
   const root = useRef<HTMLDivElement>(null)
   const scope = `${screen}:${account}`

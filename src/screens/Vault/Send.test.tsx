@@ -14,9 +14,12 @@ vi.mock('../../lib/haptics', () => ({
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.resolve(false) }))
 
 vi.mock('./Scanner', () => ({
-  default: ({ close, label }: { close: () => void; label: string }) => (
+  default: ({ close, manual, label }: { close: () => void; manual: () => void; label: string }) => (
     <div>
       <h2>{label}</h2>
+      <button type='button' onClick={manual}>
+        Enter manually
+      </button>
       <button type='button' onClick={close}>
         Cancel
       </button>
@@ -138,9 +141,36 @@ describe('Vault send scanner origin', () => {
       },
     })
 
-    expect(screen.getByText('Payment in progress')).toBeTruthy()
-    expect(screen.getByText('₿15,000 reserved')).toBeTruthy()
+    expect(screen.getByText('₿15,000 reserved for this payment')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Resume payment' }))
     expect(reviewSpend).toHaveBeenCalled()
   })
+})
+
+describe('Send maximum respects actual capacity', () => {
+  it.each([
+    [80000, 100000, 0, 50000],
+    [30000, 100000, 500, 29500],
+    [80000, 20000, 500, 19500],
+    [100, 100000, 500, 0],
+  ])('uses available=%i, remaining=%i and fee=%i', (available, remaining, fee, expected) => {
+    const value = renderSend({
+      dailyRemaining: remaining,
+      spend: { address: 'tark1destination', amount: 0, fee },
+      positions: {
+        spending: { availableSats: available, pendingSats: 0, totalSats: available },
+        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+      },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Max' }))
+    expect(value.setSpendDraft).toHaveBeenCalledWith({ amount: expected })
+  })
+})
+
+it('opens manual entry from the Home camera without returning Home', () => {
+  const value = renderSend({ scanOnSend: true })
+  fireEvent.click(screen.getByRole('button', { name: 'Enter manually' }))
+  expect(value.clearSendScan).toHaveBeenCalled()
+  expect(value.navigate).not.toHaveBeenCalled()
+  expect(screen.getByRole('textbox', { name: 'To' })).toBeVisible()
 })

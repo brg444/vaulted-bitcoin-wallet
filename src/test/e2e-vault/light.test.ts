@@ -7,12 +7,13 @@ const CONTROL = `http://127.0.0.1:${process.env.VAULT_E2E_OPERATOR_PORT || 18888
 test.skip(!RUNTIME, 'Run with the opt-in Light Go browser harness')
 test.afterEach(async ({ page }) => page.unrouteAll({ behavior: 'ignoreErrors' }))
 
-test('Light enrolls through the Go runtime with a real PRF passkey and verifies its saved file', async ({
+test('Light enrolls through the Go runtime with a real PRF passkey and automatically backs up and restores with its passkey', async ({
   page,
   passkey,
 }) => {
   void passkey
   const errors: string[] = []
+  let backupChallenges = 0
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/v1/**', async (route) => {
     const request = route.request()
@@ -32,11 +33,17 @@ test('Light enrolls through the Go runtime with a real PRF passkey and verifies 
     })
     if (url.pathname === '/v1/light/enroll/finish' && response.ok())
       await page.request.post(`${CONTROL}/__vault_e2e_authorizer`, { data: await response.json() })
+    if (url.pathname === '/v1/light/backup/challenge' && response.ok()) {
+      const challenge = await response.json()
+      expect(challenge.challengeId).toMatch(/^v1\.[A-Za-z0-9_-]+$/)
+      expect(Buffer.from(challenge.challenge, 'hex')).toHaveLength(32)
+      backupChallenges++
+    }
     await route.fulfill({ response })
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  await page.getByRole('button', { name: /^Light Passkey spending/ }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
   await expect(page.getByRole('heading', { name: 'Set your spending limits' })).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'Invite code' })).toHaveCount(0)
   await page.getByLabel('Per-payment limit, in sats').fill('20000')
@@ -45,26 +52,8 @@ test('Light enrolls through the Go runtime with a real PRF passkey and verifies 
   const footer = await page.getByRole('button', { name: 'Create passkey', exact: true }).boundingBox()
   expect(footer!.y + footer!.height).toBeLessThanOrEqual(page.viewportSize()!.height)
   await page.getByRole('button', { name: 'Create passkey', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Keep two things safe' })).toBeVisible()
-  const secret = (await page.locator('.light-secret').innerText()).trim()
-  expect(secret).toMatch(/^[0-9a-f]{64}$/)
-  const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Download recovery file', exact: true }).click()
-  const download = await downloadPromise
-  const path = await download.path()
-  expect(path).toBeTruthy()
-  const saved = JSON.parse(await readFile(path!, 'utf8'))
-  expect(saved).not.toHaveProperty('token')
-  expect(saved.descriptor.spendingPolicy.txRecipientCapSats).toBe(20000)
-  // Reload with only encrypted staged material, then reopen the saved file.
-  await page.reload()
-  await expect(page.getByRole('heading', { name: 'Keep two things safe' })).toBeVisible()
-  await expect(page.locator('.light-secret')).toHaveCount(0)
-  await page.getByLabel('Enter your saved secret to verify').fill(secret)
-  await expect(page.getByRole('button', { name: 'Verify backup and create wallet' })).toBeDisabled()
-  await page.getByLabel('Choose the saved recovery file to verify it').setInputFiles(path!)
-  await page.getByRole('button', { name: 'Verify backup and create wallet' }).click()
-  await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible()
+  await expect(page.getByText('Recovery secret', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible({ timeout: 45000 })
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
   await expect(page.getByText('50,000 sats remaining in your limit')).toBeVisible()
   await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
@@ -89,25 +78,81 @@ test('Light enrolls through the Go runtime with a real PRF passkey and verifies 
   await page.reload()
   await expect(page.getByRole('button', { name: 'Unlock with passkey', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Unlock with passkey', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible({ timeout: 45000 })
   await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
   await page.getByRole('button', { name: 'Security', exact: true }).click()
+  await page.getByRole('button', { name: /^Access and limits/ }).click()
   await expect(page.getByText('Spending limits', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await page.getByRole('button', { name: /^Backups/ }).click()
   const persistent = await page.evaluate(() => JSON.stringify({ ...localStorage }))
-  expect(persistent).not.toContain(secret)
+  expect(persistent).not.toContain('recovery-secret')
+  expect(persistent).not.toContain('"token"')
+  await expect(page.getByText(/Encrypted cloud backup saved/)).toBeVisible()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save a local backup', exact: true }).click()
+  const path = await (await download).path()
+  const saved = JSON.parse(await readFile(path!, 'utf8'))
+  expect(backupChallenges).toBeGreaterThan(0)
+  expect(saved.name).toBe('vaulted-light-backup')
+  expect(saved.header.recoveryBackup).toBeUndefined()
   // Keep the original authenticator but remove this device's app record.
-  // Restoring the downloaded file must recover the same script and policy.
+  // Both cloud and local-file restoration retain the same script and policy.
   await page.evaluate(() => {
     localStorage.clear()
     localStorage.setItem('vaulted:active-setup', 'light')
   })
   await page.reload()
-  await page.getByRole('button', { name: 'Restore a Light wallet', exact: true }).click()
-  await page.locator('input[type=file]').setInputFiles(path!)
-  await page.getByRole('button', { name: 'Verify file and unlock', exact: true }).click()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore with passkey', exact: true }).click()
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
   await expect(page.locator('.light-address')).toHaveText(originalAddress)
+  // Exercise the downloaded encrypted file independently of cloud discovery.
+  await page.evaluate(() => localStorage.clear())
+  await page.reload()
+  await page.getByRole('button', { name: 'Get started', exact: true }).click()
+  await page.getByRole('button', { name: /^Light Passkey payments/ }).click()
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Use a local backup' }).click()
+  await page.locator('input[type="file"]').setInputFiles(path!)
+  await page.getByRole('button', { name: 'Verify file and unlock', exact: true }).click()
+  await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
+  await expect(page.getByText('50,000 sats remaining in your limit')).toBeVisible()
+  await page.getByRole('button', { name: 'Receive', exact: true }).click()
+  await expect(page.locator('.light-address')).toHaveText(originalAddress)
+  // The same exported file opens in the independent companion with every
+  // Vaulted/Operator API blocked; only the local assets and passkey are used.
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+  await page.getByRole('button', { name: 'Security', exact: true }).click()
+  await page.getByRole('button', { name: 'Lock wallet', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Unlock with passkey', exact: true })).toBeVisible()
+  const externalRequests: string[] = []
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.startsWith('/emergency-test/')) {
+      const name = url.pathname.split('/').pop()!
+      if (!['index.html', 'recovery.js', 'recovery.js.map'].includes(name)) return route.abort()
+      return route.fulfill({
+        body: await readFile(`tools/offline-recovery/light/mutinynet/${name}`),
+        contentType: name.endsWith('.html') ? 'text/html' : 'text/javascript',
+      })
+    }
+    if (url.pathname === '/favicon.ico') return route.fulfill({ status: 204 })
+    externalRequests.push(url.pathname)
+    return route.abort()
+  })
+  await page.goto('/emergency-test/index.html')
+  await page.locator('#file').setInputFiles(path!)
+  await page.locator('#unlock').click()
+  await expect(page.getByRole('heading', { name: 'Saved transaction paths' })).toBeVisible()
+  await expect(page.locator('#snapshot')).toContainText('0 outputs')
+  expect(externalRequests).toEqual([])
   expect(await passkey.credentials()).toHaveLength(1)
   expect(errors).toEqual([])
 })

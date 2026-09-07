@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
@@ -43,9 +43,6 @@ describe('Vault settings account boundaries', () => {
     expect(screen.getByTestId('settings-theme')).toHaveRole('button')
     expect(screen.getByTestId('settings-haptics')).toHaveRole('button')
     expect(screen.getByTestId('settings-about')).toHaveRole('button')
-    expect(screen.getByTestId('settings-update')).toHaveRole('button')
-    expect(screen.getByTestId('settings-refresh')).toHaveRole('button')
-    expect(screen.getByTestId('settings-logs')).toHaveRole('button')
     expect(screen.getByTestId('settings-privacy-lock')).toHaveRole('switch')
     expect(screen.getByTestId('settings-signout')).toHaveRole('button')
     expect(screen.getByRole('button', { name: 'Go back' })).toBeTruthy()
@@ -53,6 +50,10 @@ describe('Vault settings account boundaries', () => {
     expect(screen.queryByText('General')).toBeTruthy()
     expect(document.querySelector('.qg-eyebrow')).toBeNull()
     expect(document.querySelector('.qg-methods')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Diagnostics/ }))
+    expect(screen.getByTestId('settings-update')).toHaveRole('button')
+    expect(screen.getByTestId('settings-refresh')).toHaveRole('button')
+    expect(screen.getByTestId('settings-logs')).toHaveRole('button')
   })
 
   it('picks a theme from paper radios instead of the old select list', async () => {

@@ -8,6 +8,7 @@ for (const dark of [false, true]) {
     page,
   }, testInfo) => {
     await page.goto('/')
+    await page.getByRole('button', { name: 'Help', exact: true }).click()
     await page.getByRole('button', { name: 'Access and recovery help' }).click()
     await page.evaluate((value) => document.documentElement.classList.toggle('palette-dark', value), dark)
     await page.getByRole('radio', { name: 'Both keys are unavailable' }).click()
@@ -20,12 +21,13 @@ for (const dark of [false, true]) {
       .getByLabel('Recovery Kit file')
       .setInputFiles({ name: 'saved-kit.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(kit)) })
     await expect(page.getByText(/This kit uses Standard protection/)).toBeVisible()
+    await page.getByRole('button', { name: 'Go back' }).click()
     await page.getByRole('radio', { name: 'The service is unavailable' }).click()
     await expect(page.getByText(/Starting a new delayed recovery requires both services/)).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
     expect(overflow).toBe(false)
     await page.screenshot({ path: testInfo.outputPath('access-help.png'), fullPage: true })
-    await page.getByRole('button', { name: 'Go back' }).click()
+    await page.getByRole('button', { name: 'Close help' }).click()
     await expect(page.getByRole('button', { name: 'Get started', exact: true })).toBeVisible()
     await expect(page.getByTestId('account-switcher')).toHaveCount(0)
   })

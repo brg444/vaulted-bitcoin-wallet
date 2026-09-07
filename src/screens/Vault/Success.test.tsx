@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultSuccess from './Success'
@@ -20,6 +20,7 @@ function renderSuccess(lastTxKind: VaultContextProps['lastTxKind'], network = 'm
       <VaultSuccess />
     </VaultContext.Provider>,
   )
+  fireEvent.click(screen.getByText(/View (funding )?transaction$/))
 }
 
 describe('Vault send success explorer', () => {

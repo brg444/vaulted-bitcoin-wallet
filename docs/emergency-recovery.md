@@ -1,97 +1,95 @@
-# Recovery with your saved kit
+# Recovery with your saved files
 
-Keep this guide with the **Recovery Kit.json** downloaded from Vaulted. That
-file records your Savings addresses, recovery rules, protection tier, and
-Spending policy. Recovery also requires access to the keys and wallet
-information used by the route available to you.
+Keep an encrypted recovery archive alongside your Recovery Kit and access to
+its signing keys. The archive contains saved transaction paths and the
+passkey-protected device key. A public Recovery Kit records addresses and
+rules; it cannot replace missing transaction history or key-unlock data.
 
 ## Save the information you may need
 
-The current app downloads a public map, identified by `version: 3` in the
-file. It contains no private keys or encrypted copy of your device's wallet
-key. Your passkey and this file alone are insufficient to unlock that key
-if both the saved browser information and the Vault service's copy are gone.
+Open **Security → Backups** to download the public kit. On the recovery
+screen, **Enable encrypted automatic backup** starts cloud updates for the
+unlocked session, and **Download encrypted recovery archive** saves a local
+copy. Local capture updates while the wallet is running. Cloud updates need
+an active backup session and a working connection; check the last successful
+backup time before relying on a copy.
 
-| Item | What to keep |
-| --- | --- |
-| Recovery Kit.json | Save a copy outside this device and keep a second durable copy. It includes your vault addresses, so keep it private for financial privacy. |
-| Your passkey | Preserve access to the passkey created for the website where you enrolled. Face recognition, a fingerprint, or your device PIN approves its use. |
-| Your hardware key | Keep access to the hardware wallet and its own backup. It provides the second approval for ordinary Savings transfers. |
-| Your recovery key | Keep this separately if you chose Advanced. It provides an additional delayed Savings recovery route. |
-| This guide and your enrollment website | Keep them with the kit so you can identify the instructions and site associated with your vault. |
+| Item                       | What to keep                                                                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Encrypted recovery archive | Save a copy outside this device. It contains the saved Spending paths, Bitcoin parents, payment journals and protected device-key data. |
+| Recovery Kit               | Keep the public scripts and rules with the archive. Addresses reveal financial information, so keep the file private.                   |
+| Your passkey               | Preserve access to the passkey for the website where you enrolled, including access through its provider.                               |
+| Your hardware key          | Keep access to the hardware wallet and its own backup. It supplies a second Savings approval.                                           |
+| Your recovery key          | Keep this separately if you chose Advanced. Its authority depends on the saved account and recovery path.                               |
+| Your enrollment website    | Keep its exact address with these files; the original passkey depends on it.                                                            |
 
-A fresh download from this release contains the same kind of public map. It
-does not add an independent device-key backup. After creating a different
-vault, save that vault's kit too.
+A backup covers its capture time. Receipts, payments and completed renewals
+require later capture. An interrupted update retains the previous complete
+archive and reports the failure. A suspended browser cannot continuously
+update a cloud backup.
 
-## If you can still open your wallet
+## Restore access or use the companion
 
-Open **Security → Recovery Kit** to download the map or retrieve an available
-copy. **Security → I lost a key** shows the recovery tools for Savings.
+Help on the welcome and unlock screens provides **Restore encrypted cloud backup** and
+**Restore encrypted backup from a file**. Both require the original passkey.
+Restoring archived data preserves pending operations and then reconciles with
+the current wallet state; importing a file does not cancel a payment.
 
-The current recovery screen prepares transactions for external signing and
-submission. Preparing or copying a transaction leaves those steps unfinished.
-The waiting period starts when the submitted recovery transaction confirms on
-Bitcoin. A prepared cancellation likewise needs the required approvals and
-submission before it can protect the funds.
+If the wallet or its services are unavailable, use the saved
+[recovery companion](https://github.com/brg444/vaulted-emergency-recovery).
+Open the recovery file, select a supported path and check its destination,
+amount and fees. The companion validates the saved scripts and transaction
+parents before preparing an action. Preparation does not broadcast.
 
-If you have only a saved file, the kit field in this release checks its
-contents. Importing that file as a wallet and restoring passkey access require
-additional capabilities beyond this inspection field.
+Save the prepared recovery before starting. After a lost response, reopen that
+same file to check Bitcoin status and resume the exact transaction. Partial
+signatures can also be saved and resumed. Hardware signing uses an exact PSBT
+handoff; confirm compatibility with your signing device and software.
 
-## If a device or key is unavailable
+Older public kits remain supported. A kit with saved phone-unlock data can
+use its original passkey; one without that data cannot. Saved boarding pins
+can support boarding recovery, but a public Savings map alone cannot supply
+a missing Spending transaction graph.
 
-First establish which keys you can still use. Losing a phone or hardware
-device can leave its key recoverable through an existing backup. Compatible
-passkey sign-in may restore device access while the required wallet
-information remains available.
+## Keys, delays and service availability
 
-| Keys you can still use | Savings option |
-| --- | --- |
-| Device key and hardware key | Approve an ordinary Savings transfer with both keys. This path has no recovery waiting period. |
-| Hardware key only | Start delayed recovery with the recovery services. The hardware path waits 6 Bitcoin blocks after confirmation of the recovery transaction. |
-| Device key only | Start delayed recovery with the recovery services. The device path waits 144 blocks after confirmation. |
-| Separate recovery key, enrolled with Advanced | Start delayed recovery with the recovery services. This path waits 288 blocks after confirmation. |
-| Neither normal key, with Standard protection | Standard has no separate recovery-key path. The public map cannot replace the missing keys. |
+| Account or saved state             | Independent recovery path                                              |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| Legacy normal Savings              | Phone and hardware keys, with no recovery waiting period               |
+| Standard Spending                  | Phone and hardware keys after the committed Spending delay             |
+| Advanced Spending                  | Hardware and separate recovery keys after the committed Spending delay |
+| Boarding deposit                   | Phone key after the boarding delay                                     |
+| Pending recovery                   | Its designated claimant after the committed block delay                |
+| Pending cancellation or Quarantine | The remaining keys required by that exact saved script                 |
+| Outbound Lightning lockup          | Phone sender refund through the saved contract and its refund delay    |
 
-On mainnet, 6, 144, and 288 blocks are approximately one hour, one day, and
-two days. Block times vary. Use the waiting period committed by your vault;
-test-network timing differs from mainnet.
+Connector Savings requires its existing service approvals and hardware
+signature. A saved connector payment can finish when the archive contains
+those service approvals; an unrelated new payment cannot reuse them.
 
-## If recovery services are unavailable
+Starting a new one-key delayed Savings recovery requires both recovery
+services. Its hardware, phone and separate recovery paths wait 6, 144 and
+288 Bitcoin blocks respectively after the initiating transaction confirms.
+Those block delays are distinct from Spending and boarding delays expressed
+in seconds. Waiting does not add a signing path to a normal Savings output.
 
-An ordinary Savings transfer remains possible with both the device and
-hardware keys, using compatible signing software and Bitcoin access. The
-device key must still be unlockable from the required saved wallet
-information.
+Spending and Lightning recovery may require separate Bitcoin fee funding.
+The companion shows the funding address for the selected signing key. The
+current SDK waits for a parent already in the mempool and does not
+automatically raise that parent's fee. Keep the prepared file while waiting
+for confirmations or timelocks.
 
-Starting a new delayed Savings recovery requires both recovery cosigners.
-Advanced adds a recovery key, but that key alone cannot start this process
-when the services are unavailable.
+## Original passkey and suspected recovery
 
-If recovery has already reached a pending Bitcoin output, the key that
-started it can claim after the committed delay. A service-free cancellation
-requires the remaining user keys specified by that recovery. Once the
-claimant can spend, cancellation competes with their claim.
+A passkey works at its original website origin, including the port. During a
+website outage, the companion can run locally under that hostname with a
+trusted local certificate. Follow its setup instructions; opening an unrelated
+localhost address cannot unlock the original passkey. A saved archive cannot
+replace a deleted passkey or a lost signing key.
 
-Spending funds and Bitcoin still arriving into Spending have separate
-recovery rules. Each has its own transaction state, required keys, committed
-delays, and compatible tools. The public Savings map alone is insufficient
-as a complete Spending recovery backup.
-
-The current wallet has no **Open a Recovery Kit** action on its welcome
-screen. An emergency tool must explicitly support the file you saved and
-the information needed to unlock your key. A public map cannot supply a
-missing encrypted device-key backup, even when an external tool supports
-newer backup formats.
-
-## If you see a recovery you did not start
-
-Check which key started it and which remaining keys can cancel it. The
-wallet checks for recovery activity while it runs and when it regains focus.
-Continuous monitoring and guaranteed notifications are unavailable in this
-release.
-
-Keep access to the remaining keys while reviewing your options. Preparing a
-cancellation is only one step: confirm that the required transaction was
-signed, submitted, and confirmed before relying on its outcome.
+If you see a recovery you did not start, check the initiating key and the
+remaining keys that can cancel it. Once the claimant can spend, cancellation
+competes with the claim. The wallet checks while running and when it regains
+focus; this release does not provide continuous monitoring or guaranteed
+notifications. Confirm that a cancellation was signed, submitted and
+confirmed before relying on its outcome.

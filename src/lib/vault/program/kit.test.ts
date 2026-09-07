@@ -14,7 +14,7 @@ describe('Recovery Kit', () => {
     expect(report.trees.some((tree) => tree.role === 'savings')).toBe(true)
     expect(report.trees.some((tree) => tree.role.includes('daily'))).toBe(false)
     expect(report.trees.some((tree) => tree.delay === 288)).toBe(true)
-    expect(report.warnings.some((line) => /cannot exit a Normal/.test(line))).toBe(true)
+    expect(report.warnings.some((line) => /phone and hardware keys without either service/.test(line))).toBe(true)
     expect(parseRecoveryKit(JSON.parse(JSON.stringify(kit))).descriptorHash).toBe(kit.descriptorHash)
   })
 

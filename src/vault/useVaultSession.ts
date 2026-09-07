@@ -1,3 +1,8 @@
+import { renewFromLocalUnlock, setupSpendingRenewals } from '../lib/vault/vtxo/renewalCeremony'
+import { openRecoveryCloudBackup } from '../lib/vault/recovery/cloudBackup'
+import { openLocalRecoveryBackup } from '../lib/vault/recovery/backupCodec'
+import { restoreVaultRecoveryFile } from '../lib/vault/recovery/restore'
+import { fetchVaultStatus } from '../lib/vault/status'
 import { useCallback, type Dispatch, type SetStateAction } from 'react'
 import {
   findStoredEnrollment,
@@ -14,8 +19,17 @@ import {
   signInWithPasskey,
   unlockLocalEnrollment,
 } from '../lib/vault/signIn'
-import { planReady, sameBip340Key, setupSpendingPolicy, type VaultSetupPlan } from '../lib/vault/setupPlan'
+import { planReady, setupSpendingPolicy, type VaultSetupPlan } from '../lib/vault/setupPlan'
 import { enrollWithPasskey, type EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
+import {
+  connectorPinFromVerifiedStatus,
+  saveConnectorEnrollmentPin,
+  loadConnectorEnrollmentPin,
+  verifyConnectorStatus,
+  connectorKitFromVerifiedStatus,
+  saveConnectorRecoveryKit,
+} from '../lib/vault/program/connectorEnroll'
+import { isConnectorTemplate } from '../lib/vault/program/connector'
 import type { VaultStatus } from '../lib/vault/types'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { saveLocalKit } from '../lib/vault/program/kitStore'
@@ -52,6 +66,14 @@ async function restoreMap(enrollment: EnrollmentSecrets, status: VaultStatus, se
   }
 }
 
+function restoreConnectorPin(status: VaultStatus): void {
+  if (!isConnectorTemplate(status.templateVersion)) return
+  const existing = loadConnectorEnrollmentPin(status.vaultId)
+  if (existing) verifyConnectorStatus(status, existing)
+  else saveConnectorEnrollmentPin(connectorPinFromVerifiedStatus(status))
+  saveConnectorRecoveryKit(connectorKitFromVerifiedStatus(status))
+}
+
 function bestEffortBrowserWrite(write: () => void) {
   try {
     write()
@@ -83,8 +105,9 @@ export function useVaultSession({
         reportError('Finish setup first.')
         return
       }
-      if (status?.externalOwnerWalletPub && !sameBip340Key(setup.hardwarePub, status.externalOwnerWalletPub)) {
-        reportError('This vault expects a different hardware key.')
+      if (!setup.connector) {
+        reportError('Add a supported public wallet descriptor before creating this vault.')
+        setScreen('hardware')
         return
       }
       setBusy(true)
@@ -95,6 +118,16 @@ export function useVaultSession({
           protectionTier: setup.protectionTier,
           hardwarePub: setup.hardwarePub,
           ...(setup.recoveryPub ? { recoveryPub: setup.recoveryPub } : {}),
+          ...(setup.connector
+            ? {
+                connector: {
+                  connectorPub: setup.connector.connectorPub,
+                  connectorType: setup.connector.connectorType,
+                  connectorFingerprint: setup.connector.connectorFingerprint,
+                  connectorPath: [...setup.connector.connectorPath],
+                },
+              }
+            : {}),
           spendingPolicy: setupSpendingPolicy(setup),
         })
         setEnrollment(result.enrollment)
@@ -130,6 +163,7 @@ export function useVaultSession({
             )
           }
         }
+        await setupSpendingRenewals(result.status, result.enrollment)
         setScreen('created')
       } catch (error) {
         reportError(humanizeVaultError(error))
@@ -164,7 +198,10 @@ export function useVaultSession({
       const local = enrollment || findStoredEnrollment()
       const localPin = local ? loadAddressPin(localStorage, local.vaultId) : null
       if (local && localPin) {
-        const unlocked = await unlockLocalEnrollment(local)
+        const unlocked = await unlockLocalEnrollment(local, (live, auth, canAuthorizeNew, record) =>
+          renewFromLocalUnlock(live, record, auth, canAuthorizeNew),
+        )
+        restoreConnectorPin(unlocked.status)
         setEnrollment(unlocked.enrollment)
         setLocked(false)
         const live = unlocked.status
@@ -174,11 +211,13 @@ export function useVaultSession({
         bestEffortBrowserWrite(() => saveEnrollment(unlocked.enrollment))
         bestEffortBrowserWrite(() => saveSelectedVaultId(unlocked.enrollment.vaultId))
         bestEffortBrowserWrite(() => setSessionLocked(false))
+        if (isConnectorTemplate(live.templateVersion)) await setupSpendingRenewals(live, unlocked.enrollment)
         void restoreMap(unlocked.enrollment, live, setup)
         return
       }
       if (local) {
         const live = await enablePasskeyLogin(local)
+        restoreConnectorPin(live)
         const livePin = pinFromEnrolledStatus(live)
         setEnrollment(local)
         setLocked(false)
@@ -189,12 +228,16 @@ export function useVaultSession({
         bestEffortBrowserWrite(() => saveEnrollment(local))
         bestEffortBrowserWrite(() => saveSelectedVaultId(local.vaultId))
         bestEffortBrowserWrite(() => setSessionLocked(false))
+        await setupSpendingRenewals(live, local)
         void restoreMap(local, live, setup)
         return
       }
       const selected = loadSelectedVaultId()
       const vaultId = selected || (await discoverVaultIdFromPasskey())
-      const result = await signInWithPasskey(vaultId)
+      const result = await signInWithPasskey(vaultId, (live, auth, canAuthorizeNew, record) =>
+        renewFromLocalUnlock(live, record, auth, canAuthorizeNew),
+      )
+      restoreConnectorPin(result.status)
       const recoveredPin = pinFromEnrolledStatus(result.status)
       setEnrollment(result.enrollment)
       setLocked(false)
@@ -205,6 +248,7 @@ export function useVaultSession({
       bestEffortBrowserWrite(() => saveEnrollment(result.enrollment))
       bestEffortBrowserWrite(() => saveSelectedVaultId(result.enrollment.vaultId))
       bestEffortBrowserWrite(() => setSessionLocked(false))
+      await setupSpendingRenewals(result.status, result.enrollment)
       void restoreMap(result.enrollment, result.status, setup)
     } catch (error) {
       reportError(humanizeVaultError(error))
@@ -213,5 +257,41 @@ export function useVaultSession({
     }
   }, [enrollment, reportError, setAddressPin, setBusy, setEnrollment, setLocked, setScreen, setStatus, setup])
 
-  return { enableOtherDevices, enroll, signIn }
+  const restoreRecoveryArchive = useCallback(
+    async (raw?: unknown) => {
+      setBusy(true)
+      reportError('')
+      let imported = false
+      try {
+        const file =
+          raw === undefined
+            ? (await openRecoveryCloudBackup(undefined, restoreVaultRecoveryFile)).file
+            : await openLocalRecoveryBackup(raw, restoreVaultRecoveryFile)
+        if (!file) throw new Error('No complete encrypted recovery archive was found')
+        imported = true
+        const live = await fetchVaultStatus(undefined, file.header.binding.vaultId)
+        restoreConnectorPin(live)
+        const livePin = pinFromEnrolledStatus(live)
+        setEnrollment(file.header.enrollment)
+        setAddressPin(livePin)
+        setStatus(live)
+        setLocked(false)
+        bestEffortBrowserWrite(() => setSessionLocked(false))
+        setScreen('home')
+        await setupSpendingRenewals(live, file.header.enrollment)
+      } catch (error) {
+        reportError(
+          imported
+            ? 'Recovery data is saved on this device. Live balances could not be loaded.'
+            : humanizeVaultError(error),
+        )
+        throw error
+      } finally {
+        setBusy(false)
+      }
+    },
+    [reportError, setBusy, setEnrollment, setAddressPin, setStatus, setLocked, setScreen],
+  )
+
+  return { enableOtherDevices, enroll, signIn, restoreRecoveryArchive }
 }

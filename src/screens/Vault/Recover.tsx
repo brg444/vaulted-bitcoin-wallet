@@ -74,6 +74,10 @@ function RecoverAlert({ text }: { text: string }) {
 export default function VaultRecover() {
   const {
     backupRecoveryKit,
+    backupRecoveryArchive,
+    downloadRecoveryArchive,
+    recoveryArchiveStatus,
+    recoveryArchiveError,
     busy,
     downloadRecoveryKit,
     error,
@@ -91,6 +95,10 @@ export default function VaultRecover() {
   } = useContext(VaultContext)
   const { toast } = useToast()
   const { confirmed, confirm } = useBackupConfirmation()
+  const [backupView, setBackupView] = useState<'overview' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding'>(
+    'overview',
+  )
+  const [recoveryTask, setRecoveryTask] = useState<'cancel' | 'claim' | null>(null)
   const [view, setView] = useState<'kit' | 'lost'>(recoverEntry)
   const [reviewingRecovery, setReviewingRecovery] = useState(false)
   const [fromKit, setFromKit] = useState(false)
@@ -101,7 +109,6 @@ export default function VaultRecover() {
     setFromKit(false)
   }, [recoverEntry])
   const [pasted, setPasted] = useState('')
-  const [showPaste, setShowPaste] = useState(false)
   const [localError, setLocalError] = useState('')
   const [claimant, setClaimant] = useState<Claimant>('hardware')
   const [claimDest, setClaimDest] = useState('')
@@ -112,13 +119,11 @@ export default function VaultRecover() {
   const [cancelHave, setCancelHave] = useState<Claimant[]>([])
   const [signedCancelPsbt, setSignedCancelPsbt] = useState('')
   const [matureBoardingSats, setMatureBoardingSats] = useState(0)
-  const [confirmBoardingRecovery, setConfirmBoardingRecovery] = useState(false)
   const [recoveringBoarding, setRecoveringBoarding] = useState(false)
 
   useEffect(() => {
     let active = true
     setMatureBoardingSats(0)
-    setConfirmBoardingRecovery(false)
     if (view !== 'kit' || !status?.enrolled) return () => undefined
     void findMatureBoardingInputs(status)
       .then(({ totalSats }) => {
@@ -175,6 +180,29 @@ export default function VaultRecover() {
     }
   }
 
+  if (view === 'lost' && psbtOut && preparedAction && !cancelSigners.length)
+    return (
+      <QgScreen
+        title={preparedAction === 'cancel' ? 'Cancellation prepared' : 'Recovery transaction prepared'}
+        back={() => {
+          setPsbtOut('')
+          setPreparedAction(null)
+        }}
+        footer={
+          <QgPrimary label='Save transaction file' onClick={() => downloadPsbt('Vaulted recovery.psbt', psbtOut)} />
+        }
+      >
+        <h1>Continue with your signer</h1>
+        <p className='qg-copy' data-testid='recovery-prepared'>
+          {preparedAction === 'claim'
+            ? 'Sign with the key that started recovery and submit after the waiting period ends.'
+            : 'This transaction needs the selected eligible key and recovery service approvals before submission.'}{' '}
+          Preparation has not moved funds. Recovery and cancellation take effect after Bitcoin confirmation.
+        </p>
+        <QgSecondary label='Copy transaction' onClick={() => void copyToClipboard(psbtOut)} />
+      </QgScreen>
+    )
+
   if (view === 'lost') {
     const inProcess = initiateAlerts[0]
     const externalRole = cancelSigners.find((role) => role !== 'phone' && !cancelHave.includes(role))
@@ -201,42 +229,67 @@ export default function VaultRecover() {
         />
       )
     }
+    if (inProcess && !recoveryTask)
+      return (
+        <QgScreen title='Active recovery' back={() => navigate(recoverExit)}>
+          <h1>Recovery detected on Savings</h1>
+          <p className='qg-copy'>{initiateAlert || 'Review the recovery and the keys available to cancel it.'}</p>
+          <HubGroup>
+            <HubRow title='Cancel this recovery' onClick={() => setRecoveryTask('cancel')} />
+            <HubRow title='Claim after the waiting period' onClick={() => setRecoveryTask('claim')} />
+          </HubGroup>
+          <p className='qg-copy'>
+            Use the eligible keys for your selected path. Preparing a transaction does not end the waiting period or
+            cancel recovery.
+          </p>
+        </QgScreen>
+      )
     return (
       <QgScreen
         title={fromHome && !backToKit ? 'Recovery' : 'Lost a key'}
-        dismiss={!backToKit && fromHome ? () => navigate('home') : undefined}
-        back={backToKit ? () => setView('kit') : fromHome ? undefined : () => navigate(recoverExit)}
+        dismiss={!inProcess && !backToKit && fromHome ? () => navigate('home') : undefined}
+        back={
+          inProcess
+            ? () => setRecoveryTask(null)
+            : backToKit
+              ? () => setView('kit')
+              : fromHome
+                ? undefined
+                : () => navigate(recoverExit)
+        }
         footer={
           inProcess ? (
             <>
               <RecoverAlert text={error || localError} />
-              <QgPrimary
-                label='Prepare cancellation'
-                testId='recover-clawback'
-                onClick={() => {
-                  setLocalError('')
-                  void (async () => {
-                    try {
-                      const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                      const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
-                      const built = planClawback({
-                        family: familyFromDescriptor(kit.descriptor),
-                        claimant: c,
-                        coin: { txid: inProcess.txid, vout: inProcess.vout, value: inProcess.value },
-                        feeSats: await recoveryOnchainFeeSats(SAVINGS_TRANSITION_VBYTES),
-                        vaultId: kit.descriptor.vaultId,
-                      })
-                      setPsbtOut(built.psbtHex)
-                      setPreparedAction('cancel')
-                      await copyToClipboard(built.psbtHex)
-                      toast('Cancellation transaction copied')
-                    } catch (err) {
-                      setLocalError(err instanceof Error ? err.message : 'Could not prepare cancellation')
-                    }
-                  })()
-                }}
-              />
-              {canCancelWithoutServices ? (
+              {recoveryTask === 'cancel' ? (
+                <QgPrimary
+                  label='Prepare cancellation'
+                  testId='recover-clawback'
+                  onClick={() => {
+                    setLocalError('')
+                    void (async () => {
+                      try {
+                        const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
+                        const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
+                        const built = planClawback({
+                          family: familyFromDescriptor(kit.descriptor),
+                          claimant: c,
+                          coin: { txid: inProcess.txid, vout: inProcess.vout, value: inProcess.value },
+                          feeSats: await recoveryOnchainFeeSats(SAVINGS_TRANSITION_VBYTES),
+                          vaultId: kit.descriptor.vaultId,
+                        })
+                        setPsbtOut(built.psbtHex)
+                        setPreparedAction('cancel')
+                        await copyToClipboard(built.psbtHex)
+                        toast('Cancellation transaction copied')
+                      } catch (err) {
+                        setLocalError(err instanceof Error ? err.message : 'Could not prepare cancellation')
+                      }
+                    })()
+                  }}
+                />
+              ) : null}
+              {recoveryTask === 'cancel' && canCancelWithoutServices ? (
                 <QgSecondary
                   label='Cancel without services'
                   testId='recover-guardian-exit'
@@ -275,34 +328,36 @@ export default function VaultRecover() {
                   }}
                 />
               ) : null}
-              <QgSecondary
-                label='Prepare recovery transfer'
-                testId='recover-claim'
-                disabled={!claimDest.trim()}
-                onClick={() => {
-                  setLocalError('')
-                  void (async () => {
-                    try {
-                      const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                      const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
-                      const built = planClaim({
-                        family: familyFromDescriptor(kit.descriptor),
-                        claimant: c,
-                        coin: { txid: inProcess.txid, vout: inProcess.vout, value: inProcess.value },
-                        destAddress: claimDest.trim(),
-                        feeSats: await recoveryOnchainFeeSats(SAVINGS_CLAIM_VBYTES),
-                        network: kit.descriptor.network,
-                      })
-                      setPsbtOut(built.psbtHex)
-                      setPreparedAction('claim')
-                      await copyToClipboard(built.psbtHex)
-                      toast('Recovery transfer copied')
-                    } catch (err) {
-                      setLocalError(err instanceof Error ? err.message : 'Could not prepare recovery transfer')
-                    }
-                  })()
-                }}
-              />
+              {recoveryTask === 'claim' ? (
+                <QgPrimary
+                  label='Prepare recovery transfer'
+                  testId='recover-claim'
+                  disabled={!claimDest.trim()}
+                  onClick={() => {
+                    setLocalError('')
+                    void (async () => {
+                      try {
+                        const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
+                        const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
+                        const built = planClaim({
+                          family: familyFromDescriptor(kit.descriptor),
+                          claimant: c,
+                          coin: { txid: inProcess.txid, vout: inProcess.vout, value: inProcess.value },
+                          destAddress: claimDest.trim(),
+                          feeSats: await recoveryOnchainFeeSats(SAVINGS_CLAIM_VBYTES),
+                          network: kit.descriptor.network,
+                        })
+                        setPsbtOut(built.psbtHex)
+                        setPreparedAction('claim')
+                        await copyToClipboard(built.psbtHex)
+                        toast('Recovery transfer copied')
+                      } catch (err) {
+                        setLocalError(err instanceof Error ? err.message : 'Could not prepare recovery transfer')
+                      }
+                    })()
+                  }}
+                />
+              ) : null}
             </>
           ) : (
             <>
@@ -545,158 +600,54 @@ export default function VaultRecover() {
   }
 
   const fromHome = recoverExit === 'home'
+  const runBackup = (action: () => Promise<unknown>) => {
+    setLocalError('')
+    void action().catch((err) => setLocalError(err instanceof Error ? err.message : 'Backup is unavailable'))
+  }
   return (
     <QgScreen
-      title='Recovery Kit'
-      dismiss={fromHome ? () => navigate('home') : undefined}
-      back={fromHome ? undefined : () => navigate(recoverExit)}
+      title={
+        backupView === 'overview'
+          ? 'Backups'
+          : backupView === 'kit'
+            ? 'Recovery Kit'
+            : backupView === 'cloud'
+              ? 'Automatic backup'
+              : backupView === 'file'
+                ? 'Save encrypted backup'
+                : backupView === 'boarding'
+                  ? 'Recover received Bitcoin'
+                  : 'Check Recovery Kit'
+      }
+      dismiss={backupView === 'overview' && fromHome ? () => navigate('home') : undefined}
+      back={
+        backupView !== 'overview' ? () => setBackupView('overview') : fromHome ? undefined : () => navigate(recoverExit)
+      }
       footer={
         <>
-          <RecoverAlert text={error || localError} />
-          {hasRecoveryKit ? (
-            <>
-              <QgPrimary label='Download Recovery Kit' testId='download-recovery-kit' onClick={saveKit} />
-              <QgSecondary
-                label={busy ? 'Waiting for passkey…' : 'Save copy with Vault service'}
-                testId='backup-recovery-kit'
-                disabled={busy}
-                onClick={() => {
-                  setLocalError('')
-                  void (async () => {
-                    try {
-                      const pushed = await backupRecoveryKit()
-                      toast(pushed ? 'Kit copy saved with the Vault service' : 'Kit saved on this device only')
-                    } catch (err) {
-                      setLocalError(err instanceof Error ? err.message : 'Could not back up the map')
-                    }
-                  })()
-                }}
-              />
-            </>
-          ) : (
+          <RecoverAlert text={error || localError || recoveryArchiveError} />
+          {backupView === 'cloud' ? (
             <QgPrimary
-              label={busy ? 'Waiting for passkey…' : 'Retrieve Recovery Kit'}
-              testId='restore-recovery-kit'
+              label='Enable encrypted automatic backup'
               disabled={busy}
-              onClick={() => {
-                setLocalError('')
-                void (async () => {
-                  try {
-                    await restoreRecoveryKit()
-                    toast('Recovery Kit retrieved on this device')
-                  } catch (err) {
-                    setLocalError(err instanceof Error ? err.message : 'Could not get the map')
-                  }
-                })()
-              }}
+              onClick={() => runBackup(backupRecoveryArchive)}
             />
-          )}
-        </>
-      }
-    >
-      <div className='vault-security'>
-        <section className='vault-security-hero' aria-label='Recovery Kit status'>
-          <div className='vault-security-hero-head'>
-            <strong>Recovery Kit</strong>
-            <span className={hasRecoveryKit ? 'is-ready' : 'is-attention'}>
-              {hasRecoveryKit ? 'On this device' : 'Needed'}
-            </span>
-          </div>
-          <h2>Keep your Recovery Kit available</h2>
-          <p>
-            The Recovery Kit is a public map of this vault—not a seed or private key. It lets recovery software rebuild
-            the correct addresses and recovery paths, but cannot move bitcoin by itself.
-          </p>
-        </section>
-
-        <section className='qg-note'>
-          <FileKey />
-          <div>
-            <strong>{confirmed ? 'Separate copy confirmed by you' : 'Separate copy still needs confirmation'}</strong>
-            <p>
-              {confirmed
-                ? 'The app records your confirmation, but cannot verify the saved file.'
-                : 'After saving this vault’s kit outside this device, record that you have a separate copy.'}
-            </p>
-            {!confirmed && hasRecoveryKit ? (
-              <button
-                type='button'
-                className='qg-text'
-                onClick={() => {
-                  if (!confirm()) toast('Could not save your confirmation. Try again.')
-                }}
-              >
-                I have a copy outside this device
-              </button>
-            ) : null}
-          </div>
-        </section>
-        <HubGroup label='Keep a durable copy'>
-          <HubRow
-            title='On this device'
-            detail={
-              hasRecoveryKit
-                ? 'The vault map is here. Save another copy outside this device.'
-                : 'No vault map is available here. Retrieve a service copy with your passkey, or inspect a saved file below.'
-            }
-          />
-          <HubRow
-            title='When you need the file'
-            detail='Recovery software uses this file to reconstruct the vault’s addresses and recovery rules when the app cannot.'
-          />
-          <HubRow
-            title='When the file cannot help'
-            detail='The map cannot sign, start recovery by itself, or replace a lost key. This device plus hardware can still move Savings without the service.'
-          />
-        </HubGroup>
-
-        {report && 'trees' in report ? (
-          <p className='qg-copy'>
-            This kit is for vault {report.vaultId.slice(0, 8)}… · {report.trees.length} addresses
-          </p>
-        ) : null}
-        {report && 'error' in report && pasted.trim() ? <RecoverAlert text={report.error} /> : null}
-        <button type='button' className='qg-text' onClick={() => setShowPaste((open) => !open)}>
-          I already have a kit file
-        </button>
-        {showPaste ? (
-          <label className='qg-field'>
-            <span>Recovery Kit</span>
-            <input
-              value={pasted}
-              placeholder='Paste the file to check it'
-              data-testid='recovery-kit-json'
-              onChange={(event) => setPasted(event.target.value)}
+          ) : backupView === 'file' ? (
+            <QgPrimary
+              label='Download encrypted recovery archive'
+              disabled={busy}
+              onClick={() =>
+                runBackup(async () => downloadJson('Vaulted encrypted recovery.json', await downloadRecoveryArchive()))
+              }
             />
-          </label>
-        ) : null}
-
-        <HubGroup label='If something is wrong'>
-          <HubRow
-            title='I lost a key'
-            detail='Check the remaining keys, service requirements, and next steps for Savings.'
-            onClick={() => {
-              setLocalError('')
-              setFromKit(true)
-              setReviewingRecovery(false)
-              setView('lost')
-            }}
-          />
-          {matureBoardingSats > 0 ? (
-            <HubRow
-              title='Recover received Bitcoin'
-              detail={`These funds have waited long enough to return onchain with this device. ${prettyAmount(matureBoardingSats)}`}
-              onClick={() => setConfirmBoardingRecovery(true)}
-              testId='recover-mature-boarding'
+          ) : backupView === 'kit' ? (
+            <QgPrimary
+              label={hasRecoveryKit ? 'Download Recovery Kit' : 'Retrieve Recovery Kit'}
+              testId={hasRecoveryKit ? 'download-recovery-kit' : 'restore-recovery-kit'}
+              disabled={busy}
+              onClick={() => (hasRecoveryKit ? saveKit() : runBackup(restoreRecoveryKit))}
             />
-          ) : null}
-        </HubGroup>
-        {confirmBoardingRecovery ? (
-          <>
-            <p className='qg-copy'>
-              Your passkey will authorize a one-time recovery to this device. A network fee is deducted before the
-              transaction is sent.
-            </p>
+          ) : backupView === 'boarding' ? (
             <QgPrimary
               label={recoveringBoarding ? 'Recovering…' : 'Recover to this device'}
               testId='recover-mature-boarding-confirm'
@@ -709,18 +660,137 @@ export default function VaultRecover() {
                 void recoverMatureBoarding()
                   .then((txid) => {
                     setMatureBoardingSats(0)
-                    setConfirmBoardingRecovery(false)
+                    setBackupView('overview')
                     toast(`Recovery sent ${txid.slice(0, 8)}…`)
                   })
-                  .catch((err) => {
-                    setLocalError(err instanceof Error ? err.message : 'Could not recover received Bitcoin')
-                  })
+                  .catch((err) =>
+                    setLocalError(err instanceof Error ? err.message : 'Could not recover received Bitcoin'),
+                  )
                   .finally(() => setRecoveringBoarding(false))
               }}
             />
-          </>
-        ) : null}
-      </div>
+          ) : null}
+        </>
+      }
+    >
+      {backupView === 'overview' ? (
+        <>
+          <p className='qg-copy'>Keep your keys and recovery data available if this device is lost.</p>
+          <HubGroup>
+            <HubRow
+              title='Automatic encrypted backup'
+              detail={recoveryArchiveStatus || 'Save transaction data for every account'}
+              onClick={() => setBackupView('cloud')}
+            />
+            <HubRow title='Save encrypted backup file' onClick={() => setBackupView('file')} />
+            <HubRow
+              title='Recovery Kit'
+              status={confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'On this device' : 'Needed'}
+              onClick={() => setBackupView('kit')}
+            />
+            <HubRow title='Check a saved Recovery Kit' onClick={() => setBackupView('inspect')} />
+            <HubRow
+              title='I lost a key'
+              onClick={() => {
+                setLocalError('')
+                setFromKit(true)
+                setReviewingRecovery(false)
+                setView('lost')
+              }}
+            />
+            {matureBoardingSats > 0 ? (
+              <HubRow
+                title='Recover received Bitcoin'
+                detail={prettyAmount(matureBoardingSats)}
+                testId='recover-mature-boarding'
+                onClick={() => setBackupView('boarding')}
+              />
+            ) : null}
+          </HubGroup>
+        </>
+      ) : backupView === 'kit' ? (
+        <>
+          <h1>Save your Recovery Kit</h1>
+          <p className='qg-copy'>
+            This public map records Savings addresses and recovery rules. It contains no private keys and cannot move
+            bitcoin by itself. Save a private copy outside this device.
+          </p>
+          <p className='qg-copy'>
+            {confirmed
+              ? 'You confirmed a separate copy. The app cannot verify where it is saved.'
+              : 'After saving a separate copy, record your confirmation below.'}
+          </p>
+          {!confirmed && hasRecoveryKit ? (
+            <QgSecondary
+              label='I have a copy outside this device'
+              onClick={() => {
+                if (!confirm()) toast('Could not save your confirmation. Try again.')
+              }}
+            />
+          ) : null}
+          {hasRecoveryKit ? (
+            <details className='qg-guidance'>
+              <summary>Save a public kit copy with the service</summary>
+              <p>This stores the public vault map separately from the encrypted transaction backup.</p>
+              <QgSecondary
+                label='Save copy with Vault service'
+                testId='backup-recovery-kit'
+                disabled={busy}
+                onClick={() =>
+                  runBackup(async () => {
+                    const pushed = await backupRecoveryKit()
+                    toast(pushed ? 'Kit copy saved with the Vault service' : 'Kit saved on this device only')
+                  })
+                }
+              />
+            </details>
+          ) : null}
+        </>
+      ) : backupView === 'cloud' || backupView === 'file' ? (
+        <>
+          <h1>{backupView === 'cloud' ? 'Back up automatically' : 'Keep a local backup'}</h1>
+          <p className='qg-copy'>
+            Save encrypted transaction data for recovery across every account. Keep access to the passkey needed to
+            unlock your backup.
+          </p>
+          <p className='qg-copy'>
+            {recoveryArchiveStatus ||
+              (backupView === 'file'
+                ? 'A file covers the data available when it is saved. Save an updated copy after activity.'
+                : 'Approve with your passkey to enable automatic backup.')}
+          </p>
+        </>
+      ) : backupView === 'boarding' ? (
+        <>
+          <h1>Recover received Bitcoin</h1>
+          <p className='qg-copy'>{prettyAmount(matureBoardingSats)} has waited long enough for this recovery path.</p>
+          <p className='qg-copy'>
+            Your passkey will authorize a one-time recovery to this device. A network fee is deducted before the
+            transaction is sent.
+          </p>
+        </>
+      ) : (
+        <>
+          <h1>Inspect a saved kit</h1>
+          <p className='qg-copy'>
+            Paste a public Recovery Kit to check its vault information. This does not restore access.
+          </p>
+          <label className='qg-field'>
+            <span>Recovery Kit JSON</span>
+            <textarea
+              value={pasted}
+              data-testid='recovery-kit-json'
+              onChange={(event) => setPasted(event.target.value)}
+            />
+          </label>
+          {report && 'trees' in report ? (
+            <p className='qg-copy'>
+              This kit is for vault {report.vaultId.slice(0, 8)}… · {report.trees.length} addresses
+            </p>
+          ) : null}
+          {report && 'error' in report && pasted.trim() ? <RecoverAlert text={report.error} /> : null}
+        </>
+      )}
     </QgScreen>
   )
 }

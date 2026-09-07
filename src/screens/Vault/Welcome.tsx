@@ -1,24 +1,17 @@
-import { useContext, useEffect, useState } from 'react'
-import { Fingerprint, ShieldCheck } from 'lucide-react'
+import { useContext, useEffect } from 'react'
 import ErrorMessage from '../../components/Error'
 import { isCoarsePhone } from '../../lib/vault/webauthn'
 import { VaultContext } from '../../vault/context'
 import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
 
-import RecoveryHelp from './RecoveryHelp'
-import InstallNotice from './qg/InstallNotice'
-
 export default function VaultWelcome() {
   const { busy, enrollmentMode, lightAvailable, error, hasLocalEnrollment, locked, navigate, signIn } =
     useContext(VaultContext)
   const onPhone = isCoarsePhone()
-  const [showHelp, setShowHelp] = useState(false)
 
   useEffect(() => {
     if (hasLocalEnrollment && !locked) navigate('home')
   }, [hasLocalEnrollment, locked, navigate])
-
-  if (showHelp) return <RecoveryHelp onBack={() => setShowHelp(false)} />
 
   return (
     <QgScreen
@@ -26,7 +19,6 @@ export default function VaultWelcome() {
       brand
       footer={
         <>
-          <QgTextButton onClick={() => setShowHelp(true)} label='Access and recovery help' />
           <ErrorMessage error={Boolean(error)} text={error} />
           {locked ? (
             <QgPrimary
@@ -66,17 +58,6 @@ export default function VaultWelcome() {
       <p className='qg-lead'>
         Use your passkey for everyday payments and your hardware wallet for a second Savings approval.
       </p>
-      <div className='qg-assurances'>
-        <span>
-          <Fingerprint />
-          Passkey protected
-        </span>
-        <span>
-          <ShieldCheck />
-          Two-key Savings
-        </span>
-      </div>
-      <InstallNotice />
     </QgScreen>
   )
 }

@@ -86,6 +86,7 @@ describe('Savings hardware handoff', () => {
     const { completeSavingsHandoff } = renderHandoff()
 
     fireEvent.click(screen.getByRole('button', { name: 'I’ve signed it' }))
+    fireEvent.click(screen.getByRole('button', { name: /Paste/ }))
     fireEvent.change(screen.getByTestId('savings-signed-psbt-paste'), {
       target: { value: 'hardware-signed-psbt-base64' },
     })
@@ -101,6 +102,7 @@ describe('Savings hardware handoff', () => {
   it('labels a mainnet handoff as Bitcoin', () => {
     renderHandoff('mainnet')
     fireEvent.click(screen.getByRole('button', { name: 'I’ve signed it' }))
+    fireEvent.click(screen.getByRole('button', { name: /Paste/ }))
     fireEvent.change(screen.getByTestId('savings-signed-psbt-paste'), {
       target: { value: 'hardware-signed-psbt-base64' },
     })

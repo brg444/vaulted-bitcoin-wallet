@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildVaultProgramDescriptor } from '../../lib/vault/program/descriptor'
 import { PROGRAM_FIXTURE } from '../../lib/vault/program/fixtures'
@@ -43,9 +43,10 @@ describe('access and recovery guidance', () => {
         <Component />
       </VaultContext.Provider>,
     )
+    fireEvent.click(screen.getByRole('button', { name: 'Help' }))
     fireEvent.click(screen.getByRole('button', { name: 'Access and recovery help' }))
     expect(screen.getByRole('heading', { name: 'What do you still have access to?' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Go back' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Go back' }))
     expect(screen.getByRole('button', { name: 'Access and recovery help' })).toBeTruthy()
     expect(value.signIn).not.toHaveBeenCalled()
     expect(value.navigate).not.toHaveBeenCalled()
@@ -72,6 +73,8 @@ describe('access and recovery guidance', () => {
   it('rejects oversized files without reading them', () => {
     const text = vi.fn()
     render(<RecoveryHelp onBack={vi.fn()} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'Both keys are unavailable' }))
+    fireEvent.click(screen.getByText('Check a saved Recovery Kit'))
     fireEvent.change(screen.getByLabelText('Recovery Kit file'), {
       target: { files: [{ size: 1024 * 1024 + 1, text }] },
     })

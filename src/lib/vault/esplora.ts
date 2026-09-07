@@ -130,7 +130,7 @@ export async function fetchFeeEstimates(): Promise<Record<string, number>> {
 }
 
 export async function broadcastTx(txHex: string): Promise<string> {
-  const expectedTxid = Transaction.fromRaw(hex.decode(txHex)).id
+  const expectedTxid = Transaction.fromRaw(hex.decode(txHex), { allowUnknownOutputs: true }).id
   const res = await fetch(`${esploraBase()}/tx`, { method: 'POST', body: txHex })
   const text = await readBounded(res)
   if (res.ok) {

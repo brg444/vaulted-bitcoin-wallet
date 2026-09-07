@@ -18,12 +18,13 @@ import {
 } from '../../lib/vault/prefs'
 import { setSessionLocked } from '../../lib/vault/enrollmentStore'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
+import type { VaultStatus } from '../../lib/vault/types'
 import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
 
-type View = 'menu' | 'theme' | 'about' | 'haptics' | 'logs' | 'reset'
+type View = 'menu' | 'theme' | 'about' | 'haptics' | 'logs' | 'reset' | 'diagnostics'
 
 const THEME_OPTIONS: { value: Themes; testId: string; label: (theme: Themes) => string }[] = [
   { value: Themes.Auto, testId: 'select-option-0', label: () => `Auto (${systemTheme()})` },
@@ -125,9 +126,26 @@ function ResetView({ onBack, onReset }: { onBack: () => void; onReset: () => voi
   )
 }
 
-export default function VaultSettings() {
-  const { balanceError, busy, liveNetwork, navigate, refreshBalance, refreshingBalance, reset, setup, status } =
-    useContext(VaultContext)
+export default function VaultSettings({
+  light,
+}: {
+  light?: {
+    status: VaultStatus | null
+    busy: boolean
+    onClose: () => void
+    refresh: () => Promise<void>
+    lock: () => void
+  }
+} = {}) {
+  const context = useContext(VaultContext)
+  const { reset, setup } = context
+  const status = light ? light.status : context.status
+  const busy = light ? light.busy : context.busy
+  const liveNetwork = light ? status?.network === 'mutinynet' : context.liveNetwork
+  const balanceError = light ? '' : context.balanceError
+  const refreshingBalance = light ? light.busy : context.refreshingBalance
+  const refreshBalance = light ? light.refresh : context.refreshBalance
+  const close = light ? light.onClose : () => context.navigate('home')
   const readiness = useVaultReadiness()
   const { toast } = useToast()
   const [view, setView] = useState<View>('menu')
@@ -234,7 +252,11 @@ export default function VaultSettings() {
       ['Policy version', status?.policyVersion],
       [
         'Protection tier',
-        tier === 'advanced' ? 'Advanced — separate recovery key' : 'Standard — no separate recovery key',
+        light
+          ? 'Light — passkey payments'
+          : tier === 'advanced'
+            ? 'Advanced — separate recovery key'
+            : 'Standard — no separate recovery key',
       ],
       ['Per-payment limit', prettyAmount(status?.txCap || setup.txCapSats)],
       ['Rolling allowance', prettyAmount(status?.periodAllowance || setup.dailyLimitSats)],
@@ -264,28 +286,10 @@ export default function VaultSettings() {
     )
   }
 
-  if (view === 'logs') return <LogsView onBack={() => setView('menu')} />
-  if (view === 'reset') return <ResetView onBack={() => setView('menu')} onReset={reset} />
-
-  return (
-    <QgScreen title='Settings' dismiss={() => navigate('home')}>
-      <div className='vault-security'>
-        <HubGroup label='General'>
-          <SettingsRow
-            label='Theme'
-            testId='settings-theme'
-            value={theme === Themes.Auto ? `Auto (${resolveVaultTheme(Themes.Auto)})` : theme}
-            onClick={() => setView('theme')}
-          />
-          <SettingsRow
-            label='Haptics'
-            testId='settings-haptics'
-            value={haptics ? 'On' : 'Off'}
-            onClick={() => setView('haptics')}
-          />
-          <SettingsRow label='About' testId='settings-about' onClick={() => setView('about')} />
-        </HubGroup>
-
+  if (view === 'diagnostics')
+    return (
+      <QgScreen title='Diagnostics' back={() => setView('menu')}>
+        {' '}
         <HubGroup label='Advanced'>
           <SettingsRow
             label={checkingUpdate ? 'Checking…' : 'Check for update'}
@@ -311,29 +315,63 @@ export default function VaultSettings() {
           />
           <SettingsRow label='Logs' testId='settings-logs' onClick={() => setView('logs')} />
         </HubGroup>
+      </QgScreen>
+    )
+
+  if (view === 'logs') return <LogsView onBack={() => setView('diagnostics')} />
+  if (view === 'reset') return <ResetView onBack={() => setView('menu')} onReset={reset} />
+
+  return (
+    <QgScreen title='Settings' dismiss={close}>
+      <div className='vault-security'>
+        <HubGroup label='General'>
+          <SettingsRow
+            label='Theme'
+            testId='settings-theme'
+            value={theme === Themes.Auto ? `Auto (${resolveVaultTheme(Themes.Auto)})` : theme}
+            onClick={() => setView('theme')}
+          />
+          <SettingsRow
+            label='Haptics'
+            testId='settings-haptics'
+            value={haptics ? 'On' : 'Off'}
+            onClick={() => setView('haptics')}
+          />
+          <SettingsRow label='About' testId='settings-about' onClick={() => setView('about')} />
+        </HubGroup>
+
+        <HubGroup>
+          <SettingsRow label='Diagnostics' testId='settings-diagnostics' onClick={() => setView('diagnostics')} />
+        </HubGroup>
 
         <HubGroup label='This browser'>
-          <button
-            type='button'
-            role='switch'
-            aria-checked={privacyLock}
-            className='vault-hub-row'
-            data-testid='settings-privacy-lock'
-            onClick={() => {
-              const next = !privacyLock
-              setPrivacyLock(next)
-              saveVaultPrivacyLock(next)
-              setSessionLocked(next)
-              if (next) hapticLight()
-            }}
-          >
-            <div className='vault-hub-copy'>
-              <p>Require passkey to open</p>
-              <p>Hide balances until this device approves</p>
-            </div>
-            <span className={privacyLock ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
-          </button>
-          <SettingsRow label='Sign out' testId='settings-signout' danger onClick={() => setView('reset')} />
+          {light ? (
+            <SettingsRow label='Lock wallet' testId='settings-lock' onClick={light.lock} />
+          ) : (
+            <>
+              <button
+                type='button'
+                role='switch'
+                aria-checked={privacyLock}
+                className='vault-hub-row'
+                data-testid='settings-privacy-lock'
+                onClick={() => {
+                  const next = !privacyLock
+                  setPrivacyLock(next)
+                  saveVaultPrivacyLock(next)
+                  setSessionLocked(next)
+                  if (next) hapticLight()
+                }}
+              >
+                <div className='vault-hub-copy'>
+                  <p>Require passkey to open</p>
+                  <p>Hide balances until this device approves</p>
+                </div>
+                <span className={privacyLock ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
+              </button>
+              <SettingsRow label='Sign out' testId='settings-signout' danger onClick={() => setView('reset')} />
+            </>
+          )}
         </HubGroup>
       </div>
     </QgScreen>

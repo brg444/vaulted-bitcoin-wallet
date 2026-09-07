@@ -18,7 +18,7 @@ describe('frozen wallet protocol domains', () => {
       standard: { recoveryKey: 'forbidden' },
       advanced: { recoveryKey: 'required' },
     })
-    expect(pack.formats).toEqual({ recoveryKit: 3, mapBackup: 3 })
+    expect(pack.formats).toEqual({ recoveryKit: 3, mapBackup: 3, connectorEnrollmentKit: 1 })
     expect(pack.domains.vaultRecord).toBe('arkade-vault/vault-record/v2')
     expect(pack.domains.recoveryBinding).toBe('arkade-vault/recovery-binding/v4')
   })

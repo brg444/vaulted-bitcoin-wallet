@@ -1,27 +1,23 @@
+import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import { expect, test, type Page } from '@playwright/test'
-import { PROGRAM_FIXTURE } from '../../lib/vault/program/fixtures'
 
 async function setupToThisDevice(page: Page) {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /Everyday spending/ })).toBeVisible()
   await page.getByRole('button', { name: 'Get started' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Everyday spending, protected savings' })).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.getByRole('button', { name: /^Standard/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Add your hardware key' })).toBeVisible()
-  await page.getByTestId('hardware-pub').fill(PROGRAM_FIXTURE.hardwarePub)
+  await page.getByRole('button', { name: 'Paste', exact: true }).click()
+  await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
 
-  await expect(page.getByRole('heading', { name: 'How should recovery work?' })).toBeVisible()
-  await page.getByRole('button', { name: 'Continue with Standard' }).click()
-
-  await expect(page.getByRole('heading', { name: 'Set comfortable limits' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Set your spending limits' })).toBeVisible()
   await page.getByRole('button', { name: 'Review setup' }).click()
 
   await expect(page.getByRole('heading', { name: 'Review your Vault' })).toBeVisible()
-  await expect(page.getByText('Not enrolled')).toBeVisible()
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: 'Continue' }).click()
 }

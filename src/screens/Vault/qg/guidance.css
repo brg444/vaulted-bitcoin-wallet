@@ -1,14 +1,14 @@
 .qg-guidance {
   border-block: 1px solid var(--qg-line);
-  margin-block: 20px;
-  font-size: 14px;
+  margin-block: var(--qg-space-24);
+  font-size: var(--qg-body);
   line-height: 1.55;
 }
 .qg-guidance > summary {
   cursor: pointer;
-  padding-block: 14px;
+  padding-block: var(--qg-space-16);
   min-height: 44px;
-  font-weight: 500;
+  font-weight: var(--qg-weight-medium);
 }
 .qg-guidance > summary:focus-visible {
   outline: none;
@@ -16,44 +16,44 @@
   text-underline-offset: 4px;
 }
 .qg-guidance-body {
-  padding-bottom: 16px;
+  padding-bottom: var(--qg-space-16);
 }
 .qg-guidance-body p + p,
 .qg-guidance-body dl,
 .qg-guidance-body ol {
-  margin-top: 12px;
+  margin-top: var(--qg-space-12);
 }
 .qg-guidance-body dt {
-  font-weight: 500;
-  margin-top: 12px;
+  font-weight: var(--qg-weight-medium);
+  margin-top: var(--qg-space-12);
 }
 .qg-guidance-body dd {
   margin: 3px 0 0;
   color: var(--qg-muted);
 }
 .qg-guidance-body ol {
-  padding-left: 20px;
+  padding-left: var(--qg-space-24);
 }
 .qg-guidance-body li + li {
-  margin-top: 10px;
+  margin-top: var(--qg-space-8);
 }
 .qg-backup-status {
-  margin-top: 20px;
-  font-size: 14px;
+  margin-top: var(--qg-space-24);
+  font-size: var(--qg-body);
   line-height: 1.55;
 }
 
 .qg-help-choices {
-  margin-top: 20px;
-  gap: 8px;
+  margin-top: var(--qg-space-24);
+  gap: var(--qg-space-8);
 }
 .qg-help-choices button {
   min-height: 56px;
 }
 
 .qg-guidance-body h2 {
-  font-size: 18px;
+  font-size: var(--qg-section);
   line-height: 1.35;
-  font-weight: 600;
-  margin-bottom: 12px;
+  font-weight: var(--qg-weight-strong);
+  margin-bottom: var(--qg-space-12);
 }

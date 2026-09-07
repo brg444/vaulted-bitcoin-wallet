@@ -7,8 +7,9 @@ import { VaultContext } from '../../vault/context'
 
 const THRESHOLD = 104
 
-export default function VaultRefresher() {
-  const { refreshBalance } = useContext(VaultContext)
+export default function VaultRefresher({ onRefresh }: { onRefresh?: () => Promise<void> } = {}) {
+  const context = useContext(VaultContext)
+  const refreshBalance = onRefresh || context.refreshBalance
   const indicator = useRef<HTMLDivElement>(null)
   const [distance, setDistance] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
