@@ -1,11 +1,4 @@
-# Light automatic backup
-
-Release preparation now targets the current owner-presigned delegation model,
-with Guardian assessed as the delegate. The integration and qualification
-requirements are in [Light delegated renewal](light-delegated-renewal.md).
-The backup qualification below covers foreground renewal. A renewal completed
-while the browser is closed requires recovery-data reconciliation on the next
-unlock with the current backup format.
+# Automatic encrypted backup
 
 Light creates a passkey and saves an encrypted recovery snapshot without asking
 for a seed, recovery code, or downloaded file. A discoverable passkey ceremony
@@ -27,16 +20,15 @@ reach the backup service. The Bitcoin owner scalar and passkey PRF are wiped
 after use. Background sync retains only the backup encryption key and an
 eight-hour, memory-only backup session, which cannot authorize payments.
 
-The new runtime routes use a single-use WebAuthn challenge plus the enrolled
+The runtime routes use a single-use WebAuthn challenge plus the enrolled
 direct-key proof. Reads and writes require the resulting tenant-scoped session,
 while authenticated backup rows and compare-and-swap revisions prevent a
-conflicting writer from silently overwriting another device's backup. Existing identity, policy and economic sequence bytes are preserved by
-the additive schema-2 migration. Backup writes preserve the existing spending limits and economic sequence.
+conflicting writer from silently overwriting another device's backup. Backup writes preserve spending limits and leave the economic policy sequence unchanged.
 
 ## VTXO paths and synchronization
 
 The reviewed wallet SDK is the vendored `f0fd58d5` lineage, with the existing
-selective Lightning patches recorded in `node_modules/@arkade-os/sdk/ORIGIN.md`.
+selective Lightning patches recorded in `vendor/arkade-os-sdk-ORIGIN.md`.
 In that source, `wallet/wallet.ts` installs ContractManager hooks only when a
 `virtualTxRepository` is supplied. Capture defaults to `lite`, which omits
 transaction PSBTs, and skips outputs below 1,000 sats. Capture errors are
@@ -86,38 +78,10 @@ approval or contact the Operator when saved-data mode is selected.
 origin needs a local server with trusted HTTPS after a website outage;
 WebAuthn cannot unlock that passkey at an unrelated localhost origin. A prepared
 exit can also be exported in the SDK's standard package format for
-`arkade-os/arkade-unilateral-exit` (reviewed at `718e90a`). That executor supports
+`arkade-os/arkade-unilateral-exit`. That executor supports
 graph packages and can supply its own fee wallet without the Light owner key.
 Its separate fee funding address must be followed when using that executor.
 
 The automatic flow depends on access to the original passkey or its provider's
 account recovery. It does not recover an owner key after every copy of that
 passkey is permanently lost. Cloud storage alone cannot decrypt the wallet.
-
-## Qualification on September 6, 2026
-
-A fresh Mutinynet browser wallet received 50,000 sats and automatically saved
-52 transaction PSBTs at cloud revision 2. A 10,000-sat payment produced a new
-40,000-sat change output, saved with 54 transaction PSBTs at revision 3.
-Renewal replaced that outpoint with a new confirmed path, saved at revision 5.
-After both the Vaulted API and Operator were blocked, the downloaded encrypted
-snapshot prepared the full 40,000-sat owner exit with no skipped output or
-request to either service. This drill prepared the signed graph; the resulting
-onchain sweep was not broadcast.
-
-The local candidate passed 941 wallet tests, TypeScript, lint, formatting,
-the mainnet production build, the full runtime build/vet/test gate, targeted
-backup authentication and migration tests, and 13 recovery-companion tests.
-The schema-2 migration preserved the authenticated identity and renewal rows
-and the independent policy-sequence file. A lost cloud write acknowledgment
-retries the exact saved ciphertext before uploading later payment paths.
-
-The September 6 drill used an isolated backup-only schema-3 database. Combined
-release integration preserves connector schema 3 and adds backup schema 4
-through an explicitly validated migration chain. That test database is a
-separate development lineage.
-
-Deploy the combined runtime and backup routes before the wallet frontend. The
-independent recovery bundles also need publication from the same reviewed
-source. Combined candidate commits remain local; production still uses the
-existing release.

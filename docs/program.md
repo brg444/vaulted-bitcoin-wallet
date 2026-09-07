@@ -1,76 +1,67 @@
-# Vault Program
+# Wallet programs
 
-The current enrollment template is `phone-hww-recovery-savings-v1`, and its
-descriptor schema is `arkade-vault/savings-v1`; together they identify the
-Savings-only L1 program. Spending uses the separate `vault-policy-v1` VTXO
-program, while database versions, templates, programs, and digest domains
-remain independent contracts.
+The wallet reconstructs its programs from authenticated enrollment facts and
+network-specific parameters. [Mutinynet](../src/lib/vault/contract-pack.json)
+and [mainnet](../src/lib/vault/contract-pack.mainnet.json) Contract Packs must
+match the Guardian. Updating the app does not change an enrolled Bitcoin script.
 
-The server and wallet pin the same machine-readable values in
-[`contract-pack.json`](../src/lib/vault/contract-pack.json) and verify the same
-canonical Savings vectors.
+## Spending policy
 
-## Enrollment policy instance
+Standard and Advanced use `vault-policy-v1`; Light uses
+`vault-light-policy-v1`. Cooperative Spending requires the owner, the policy
+cosigner, and the pinned Arkade Operator. The Guardian enforces per-payment,
+rolling 24-hour, and fee limits before signing. Bitcoin Script does not compute
+the rolling allowance.
 
-The program is fixed, but each vault freezes a protection tier and supported
-numeric policy. Standard forbids a recovery key; Advanced requires one.
-Onboarding offers Lower exposure (25,000 sats per payment and 50,000 sats per
-rolling 24 hours), Everyday (50,000 and 100,000), or custom values for those
-two fields. The 5,000-sat absolute fee ceiling and 10 sat/vB feerate ceiling
-remain release-managed and are not ordinary setup controls. The wallet commits
-the exact tier and policy digest before creating the passkey and accepts only
-an exact service echo and reconstructable descriptor.
+The Lower exposure preset allows 25,000 sats per payment and 50,000 sats per
+rolling 24 hours. Everyday allows 50,000 and 100,000 respectively. Custom values must satisfy the published policy bounds, with fee ceilings of
+5,000 sats and 10 sat/vB. Enrollment freezes the complete policy and its
+canonical digest before the wallet can use that program.
 
-The policy digest is retained in the staged enrollment, local program pin, and
-Recovery Kit. The two fee ceilings also affect the Savings transition scripts,
-so a vault enrolled with different ceilings has a different Savings
-descriptor. There is no post-enrollment edit path. Destination rules,
-arbitrary policy code, and additional programs are not part of this schema.
+The delayed Spending exit requires the device and hardware keys for Standard,
+hardware and recovery keys for Advanced, and the owner key for Light. Exact
+maturity comes from the enrolled script. These exits also need current Bitcoin
+transaction paths and fees.
 
-## Spending
+## Savings and connector versions
 
-Spending is VTXO-only and has no L1 Daily account. The collaborative
-`vault-policy-v1` leaf requires the phone, VTXO VaultCosigner, and Arkade
-Operator. The Vault service independently verifies the complete Arkade
-transaction and checkpoints and enforces recipient, fee, and rolling 24-hour
-allowance policy from that vault's immutable instance before signing.
+Light Savings is watch-only. Standard and Advanced retain the Savings family
+selected at enrollment:
 
-An ordinary send begins with a phone-signed, idempotent reservation. The user
-then authorizes the transaction-bound digest. The two ceremonies are separate:
-the first prevents an unauthenticated caller from locking the vault's VTXO,
-while the second approves the exact transaction built from the reservation.
+| Family                                | Normal approval and reserves                                                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `phone-hww-recovery-savings-v1`       | Device and hardware signatures on the Savings input                                                                                      |
+| `phone-connector-recovery-savings-v1` | Device, Guardian, and Emulator approval, followed by one conventional signer input with a returned 1,000-sat reserve                     |
+| `phone-connector-recovery-savings-v2` | Two conventional signer inputs, each with a returned 500-sat reserve; external approval precedes device, Guardian, and Emulator approval |
 
-The current Mutinynet spend shape uses between one and 50 canonical inputs, one
-destination, optional `vault-policy-v1` change, and P2A. The wallet reserves
-the operation before Review so the user sees the exact Operator fee. It binds
-the fee-policy digest and rejects drift before every remaining signing or
-submission stage.
+New connector enrollments use `savings-connector-dual-v2`. Its external
+signatures use `SIGHASH_SINGLE` without `ANYONECANPAY`. The first commits to
+the recipient; the second commits to Savings change, or the first returned
+reserve for a full withdrawal. The Emulator independently verifies both
+commitments and the complete program packet. Savings signatures commit to
+the completed transaction, including that packet.
 
-## Savings
+Savings pays the recipient, network fee, and 240-sat anchor. Reserves return in full, and partial withdrawals return Savings change to the
+enrolled script.
+A transfer to Spending pays the enrolled boarding address.
 
-Savings is the only L1 balance in a fresh vault. Its ordinary admin leaf
-requires the phone and hardware keys. The VaultCosigner has no routine path to
-pay an arbitrary Savings recipient.
+The connector's signer requirement depends on its online enforcing cosigners.
+Bitcoin does not execute the Emulator program. The device key together with
+both online signing keys can bypass that policy; this differs from the direct
+hardware-signature leaf of older Savings. See [security](security.md).
 
-Moving Savings to Spending pays the exact enrolled boarding address. The
-only supported program is `vault-board-v1`. After the output confirms, the
-official SDK settles it to the advertised `vault-policy-v1` Arkade address. A
-Savings withdrawal to another Bitcoin address remains an external PSBT
-workflow.
+## Delayed Savings recovery
 
-## Recovery
+Standard forbids a separate recovery key, while Advanced requires one distinct
+from the device and hardware roles. Creating a new delayed recovery requires its
+service approvals. The resulting Pending output uses the enrolled claimant
+and a block delay: hardware 6, device 144, or recovery key 288 blocks.
 
-Standard has phone and hardware recovery claimants but no recovery key.
-Advanced also includes the recovery-key claimant. The enrolled program can
-begin a new Pending output for an enrolled claimant. The current Mutinynet delays
-are 144, 6, and 288 blocks respectively. Those values begin when the Pending
-output confirms; the age of the original Savings output does not satisfy them.
+The waiting period starts when Pending confirms. Remaining guardian keys can
+use the exact cancellation and Quarantine paths committed in the saved script.
+Waiting alone does not add a service-independent path to normal connector
+Savings. A completed, saved authorization can support only its exact retained
+transaction.
 
-The remaining guardians can claw a Pending output into a Quarantine tree before
-the claimant matures. A matured claimant may recover through the committed
-claim path. The in-app watcher is local best-effort polling, not a watchtower.
-
-Face ID is a local user-verification ceremony, not a Bitcoin key. Production
-screens never request raw hardware or recovery private keys. They export and
-import PSBTs so an external signer can preserve the custom tapscript data and
-approve the intended leaf.
+Public kits and encrypted archives carry different information. Follow
+[recovery with saved files](emergency-recovery.md) before relying on either.

@@ -1,7 +1,8 @@
 # Electrum connector qualification
 
-The onchain Savings connector is the active integration candidate; see
-[implementation and deployment status](DEPLOYMENT.md).
+These tests exercise the v1 Savings connector with one 1,000-sat signer reserve.
+The v2 dual-reserve transaction requires its own compatibility tests. See the
+[current signer guide](../../docs/connector-signers.md) for the enrolled family.
 
 Unmodified Electrum 4.8.1 signs the connector Savings PSBT with a native SegWit
 software wallet. Eight tests cover native Electrum seed derivation and imported
@@ -34,7 +35,7 @@ The Python process uses temporary wallet state and public test keys. The native
 seed fixture comes from Electrum's own `tests/test_wallet_vertical.py`.
 No daemon, network service, existing wallet, or user secret is used.
 [Sparrow qualification](SPARROW.md) covers native SegWit and Taproot software
-keys. BlueWallet-specific changes are outside the current scope.
+keys. Compatibility with other wallets is not established by these tests.
 
 ## Transaction screen qualification
 
@@ -64,7 +65,7 @@ directory to retain rendered transaction-dialog images.
 
 ## Electrum review and return
 
-Once connector enrollment is available, use the Electrum wallet that owns the
+For an enrolled v1 connector, use the Electrum wallet that owns the
 funded connector input:
 
 1. Open **Tools → Load transaction → From file** and choose the Savings PSBT.

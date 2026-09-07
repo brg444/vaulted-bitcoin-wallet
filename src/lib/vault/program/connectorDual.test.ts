@@ -86,8 +86,24 @@ describe('dual connector approval', () => {
           for (const i of [0, 1]) approval.signIdx(key.privateKey!, i, [3])
           const response = hex.encode(approval.toPSBT())
           const hardwareSignatures = initial.acceptHardwareApproval(response)
+          const coreResponse = RawPSBTV0.decode(approval.toPSBT())
+          coreResponse.inputs[2].sighashType = 3
+          expect(initial.acceptHardwareApproval(hex.encode(RawPSBTV0.encode(coreResponse)))).toEqual(hardwareSignatures)
+          for (const mode of [1, 2, 0x83]) {
+            coreResponse.inputs[2].sighashType = mode
+            expect(() => initial.acceptHardwareApproval(hex.encode(RawPSBTV0.encode(coreResponse)))).toThrow(
+              'connector signature sighash mismatch',
+            )
+          }
+          coreResponse.inputs[2].sighashType = 3
+          coreResponse.inputs[2].tapKeySig = new Uint8Array(65).fill(3)
+          expect(() => initial.acceptHardwareApproval(hex.encode(RawPSBTV0.encode(coreResponse)))).toThrow(
+            'connector signature sighash mismatch',
+          )
+          delete coreResponse.inputs[2].tapKeySig
           const payment = prepareConnectorPayment({ ...request, hardwareSignatures })
           const tx = Transaction.fromPSBT(hex.decode(payment.psbt()), options)
+          expect(tx.getInput(2).sighashType ?? 0).toBe(0)
           const scripts = [family.connector.script, family.connector.script, family.savings.script],
             values = [500n, 500n, 100000n]
           const message = tx.preimageWitnessV1(2, scripts, 0, values, -1, family.savings.normal)
@@ -101,6 +117,9 @@ describe('dual connector approval', () => {
           const phoneStage = payment.signPhone(scalar(3))
           expect(payment.verifyPhoneStage(phoneStage)).toBe(phoneStage)
           const handoff = payment.forHardware(witness)
+          expect(() => handoff.accept(hex.encode(RawPSBTV0.encode(coreResponse)))).toThrow(
+            'connector signature sighash mismatch',
+          )
           expect(approval.outputsLength).toBe(tx.outputsLength - 1)
           expect(approval.getInput(2).finalScriptWitness).toBeUndefined()
           for (let i = 0; i < approval.outputsLength; i++) expect(approval.getOutput(i)).toEqual(tx.getOutput(i))

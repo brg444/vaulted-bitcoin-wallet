@@ -47,8 +47,10 @@ funds' recovery data.
 
 ## Restore access or use the companion
 
-The welcome and unlock screens offer **Restore encrypted cloud backup** and
-**Restore encrypted backup from a file**. File restore accepts the new package and older encrypted archives. Both restore routes require the original passkey and authenticate the encrypted backup before using its contents.
+Help on the welcome and unlock screens provides **Restore encrypted cloud backup**
+and **Restore encrypted backup from a file**. File restore accepts the new package
+and older encrypted archives. Both routes require the original passkey and
+authenticate the encrypted backup before using its contents.
 Restoring archived data preserves pending operations and then reconciles with
 the current wallet state; importing a file does not cancel a payment.
 
@@ -72,15 +74,15 @@ a missing Spending transaction graph.
 
 ## Keys, delays and service availability
 
-| Account or saved state | Independent recovery path |
-| --- | --- |
-| Legacy normal Savings | Phone and hardware keys, with no recovery waiting period |
-| Standard Spending | Phone and hardware keys after the committed Spending delay |
-| Advanced Spending | Hardware and separate recovery keys after the committed Spending delay |
-| Boarding deposit | Phone key after the boarding delay |
-| Pending recovery | Its designated claimant after the committed block delay |
-| Pending cancellation or Quarantine | The remaining keys required by that exact saved script |
-| Outbound Lightning lockup | Phone sender refund through the saved contract and its refund delay |
+| Account or saved state             | Independent recovery path                                              |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| Legacy normal Savings              | Phone and hardware keys, with no recovery waiting period               |
+| Standard Spending                  | Phone and hardware keys after the committed Spending delay             |
+| Advanced Spending                  | Hardware and separate recovery keys after the committed Spending delay |
+| Boarding deposit                   | Phone key after the boarding delay                                     |
+| Pending recovery                   | Its designated claimant after the committed block delay                |
+| Pending cancellation or Quarantine | The remaining keys required by that exact saved script                 |
+| Outbound Lightning lockup          | Phone sender refund through the saved contract and its refund delay    |
 
 Connector Savings requires its existing service approvals and hardware
 signature. A saved connector payment can finish when the archive contains

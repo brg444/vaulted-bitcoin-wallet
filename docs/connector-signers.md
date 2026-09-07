@@ -1,71 +1,80 @@
-# Software signers for Savings
+# Signing Savings transfers
 
-This guide applies to the Savings connector candidate. Existing vaults retain
-the contract chosen at enrollment; updating the app does not convert their
-funds. See the [deployment status](../tools/connector-signers/DEPLOYMENT.md)
-before using this flow on RC.
+Savings needs a separate signer that can approve its transactions. A public
+descriptor identifies the key and receiving address; accepting that descriptor
+does not establish signing compatibility or prove that the key is in hardware.
 
-## Sparrow
+## Compatibility
 
-Use a single-signature native SegWit wallet (BIP84) or Taproot wallet (BIP86)
-that can sign transactions. A watch-only wallet requires its separate signer;
-software testing does not establish compatibility with a hardware device.
+For the two-reserve connector (`phone-connector-recovery-savings-v2`):
 
-1. In Sparrow, open the wallet's **Settings** tab and copy its public
-   **Descriptor** under **Script Policy**. Alternatively, choose **Export… →
-   Output Descriptor** and copy the receive descriptor from the exported text
-   file. Copy one `wpkh(...)` or `tr(...)` line, including its key origin and
-   checksum; leave the file's headings and other descriptors out of the paste.
-2. Paste that descriptor into Vaulted's signer setup. Check the derived reserve
-   address against the corresponding receiving address in Sparrow. A descriptor
-   ending in `/<0;1>/*` selects the first receive address.
-3. Send exactly **1,000 sats** to the reserve address and wait for confirmation.
-   Deposit Savings separately, using the Savings address shown by Vaulted after
-   enrollment. The reserve address and Savings address serve different purposes.
+| Signing option | Qualification |
+| --- | --- |
+| Sparrow 2.5.4 software wallet | Native SegWit and Taproot signing passed automated tests with the current Emulator. Manual desktop approval remains untested. |
+| Bitcoin Core 31.0 RPC | Native SegWit and Taproot signing passed automated tests with the current Emulator, using the Core response compatibility adjustment. GUI signing is not covered. |
+| Ledger Bitcoin app 2.4.2 | Native SegWit and Taproot passed simulator tests. Physical approval, the distributed application binary and funded production qualification remain incomplete. |
+| Jade | Current Bitcoin signing policy rejects the required signature mode. |
+| Electrum and other hardware devices | Not qualified for this two-reserve flow. |
 
-For a withdrawal, review the recipient and amount in Vaulted and approve with
-your passkey. Import the exported PSBT into Sparrow, check the full recipient
-address against the address you intended to pay, and sign. Return the signed
-PSBT or completed transaction to Vaulted for verification and submission.
+Hardware compatibility requires testing the complete device, firmware and
+connecting application together. See [reproducible qualification](../tools/connector-signers/DUAL-SIGNERS.md)
+and the [Ledger user guide](ledger-guide.md).
 
-The transaction returns the full 1,000-sat reserve to the same signer script.
-Savings pays the recipient, network fee, and a 240-sat fee-bumping anchor. Any
-remaining Savings returns to the enrolled Savings address. Wait for confirmation
-before using the reserve's successor for another withdrawal.
+## Create a key with Sparrow
 
-## Electrum
+1. Create a new wallet and select **Single Signature**, then **Taproot (BIP86)**.
+2. For hardware protection, generate the seed on the device and add it through
+   **Connected Hardware Wallet**. Keep the seed backup offline. For software
+   testing, choose **New or Imported Software Wallet** and create a BIP39 seed
+   or import a dedicated test seed into a new wallet.
+3. Apply the settings. Show the public **Descriptor** QR in **Settings**, or
+   export an **Output Descriptor** file. In Vaulted, choose **Scan QR**,
+   **Upload** or **Paste**. Supply one receiving `tr(...)` descriptor with its
+   fingerprint and derivation path.
+4. Compare Vaulted's reserve address with the first receiving address in the
+   signing wallet. A ranged descriptor selects index zero; a multipath
+   descriptor selects its receive branch.
 
-Electrum 4.8.1 is qualified for native SegWit connector signing with BIP84 or
-native Electrum origins. The qualification does not cover Taproot signing.
-Its **Wallet → Information** dialog displays the master public key, derivation
-path, and BIP32 root fingerprint, but does not provide Sparrow's descriptor
-export action.
+Native SegWit (BIP84) remains supported as an alternative, using a `wpkh(...)`
+descriptor. Keep the selected wallet type, account and descriptor matched.
 
-For a single-signature native SegWit wallet, assemble the public descriptor from
-those three fields:
+Never enter seed words or private keys into Vaulted. A software wallet created
+for testing does not provide hardware protection. For hardware use, choose a
+qualified device and signing workflow before depositing.
 
-```text
-wpkh([FINGERPRINT/ORIGIN_PATH]MASTER_PUBLIC_KEY/0/*)
-```
+## Deposit and approve
 
-For example, a displayed origin of `m/0'` becomes
-`wpkh([FINGERPRINT/0']MASTER_PUBLIC_KEY/0/*)`. Replace the placeholders with the
-public values from your wallet, keeping your seed phrase and private extended
-key in the signing wallet. Vaulted derives the first receiving address, which
-you can compare with Electrum before funding the reserve.
+Use Vaulted's prepared first Savings deposit. It funds Savings and creates two
+500-sat reserves for the signer together. A new two-reserve wallet needs both
+outputs created by that prepared deposit.
 
-To sign, choose **Tools → Load transaction → From file**, open the exported
-Savings PSBT, and review the Outputs list. Copy the recipient address to check
-its full value, then sign and return the completed transaction or PSBT to
-Vaulted. Keep any pending withdrawal available until its outcome is resolved;
-a closed window or failed network request does not cancel an issued signature.
+For a transfer, export the hardware approval PSBT from Vaulted and open it in
+Sparrow. Sparrow shows a **Non-Default Sighash** warning; review the transaction
+before agreeing to open it. Check the recipient address and amount, and the
+protected Savings change for a partial withdrawal. Sign and return the partially
+signed PSBT to Vaulted. The Savings input is deliberately unsigned at this
+stage, so the transaction is not ready to broadcast from Sparrow.
 
-## Qualification scope
+Vaulted verifies both reserve signatures, then obtains the remaining Savings
+approvals. The reserves return to the same enrolled address. Savings pays the
+recipient, network fee and 240-sat anchor; remaining Savings returns to its
+enrolled address. Preserve a pending transfer until its outcome is resolved.
 
-[Sparrow](../tools/connector-signers/SPARROW.md) and
-[Electrum](../tools/connector-signers/README.md) tests exercise conventional-input
-signing with the Savings input already finalized. They verify that the returned
-signature commits every output and that the completed transaction matches the
-retained candidate. Vaulted's custom recovery scripts retain the existing
-recovery model and its separate signer requirements; the conventional-input
-tests qualify normal connector withdrawals.
+For Bitcoin Core RPC signing, unlock the correct signing wallet locally and
+use its `walletprocesspsbt` RPC with `sign=true`, `sighashtype="SINGLE"`,
+`bip32derivs=true`, and `finalize=true`. Return the `psbt` result to Vaulted.
+`complete=false` is expected because Core cannot sign the Savings input. This
+flow requires the Core response compatibility adjustment described in the
+qualification notes; descriptor import alone does not establish its availability.
+
+## Existing one-reserve wallets
+
+Previously enrolled `phone-connector-recovery-savings-v1` wallets retain their
+single 1,000-sat reserve and original approval order. Savings approvals come
+first, followed by the conventional input signature committing every output.
+An app update does not change the enrolled contract or move funds.
+
+The earlier [Sparrow](../tools/connector-signers/SPARROW.md) and
+[Electrum](../tools/connector-signers/README.md) qualifications apply to that
+one-reserve transaction; v2 requires its own qualification. Both connector
+versions retain their enrolled recovery paths and signer requirements.
