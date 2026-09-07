@@ -127,7 +127,7 @@ export function sign(bytes) { const tx=Transaction.fromPSBT(bytes); tx.sign(scal
     await page.locator('#file').setInputFiles({
       name: 'bad.json',
       mimeType: 'application/json',
-      buffer: Buffer.from('{"name":"vaulted-recovery-package","version":1}'),
+      buffer: Buffer.from('{malformed'),
     })
     await expect(page.locator('#error')).not.toBeEmpty()
     await expect(page.locator('#prepared')).toBeHidden()

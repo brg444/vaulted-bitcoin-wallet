@@ -686,7 +686,11 @@ el('scan').onclick = () =>
           allowUnknownOutputs: true,
         })
         const output = tx.getOutput(coin.vout)
-        if (tx.id !== coin.txid || hex.encode(OutScript.decode(output.script!)) !== tree.script || Number(output.amount) !== coin.value)
+        if (
+          tx.id !== coin.txid ||
+          hex.encode(OutScript.decode(output.script!)) !== tree.script ||
+          Number(output.amount) !== coin.value
+        )
           throw new Error('Bitcoin parent changed')
         found.set(`${coin.txid}:${coin.vout}`, { ...coin, script: tree.script, parentHex: parentHex.trim() })
       }
@@ -706,18 +710,26 @@ el('export-psbt').onclick = () => {
   else if (prepared.name === 'vaulted-connector-recovery')
     save('Vaulted connector.psbt', connectorRecoveryHandoff(prepared))
 }
-async function load(data: unknown) {
-  const x = data as { name?: string; version?: number; source?: Source; prepared?: Prepared }
+function clearSource() {
   prepared = undefined
   draft = undefined
   source = {}
-  raw = data
+  raw = undefined
   el('signature').hidden = true
   el('review').hidden = true
   el('prepared').hidden = true
   el('open').hidden = true
   el('unlock').hidden = true
   el<HTMLDetailsElement>('unlock').open = false
+  coins = []
+  el('import').hidden = false
+  el('change-file').hidden = true
+  el('status').textContent = ''
+}
+async function load(data: unknown) {
+  const x = data as { name?: string; version?: number; source?: Source; prepared?: Prepared }
+  clearSource()
+  raw = data
   if (x.name === 'vaulted-recovery-package') {
     const pkg = parsePortableRecoveryPackage(data)
     source = { full: portableRecoverySource(pkg) }
@@ -810,7 +822,9 @@ function validatePrepared() {
 el<HTMLInputElement>('file').onchange = () =>
   void run(async () => {
     const f = el<HTMLInputElement>('file').files?.[0]
-    if (!f || f.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
+    if (!f) return
+    clearSource()
+    if (f.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
     await load(JSON.parse(extractRecoveryKitJson(new Uint8Array(await f.arrayBuffer()))))
   })
 el('open').onclick = () =>
