@@ -135,6 +135,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [restoreMethod, setRestoreMethod] = useState<'choose' | 'file'>('choose')
   const [backupStep, setBackupStep] = useState<'file' | 'secret'>('file')
   const [exitStep, setExitStep] = useState<'review' | 'fund'>('review')
+  const [recoveryReturn, setRecoveryReturn] = useState<'restore' | 'security'>('restore')
   const [view, setView] = useState<View>('setup')
   const [settingsReturn, setSettingsReturn] = useState<'home' | 'savings'>('home')
   const [status, setStatus] = useState<VaultStatus | null>(null)
@@ -371,7 +372,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       setCloudSavedAt(saved.createdAt)
       setCloudError('')
       setStatus(st)
-      setWatched(loadWatchedSavings(st.vaultId, record.descriptor.network))
       setView('home')
       await refresh()
     })
@@ -449,7 +449,13 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     setDownloaded(true)
   }
   useEffect(() => {
-    if (record) setWatched(loadWatchedSavings(record.descriptor.vaultId, record.descriptor.network))
+    if (!record) return
+    try {
+      setWatched(loadWatchedSavings(record.descriptor.vaultId, record.descriptor.network))
+    } catch {
+      setWatched(null)
+      setError('The saved Savings address could not be loaded. Add it again in Savings.')
+    }
   }, [record])
   const openSavings = () =>
     run(async () => {
@@ -801,6 +807,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             </p>
             <input
               ref={file}
+              aria-label='Light recovery file'
               type='file'
               accept='.json,application/json'
               onChange={(e) => {
@@ -837,6 +844,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   setPasskeyRecovery(encrypted || !saved.recoveryBackup)
                   setUseSavedRecovery(Boolean(saved.archive))
                   setRecoveryFile(saved)
+                  setRecoveryReturn('restore')
                   setConfirmation('')
                   setExitStep('review')
                   setView('emergency')
@@ -856,7 +864,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       <QgScreen
         title='Emergency Bitcoin recovery'
         back={() => {
-          if (!busyRef.current) navigate('restore')
+          if (busyRef.current) return
+          if (exitStep === 'fund') setExitStep('review')
+          else navigate(recoveryReturn)
         }}
         footer={
           recoveryFile.exitPackage && exitStep === 'review' ? (
@@ -1577,6 +1587,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                     archive,
                   })
                   setPasskeyRecovery(true)
+                  setRecoveryReturn('security')
                   setUseSavedRecovery(true)
                   setExitStep('review')
                   setView('emergency')
@@ -1664,6 +1675,13 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             }}
             actions={[
               {
+                id: 'security',
+                label: 'Security',
+                testId: 'tab-vault',
+                icon: <Shield />,
+                onClick: () => navigate('security'),
+              },
+              {
                 id: 'settings',
                 label: 'Settings',
                 testId: 'tab-settings',
@@ -1672,13 +1690,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   setSettingsReturn(view === 'savings' ? 'savings' : 'home')
                   navigate('settings')
                 },
-              },
-              {
-                id: 'security',
-                label: 'Security',
-                testId: 'tab-vault',
-                icon: <Shield />,
-                onClick: () => navigate('security'),
               },
             ]}
           />

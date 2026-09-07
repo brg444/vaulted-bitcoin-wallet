@@ -40,6 +40,7 @@ async function openLight(page: Page, watch = false, local = false) {
   })
   await override(page, 'lib/vault/light/recoveryArchive.ts', {
     captureLightRecoveryArchive: `async () => ({coins:[],capturedAt:'2026-09-07T00:00:00Z'})`,
+    loadLightRecoveryArchive: `async () => ({coins:[],capturedAt:'2026-09-07T00:00:00Z'})`,
   })
   await override(page, 'lib/vault/light/backupScheduler.ts', {
     lightBackupScheduler: `() => ({request(){},dispose(){}})`,
@@ -143,6 +144,10 @@ test('@polish Light balance, history, settings and payment navigation stay acces
     await expect(page.getByRole('button', { name: 'Lock wallet' })).toBeInViewport({ ratio: 1 })
     await page.getByRole('button', { name: 'Go back', exact: true }).click()
   }
+  await page.getByRole('button', { name: 'Recover directly to Bitcoin', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Recover to Bitcoin', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Security', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Lock wallet' }).click()
   await expect(page.getByRole('button', { name: 'Unlock with passkey' })).toBeVisible()
   await expect(page.getByTestId('vault-balance')).toHaveCount(0)
