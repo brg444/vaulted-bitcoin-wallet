@@ -1454,8 +1454,11 @@ test('@interaction launcher momentum glides, can be caught, and remembers its re
   page,
   browserName,
 }) => {
+  await page.clock.install()
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await openVault(page)
+  // Control gesture and coast time so native pointer dispatch cannot miss the glide.
+  await page.clock.pauseAt(new Date(Date.now() + 1000))
   const tab = page.getByRole('button', { name: 'Open navigation' })
   const start = (await tab.boundingBox())!
   const x = start.x + 20
@@ -1470,6 +1473,7 @@ test('@interaction launcher momentum glides, can be caught, and remembers its re
     await page.mouse.down()
   }
   for (let step = 1; step <= 5; step++) {
+    await page.clock.runFor(20)
     if (cdp)
       await cdp.send('Input.dispatchTouchEvent', {
         type: 'touchMove',
@@ -1477,13 +1481,14 @@ test('@interaction launcher momentum glides, can be caught, and remembers its re
         touchPoints: [{ x, y: y - step * 24 }],
       })
     else await page.mouse.move(x, y - step * 24)
-    await page.waitForTimeout(16)
   }
+  await page.clock.runFor(20)
   const released = (await tab.boundingBox())!.y
   if (cdp)
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', timestamp: gestureTime + 0.12, touchPoints: [] })
   else await page.mouse.up()
   await expect(tab).toHaveClass(/is-coasting/)
+  await page.clock.runFor(32)
   await expect.poll(async () => (await tab.boundingBox())!.y).toBeLessThan(released - 12)
   await expect(page.getByRole('navigation')).toHaveCount(0)
 
@@ -1495,8 +1500,9 @@ test('@interaction launcher momentum glides, can be caught, and remembers its re
   const caught = (await tab.boundingBox())!.y
   await page.mouse.up()
   await expect(page.getByRole('navigation')).toHaveCount(0)
-  await page.waitForTimeout(100)
+  await page.clock.runFor(100)
   expect((await tab.boundingBox())!.y).toBeCloseTo(caught, 0)
+  await page.clock.resume()
   await cdp?.detach()
   await page.reload()
   await expect(tab).toBeVisible()
