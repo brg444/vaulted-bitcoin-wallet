@@ -217,7 +217,7 @@ export default function ConnectorDeposit({
               <details className='qg-guidance'>
                 <summary>Prepare the unsigned payment</summary>
                 <p>
-                  Use a native SegWit or Taproot wallet. In Sparrow, create the payment and save its PSBT before
+                  Use a native SegWit or Taproot wallet. Create the payment in your wallet and save its PSBT before
                   signing. Vaulted will show the adjusted outputs and fee for review.
                 </p>
               </details>

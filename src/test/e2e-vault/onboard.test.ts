@@ -10,6 +10,7 @@ async function setupToThisDevice(page: Page) {
   await page.getByRole('button', { name: /^Standard/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Add your hardware key' })).toBeVisible()
+  await page.getByRole('button', { name: 'Paste', exact: true }).click()
   await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
 

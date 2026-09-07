@@ -477,6 +477,34 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   font-size: 16px;
 }
 
+/* A multiline descriptor must look editable even before it receives focus. */
+.qg-field .qg-descriptor-input {
+  display: block;
+  width: 100%;
+  min-height: 104px;
+  padding: 14px 16px;
+  border: 1px solid var(--qg-muted);
+  border-radius: var(--qg-field-radius);
+  background: var(--qg-paper);
+  color: var(--qg-ink);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+
+.qg-field .qg-descriptor-input::placeholder {
+  color: var(--qg-muted);
+  opacity: 1;
+}
+
+.qg-field .qg-descriptor-input:focus {
+  border-color: var(--qg-purple);
+  outline: 2px solid var(--qg-purple);
+  outline-offset: 2px;
+}
+
 .qg-field small {
   color: var(--qg-muted);
   font-size: 12px;
@@ -2991,4 +3019,32 @@ html.palette-dark .qg-progress {
   .qg-choice-list {
     margin-block: 16px;
   }
+}
+
+.qg-import-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.qg-import-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px;
+  border: 1px solid var(--qg-line);
+  border-radius: 10px;
+  color: var(--qg-ink);
+  background: var(--qg-paper);
+  font-size: 13px;
+}
+.qg-import-actions svg {
+  width: 16px;
+  height: 16px;
+}
+.qg-import-actions button:focus-visible {
+  outline: 2px solid var(--qg-purple);
+  outline-offset: 2px;
 }

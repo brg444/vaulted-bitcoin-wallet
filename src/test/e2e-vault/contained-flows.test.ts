@@ -1,5 +1,11 @@
+import { UR, UREncoder } from '@ngraveio/bc-ur'
 import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { test, expect, reachPasskeySetup } from './fixtures/passkey'
+
+const descriptorQrEncoder = new UREncoder(UR.fromBuffer(Buffer.from(CONNECTOR_TEST_DESCRIPTOR)), 30)
+const descriptorQrParts = Array.from({ length: descriptorQrEncoder.fragmentsLength }, () =>
+  descriptorQrEncoder.nextPart(),
+).reverse()
 
 for (const height of [667, 844]) {
   test(`backup and Help preserve the primary action at 375 by ${height}`, async ({ page, authorizer, passkey }) => {
@@ -44,6 +50,8 @@ test('another vault on the same device accepts a different editable hardware des
   await page.getByRole('button', { name: 'Sign out', exact: true }).click()
   await page.getByRole('button', { name: 'Set up another vault' }).click()
   await page.getByRole('button', { name: /^Standard/ }).click()
+  await expect(page.getByRole('textbox')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Paste', exact: true }).click()
   const descriptor = page.getByRole('textbox', { name: 'Wallet descriptor' })
   await expect(descriptor).toBeEditable()
   await expect(descriptor).toBeEmpty()
@@ -51,6 +59,43 @@ test('another vault on the same device accepts a different editable hardware des
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
   await expect(page.getByRole('heading', { name: 'Spending limits', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await page.getByRole('button', { name: 'Paste', exact: true }).click()
   await expect(descriptor).toHaveValue(CONNECTOR_TEST_DESCRIPTOR.replace('/0/*)', '/1/*)'))
   await expect(descriptor).toBeEditable()
+})
+
+test('descriptor upload, QR fallback, and animated QR decoding preserve editable review', async ({
+  page,
+  authorizer,
+}) => {
+  void authorizer
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Get started' }).click()
+  await page.getByRole('button', { name: /^Standard/ }).click()
+  await page.getByLabel('Descriptor file', { exact: true }).setInputFiles({
+    name: 'descriptor.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from(
+      `# Receive descriptor:\n${CONNECTOR_TEST_DESCRIPTOR}\n# Change descriptor:\n${CONNECTOR_TEST_DESCRIPTOR.replace('/0/*)', '/1/*)')}`,
+    ),
+  })
+  await expect(page.getByText('Review imported descriptor')).toBeVisible()
+  await expect(page.getByRole('textbox')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Paste', exact: true }).click()
+  const input = page.getByRole('textbox', { name: 'Wallet descriptor' })
+  await expect(input).toHaveValue(CONNECTOR_TEST_DESCRIPTOR)
+  const result = await page.evaluate(async (parts) => {
+    const source = '/src/lib/vault/descriptorQr.ts'
+    const { DescriptorQrDecoder } = await import(source)
+    const decoder = new DescriptorQrDecoder('mutinynet')
+    let result
+    for (const part of parts) result = decoder.receive(part)
+    return result
+  }, descriptorQrParts)
+  expect(result.descriptor).toBe(CONNECTOR_TEST_DESCRIPTOR)
+  await page.getByRole('button', { name: 'Scan descriptor QR code' }).click()
+  await expect(page.getByRole('heading', { name: 'Scan wallet descriptor' })).toBeVisible()
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await expect(input).toHaveValue(CONNECTOR_TEST_DESCRIPTOR)
+  await expect(input).toBeEditable()
 })

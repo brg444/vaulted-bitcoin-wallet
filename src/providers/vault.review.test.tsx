@@ -312,6 +312,8 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     )
     await waitFor(() => expect(screen.getByTestId('old-vault')).toHaveTextContent('vault-a'))
     fireEvent.click(screen.getByText('Start another vault'))
+    expect(screen.queryByRole('textbox')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
     const input = screen.getByRole('textbox', { name: 'Wallet descriptor' })
     expect(input).toHaveValue('')
     expect(input).not.toHaveAttribute('readonly')

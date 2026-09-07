@@ -11,3 +11,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+// The QR codec uses the browser implementation of Node's process helpers.
+declare module 'process/browser.js' {
+  const process: NodeJS.Process
+  export default process
+}

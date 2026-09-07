@@ -907,6 +907,7 @@ export async function reachPasskeySetup(page: Page, inviteOnly = true) {
   await expect(page.getByRole('heading', { name: /Everyday spending/ })).toBeVisible()
   await page.getByRole('button', { name: 'Get started' }).click()
   await page.getByRole('button', { name: /^Standard/ }).click()
+  await page.getByRole('button', { name: 'Paste', exact: true }).click()
   await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
   await page.getByRole('button', { name: 'Review setup' }).click()

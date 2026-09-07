@@ -13,6 +13,7 @@ function ScanFrame({
   onSwitch,
   onManual,
   video,
+  message,
 }: {
   label: string
   error: boolean
@@ -20,6 +21,7 @@ function ScanFrame({
   onSwitch: () => void
   onManual?: () => void
   video: ReactNode
+  message?: string
 }) {
   return (
     <QgScreen
@@ -42,7 +44,7 @@ function ScanFrame({
           <i />
           <i />
         </div>
-        <p>Place the QR code inside the frame</p>
+        <p role='status'>{message || 'Place the QR code inside the frame'}</p>
       </div>
     </QgScreen>
   )
@@ -52,29 +54,58 @@ interface ScannerProps {
   close: () => void
   manual?: () => void
   label: string
-  onData: (value: string) => void
+  message?: string
+  onData: (value: string) => void | boolean
   onError: (error: string) => void
   onSwitch?: () => void
   calculateScanRegion?: (video: HTMLVideoElement) => QrScanner.ScanRegion
 }
 
-export default function VaultScanner({ close, manual, label, onData, onError }: ScannerProps) {
+export default function VaultScanner({ close, manual, label, message, onData, onError }: ScannerProps) {
   const [implementation, setImplementation] = useState<'qr' | 'qrmini' | 'mills'>('qr')
   const next = () =>
     setImplementation(implementation === 'qr' ? 'qrmini' : implementation === 'qrmini' ? 'mills' : 'qr')
 
   if (implementation === 'qr') {
-    return <ScannerQr close={close} manual={manual} label={label} onData={onData} onError={onError} onSwitch={next} />
+    return (
+      <ScannerQr
+        close={close}
+        manual={manual}
+        label={label}
+        message={message}
+        onData={onData}
+        onError={onError}
+        onSwitch={next}
+      />
+    )
   }
   if (implementation === 'qrmini') {
     return (
-      <ScannerQrMini close={close} manual={manual} label={label} onData={onData} onError={onError} onSwitch={next} />
+      <ScannerQrMini
+        close={close}
+        manual={manual}
+        label={label}
+        message={message}
+        onData={onData}
+        onError={onError}
+        onSwitch={next}
+      />
     )
   }
-  return <ScannerMills close={close} manual={manual} label={label} onData={onData} onError={onError} onSwitch={next} />
+  return (
+    <ScannerMills
+      close={close}
+      manual={manual}
+      label={label}
+      message={message}
+      onData={onData}
+      onError={onError}
+      onSwitch={next}
+    />
+  )
 }
 
-function ScannerMills({ close, manual, label, onData, onError, onSwitch }: ScannerProps) {
+function ScannerMills({ close, manual, label, message, onData, onError, onSwitch }: ScannerProps) {
   const [error, setError] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const cameraRef = useRef<any>(null)
@@ -111,8 +142,7 @@ function ScannerMills({ close, manual, label, onData, onError, onSwitch }: Scann
         cancelRef.current = frameLoop(() => {
           const value = camera.readFrame(canvas)
           if (value) {
-            onData(value)
-            closeScanner()
+            if (onData(value) !== false) closeScanner()
           }
         })
       } catch (cause) {
@@ -135,6 +165,7 @@ function ScannerMills({ close, manual, label, onData, onError, onSwitch }: Scann
   return (
     <ScanFrame
       label={label}
+      message={message}
       error={error}
       onClose={closeScanner}
       onManual={() => {
@@ -147,7 +178,7 @@ function ScannerMills({ close, manual, label, onData, onError, onSwitch }: Scann
   )
 }
 
-function ScannerQr({ calculateScanRegion, close, manual, label, onData, onError, onSwitch }: ScannerProps) {
+function ScannerQr({ calculateScanRegion, close, manual, label, message, onData, onError, onSwitch }: ScannerProps) {
   const [error, setError] = useState(false)
   const [hasCamera, setHasCamera] = useState<boolean | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -173,8 +204,7 @@ function ScannerQr({ calculateScanRegion, close, manual, label, onData, onError,
     const scanner = new QrScanner(
       videoRef.current,
       (result) => {
-        onData(result.data)
-        closeScanner()
+        if (onData(result.data) !== false) closeScanner()
       },
       {
         maxScansPerSecond: 100,
@@ -200,6 +230,7 @@ function ScannerQr({ calculateScanRegion, close, manual, label, onData, onError,
   return (
     <ScanFrame
       label={label}
+      message={message}
       error={error || hasCamera === false}
       onClose={closeScanner}
       onManual={() => {

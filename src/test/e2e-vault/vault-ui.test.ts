@@ -1416,6 +1416,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.screenshot({ path: testInfo.outputPath('welcome.png'), animations: 'disabled' })
     await page.getByRole('button', { name: 'Get started' }).click()
     await page.getByRole('button', { name: /^Advanced/ }).click()
+    await page.getByRole('button', { name: 'Paste', exact: true }).click()
     await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
     await page.getByRole('button', { name: 'Use this hardware key' }).click()
     await expect(page.getByRole('heading', { name: 'Recovery key', exact: true })).toBeVisible()
