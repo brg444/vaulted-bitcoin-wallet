@@ -1,0 +1,255 @@
+From 552106239d9ebfadd56e79c1a5286951029e97b1 Mon Sep 17 00:00:00 2001
+From: brg444 <79601696+brg444@users.noreply.github.com>
+Date: Mon, 7 Sep 2026 21:41:11 +0800
+Subject: [PATCH] fix: preserve tree cosigner metadata during signature updates
+
+---
+ packages/ts-sdk/src/tree/txTree.ts            |   4 +-
+ .../ts-sdk/test/batch-tree-metadata.test.ts   | 106 ++++++++++++++++++
+ packages/ts-sdk/test/boarding-adapter.test.ts |  15 +++
+ .../fixtures/boarding-tree-transport.json     |  66 +++++++++++
+ 4 files changed, 190 insertions(+), 1 deletion(-)
+ create mode 100644 packages/ts-sdk/test/batch-tree-metadata.test.ts
+ create mode 100644 packages/ts-sdk/test/fixtures/boarding-tree-transport.json
+
+diff --git a/packages/ts-sdk/src/tree/txTree.ts b/packages/ts-sdk/src/tree/txTree.ts
+index bdb7aac1..0a66b05a 100644
+--- a/packages/ts-sdk/src/tree/txTree.ts
++++ b/packages/ts-sdk/src/tree/txTree.ts
+@@ -250,6 +250,8 @@ function buildGraph(rootTxid: string, chunksByTxid: Map<string, DecodedNode>): T
+ }
+ 
+ function decodeNode(chunk: TxTreeNode): DecodedNode {
+-    const tx = Transaction.fromPSBT(base64.decode(chunk.tx));
++    // Signature updates must retain the cosigner and expiry PSBT fields used
++    // to verify the signed recovery tree after settlement events are applied.
++    const tx = Transaction.fromPSBT(base64.decode(chunk.tx), { allowUnknown: true });
+     return { tx, children: chunk.children };
+ }
+diff --git a/packages/ts-sdk/test/batch-tree-metadata.test.ts b/packages/ts-sdk/test/batch-tree-metadata.test.ts
+new file mode 100644
+index 00000000..918a3a84
+--- /dev/null
++++ b/packages/ts-sdk/test/batch-tree-metadata.test.ts
+@@ -0,0 +1,106 @@
++import { describe, expect, it } from "vitest";
++import { base64, hex } from "@scure/base";
++import { schnorr } from "@noble/curves/secp256k1.js";
++import { SigHash } from "@scure/btc-signer";
++import { Transaction } from "../src/utils/transaction";
++import { aggregateKeys } from "../src/musig2";
++import { CosignerPublicKey, getArkPsbtFields } from "../src/utils/unknownFields";
++import { TxTree, type TxTreeNode } from "../src/tree/txTree";
++import { Batch } from "../src/wallet/batch";
++import { SettlementEventType, type SettlementEvent } from "../src/providers/ark";
++import fixtures from "./fixtures/boarding-tree-transport.json";
++
++// Synthetic single-receiver and shared trees built and MuSig2-signed by
++// ark-lib 8b34e3528595. No live wallet data or signing keys are included.
++describe("streamed tree signature metadata", () => {
++    it.each(fixtures)("preserves signed recovery evidence: $name", async (fixture) => {
++        const unsigned = TxTree.create(fixture.unsigned);
++        const expected = TxTree.create(fixture.signed);
++        const common = { id: "batch-1", topic: [], batchIndex: 0 };
++        const events: SettlementEvent[] = [
++            {
++                ...common,
++                type: SettlementEventType.BatchStarted,
++                intentIdHashes: [],
++                batchExpiry: 100n,
++            },
++            ...fixture.unsigned.map((chunk) => ({
++                ...common,
++                type: SettlementEventType.TreeTx as const,
++                chunk,
++            })),
++            {
++                ...common,
++                type: SettlementEventType.TreeSigningStarted,
++                cosignersPublicKeys: [],
++                unsignedCommitmentTx: "",
++            },
++            {
++                ...common,
++                type: SettlementEventType.TreeNonces,
++                txid: unsigned.txid,
++                nonces: new Map(),
++            },
++            ...fixture.signed.map((node) => ({
++                ...common,
++                type: SettlementEventType.TreeSignature as const,
++                txid: node.txid,
++                signature: hex.encode(
++                    Transaction.fromPSBT(base64.decode(node.tx)).getInput(0).tapKeySig!,
++                ),
++            })),
++            { ...common, type: SettlementEventType.BatchFinalization, commitmentTx: "" },
++            {
++                ...common,
++                type: SettlementEventType.BatchFinalized,
++                commitmentTxid: "22".repeat(32),
++            },
++        ];
++        async function* stream() {
++            yield* events;
++        }
++        let snapshot: TxTreeNode[] | undefined;
++        const handler: Batch.Handler = {
++            onBatchStarted: async () => ({ skip: false }),
++            onTreeSigningStarted: async () => ({ skip: false }),
++            onTreeNonces: async () => ({ fullySigned: true }),
++            onBatchFinalization: async (_, tree) => {
++                snapshot = [...tree!.iterator()].map((node) => ({
++                    txid: node.txid,
++                    tx: base64.encode(node.root.toPSBT()),
++                    children: Object.fromEntries(
++                        [...node.children].map(([index, child]) => [index, child.txid]),
++                    ),
++                }));
++            },
++        };
++        await expect(Batch.join(stream(), handler)).resolves.toBe("22".repeat(32));
++        const actual = TxTree.create(snapshot!);
++        actual.validate();
++        expect(actual.nbOfNodes()).toBe(fixture.signed.length);
++        for (const node of actual.iterator()) {
++            const input = node.root.getInput(0);
++            const original = unsigned.find(node.txid)!.root.getInput(0);
++            const signed = expected.find(node.txid)!.root.getInput(0);
++            expect(input.unknown).toEqual(original.unknown);
++            expect(input.tapKeySig).toEqual(signed.tapKeySig);
++            expect(node.root.unsignedTx).toEqual(expected.find(node.txid)!.root.unsignedTx);
++            const cosigners = getArkPsbtFields(node.root, 0, CosignerPublicKey).map(
++                (field) => field.key,
++            );
++            expect(cosigners.length).toBeGreaterThanOrEqual(2);
++            const { finalKey } = aggregateKeys(cosigners, true, {
++                taprootTweak: hex.decode(fixture.sweepRoot),
++            });
++            const parent = actual.find(hex.encode(input.txid!));
++            const prevout = parent?.root.getOutput(input.index!) ?? {
++                script: new Uint8Array([0x51, 0x20, ...finalKey.slice(1)]),
++                amount: BigInt(fixture.amount),
++            };
++            const message = node.root.preimageWitnessV1(0, [prevout.script!], SigHash.DEFAULT, [
++                prevout.amount!,
++            ]);
++            expect(schnorr.verify(input.tapKeySig!, message, finalKey.slice(1))).toBe(true);
++        }
++    });
++});
+diff --git a/packages/ts-sdk/test/boarding-adapter.test.ts b/packages/ts-sdk/test/boarding-adapter.test.ts
+index b5618578..42b22304 100644
+--- a/packages/ts-sdk/test/boarding-adapter.test.ts
++++ b/packages/ts-sdk/test/boarding-adapter.test.ts
+@@ -14,6 +14,7 @@ import { createBoardingProgramScript } from "../src/script/boarding";
+ import { extendCoinWithTapscript } from "../src/wallet/utils";
+ import { InputSignerRouter } from "../src/wallet/inputSignerRouter";
+ import { networks } from "../src/networks";
++import { CosignerPublicKey, getArkPsbtFields, setArkPsbtField } from "../src/utils/unknownFields";
+ import { SingleKey } from "../src/identity/singleKey";
+ import { Batch } from "../src/wallet/batch";
+ import { SettlementEventType, type SettlementEvent } from "../src/providers/ark";
+@@ -285,6 +286,13 @@ describe("named boarding adapter lifecycle seam", () => {
+             const tree = new Transaction({ allowUnknownOutputs: true });
+             tree.addInput({ txid: commitment.id, index: 0 });
+             tree.addOutput({ script: new Uint8Array([0x51]), amount: 9_000n });
++            const cosigner = {
++                index: 0,
++                key: hex.decode(
++                    "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
++                ),
++            };
++            setArkPsbtField(tree, 0, CosignerPublicKey, cosigner);
+             // Event wiring fixture: Guardian independently verifies aggregate signature validity.
+             const aggregateSignature = "11".repeat(64);
+             const events: SettlementEvent[] = [
+@@ -359,6 +367,13 @@ describe("named boarding adapter lifecycle seam", () => {
+                     ).getInput(0).tapKeySig!,
+                 ),
+             ).toBe(aggregateSignature);
++            expect(
++                getArkPsbtFields(
++                    Transaction.fromPSBT(base64.decode(submitted.validatedBatch.vtxoTree[0].tx)),
++                    0,
++                    CosignerPublicKey,
++                ),
++            ).toEqual([cosigner]);
+             expect(submitted.validatedBatch.unsignedCommitmentTx).toBe(commitmentPsbt);
+             expect(
+                 Transaction.fromPSBT(base64.decode(submitted.psbt)).getInput(0).tapScriptSig
+diff --git a/packages/ts-sdk/test/fixtures/boarding-tree-transport.json b/packages/ts-sdk/test/fixtures/boarding-tree-transport.json
+new file mode 100644
+index 00000000..c39b95b4
+--- /dev/null
++++ b/packages/ts-sdk/test/fixtures/boarding-tree-transport.json
+@@ -0,0 +1,66 @@
++[
++    {
++        "name": "single receiver",
++        "sweepRoot": "1a5df8966b6714529f9a95493243b27c03d066e59824fc64a2346031f29f9e12",
++        "amount": 49000,
++        "signed": [
++            {
++                "txid": "f498c7f2496615069685fee0939eaa878ae495661531b36a4f50efffd6721695",
++                "tx": "cHNidP8BAEwDAAAAAaa06fwjOz2w4xZSPGQmIWM9FxLG9Qt0K/UO6vu+Rng3AAAAAAD/////Ami/AAAAAAAAA1EgAQAAAAAAAAAABFECTnMAAAAAAAETQJwsYhEeyfOzcBp7dJ/iLqvTNfUvVkKSSHsyc5US82asH6i83td2mJsT+/9+VDWLV2RJmarUbnzHDiDJb3Id7hUN3mNvc2lnbmVyAAAAACECzysX6AgTjxLsGNlOPjurr+migS/kqkFHvF+fzWhi9fgN3mNvc2lnbmVyAAAAASED6bBd8DuwBujAfxkdCCSIrw18pLPaGFipXFl5YuN9VrEH3mV4cGlyeQOdBEAAAAA=",
++                "children": {}
++            }
++        ],
++        "unsigned": [
++            {
++                "txid": "f498c7f2496615069685fee0939eaa878ae495661531b36a4f50efffd6721695",
++                "tx": "cHNidP8BAEwDAAAAAaa06fwjOz2w4xZSPGQmIWM9FxLG9Qt0K/UO6vu+Rng3AAAAAAD/////Ami/AAAAAAAAA1EgAQAAAAAAAAAABFECTnMAAAAAAA3eY29zaWduZXIAAAAAIQLPKxfoCBOPEuwY2U4+O6uv6aKBL+SqQUe8X5/NaGL1+A3eY29zaWduZXIAAAABIQPpsF3wO7AG6MB/GR0IJIivDXyks9oYWKlcWXli431WsQfeZXhwaXJ5A50EQAAAAA==",
++                "children": {}
++            }
++        ]
++    },
++    {
++        "name": "shared tree",
++        "sweepRoot": "1a5df8966b6714529f9a95493243b27c03d066e59824fc64a2346031f29f9e12",
++        "amount": 49500,
++        "signed": [
++            {
++                "txid": "8dde12fa5e7441468a84da86958e53ed48cb96d5bafe6849a73d1f8f3a4915fe",
++                "tx": "cHNidP8BAEwDAAAAATY7LSqkWVCoMNReQV6LP/x+w8oFd+K6C312iVGqMCA1AAAAAAD/////Ami/AAAAAAAAA1EgAQAAAAAAAAAABFECTnMAAAAAAAETQM80cA8jpcuoI7aIZ2YWImU741ZwNyTz8iGDDMzXwkxvFDgaQr6yJCMm8y47q3IH5pGBCoc0ByN/iZLUvwfdy7kN3mNvc2lnbmVyAAAAACEDEdEeUPf5aJehPv21OJ8mnL59LRHW/brD3lCyNYr/8jcN3mNvc2lnbmVyAAAAASEDFz5B3Qi5GpJFnBu/nXJYFgRQLe46QtF58nIgb0cw7C4H3mV4cGlyeQOdBEAAAAA=",
++                "children": {}
++            },
++            {
++                "txid": "6cca9b55c1849eae3e5fe1e5dd505bba1c61a904b736a7ff11c0bae53a1c9df7",
++                "tx": "cHNidP8BAGsDAAAAATY7LSqkWVCoMNReQV6LP/x+w8oFd+K6C312iVGqMCA1AQAAAAD/////AvQBAAAAAAAAIlEgZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWUAAAAAAAAAAARRAk5zAAAAAAABE0BVc2GqEHOwd5r5rroZ702+xUbDuw+J/6/VoDhlKARZy7CBk6saxCIdSk9NozIP87OQlrcZMAVv+aU0gARxPe2iDd5jb3NpZ25lcgAAAAAhArfFGhpQRG9bNw3vhphgPZhaF94qb8OxLsxRYoAjzteJDd5jb3NpZ25lcgAAAAEhAxHRHlD3+WiXoT79tTifJpy+fS0R1v26w95QsjWK//I3B95leHBpcnkDnQRAAAAA",
++                "children": {}
++            },
++            {
++                "txid": "352030aa5189767d0bbae27705cac37efc3f8b5e415ed430a85059a42a2d3b36",
++                "tx": "cHNidP8BAJYDAAAAAQZvtW3JDkaZ3JYT60lrZhgoFIUuZom5EYdK2VEw5VMlAAAAAAD/////A2i/AAAAAAAAIlEg99VCfs3SZ8QuxSbwoNyNHao5BEe49GBRpUKUcaryNEf0AQAAAAAAACJRIEJFFCncAEmwXOhzJgeTEFpySy8R0GvPogbrzBikAoCVAAAAAAAAAAAEUQJOcwAAAAAAARNASMDB0J5l4Cii+0PysB7U8k1NhkRo3vv/aLkvt0QrZeIk3JXGzbUkjvDzPsZOlPTr8DDscBKFIzmTmZ654xB9dg3eY29zaWduZXIAAAAAIQK3xRoaUERvWzcN74aYYD2YWhfeKm/DsS7MUWKAI87XiQ3eY29zaWduZXIAAAABIQMR0R5Q9/lol6E+/bU4nyacvn0tEdb9usPeULI1iv/yNw3eY29zaWduZXIAAAACIQMXPkHdCLkakkWcG7+dclgWBFAt7jpC0XnyciBvRzDsLgfeZXhwaXJ5A50EQAAAAAA=",
++                "children": {
++                    "0": "8dde12fa5e7441468a84da86958e53ed48cb96d5bafe6849a73d1f8f3a4915fe",
++                    "1": "6cca9b55c1849eae3e5fe1e5dd505bba1c61a904b736a7ff11c0bae53a1c9df7"
++                }
++            }
++        ],
++        "unsigned": [
++            {
++                "txid": "8dde12fa5e7441468a84da86958e53ed48cb96d5bafe6849a73d1f8f3a4915fe",
++                "tx": "cHNidP8BAEwDAAAAATY7LSqkWVCoMNReQV6LP/x+w8oFd+K6C312iVGqMCA1AAAAAAD/////Ami/AAAAAAAAA1EgAQAAAAAAAAAABFECTnMAAAAAAA3eY29zaWduZXIAAAAAIQMR0R5Q9/lol6E+/bU4nyacvn0tEdb9usPeULI1iv/yNw3eY29zaWduZXIAAAABIQMXPkHdCLkakkWcG7+dclgWBFAt7jpC0XnyciBvRzDsLgfeZXhwaXJ5A50EQAAAAA==",
++                "children": {}
++            },
++            {
++                "txid": "6cca9b55c1849eae3e5fe1e5dd505bba1c61a904b736a7ff11c0bae53a1c9df7",
++                "tx": "cHNidP8BAGsDAAAAATY7LSqkWVCoMNReQV6LP/x+w8oFd+K6C312iVGqMCA1AQAAAAD/////AvQBAAAAAAAAIlEgZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWUAAAAAAAAAAARRAk5zAAAAAAAN3mNvc2lnbmVyAAAAACECt8UaGlBEb1s3De+GmGA9mFoX3ipvw7EuzFFigCPO14kN3mNvc2lnbmVyAAAAASEDEdEeUPf5aJehPv21OJ8mnL59LRHW/brD3lCyNYr/8jcH3mV4cGlyeQOdBEAAAAA=",
++                "children": {}
++            },
++            {
++                "txid": "352030aa5189767d0bbae27705cac37efc3f8b5e415ed430a85059a42a2d3b36",
++                "tx": "cHNidP8BAJYDAAAAAQZvtW3JDkaZ3JYT60lrZhgoFIUuZom5EYdK2VEw5VMlAAAAAAD/////A2i/AAAAAAAAIlEg99VCfs3SZ8QuxSbwoNyNHao5BEe49GBRpUKUcaryNEf0AQAAAAAAACJRIEJFFCncAEmwXOhzJgeTEFpySy8R0GvPogbrzBikAoCVAAAAAAAAAAAEUQJOcwAAAAAADd5jb3NpZ25lcgAAAAAhArfFGhpQRG9bNw3vhphgPZhaF94qb8OxLsxRYoAjzteJDd5jb3NpZ25lcgAAAAEhAxHRHlD3+WiXoT79tTifJpy+fS0R1v26w95QsjWK//I3Dd5jb3NpZ25lcgAAAAIhAxc+Qd0IuRqSRZwbv51yWBYEUC3uOkLRefJyIG9HMOwuB95leHBpcnkDnQRAAAAAAA==",
++                "children": {
++                    "0": "8dde12fa5e7441468a84da86958e53ed48cb96d5bafe6849a73d1f8f3a4915fe",
++                    "1": "6cca9b55c1849eae3e5fe1e5dd505bba1c61a904b736a7ff11c0bae53a1c9df7"
++                }
++            }
++        ]
++    }
++]
+-- 
+2.39.5 (Apple Git-154)
+
