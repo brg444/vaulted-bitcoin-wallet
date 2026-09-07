@@ -706,7 +706,7 @@ export default function VaultRecover() {
           <HubGroup>
             <HubRow
               title='Automatic encrypted backup'
-              detail={recoveryArchiveStatus || 'Save transaction data for every account'}
+              detail={recoveryArchiveStatus || 'Stored with Vaulted while this wallet is open'}
               onClick={() => setBackupView('cloud')}
             />
             <HubRow title='Save recovery package' onClick={() => setBackupView('file')} />
@@ -784,8 +784,14 @@ export default function VaultRecover() {
           <p className='qg-copy'>
             {backupView === 'file'
               ? 'Keep this file private: its Spending paths and Bitcoin addresses are readable without your passkey. Private keys and payment journals remain encrypted. Advanced Spending can use its hardware and recovery keys without unlocking the phone.'
-              : 'Save encrypted transaction data for recovery across every account. Keep access to the passkey needed to unlock your backup.'}
+              : 'Store an encrypted copy with Vaulted while this wallet is open and unlocked. You need the original passkey to restore it.'}
           </p>
+          {backupView === 'cloud' ? (
+            <p className='qg-copy'>
+              Keep a separate recovery package outside Vaulted so you have your saved transaction paths if the service
+              is unavailable.
+            </p>
+          ) : null}
           {backupView === 'file' ? (
             <p className='qg-copy'>
               Keep a copy of the{' '}
