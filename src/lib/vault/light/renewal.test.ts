@@ -69,7 +69,7 @@ describe('Light renewal approval', () => {
     const unsigned = [{ txid: tx.id, tx: base64.encode(tx.toPSBT()), children: {} }]
     const tree = TxTree.create(unsigned)
     tree.root.updateInput(0, { tapKeySig: new Uint8Array(64).fill(1) })
-    expect(getArkPsbtFields(tree.root, 0, CosignerPublicKey)).toHaveLength(0)
+    expect(getArkPsbtFields(tree.root, 0, CosignerPublicKey)).toEqual(getArkPsbtFields(tx, 0, CosignerPublicKey))
     const preserved = serializeLightRenewalTree(tree, unsigned)
     const decoded = Transaction.fromPSBT(base64.decode(preserved[0].tx))
     expect(getArkPsbtFields(decoded, 0, CosignerPublicKey)).toHaveLength(1)
