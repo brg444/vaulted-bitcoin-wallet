@@ -18,22 +18,25 @@ For the two-reserve connector (`phone-connector-recovery-savings-v2`):
 
 Hardware compatibility requires testing the complete device, firmware and
 connecting application together. See [reproducible qualification](../tools/connector-signers/DUAL-SIGNERS.md)
-and [Ledger qualification](../tools/connector-signers/LEDGER.md).
+and the [Ledger user guide](ledger-guide.md).
 
 ## Create a key with Sparrow
 
-1. Create a new wallet and select **Single Signature**, then **Native SegWit**.
+1. Create a new wallet and select **Single Signature**, then **Taproot (BIP86)**.
 2. For hardware protection, generate the seed on the device and add it through
    **Connected Hardware Wallet**. Keep the seed backup offline. For software
    testing, choose **New or Imported Software Wallet** and create a BIP39 seed
    or import a dedicated test seed into a new wallet.
 3. Apply the settings. Show the public **Descriptor** QR in **Settings**, or
    export an **Output Descriptor** file. In Vaulted, choose **Scan QR**,
-   **Upload** or **Paste**. Supply one receiving `wpkh(...)` descriptor with its
-   fingerprint and derivation path; a Taproot wallet uses `tr(...)`.
+   **Upload** or **Paste**. Supply one receiving `tr(...)` descriptor with its
+   fingerprint and derivation path.
 4. Compare Vaulted's reserve address with the first receiving address in the
    signing wallet. A ranged descriptor selects index zero; a multipath
    descriptor selects its receive branch.
+
+Native SegWit (BIP84) remains supported as an alternative, using a `wpkh(...)`
+descriptor. Keep the selected wallet type, account and descriptor matched.
 
 Never enter seed words or private keys into Vaulted. A software wallet created
 for testing does not provide hardware protection. For hardware use, choose a
