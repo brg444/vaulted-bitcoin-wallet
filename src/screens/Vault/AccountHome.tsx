@@ -46,7 +46,7 @@ export default function AccountHome({
 }) {
   const spending = account === 'Spending'
   return (
-    <Content className={`qg-home-content ${styles.content}`} onRefresh={onRefresh}>
+    <Content className={`qg-home-content ${styles.surface} ${styles.content}`} onRefresh={onRefresh}>
       <main className={`qg-home ${styles.home}`}>
         <header className='qg-account-bar vault-account-bar'>
           <div className='qg-account' data-testid='account-switcher'>

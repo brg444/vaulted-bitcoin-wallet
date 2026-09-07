@@ -47,6 +47,7 @@ import {
   Settings as SettingsIcon,
 } from 'lucide-react'
 import AccountHome from './AccountHome'
+import homeStyles from './AccountHome.module.css'
 import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
 import { VaultHistoryList } from './History'
@@ -1636,7 +1637,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         },
       }}
     >
-      <div ref={root} className='light-app' data-testid='vault-light' {...intent}>
+      <div ref={root} className={`light-app ${homeStyles.surface}`} data-testid='vault-light' {...intent}>
         {content}
         {record && !renewalReview && (view === 'home' || view === 'savings') ? (
           <VaultLauncher
