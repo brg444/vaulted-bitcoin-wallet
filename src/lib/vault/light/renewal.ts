@@ -168,10 +168,9 @@ function flattenTree(tree: TxTree): TxTreeNode[] {
   return result
 }
 
-// The pinned SDK's TxTree uses scure's default unknown-field policy: adding a
-// tree signature can discard the public MuSig key metadata. Retain the exact
-// pre-signing PSBT and attach only the SDK's completed signature. The runtime
-// independently checks the complete signed graph and its aggregate keys.
+// Bind final evidence to the captured pre-signing PSBT and tree topology,
+// attaching only the SDK's completed signature. The runtime independently
+// checks the complete signed graph and its aggregate keys.
 export function serializeLightRenewalTree(tree: TxTree, unsigned: TxTreeNode[]): TxTreeNode[] {
   const signed = flattenTree(tree)
   if (signed.length !== unsigned.length) throw new Error('Renewal tree changed while signing')
