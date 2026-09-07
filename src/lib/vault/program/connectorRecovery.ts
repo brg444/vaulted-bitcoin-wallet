@@ -1,7 +1,7 @@
 import { hex } from '@scure/base'
 import { validateRecoveryHeader, type RecoveryHeader } from '../recovery/backupCodec'
 import { validateConnectorRecoveryRecord, type ConnectorPendingRecord } from './connectorStore'
-import { CONNECTOR_TEMPLATE } from './connector'
+import { isConnectorTemplate } from './connector'
 import type { SavingsRecoveryChain } from './onchainRecovery'
 export interface ConnectorRecoveryFile {
   name: 'vaulted-connector-recovery'
@@ -13,7 +13,7 @@ export function validateConnectorRecoveryFile(file: ConnectorRecoveryFile) {
   if (!file || file.name !== 'vaulted-connector-recovery' || file.version !== 1)
     throw new Error('Invalid connector recovery file')
   const header = validateRecoveryHeader(file.header)
-  if (header.binding.templateVersion !== CONNECTOR_TEMPLATE)
+  if (!isConnectorTemplate(header.binding.templateVersion))
     throw new Error('Connector recovery needs its enrolled contract')
   return validateConnectorRecoveryRecord(
     { vaultId: header.binding.vaultId, enrollmentDigest: header.status.connectorEnrollment!.enrollmentDigest },
@@ -41,7 +41,8 @@ export async function executeConnectorRecovery(value: ConnectorRecoveryFile, cha
   const file = JSON.parse(JSON.stringify(value)) as ConnectorRecoveryFile
   const view = validateConnectorRecoveryFile(file)
   if (!view.record.signedTxHex || !view.record.txid) throw new Error('The required connector signature is missing')
-  for (const coin of [view.record.savings, view.record.reserve]) {
+  for (const coin of [view.record.savings, view.record.reserve, view.record.secondReserve]) {
+    if (!coin) continue
     const spent = await chain.outspend(coin.txid, coin.vout)
     if (spent.spent) {
       if (spent.txid !== view.record.txid)

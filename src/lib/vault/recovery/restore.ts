@@ -10,7 +10,7 @@ import { restoreSpendingRecoveryJournal } from '../vtxo/spend'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 import { vaultLightningSwapStorageName } from '../lightningLifecycle'
 import { restoreConnectorRecoveryJournal } from '../program/connectorStore'
-import { CONNECTOR_TEMPLATE } from '../program/connector'
+import { isConnectorTemplate } from '../program/connector'
 import {
   connectorPinFromVerifiedStatus,
   saveConnectorEnrollmentPin,
@@ -43,7 +43,7 @@ export async function restoreVaultRecoveryFile(value: VaultRecoveryFile, phone: 
   const pin = pinFromEnrolledStatus(status)
   const oldPin = loadAddressPin(localStorage, status.vaultId)
   if (oldPin && oldPin.pinHash !== pin.pinHash) throw new Error('Recovery address pin differs from this device')
-  const connector = status.templateVersion === CONNECTOR_TEMPLATE ? connectorPinFromVerifiedStatus(status) : null
+  const connector = isConnectorTemplate(status.templateVersion) ? connectorPinFromVerifiedStatus(status) : null
   const previousConnector = connector ? loadConnectorEnrollmentPin(status.vaultId) : null
   if (previousConnector) verifyConnectorStatus(status, previousConnector)
   // The key is derived from the original phone key and verified against the

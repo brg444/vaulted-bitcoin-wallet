@@ -29,7 +29,7 @@ import {
   connectorKitFromVerifiedStatus,
   saveConnectorRecoveryKit,
 } from '../lib/vault/program/connectorEnroll'
-import { CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
+import { isConnectorTemplate } from '../lib/vault/program/connector'
 import type { VaultStatus } from '../lib/vault/types'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { saveLocalKit } from '../lib/vault/program/kitStore'
@@ -67,7 +67,7 @@ async function restoreMap(enrollment: EnrollmentSecrets, status: VaultStatus, se
 }
 
 function restoreConnectorPin(status: VaultStatus): void {
-  if (status.templateVersion !== CONNECTOR_TEMPLATE) return
+  if (!isConnectorTemplate(status.templateVersion)) return
   const existing = loadConnectorEnrollmentPin(status.vaultId)
   if (existing) verifyConnectorStatus(status, existing)
   else saveConnectorEnrollmentPin(connectorPinFromVerifiedStatus(status))
@@ -211,7 +211,7 @@ export function useVaultSession({
         bestEffortBrowserWrite(() => saveEnrollment(unlocked.enrollment))
         bestEffortBrowserWrite(() => saveSelectedVaultId(unlocked.enrollment.vaultId))
         bestEffortBrowserWrite(() => setSessionLocked(false))
-        if (live.templateVersion === CONNECTOR_TEMPLATE) await setupSpendingRenewals(live, unlocked.enrollment)
+        if (isConnectorTemplate(live.templateVersion)) await setupSpendingRenewals(live, unlocked.enrollment)
         void restoreMap(unlocked.enrollment, live, setup)
         return
       }

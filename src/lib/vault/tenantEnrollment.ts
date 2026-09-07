@@ -1,3 +1,4 @@
+import { DUAL_CONNECTOR_TEMPLATE } from './program/connector'
 import type { LightKeyBackup } from './light/keyBackup'
 import { clearOpenEnrollmentSession, openEnrollmentToken } from './openEnrollmentSession'
 import { p256 } from '@noble/curves/nist.js'
@@ -321,6 +322,7 @@ export async function beginTenantEnrollment(
     if (connector && enrollmentNetwork) {
       try {
         connectorVerified = requireProposedConnectorDescriptor(proposed.descriptor, proposed.descriptorHash, {
+          templateVersion: DUAL_CONNECTOR_TEMPLATE,
           vaultId: start.vaultId,
           network: enrollmentNetwork,
           phonePub: enrollment.phoneBip340Pub,

@@ -9,11 +9,13 @@ import { beginPasskeySession, decryptPhoneSecret } from './signIn'
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import type { VaultStatus } from './types'
 import { validateSpendingPolicy } from './spendingPolicy'
-import { CONNECTOR_TEMPLATE, buildConnectorFamily } from './program/connector'
+import { DUAL_CONNECTOR_TEMPLATE, buildConnectorFamily } from './program/connector'
 import { loadConnectorEnrollmentPin, verifyConnectorStatus } from './program/connectorEnroll'
 import { prepareConnectorPayment } from './program/connectorPayment'
 import {
   loadPendingConnectorOperation,
+  markConnectorSignaturesMayHaveIssued,
+  storeConnectorHardwareApproval,
   preparePendingConnectorOperation,
   cancelPendingConnectorOperation,
   storeConnectorPhoneStage,
@@ -56,7 +58,7 @@ export function connectorContract(status: VaultStatus): ConnectorPendingInput['c
   return {
     vaultId: status.vaultId,
     network: status.network,
-    templateVersion: CONNECTOR_TEMPLATE,
+    templateVersion: status.templateVersion,
     phonePub: status.phoneBip340Pub!,
     hardwarePub: origin.connectorPub,
     phoneDirectP256: status.phoneDirectP256!,
@@ -122,10 +124,13 @@ export async function prepareConnectorWithdrawal(status: VaultStatus, recipient:
     fetchAddressUtxos(family.connector.address!),
     fetchFeeEstimates(),
   ])
-  const reserve = reserves
-    .filter((coin) => coin.status.confirmed && coin.value === 1000)
-    .sort((a, b) => a.txid.localeCompare(b.txid) || a.vout - b.vout)[0]
-  if (!reserve)
+  const dual = contract.templateVersion === DUAL_CONNECTOR_TEMPLATE
+  const selectedReserves = reserves
+    .filter((coin) => coin.status.confirmed && coin.value === (dual ? 500 : 1000))
+    .sort((a, b) => a.txid.localeCompare(b.txid) || a.vout - b.vout)
+    .slice(0, dual ? 2 : 1)
+  const [reserve, secondReserve] = selectedReserves
+  if (selectedReserves.length !== (dual ? 2 : 1))
     throw new ConnectorUserError(
       `Prepare a deposit under Savings → Deposit to fund the signer reserve automatically, then wait for Bitcoin confirmation.`,
     )
@@ -133,6 +138,7 @@ export async function prepareConnectorWithdrawal(status: VaultStatus, recipient:
   if (!Number.isFinite(rate) || rate <= 0 || rate > contract.feerateCapSatPerV)
     throw new ConnectorUserError('The current Bitcoin fee rate is outside this vault’s limit. Try again later.')
   const reserveParent = await fetchTxHex(reserve.txid)
+  const secondParent = secondReserve ? await fetchTxHex(secondReserve.txid) : undefined
   const origin = {
     publicKey: hex.decode(enrollment.connectorPub),
     fingerprint: enrollment.connectorFingerprint,
@@ -147,6 +153,9 @@ export async function prepareConnectorWithdrawal(status: VaultStatus, recipient:
       origin: { ...origin, publicKey: enrollment.connectorPub },
       savings: { parentHex: await fetchTxHex(coin.txid), txid: coin.txid, vout: coin.vout },
       reserve: { parentHex: reserveParent, txid: reserve.txid, vout: reserve.vout },
+      ...(secondReserve
+        ? { secondReserve: { parentHex: secondParent!, txid: secondReserve.txid, vout: secondReserve.vout } }
+        : {}),
       recipient,
       amountSats,
       feeSats: 0,
@@ -172,7 +181,10 @@ export async function prepareConnectorWithdrawal(status: VaultStatus, recipient:
     for (const row of await loadConnectorHistory(identity, localStorage)) {
       if (
         (row.record.savings.txid === coin.txid && row.record.savings.vout === coin.vout) ||
-        (row.record.reserve.txid === reserve.txid && row.record.reserve.vout === reserve.vout)
+        [row.record.reserve, row.record.secondReserve].some(
+          (previous) =>
+            previous && selectedReserves.some((next) => previous.txid === next.txid && previous.vout === next.vout),
+        )
       ) {
         const view = await operationView(status, row)
         if (view?.verified && view.resolution === 'none') {
@@ -202,7 +214,8 @@ function savingsWitness(pending: PendingConnector, response: string) {
   if (packet.id !== pending.candidateTxid) throw new ConnectorUserError('Guardian changed the Savings transaction.')
   const family = buildConnectorFamily(pending.record.contract)
   const leafHash = hex.encode(tapLeafHash(family.savings.normal))
-  const sigs = packet.getInput(0).tapScriptSig || []
+  const sigs =
+    packet.getInput(pending.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE ? 2 : 0).tapScriptSig || []
   const keys = [family.normalTweaks.arkade, family.normalTweaks.vault, pending.record.contract.phonePub]
   const witness = keys.map((pub) => {
     const found = sigs.filter(
@@ -225,6 +238,10 @@ export async function approveConnectorWithdrawal(
   let pending = await loadPendingConnectorOperation(identity, localStorage)
   if (!pending || pending.candidateTxid !== candidateTxid)
     throw new ConnectorUserError('Review this Savings transfer again.')
+  if (pending.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE && !pending.record.hardwareSignatures) {
+    await markConnectorSignaturesMayHaveIssued(identity, candidateTxid, localStorage)
+    return (await loadPendingConnectorOperation(identity, localStorage))!
+  }
   if (pending.record.savingsWitness) return pending
   if (pending.record.operationId) {
     const view = await operationView(status, pending)
@@ -268,18 +285,36 @@ export async function approveConnectorWithdrawal(
 }
 
 export function connectorHandoff(pending: PendingConnector): string {
+  if (pending.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE) return pending.prepared.hardwareApproval()
   if (!pending.record.savingsWitness) throw new ConnectorUserError('Savings approval is still pending.')
   return pending.prepared.forHardware(pending.record.savingsWitness.map((item) => hex.decode(item))).psbt()
 }
 
-export async function completeConnectorWithdrawal(status: VaultStatus, candidateTxid: string, response: string) {
+export async function completeConnectorWithdrawal(
+  status: VaultStatus,
+  candidateTxid: string,
+  response: string,
+  enrollment?: EnrollmentSecrets,
+) {
   const identity = connectorIdentity(status)
-  const pending = await loadPendingConnectorOperation(identity, localStorage)
+  let pending = await loadPendingConnectorOperation(identity, localStorage)
   if (!pending || pending.candidateTxid !== candidateTxid)
     throw new ConnectorUserError('The Savings transfer changed. Reopen the pending payment.')
+  const dual = pending.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE
+  if (dual) {
+    if (!pending.record.hardwareSignatures) {
+      await storeConnectorHardwareApproval(identity, candidateTxid, response, localStorage)
+      pending = (await loadPendingConnectorOperation(identity, localStorage))!
+      candidateTxid = pending.candidateTxid
+    }
+    if (!pending.record.savingsWitness) {
+      if (!enrollment) throw new ConnectorUserError('Sign in to approve this Savings transfer.')
+      pending = await approveConnectorWithdrawal(status, enrollment, candidateTxid)
+    }
+  }
   if (!pending.record.savingsWitness) throw new ConnectorUserError('Savings approval is still pending.')
   const signer = pending.prepared.forHardware(pending.record.savingsWitness.map((item) => hex.decode(item)))
-  const accepted = signer.accept(response)
+  const accepted = signer.accept(dual ? pending.prepared.psbt() : response)
   const saved = await storeConnectorSignedTx(identity, candidateTxid, accepted.txHex, localStorage)
   const txid = await broadcastTx(saved.txHex)
   if (txid !== saved.txid) throw new ConnectorUserError('Broadcast response did not match the Savings transaction.')

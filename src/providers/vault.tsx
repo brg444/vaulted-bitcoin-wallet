@@ -96,7 +96,7 @@ import {
 } from '../lib/vault/spendingPolicy'
 import { requireProtectionTier, type ProtectionTier } from '../lib/vault/protectionTier'
 import { importConnectorOrigin } from '../lib/vault/program/connectorOrigin'
-import { CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
+import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
 import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
 import { getPriceFeed } from '../lib/fiat'
 import { Fiats } from '../lib/types'
@@ -401,7 +401,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     })
   }, [history])
   useEffect(() => {
-    if (!status?.enrolled || status.templateVersion !== CONNECTOR_TEMPLATE || locked) {
+    if (!status?.enrolled || !isConnectorTemplate(status.templateVersion) || locked) {
       setPendingConnector(null)
       return
     }
@@ -437,7 +437,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
               activity: 'savings-connector',
               connectorStage: pendingConnector.record.signedTxHex
                 ? 'broadcast'
-                : pendingConnector.record.savingsWitness
+                : (
+                      pendingConnector.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE
+                        ? !pendingConnector.record.hardwareSignatures
+                        : !!pendingConnector.record.savingsWitness
+                    )
                   ? 'signer'
                   : 'approval',
             },
@@ -851,7 +855,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setError(`At least ₿${minimumAmount}.`)
       return
     }
-    if (account === 'savings' && status.templateVersion === CONNECTOR_TEMPLATE) {
+    if (account === 'savings' && isConnectorTemplate(status.templateVersion)) {
       setBusy(true)
       try {
         const prepared = await prepareConnectorWithdrawal(status, spend.address, spend.amount)
@@ -968,7 +972,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     if (!status?.enrolled || !enrollment || !savingsAddress) {
       throw new Error('Sign in with the passkey that created this vault.')
     }
-    if (status.templateVersion === CONNECTOR_TEMPLATE) {
+    if (isConnectorTemplate(status.templateVersion)) {
       const candidate = await loadConnectorWithdrawal(status)
       if (
         !candidate ||
@@ -978,8 +982,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       )
         throw new Error('Review this Savings transfer again.')
       try {
-        if (candidate.record.signedTxHex) {
-          const txid = await completeConnectorWithdrawal(status, candidate.candidateTxid, candidate.record.signedTxHex)
+        if (candidate.record.signedTxHex || candidate.record.hardwareSignatures) {
+          const txid = await completeConnectorWithdrawal(
+            status,
+            candidate.candidateTxid,
+            candidate.record.signedTxHex ?? candidate.prepared.psbt(),
+            enrollment,
+          )
           await finishBroadcast(txid)
           return
         }
@@ -1059,7 +1068,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [pendingSavingsHandoff?.vaultId, status?.vaultId])
 
   const cancelSavingsHandoff = useCallback(() => {
-    if (status?.templateVersion === CONNECTOR_TEMPLATE) {
+    if (status && isConnectorTemplate(status.templateVersion)) {
       setError('')
       setScreen('home')
       return
@@ -1076,9 +1085,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setBusy(true)
       setError('')
       try {
-        if (status?.templateVersion === CONNECTOR_TEMPLATE) {
+        if (status && isConnectorTemplate(status.templateVersion)) {
           if (!pendingConnector) throw new Error('The pending Savings transfer is missing.')
-          const txid = await completeConnectorWithdrawal(status, pendingConnector.candidateTxid, signedPsbt)
+          const txid = await completeConnectorWithdrawal(
+            status,
+            pendingConnector.candidateTxid,
+            signedPsbt,
+            enrollment ?? undefined,
+          )
           await finishBroadcast(txid)
           setPendingConnector(await loadConnectorWithdrawal(status))
           return
@@ -1104,12 +1118,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setError(humanizeVaultError(err))
       } finally {
+        if (status && isConnectorTemplate(status.templateVersion)) {
+          try {
+            setPendingConnector(await loadConnectorWithdrawal(status))
+          } catch {
+            /* Preserve the original error. */
+          }
+        }
         setBusy(false)
       }
     },
     [
       discardPendingSavingsHandoff,
-      enrollment?.phoneBip340Pub,
+      enrollment,
       finishBroadcast,
       handoffPsbt,
       pendingSavingsHandoff,
@@ -1451,7 +1472,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
             fee: pendingConnector.record.feeSats + 240,
           })
           setError('')
-          if (pendingConnector.record.savingsWitness && !pendingConnector.record.signedTxHex) {
+          if (
+            (pendingConnector.record.savingsWitness ||
+              (pendingConnector.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE &&
+                !pendingConnector.record.hardwareSignatures)) &&
+            !pendingConnector.record.signedTxHex
+          ) {
             setHandoffPsbt(connectorHandoff(pendingConnector))
             setScreen('handoff')
           } else setScreen('review')

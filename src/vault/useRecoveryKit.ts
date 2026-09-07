@@ -9,7 +9,7 @@ import { signGuardianExitPsbt } from '../lib/vault/program/guardianExit'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { loadLocalKit, saveLocalKit } from '../lib/vault/program/kitStore'
 import { loadConnectorRecoveryKit } from '../lib/vault/program/connectorEnroll'
-import { CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
+import { isConnectorTemplate } from '../lib/vault/program/connector'
 import { kitMatchesLiveVault, selectLiveKit } from '../lib/vault/program/liveKit'
 import {
   alertCopy,
@@ -48,7 +48,7 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
 
   const resolveConnectorKit = useCallback(() => {
     const id = status?.vaultId || enrollment?.vaultId || ''
-    if (status?.templateVersion !== CONNECTOR_TEMPLATE || !id) return null
+    if (!isConnectorTemplate(status?.templateVersion) || !id) return null
     return loadConnectorRecoveryKit(id)
   }, [enrollment?.vaultId, status?.templateVersion, status?.vaultId])
 

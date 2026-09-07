@@ -2,7 +2,7 @@ import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
 import { bitcoinDustSats, scriptHexFromAddress } from '../bitcoin'
 import { requireExactDefaultTapscriptSignatures, tapscriptSignatureRecords } from '../taprootSignatures'
-import { CONNECTOR_TEMPLATE } from './connector'
+import { isConnectorTemplate } from './connector'
 import { type Claimant } from './constants'
 import { familyFromDescriptor } from './descriptor'
 import { parseRecoveryKit, type RecoveryKit } from './kit'
@@ -30,7 +30,7 @@ function pathFacts(kit: RecoveryKit, path: SavingsRecoveryPath) {
   const d = kit.descriptor
   const family = familyFromDescriptor(d)
   if (path.program === 'savings-admin') {
-    if (d.templateVersion === CONNECTOR_TEMPLATE)
+    if (isConnectorTemplate(d.templateVersion))
       throw new Error('Connector Savings requires its saved payment and cosigner authorization')
     return {
       tree: family.savings,

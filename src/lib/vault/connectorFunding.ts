@@ -3,7 +3,7 @@ import { OutScript, Transaction, p2wpkh } from '@scure/btc-signer'
 import { RawTx } from '@scure/btc-signer/script.js'
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js'
 import { connectorContract, connectorIdentity } from './connectorWithdrawal'
-import { buildConnectorFamily, CONNECTOR_RESERVE_SATS } from './program/connector'
+import { buildConnectorFamily, CONNECTOR_RESERVE_SATS, DUAL_CONNECTOR_TEMPLATE } from './program/connector'
 import { fetchAddressUtxos, fetchFeeEstimates, fetchTxHex, broadcastTx } from './esplora'
 import { browserVaultLockManager, requireVaultLockManager } from './vtxo/lock'
 import { readBounded } from './bounded'
@@ -24,6 +24,7 @@ export interface FundingRequest {
   savingsScript: string
   reserveScript: string
   addReserve: boolean
+  dualReserves?: 0 | 1 | 2
   feeRate: number
   feeCap: number
   feerateCap: number
@@ -33,6 +34,16 @@ export interface FundingRequest {
 // split; all other outputs and input signing metadata retain their positions.
 export function prepareFunding(request: FundingRequest) {
   if (typeof request.addReserve !== 'boolean') throw new Error('Invalid reserve funding decision.')
+  if (
+    request.dualReserves !== undefined &&
+    (!Number.isInteger(request.dualReserves) ||
+      request.dualReserves < 0 ||
+      request.dualReserves > 2 ||
+      request.addReserve !== request.dualReserves > 0)
+  )
+    throw new Error('Invalid dual reserve funding decision.')
+  const reserveValue = request.dualReserves === undefined ? 1000 : 500
+  const reserveCount = request.dualReserves ?? (request.addReserve ? 1 : 0)
   const tx = Transaction.fromPSBT(decode(request.sourcePsbt), OPTIONS)
   if (tx.inputsLength < 1 || tx.inputsLength > 50 || tx.outputsLength < 1 || tx.outputsLength > 2)
     throw new Error('Use a payment with one Savings recipient and optional change, with at most 50 inputs.')
@@ -102,7 +113,7 @@ export function prepareFunding(request: FundingRequest) {
     if (!out.script || out.amount === undefined || out.amount <= 0n || out.amount > MAX_MONEY)
       throw new Error('Invalid funding output.')
     const script = hex.encode(out.script)
-    if (request.addReserve && script === request.reserveScript && out.amount === 1000n)
+    if (request.addReserve && script === request.reserveScript && out.amount === BigInt(reserveValue))
       throw new Error('Import a payment to Savings only; Vaulted adds the reserve.')
     if (script === request.savingsScript) {
       if (savingsIndex !== -1) throw new Error('Use exactly one Savings output.')
@@ -115,8 +126,9 @@ export function prepareFunding(request: FundingRequest) {
   if (savingsIndex === -1) throw new Error('The unsigned payment must pay this vault’s Savings address.')
   const oldFee = total - outputs
   if (oldFee < 0n || oldFee > BigInt(request.feeCap)) throw new Error('Funding fee exceeds the limit.')
-  const reserve = request.addReserve ? CONNECTOR_RESERVE_SATS : 0
-  if (reserve) tx.addOutput({ script: hex.decode(request.reserveScript), amount: BigInt(reserve) })
+  const reserve = reserveValue * reserveCount
+  for (let i = 0; i < reserveCount; i++)
+    tx.addOutput({ script: hex.decode(request.reserveScript), amount: BigInt(reserveValue) })
   const estimatedVbytes = Math.ceil((tx.unsignedTx.length * 4 + witnessWeight) / 4)
   const minimumVbytes = Math.ceil((tx.unsignedTx.length * 4 + minimumWitnessWeight) / 4)
   const maximumFee = Math.floor(minimumVbytes * request.feerateCap)
@@ -212,7 +224,8 @@ export function loadFunding(status: VaultStatus) {
   if (
     draft.enrollmentDigest !== identity.enrollmentDigest ||
     draft.request.savingsScript !== hex.encode(family.savings.script) ||
-    draft.request.reserveScript !== hex.encode(family.connector.script)
+    draft.request.reserveScript !== hex.encode(family.connector.script) ||
+    (draft.request.dualReserves !== undefined) !== (contract.templateVersion === DUAL_CONNECTOR_TEMPLATE)
   )
     throw new Error('Funding enrollment does not match this vault.')
   return { draft, prepared: prepareFunding(draft.request) }
@@ -226,7 +239,9 @@ async function createFundingLocked(status: VaultStatus, sourcePsbt: string) {
   const source = Transaction.fromPSBT(decode(sourcePsbt), OPTIONS)
   if (source.inputsLength < 1 || source.inputsLength > 50) throw new Error('Use between one and 50 funding inputs.')
   const [coins, estimates] = await Promise.all([fetchAddressUtxos(family.connector.address!), fetchFeeEstimates()])
-  const reserves = coins.filter((c) => c.value === CONNECTOR_RESERVE_SATS)
+  const dual = contract.templateVersion === DUAL_CONNECTOR_TEMPLATE
+  const reserves = coins.filter((c) => c.value === (dual ? 500 : CONNECTOR_RESERVE_SATS))
+  const missingReserves = Math.max(0, (dual ? 2 : 1) - reserves.length) as 0 | 1 | 2
   if (reserves.some((c) => !c.status.confirmed)) throw new Error('Wait for the pending signer reserve to confirm.')
   const feeRate = estimates['3'] ?? estimates['6']
   if (!Number.isFinite(feeRate) || feeRate < 1 || feeRate > contract.feerateCapSatPerV)
@@ -244,7 +259,8 @@ async function createFundingLocked(status: VaultStatus, sourcePsbt: string) {
     parents,
     savingsScript: hex.encode(family.savings.script),
     reserveScript: hex.encode(family.connector.script),
-    addReserve: reserves.length === 0,
+    addReserve: missingReserves > 0,
+    ...(dual ? { dualReserves: missingReserves } : {}),
     feeRate,
     feeCap: contract.absoluteFeeCapSats,
     feerateCap: contract.feerateCapSatPerV,

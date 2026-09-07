@@ -1,3 +1,4 @@
+import { buildDualConnectorProgram } from './connectorDual'
 import { hex } from '@scure/base'
 import { p2tr, p2wpkh } from '@scure/btc-signer'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
@@ -15,6 +16,12 @@ import { tweakPair } from './tweak'
 // Selected for new connector enrollments; existing vaults retain their contract.
 export const CONNECTOR_PROGRAM = 'savings-connector-v1'
 export const CONNECTOR_TEMPLATE = 'phone-connector-recovery-savings-v1'
+export const DUAL_CONNECTOR_TEMPLATE = 'phone-connector-recovery-savings-v2'
+export const DUAL_CONNECTOR_PROGRAM = 'savings-connector-dual-v2'
+
+export function isConnectorTemplate(template: unknown): boolean {
+  return template === CONNECTOR_TEMPLATE || template === DUAL_CONNECTOR_TEMPLATE
+}
 export const CONNECTOR_RESERVE_SATS = 1000
 export const CONNECTOR_OUTPUT = { recipient: 0, reserve: 1, anchor: 2, packet: 3, change: 4 } as const
 
@@ -29,7 +36,7 @@ export type ConnectorKind = 'p2tr' | 'p2wpkh'
 
 const X = { inputScript: 0xca, toAlt: 0x6b, fromAlt: 0x6c, if: 0x63, endif: 0x68, boolOr: 0x9b }
 
-export function buildConnectorProgram(r: ConnectorRules): Uint8Array {
+export function validateConnectorRules(r: ConnectorRules): void {
   if (
     !(r.connectorScript.length === 22 && r.connectorScript[0] === 0 && r.connectorScript[1] === 20) &&
     (r.connectorScript.length !== 34 ||
@@ -50,6 +57,10 @@ export function buildConnectorProgram(r: ConnectorRules): Uint8Array {
     r.feerateCapSatPerV > 100
   )
     throw new Error('invalid connector fee policy')
+}
+
+export function buildConnectorProgram(r: ConnectorRules): Uint8Array {
+  validateConnectorRules(r)
   let prefix: Uint8Array = new Uint8Array()
   for (let attempt = 0; attempt < 8; attempt++) {
     const chunks: Uint8Array[] = []
@@ -153,10 +164,12 @@ export function buildConnectorProgram(r: ConnectorRules): Uint8Array {
 export function buildConnectorFamily(
   input: Parameters<typeof buildVaultProgramFamily>[0] & { connectorType: ConnectorKind },
 ) {
-  if (input.templateVersion && input.templateVersion !== CONNECTOR_TEMPLATE)
+  if (input.templateVersion && !isConnectorTemplate(input.templateVersion))
     throw new Error('connector template mismatch')
   if (input.network !== 'mainnet' && input.network !== 'mutinynet') throw new Error('unsupported connector network')
-  const selected = { ...input, templateVersion: CONNECTOR_TEMPLATE, serverFreeClawback: true }
+  const template = input.templateVersion ?? CONNECTOR_TEMPLATE
+  const dual = template === DUAL_CONNECTOR_TEMPLATE
+  const selected = { ...input, templateVersion: template, serverFreeClawback: true }
   const base = buildVaultProgramFamily(selected)
   if (input.connectorType !== 'p2tr' && input.connectorType !== 'p2wpkh') throw new Error('unsupported connector type')
   const connector =
@@ -165,8 +178,14 @@ export function buildConnectorFamily(
       : p2wpkh(hex.decode(input.hardwarePub), vaultAddressNetwork(input.network))
   // Lower bound, not an ECDSA size estimate: a longer signature cannot weaken
   // the fee-rate ceiling. Taproot ALL adds one byte to DEFAULT's witness.
-  const connectorWitnessBytes = input.connectorType === 'p2tr' ? 66 : 45
-  const internal = contextInternalKey({ vaultId: input.vaultId, claimant: '', templateVersion: CONNECTOR_TEMPLATE })
+  const connectorWitnessBytes = dual
+    ? input.connectorType === 'p2tr'
+      ? 134
+      : 90
+    : input.connectorType === 'p2tr'
+      ? 66
+      : 45
+  const internal = contextInternalKey({ vaultId: input.vaultId, claimant: '', templateVersion: template })
   const makeNormal = (normal: Uint8Array) => {
     const tree = p2tr(
       internal,
@@ -188,7 +207,7 @@ export function buildConnectorFamily(
     absoluteFeeCapSats: input.absoluteFeeCapSats,
     feerateCapSatPerV: input.feerateCapSatPerV,
   }
-  const program = buildConnectorProgram(rules)
+  const program = dual ? buildDualConnectorProgram(rules) : buildConnectorProgram(rules)
   const pair = tweakPair(input.vaultCosignerBase, input.arkadeCosignerBase, program)
   const roles = [
     input.phonePub,
@@ -259,7 +278,7 @@ export function connectorEnrollmentDigest(
   const canonical = (s: string) => hex.encode(hex.decode(s))
   const fields = [
     'arkade-vault/connector-enrollment-v1',
-    CONNECTOR_TEMPLATE,
+    input.templateVersion ?? CONNECTOR_TEMPLATE,
     input.vaultId,
     input.network,
     input.protectionTier,

@@ -1,4 +1,4 @@
-import { CONNECTOR_TEMPLATE } from './connector'
+import { isConnectorTemplate } from './connector'
 import { vaultCosignerClient } from '../cosignerClient'
 import { beginPasskeySession } from '../signIn'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
@@ -72,7 +72,7 @@ export function kitFromFacts(input: {
     protectionTier &&
     protectionTier !== 'light' &&
     isSupportedVaultNetwork(input.status?.network) &&
-    (liveTemplate === SAVINGS_TEMPLATE || liveTemplate === CONNECTOR_TEMPLATE)
+    (liveTemplate === SAVINGS_TEMPLATE || isConnectorTemplate(liveTemplate))
   ) {
     try {
       const descriptor = buildVaultProgramDescriptor({

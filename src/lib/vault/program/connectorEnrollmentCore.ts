@@ -34,6 +34,7 @@ export interface ConnectorEnrollmentOrigin {
 }
 
 export interface ConnectorEnrollmentPreviewInput {
+  templateVersion?: string
   vaultId: string
   network: ConnectorEnrollmentNetwork
   protectionTier: ProtectionTier
@@ -169,6 +170,7 @@ export function buildConnectorEnrollmentPreview(input: ConnectorEnrollmentPrevie
   if (input.origin.connectorType !== 'p2wpkh' && input.origin.connectorType !== 'p2tr')
     fail('connector type must be p2tr or p2wpkh')
   const familyInput = {
+    templateVersion: input.templateVersion ?? CONNECTOR_TEMPLATE,
     connectorType: input.origin.connectorType,
     vaultId: input.vaultId,
     network,
@@ -203,7 +205,7 @@ export function buildConnectorEnrollmentPreview(input: ConnectorEnrollmentPrevie
     schema: PROGRAM_SCHEMA,
     network,
     vaultId: input.vaultId,
-    templateVersion: CONNECTOR_TEMPLATE,
+    templateVersion: input.templateVersion ?? CONNECTOR_TEMPLATE,
     policyVersion: POLICY_VERSION,
     protectionTier,
     keys: {
@@ -259,6 +261,7 @@ export const CONNECTOR_KIT_VERSION = 1
 // this is a distinct document for connector vaults carrying the origin,
 // enrollment digest, and boarding descriptor needed to re-verify and recover.
 export interface ConnectorRecoveryKit {
+  templateVersion?: string
   name: typeof CONNECTOR_KIT_NAME
   version: typeof CONNECTOR_KIT_VERSION
   vaultId: string
@@ -299,6 +302,9 @@ export function buildConnectorRecoveryKit(
   return {
     name: CONNECTOR_KIT_NAME,
     version: CONNECTOR_KIT_VERSION,
+    ...(preview.descriptor.templateVersion !== CONNECTOR_TEMPLATE
+      ? { templateVersion: preview.descriptor.templateVersion }
+      : {}),
     vaultId: input.vaultId,
     network: input.network,
     protectionTier: preview.protectionTier,
@@ -331,6 +337,7 @@ export function parseConnectorRecoveryKit(raw: unknown): ConnectorRecoveryKit {
   if (kit.version !== CONNECTOR_KIT_VERSION) fail('unsupported connector kit version')
   const rebuilt = buildConnectorEnrollmentPreview({
     vaultId: kit.vaultId,
+    templateVersion: kit.templateVersion ?? CONNECTOR_TEMPLATE,
     network: kit.network,
     protectionTier: kit.protectionTier,
     phonePub: kit.phonePub,
@@ -363,6 +370,7 @@ export function connectorRecoveryDescriptor(raw: unknown): VaultProgramDescripto
   const kit = parseConnectorRecoveryKit(raw)
   return buildConnectorEnrollmentPreview({
     vaultId: kit.vaultId,
+    templateVersion: kit.templateVersion ?? CONNECTOR_TEMPLATE,
     network: kit.network,
     protectionTier: kit.protectionTier,
     origin: kit.origin,

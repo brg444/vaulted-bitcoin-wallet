@@ -163,3 +163,24 @@ it('preserves multiple inputs, signatures and metadata in a combined deposit', (
   expect(tx.sign(f.key)).toBe(2)
   expect(result.accept(hex.encode(tx.toPSBT())).txid).toBe(result.txid)
 })
+
+for (const type of ['p2tr', 'p2wpkh'] as const) {
+  it.each([0, 1, 2] as const)(
+    `${type} adds only %i missing dual reserves and preserves the funding approval`,
+    (count) => {
+      const f = fixture(type)
+      const prepared = prepareFunding({ ...f.request, dualReserves: count, addReserve: count > 0 })
+      const tx = Transaction.fromPSBT(hex.decode(prepared.psbt))
+      expect(tx.outputsLength).toBe(2 + count)
+      expect(tx.getOutput(1)).toEqual(f.source.getOutput(1))
+      expect(prepared.reserve).toBe(count * 500)
+      for (let i = 2; i < tx.outputsLength; i++)
+        expect(tx.getOutput(i)).toMatchObject({ amount: 500n, script: hex.decode(f.request.reserveScript) })
+      tx.sign(f.key)
+      expect(prepared.accept(hex.encode(tx.toPSBT())).txid).toBe(prepared.txid)
+      expect(() => prepareFunding({ ...f.request, dualReserves: count, addReserve: count === 0 })).toThrow(
+        'Invalid dual',
+      )
+    },
+  )
+}

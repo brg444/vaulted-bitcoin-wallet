@@ -66,8 +66,10 @@ test('funds Savings and its reserve in one signed deposit and resumes after relo
   const parts: Buffer[] = []
   for await (const chunk of stream) parts.push(Buffer.from(chunk))
   const approved = Transaction.fromPSBT(Buffer.concat(parts))
-  expect(approved.outputsLength).toBe(2)
-  expect(approved.getOutput(1).amount).toBe(1000n)
+  expect(approved.outputsLength).toBe(3)
+  expect(approved.getOutput(1).amount).toBe(500n)
+  expect(approved.getOutput(2).amount).toBe(500n)
+  expect(approved.getOutput(2).script).toEqual(approved.getOutput(1).script)
   approved.sign(key)
   await page.getByLabel('Signed deposit file').setInputFiles({
     name: 'signed.psbt',

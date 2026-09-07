@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { hex } from '@scure/base'
 import { Transaction, p2tr } from '@scure/btc-signer'
 import { vaultAddressNetwork } from '../addressNetwork'
-import { CONNECTOR_TEMPLATE } from './connector'
+import { CONNECTOR_TEMPLATE, DUAL_CONNECTOR_TEMPLATE } from './connector'
 import { buildVaultProgramDescriptor } from './descriptor'
 import { buildRecoveryKit } from './kit'
 import { PROGRAM_FIXTURE, scalarSecret } from './fixtures'
@@ -17,13 +17,13 @@ import {
 } from './onchainRecovery'
 
 const opts = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true } as const
-function fixture(path: SavingsRecoveryPath, advanced = true, connector = false) {
+function fixture(path: SavingsRecoveryPath, advanced = true, connector: false | string = false) {
   const kit = buildRecoveryKit(
     buildVaultProgramDescriptor({
       ...PROGRAM_FIXTURE,
       protectionTier: advanced ? 'advanced' : 'standard',
       recoveryPub: advanced ? PROGRAM_FIXTURE.recoveryPub : undefined,
-      ...(connector ? { templateVersion: CONNECTOR_TEMPLATE, connectorType: 'p2tr' as const } : {}),
+      ...(connector ? { templateVersion: connector, connectorType: 'p2tr' as const } : {}),
     }),
   )
   const parent = new Transaction(opts)
@@ -75,12 +75,20 @@ describe('independent Savings recovery transactions', () => {
         )
     }
   })
-  it.each([false, true])('preserves connector paths and remaining-key cancellation (advanced=%s)', (advanced) => {
-    expect(() => fixture({ program: 'savings-admin' }, advanced, true)).toThrow('Connector Savings')
-    const file = fixture({ program: 'pending-cancel', claimant: 'phone' }, advanced, true)
-    expect(validateSavingsRecovery(file).signers).toEqual(advanced ? ['hardware', 'recovery'] : ['hardware'])
-    expect(finalizeSavingsRecovery(sign(file)).txid).toMatch(/^[0-9a-f]{64}$/)
-  })
+  it.each([
+    [false, CONNECTOR_TEMPLATE],
+    [true, CONNECTOR_TEMPLATE],
+    [false, DUAL_CONNECTOR_TEMPLATE],
+    [true, DUAL_CONNECTOR_TEMPLATE],
+  ] as const)(
+    'preserves connector paths and remaining-key cancellation (advanced=%s, template=%s)',
+    (advanced, template) => {
+      expect(() => fixture({ program: 'savings-admin' }, advanced, template)).toThrow('Connector Savings')
+      const file = fixture({ program: 'pending-cancel', claimant: 'phone' }, advanced, template)
+      expect(validateSavingsRecovery(file).signers).toEqual(advanced ? ['hardware', 'recovery'] : ['hardware'])
+      expect(finalizeSavingsRecovery(sign(file)).txid).toMatch(/^[0-9a-f]{64}$/)
+    },
+  )
   it('rejects changed parent, control block, destination and missing prior signatures', () => {
     const file = fixture({ program: 'savings-admin' })
     expect(() => validateSavingsRecovery({ ...file, vout: 1 })).toThrow('parent output')

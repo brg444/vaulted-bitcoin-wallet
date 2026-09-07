@@ -2,7 +2,7 @@ import type { VaultStatus } from '../types'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
 import { kitFromFacts } from '../program/kitBackup'
 import { exportConnectorRecoveryJournal } from '../program/connectorStore'
-import { CONNECTOR_TEMPLATE } from '../program/connector'
+import { isConnectorTemplate } from '../program/connector'
 import { captureVaultRecoveryArchive } from '../vtxo/recoveryArchive'
 import { buildRecoveryHeader, validateVaultRecoveryFile, type VaultRecoveryFile } from './backupCodec'
 import { captureRecoveryJournals } from './journals'
@@ -24,13 +24,12 @@ export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: 
     if (previous) validateVaultRecoveryFile(previous)
     const archive = await captureVaultRecoveryArchive(kit, status)
     const journals = await captureRecoveryJournals(status, previous || undefined)
-    const connectorJournal =
-      status.templateVersion === CONNECTOR_TEMPLATE
-        ? await exportConnectorRecoveryJournal(
-            { vaultId: status.vaultId, enrollmentDigest: status.connectorEnrollment!.enrollmentDigest },
-            localStorage,
-          )
-        : undefined
+    const connectorJournal = isConnectorTemplate(status.templateVersion)
+      ? await exportConnectorRecoveryJournal(
+          { vaultId: status.vaultId, enrollmentDigest: status.connectorEnrollment!.enrollmentDigest },
+          localStorage,
+        )
+      : undefined
     const file = validateVaultRecoveryFile({
       name: 'vaulted-recovery',
       version: 1,

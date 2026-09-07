@@ -1,4 +1,4 @@
-import { CONNECTOR_TEMPLATE } from './connector'
+import { isConnectorTemplate } from './connector'
 import { CONNECTOR_KIT_NAME, connectorRecoveryDescriptor } from './connectorEnrollmentCore'
 import { PROGRAM_CSV, PROGRAM_SCHEMA, familyKeysFor, isSavingsTemplate } from './constants'
 import { hashVaultProgramDescriptor, validateVaultProgramDescriptor, type VaultProgramDescriptor } from './descriptor'
@@ -76,7 +76,7 @@ export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
     hash: parsed.descriptorHash,
     trees,
     warnings: [
-      d.templateVersion === CONNECTOR_TEMPLATE
+      isConnectorTemplate(d.templateVersion)
         ? 'A new connector Savings payment needs its existing service approvals and hardware signature.'
         : 'Normal Savings can be recovered with the phone and hardware keys without either service.',
       'Pending cancellation requires the exact remaining keys or service approvals in the saved script.',
@@ -89,7 +89,7 @@ export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
 export function assertKitTemplate(d: VaultProgramDescriptor) {
   if (
     d.schema !== PROGRAM_SCHEMA ||
-    (!isSavingsTemplate(d.templateVersion) && d.templateVersion !== CONNECTOR_TEMPLATE)
+    (!isSavingsTemplate(d.templateVersion) && !isConnectorTemplate(d.templateVersion))
   ) {
     throw new Error('Recovery Kit does not match the current Vault Program')
   }

@@ -5,7 +5,7 @@ import { createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
 import { networkPins } from '../networkPins'
 import { hexToBytes } from '../hex'
 import { defaultSpendingPolicy } from '../spendingPolicy'
-import { CONNECTOR_TEMPLATE } from './connector'
+import { CONNECTOR_TEMPLATE, DUAL_CONNECTOR_TEMPLATE } from './connector'
 import {
   buildConnectorEnrollmentPreview,
   hashConnectorBoardComposite,
@@ -138,7 +138,7 @@ function mockStatus(preview: ReturnType<typeof buildConnectorEnrollmentPreview>)
     clientOrigin: 'http://localhost:3003',
     rpId: 'localhost',
     vaultId: 'connector-family-fixture',
-    templateVersion: CONNECTOR_TEMPLATE,
+    templateVersion: preview.descriptor.templateVersion,
     policyVersion: 'vault-spending-policy-v1',
     protectionTier: V_TIER,
     externalOwnerWalletPub: vector.hardware,
@@ -443,3 +443,15 @@ function makeStorage(): Storage {
     setItem: (key: string, value: string) => void backing.set(key, value),
   } as Storage
 }
+
+it('pins a v2 status and rejects a silent switch back to v1', () => {
+  const input = { ...previewInput(), templateVersion: DUAL_CONNECTOR_TEMPLATE }
+  const preview = buildConnectorEnrollmentPreview(input)
+  const status = mockStatus(preview)
+  expect(() => verifyConnectorStatus(status, mockPin(preview), { boardingPub: vector.hardware })).not.toThrow()
+  expect(() => verifyConnectorStatus({ ...status, templateVersion: CONNECTOR_TEMPLATE }, mockPin(preview))).toThrow()
+  const saved = buildConnectorRecoveryKit(preview, { ...input, boarding: boarding })
+  expect(saved.templateVersion).toBe(DUAL_CONNECTOR_TEMPLATE)
+  expect(parseConnectorRecoveryKit(JSON.parse(JSON.stringify(saved))).enrollmentDigest).toBe(preview.digest)
+  expect(() => parseConnectorRecoveryKit({ ...saved, templateVersion: undefined })).toThrow()
+})

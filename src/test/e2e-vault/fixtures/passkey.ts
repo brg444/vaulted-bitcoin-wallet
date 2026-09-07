@@ -1,7 +1,7 @@
 import { CONNECTOR_TEST_DESCRIPTOR, CONNECTOR_TEST_PUB } from './connector'
 import { buildConnectorEnrollmentPreview } from '../../../lib/vault/program/connectorEnrollmentCore'
 import { tweakPrivateKey } from '../../../lib/vault/program/tweak'
-import { CONNECTOR_TEMPLATE } from '../../../lib/vault/program/connector'
+import { DUAL_CONNECTOR_TEMPLATE, DUAL_CONNECTOR_PROGRAM } from '../../../lib/vault/program/connector'
 import { expect, test as base, type BrowserContext, type CDPSession, type Page, type Route } from '@playwright/test'
 import { ArkAddress, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
@@ -136,8 +136,8 @@ function publicStatus() {
     vtxoBoardingProgram: BOARDING_PROGRAM,
     connectorCapability: {
       schema: 'arkade-vault/connector-capability-v1',
-      program: 'savings-connector-v1',
-      template: CONNECTOR_TEMPLATE,
+      program: DUAL_CONNECTOR_PROGRAM,
+      template: DUAL_CONNECTOR_TEMPLATE,
       reserveSats: 1000,
       enrollmentSchema: 'arkade-vault/enrollment-with-connector-v1',
     },
@@ -266,7 +266,10 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       return [{ txid: tx.id, vout: 0, value, status: { confirmed: true, block_height: 1 } }]
     }
     this.savingsUtxos = parent(this.connectorPreview.family.savings.script, this.fundingValue, '77')
-    this.reserveUtxos = parent(this.connectorPreview.family.connector.script, 1000, '78')
+    this.reserveUtxos = [
+      ...parent(this.connectorPreview.family.connector.script, 500, '78'),
+      ...parent(this.connectorPreview.family.connector.script, 500, '79'),
+    ]
   }
 
   releaseRecover() {
@@ -312,7 +315,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       clientOrigin: ORIGIN,
       rpId: RP_ID,
       vaultId,
-      templateVersion: CONNECTOR_TEMPLATE,
+      templateVersion: DUAL_CONNECTOR_TEMPLATE,
       policyVersion: POLICY_VERSION,
       protectionTier: (proposed?.protectionTier as 'standard' | 'advanced') || 'standard',
       externalOwnerWalletPub: descriptor?.keys.hardware || PROGRAM_FIXTURE.hardwarePub,
@@ -516,6 +519,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         address: boarding.onchainAddress(getNetwork('mutinynet')),
       }
       const preview = buildConnectorEnrollmentPreview({
+        templateVersion: DUAL_CONNECTOR_TEMPLATE,
         vaultId: VAULT_ID,
         network: 'mutinynet',
         protectionTier: body.protectionTier,
@@ -548,7 +552,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
           boarding: this.boardingDescriptor,
           connector: {
             schema: 'arkade-vault/connector-enrollment-v1',
-            template: CONNECTOR_TEMPLATE,
+            template: DUAL_CONNECTOR_TEMPLATE,
             vaultId: VAULT_ID,
             network: 'mutinynet',
             protectionTier: body.protectionTier,
@@ -580,8 +584,8 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         allowUnknownOutputs: true,
         allowUnknown: true,
       })
-      tx.signIdx(tweakPrivateKey(scalarSecret(14), this.connectorPreview.family.program), 0)
-      tx.signIdx(tweakPrivateKey(scalarSecret(15), this.connectorPreview.family.program), 0)
+      tx.signIdx(tweakPrivateKey(scalarSecret(14), this.connectorPreview.family.program), 2)
+      tx.signIdx(tweakPrivateKey(scalarSecret(15), this.connectorPreview.family.program), 2)
       const signedPsbt = hex.encode(tx.toPSBT())
       this.operation = {
         operationId: 'ab'.repeat(16),

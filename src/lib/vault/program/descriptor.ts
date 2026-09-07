@@ -1,4 +1,4 @@
-import { buildConnectorFamily, CONNECTOR_TEMPLATE, type ConnectorKind } from './connector'
+import { buildConnectorFamily, isConnectorTemplate, type ConnectorKind } from './connector'
 import { p256 } from '@noble/curves/nist.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -274,7 +274,7 @@ export function validateVaultProgramDescriptor(d: VaultProgramDescriptor): Vault
   if (d.schema !== PROGRAM_SCHEMA) throw new Error('unsupported vault schema')
   if (!SUPPORTED_NETWORKS.includes(d.network)) throw new Error(`unsupported network ${d.network}`)
   if (!d.vaultId || String(d.vaultId).trim() === '') throw new Error('vault id required')
-  if (!isSavingsTemplate(d.templateVersion) && d.templateVersion !== CONNECTOR_TEMPLATE)
+  if (!isSavingsTemplate(d.templateVersion) && !isConnectorTemplate(d.templateVersion))
     throw new Error('template version is not this release')
   if (d.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   requireProtectionTierMatchesRecovery(d.protectionTier, d.keys.recovery)
@@ -473,7 +473,7 @@ export type { Claimant, FamilyKey }
 function buildDescriptorFamily(
   input: Parameters<typeof buildVaultProgramFamily>[0] & { connectorType?: ConnectorKind },
 ) {
-  if (input.templateVersion !== CONNECTOR_TEMPLATE) {
+  if (!isConnectorTemplate(input.templateVersion)) {
     if (input.connectorType !== undefined) throw new Error('connector type on a legacy descriptor')
     return buildVaultProgramFamily(input)
   }

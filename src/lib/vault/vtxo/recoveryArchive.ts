@@ -17,7 +17,7 @@ import { vaultExitRepository } from './exitRepository'
 import { vaultWalletDatabase } from './walletWorkerNames'
 import { networkPins } from '../networkPins'
 import { readBounded } from '../bounded'
-import { CONNECTOR_TEMPLATE } from '../program/connector'
+import { isConnectorTemplate } from '../program/connector'
 import { connectorPinFromVerifiedStatus } from '../program/connectorEnroll'
 import { hashBoardingEnrollmentDescriptor } from '../program/enroll'
 
@@ -39,7 +39,7 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
   if (hex.encode(script.params.arkdServerPub) !== networkPins(status.network).operatorSignerPub.slice(2))
     throw new Error('Recovery Operator does not match this release')
   const boarding = requireBoardingStatus(status, String(status.vtxoBoardingDescriptor?.boardingPub || ''))
-  if (status.templateVersion === CONNECTOR_TEMPLATE) connectorPinFromVerifiedStatus(status)
+  if (isConnectorTemplate(status.templateVersion)) connectorPinFromVerifiedStatus(status)
   else if (
     hashBoardingEnrollmentDescriptor({
       schema: 'arkade-vault/enrollment-with-board-v1',

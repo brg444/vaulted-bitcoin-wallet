@@ -74,7 +74,7 @@ import {
   recoveryPsbtHasAllSignatures,
 } from '../../src/lib/vault/recovery/signatureImport'
 import { familyFromDescriptor } from '../../src/lib/vault/program/descriptor'
-import { CONNECTOR_TEMPLATE } from '../../src/lib/vault/program/connector'
+import { isConnectorTemplate } from '../../src/lib/vault/program/connector'
 import { requireReleaseNetwork } from '../../src/lib/vault/releaseNetwork'
 import { networkPins } from '../../src/lib/vault/networkPins'
 import { readBounded } from '../../src/lib/vault/bounded'
@@ -233,7 +233,7 @@ function review() {
   if (source.full || source.publicKit?.boarding)
     options.push({ value: 'boarding', label: 'Boarding — phone recovery after its delay' })
   if (k) {
-    if (k.descriptor.templateVersion !== CONNECTOR_TEMPLATE)
+    if (!isConnectorTemplate(k.descriptor.templateVersion))
       options.push({ value: 'savings-admin', label: 'Savings — phone and hardware' })
     for (const claimant of ['phone', 'hardware', 'recovery'] as const)
       if (k.descriptor.pending[`savings-${claimant}`]) {

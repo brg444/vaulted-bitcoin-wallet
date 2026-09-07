@@ -5,7 +5,7 @@ import type { EnrollmentSecrets } from '../tenantEnrollment'
 import type { VaultStatus } from '../types'
 import { parseRecoveryKit, type RecoveryKit } from '../program/kit'
 import { validateConnectorRecoveryJournal, type ConnectorRecoveryJournal } from '../program/connectorStore'
-import { CONNECTOR_TEMPLATE } from '../program/connector'
+import { isConnectorTemplate } from '../program/connector'
 import { validateVaultRecoveryArchive, vaultRecoveryBinding, type VaultRecoveryArchive } from '../vtxo/recoveryArchive'
 import { unlockPhoneBip340 } from '../savingsSpend'
 import { compressRecoveryData, MAX_RECOVERY_PLAIN_BYTES } from './compression'
@@ -53,10 +53,9 @@ export function recoveryBinding(kit: RecoveryKit, status: VaultStatus): Recovery
     protectionTier: kit.protectionTier,
     policyVersion: status.policyVersion,
     spendingPolicyDigest: kit.spendingPolicyDigest,
-    descriptorHash:
-      status.templateVersion === CONNECTOR_TEMPLATE
-        ? status.connectorEnrollment!.descriptorHash
-        : status.vtxoBoardingDescriptorHash!,
+    descriptorHash: isConnectorTemplate(status.templateVersion)
+      ? status.connectorEnrollment!.descriptorHash
+      : status.vtxoBoardingDescriptorHash!,
   }
 }
 
@@ -177,7 +176,7 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
     archive.kit.descriptorHash !== header.kit.descriptorHash
   )
     throw new Error('Recovery data does not match its encrypted identity')
-  if (header.binding.templateVersion === CONNECTOR_TEMPLATE) {
+  if (isConnectorTemplate(header.binding.templateVersion)) {
     validateConnectorRecoveryJournal(
       { vaultId: header.binding.vaultId, enrollmentDigest: header.status.connectorEnrollment!.enrollmentDigest },
       file.connectorJournal,

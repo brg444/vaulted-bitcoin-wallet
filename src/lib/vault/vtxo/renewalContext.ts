@@ -5,7 +5,7 @@ import { requireSupportedVaultNetwork, type VaultNetwork } from '../constants'
 import { LIGHT_PROFILE, LIGHT_PROGRAM, validateLightPolicy, type LightPolicy } from '../light/contract'
 import { requireLightStatus } from '../light/status'
 import { networkPins } from '../networkPins'
-import { CONNECTOR_TEMPLATE } from '../program/connector'
+import { isConnectorTemplate } from '../program/connector'
 import { isSavingsTemplate } from '../program/constants'
 import { requireProtectionTierMatchesRecovery, type ProtectionTier } from '../protectionTier'
 import { spendingPolicyDigest, validateSpendingPolicy, type SpendingPolicy } from '../spendingPolicy'
@@ -49,7 +49,7 @@ export function guardianRenewalContext(status: VaultStatus): GuardianRenewalCont
       spendingPolicy: validateLightPolicy(d.spendingPolicy, network),
     }
   }
-  if (!isSavingsTemplate(status.templateVersion) && status.templateVersion !== CONNECTOR_TEMPLATE)
+  if (!isSavingsTemplate(status.templateVersion) && !isConnectorTemplate(status.templateVersion))
     throw new Error('Unsupported renewal program')
   const protectionTier = requireProtectionTierMatchesRecovery(
     status.protectionTier,

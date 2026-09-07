@@ -1,5 +1,5 @@
 import { hex } from '@scure/base'
-import { CONNECTOR_TEMPLATE } from './connector'
+import { isConnectorTemplate, CONNECTOR_TEMPLATE, DUAL_CONNECTOR_TEMPLATE, DUAL_CONNECTOR_PROGRAM } from './connector'
 import { requireBoardingDescriptor } from '../vtxo/board'
 import { spendingPolicyDigest, validateSpendingPolicy, type SpendingPolicy } from '../spendingPolicy'
 import type { BoardingDescriptor, VaultStatus } from '../types'
@@ -33,6 +33,7 @@ export * from './connectorEnrollmentCore'
 // network, or trusts a stored script: every script/address is recomputed.
 
 export interface ConnectorProposalExpectation {
+  templateVersion?: string
   vaultId: string
   network: ConnectorEnrollmentNetwork
   phonePub: string
@@ -81,7 +82,7 @@ export function requireProposedConnectorDescriptor(
   if (!connector || typeof connector !== 'object') fail('connector enrollment preview is missing its descriptor')
   if (
     connector.schema !== CONNECTOR_DESCRIPTOR_SCHEMA ||
-    connector.template !== CONNECTOR_TEMPLATE ||
+    connector.template !== (expected.templateVersion ?? CONNECTOR_TEMPLATE) ||
     connector.vaultId !== expected.vaultId ||
     connector.network !== expected.network ||
     connector.protectionTier !== expected.protectionTier
@@ -123,6 +124,7 @@ export function requireProposedConnectorDescriptor(
     network: expected.network,
   })
   const preview = buildConnectorEnrollmentPreview({
+    templateVersion: String(connector.template),
     vaultId: expected.vaultId,
     network: expected.network,
     protectionTier: expected.protectionTier,
@@ -211,7 +213,7 @@ export function verifyConnectorStatus(
   if (!status?.enrolled) fail('vault is not enrolled')
   if (status.vaultId !== pin.vaultId) fail('connector vault id does not match enrollment')
   if (status.network !== pin.network) fail('connector network does not match enrollment')
-  if (status.templateVersion !== CONNECTOR_TEMPLATE) fail('vault is not a connector enrollment')
+  if (!isConnectorTemplate(status.templateVersion)) fail('vault is not a connector enrollment')
   const identity = status.connectorEnrollment
   if (
     !identity ||
@@ -255,6 +257,7 @@ export function verifyConnectorStatus(
   }
   const preview = buildConnectorEnrollmentPreview({
     vaultId: pin.vaultId,
+    templateVersion: status.templateVersion,
     network: pin.network,
     protectionTier: pin.protectionTier,
     phonePub,
@@ -297,8 +300,8 @@ export interface ConnectorCapability {
 }
 export const REQUIRED_CONNECTOR_CAPABILITY: ConnectorCapability = {
   schema: 'arkade-vault/connector-capability-v1',
-  program: 'savings-connector-v1',
-  template: CONNECTOR_TEMPLATE,
+  program: DUAL_CONNECTOR_PROGRAM,
+  template: DUAL_CONNECTOR_TEMPLATE,
   reserveSats: 1000,
   enrollmentSchema: CONNECTOR_ENROLLMENT_SCHEMA,
 }
@@ -467,6 +470,7 @@ export function connectorKitFromVerifiedStatus(status: VaultStatus): ConnectorRe
   const boarding = status.vtxoBoardingDescriptor!
   const preview = buildConnectorEnrollmentPreview({
     vaultId: pin.vaultId,
+    templateVersion: status.templateVersion,
     network: pin.network,
     protectionTier: pin.protectionTier,
     origin,

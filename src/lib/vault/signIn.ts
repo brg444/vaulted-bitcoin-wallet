@@ -1,4 +1,4 @@
-import { CONNECTOR_TEMPLATE } from './program/connector'
+import { isConnectorTemplate } from './program/connector'
 import { loadConnectorEnrollmentPin, verifyConnectorStatus } from './program/connectorEnroll'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { deriveDirectP256, signDirectP256, zeroBytes } from './ceremony/directauth'
@@ -141,7 +141,7 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     if (!status.enrolled) throw new Error('vault is not enrolled')
     const connectorPin = loadConnectorEnrollmentPin(vaultId)
     if (connectorPin) verifyConnectorStatus(status, connectorPin)
-    else if (status.templateVersion === CONNECTOR_TEMPLATE) {
+    else if (isConnectorTemplate(status.templateVersion)) {
       // A lost browser pin must come from the existing signed recovery binding,
       // never from signing a replacement binding supplied by the service.
       if (status.passkeyLoginAvailable) return (await signInWithPasskey(vaultId)).status
@@ -214,7 +214,7 @@ export async function unlockLocalEnrollment(
     throw new Error('deployment RP ID does not match this signing client host')
   }
   const live = await vaultCosignerClient.enrollment.status(rec.vaultId)
-  if (live.templateVersion === CONNECTOR_TEMPLATE) return signInWithPasskey(rec.vaultId, withRenewalAuth)
+  if (isConnectorTemplate(live.templateVersion)) return signInWithPasskey(rec.vaultId, withRenewalAuth)
   pinEnrolledStatus(live)
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({

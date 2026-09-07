@@ -4,7 +4,7 @@ import { readBounded } from './bounded'
 import { POLICY_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
 import { authorizerWalletHref, requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
-import { CONNECTOR_TEMPLATE } from './program/connector'
+import { isConnectorTemplate } from './program/connector'
 import type { ConnectorCapability } from './program/connectorEnroll'
 import { SAVINGS_TEMPLATE } from './program/constants'
 import { bindStatusToLocalPin } from './pin'
@@ -228,7 +228,7 @@ export function requireStatusIdentity(
   if (status.vaultId !== expected) throw new Error('status vault id does not match')
   requireReleaseNetwork(status.network)
   if (status.templateVersion === LIGHT_PROFILE) return requireLightStatus(status)
-  if (status.templateVersion !== SAVINGS_TEMPLATE && status.templateVersion !== CONNECTOR_TEMPLATE)
+  if (status.templateVersion !== SAVINGS_TEMPLATE && !isConnectorTemplate(status.templateVersion))
     throw new Error('template version is not this release')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   const selected = validateSpendingPolicy(status.spendingPolicy)

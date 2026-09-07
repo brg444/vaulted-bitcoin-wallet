@@ -1,4 +1,4 @@
-import { CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
+import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
@@ -25,6 +25,7 @@ export default function VaultReview() {
   const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
   const fromSavings = account === 'savings'
+  const hardwareFirst = fromSavings && status?.templateVersion === DUAL_CONNECTOR_TEMPLATE
   const movingToSpending = fromSavings && Boolean(boardingAddress) && spend.address === boardingAddress
   const lightning = isVaultLightningInput(spend.address)
   const destinationType = movingToSpending ? 'Spending' : lightning ? 'Lightning invoice' : 'Address'
@@ -42,8 +43,8 @@ export default function VaultReview() {
       <div className='qg-screen qg-screen-progress'>
         <main className='qg-main qg-centered qg-progress-screen'>
           <span className='qg-spinner' aria-hidden='true' />
-          <p className='qg-eyebrow'>Approval 1 of 2</p>
-          <h1>Approve with passkey</h1>
+          <p className='qg-eyebrow'>Savings transfer</p>
+          <h1>{hardwareFirst ? 'Preparing approval' : 'Approve with passkey'}</h1>
           <p className='qg-copy'>Use Face ID, Touch ID, fingerprint, or your device PIN when prompted.</p>
         </main>
       </div>
@@ -71,7 +72,9 @@ export default function VaultReview() {
                 : rebroadcastingConnector
                   ? 'Retry broadcast'
                   : fromSavings
-                    ? 'Sign on this device'
+                    ? hardwareFirst
+                      ? 'Continue to signer'
+                      : 'Sign on this device'
                     : resumingPayment
                       ? 'Continue payment'
                       : 'Approve payment'
@@ -125,7 +128,7 @@ export default function VaultReview() {
         <div>
           <span>
             {fromSavings
-              ? status?.templateVersion === CONNECTOR_TEMPLATE
+              ? isConnectorTemplate(status?.templateVersion)
                 ? 'Network fee and 240-sat anchor'
                 : 'Network fee'
               : 'Fee'}
@@ -148,7 +151,9 @@ export default function VaultReview() {
       {!rebroadcastingConnector ? (
         <p className='qg-copy qg-approval-copy'>
           {fromSavings
-            ? 'Approve with your passkey, then sign with your external wallet.'
+            ? hardwareFirst
+              ? 'Sign with your external wallet, then approve with your passkey to send.'
+              : 'Approve with your passkey, then sign with your external wallet.'
             : 'Approve with your passkey. The vault service checks your payment limits.'}
         </p>
       ) : null}

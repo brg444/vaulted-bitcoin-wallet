@@ -65,6 +65,8 @@ export interface ConnectorPendingInput {
   origin: ConnectorStoredOrigin
   savings: ConnectorStoredCoin
   reserve: ConnectorStoredCoin
+  secondReserve?: ConnectorStoredCoin
+  hardwareSignatures?: string[]
   recipient: string
   amountSats: number
   feeSats: number
@@ -133,6 +135,10 @@ function isRecordShape(value: unknown): value is ConnectorPendingRecord {
     !!record.origin &&
     !!record.savings &&
     !!record.reserve &&
+    (record.hardwareSignatures === undefined ||
+      (Array.isArray(record.hardwareSignatures) &&
+        record.hardwareSignatures.length === 2 &&
+        record.hardwareSignatures.every((sig) => typeof sig === 'string' && /^[0-9a-f]{18,146}$/.test(sig)))) &&
     (record.savingsWitness === undefined || Array.isArray(record.savingsWitness)) &&
     (record.signedTxHex === undefined || typeof record.signedTxHex === 'string') &&
     (record.txid === undefined || typeof record.txid === 'string')
@@ -184,6 +190,8 @@ export function validateConnectorRecoveryRecord(expected: ConnectorExpectedIdent
     enrollmentDigest: expected.enrollmentDigest,
     savings: record.savings,
     reserve: record.reserve,
+    secondReserve: record.secondReserve,
+    hardwareSignatures: record.hardwareSignatures,
     recipient: record.recipient,
     amountSats: record.amountSats,
     feeSats: record.feeSats,
@@ -275,6 +283,8 @@ export function preparePendingConnectorOperation(
         enrollmentDigest: snap.enrollmentDigest,
         savings: snapInput.savings,
         reserve: snapInput.reserve,
+        secondReserve: snapInput.secondReserve,
+        hardwareSignatures: snapInput.hardwareSignatures,
         recipient: snapInput.recipient,
         amountSats: snapInput.amountSats,
         feeSats: snapInput.feeSats,
@@ -315,6 +325,43 @@ export function markConnectorSignaturesMayHaveIssued(
       validated.record.signaturesMayHaveIssued = true
       writeRecord(snap.vaultId, validated.record, storage)
       return { record: validated.record, candidateTxid: validated.candidateTxid }
+    },
+    locks,
+  )
+}
+
+// Hardware signatures change the packet and therefore freeze a new candidate
+// identity. This is allowed once, before any Savings signature or server request.
+export function storeConnectorHardwareApproval(
+  expected: ConnectorExpectedIdentity,
+  candidateTxid: string,
+  response: string,
+  storage: Storage,
+  locks?: VaultLockManager | null,
+) {
+  const snap = snapshotIdentity(expected)
+  const txid = requireCandidateTxid(candidateTxid)
+  const incoming = String(response)
+  return withConnectorLock(
+    snap.vaultId,
+    () => {
+      const current = readValidated(snap, storage)
+      if (!current) throw new Error('no connector operation to update')
+      requireCandidateMatch(current, txid)
+      if (
+        current.record.hardwareSignatures ||
+        current.record.phoneSignedPsbt ||
+        current.record.savingsWitness ||
+        current.record.operationId
+      )
+        throw new Error('connector candidate already approved')
+      const hardwareSignatures = current.prepared.acceptHardwareApproval(incoming)
+      const record = { ...current.record, hardwareSignatures, signaturesMayHaveIssued: true }
+      const prepared = prepareConnectorPayment({ ...record, origin: toOrigin(record.origin) })
+      record.candidatePsbt = prepared.psbt()
+      const validated = validateConnectorRecoveryRecord(snap, record)
+      writeRecord(snap.vaultId, record, storage)
+      return validated
     },
     locks,
   )
@@ -428,11 +475,14 @@ export function reservedConnectorOutpoints(
     snap.vaultId,
     () => {
       const validated = readValidated(snap, storage)
-      if (!validated) return { savings: null, reserve: null }
+      if (!validated) return { savings: null, reserve: null, secondReserve: undefined }
       const { record } = validated
       return {
         savings: { txid: record.savings.txid, vout: record.savings.vout },
         reserve: { txid: record.reserve.txid, vout: record.reserve.vout },
+        ...(record.secondReserve
+          ? { secondReserve: { txid: record.secondReserve.txid, vout: record.secondReserve.vout } }
+          : {}),
       }
     },
     locks,

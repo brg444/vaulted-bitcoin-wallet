@@ -1,5 +1,5 @@
 import { readConnectorSignerFile } from '../../lib/vault/connectorSignerFile'
-import { CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
+import { isConnectorTemplate } from '../../lib/vault/program/connector'
 import QgAmount from './qg/QgAmount'
 import { useContext, useMemo, useRef, useState } from 'react'
 import { Clipboard, ScanLine, TriangleAlert, Upload } from 'lucide-react'
@@ -20,7 +20,7 @@ export default function VaultHandoff() {
   const { busy, cancelSavingsHandoff, completeSavingsHandoff, error, handoffPsbt, navigate, spend, status } =
     useContext(VaultContext)
   const { toast } = useToast()
-  const connector = status?.templateVersion === CONNECTOR_TEMPLATE
+  const connector = isConnectorTemplate(status?.templateVersion)
   const payload = useMemo(() => (handoffPsbt ? psbtHexToBase64(handoffPsbt) : ''), [handoffPsbt])
   const frames = useMemo(() => (payload ? encodePsbtFrames(payload) : []), [payload])
   const [view, setView] = useState<HandoffView>('export')

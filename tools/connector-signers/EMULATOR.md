@@ -1,11 +1,15 @@
 # Emulator HTTP qualification
 
-Twelve mainnet connector cases pass through Emulator v0.0.7's generated HTTP
-gateway, gRPC handler, onchain validation, default compute limits, and signing
-code. Coverage includes Standard and Advanced, BIP86 Taproot, BIP84 native
-SegWit, native Electrum origins, and partial and complete withdrawals. Each case
-also rejects a reduced connector reserve. Vaulted independently verifies the
-returned signature before producing the signer handoff.
+The qualification exercises Emulator v0.0.7's generated HTTP gateway, gRPC
+handler, onchain validation, default compute limits and signing code. Twelve
+existing v1 cases and 40 connector v2 cases pass. The v2 matrix covers Standard
+and Advanced, Taproot and native SegWit connectors, partial and full withdrawals,
+and P2PKH, P2SH, P2WPKH, P2WSH and Taproot recipients. Another 72 v2 requests
+must fail after deliberate policy, packet or signature-commitment changes.
+Vaulted independently verifies every returned Emulator signature.
+
+The [Ledger approval contract](LEDGER.md) describes the hardware-first flow and
+independent Bitcoin sighash verification in connector v2.
 
 The first run rejected every candidate because the wallet had dropped both
 proprietary parent-transaction fields. In btc-signer 2.0.1, `addInput` discards
