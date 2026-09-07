@@ -98,7 +98,7 @@ export default function VaultSend() {
         ? 'The smallest send is ₿330.'
         : spend.amount > available && !resumingPayment
           ? fromSavings
-            ? 'That is more than Savings can move now.'
+            ? 'That is more than Savings has available.'
             : 'That is more than you can send now.'
           : !fromSavings && spend.amount > setup.txCapSats
             ? `Up to ${prettyAmount(setup.txCapSats)} per payment.`
@@ -220,7 +220,7 @@ export default function VaultSend() {
                   ? 'Resuming…'
                   : 'Confirming fee…'
                 : movingToSpending
-                  ? 'Review move'
+                  ? 'Review transfer'
                   : fromSavings
                     ? 'Review send'
                     : resumingPayment
@@ -285,7 +285,7 @@ export default function VaultSend() {
         hint={fromSavings ? 'Bitcoin address' : undefined}
       />
       {fromSavings ? (
-        <p className='qg-available'>₿{prettyNumber(positions.savings.availableSats, 0)} available to move</p>
+        <p className='qg-available'>₿{prettyNumber(positions.savings.availableSats, 0)} available</p>
       ) : (
         <p className='qg-available' aria-label='Spending capacity'>
           {resumingPayment

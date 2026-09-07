@@ -81,7 +81,7 @@ export default function VaultReview() {
       }
     >
       <section className='qg-review-amount'>
-        <small>{movingToSpending ? 'You’re moving' : lightning ? 'You’re paying' : 'You’re sending'}</small>
+        <small>{movingToSpending ? 'You’re transferring' : lightning ? 'You’re paying' : 'You’re sending'}</small>
         <strong style={amountSizeStyle(prettyAmount(spend.amount))}>
           <QgAmount value={prettyAmount(spend.amount)} />
         </strong>
