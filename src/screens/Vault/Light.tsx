@@ -34,6 +34,7 @@ import {
   type LightRecoveryFile,
 } from '../../lib/vault/light/recovery'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { prettyAmount } from '../../lib/format'
 import {
   Check,
   Clock3,
@@ -47,6 +48,8 @@ import {
   Settings as SettingsIcon,
 } from 'lucide-react'
 import AccountHome from './AccountHome'
+import SecurityOverview from './SecurityOverview'
+import { HubGroup, HubRow } from './ui'
 import homeStyles from './AccountHome.module.css'
 import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
@@ -1371,26 +1374,67 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         footer={<QgSecondary label='Lock wallet' onClick={() => void lock()} />}
       >
         {securitySection === 'overview' ? (
-          <div className='qg-setup-options'>
-            <button type='button' onClick={() => setSecuritySection('access')}>
-              <strong>Access and limits</strong>
-              <small>Passkey and payment limits</small>
-            </button>
-            <button type='button' onClick={() => setSecuritySection('renewal')}>
-              <strong>Automatic renewal</strong>
-              <small>
-                {coverage?.available ? `${coverage.scheduled} of ${coverage.total} scheduled` : 'Check coverage'}
-              </small>
-            </button>
-            <button type='button' onClick={() => setSecuritySection('backup')}>
-              <strong>Backups</strong>
-              <small>{cloudError ? 'Needs attention' : 'Cloud and local recovery data'}</small>
-            </button>
-          </div>
+          <SecurityOverview
+            title='Light wallet'
+            description='Passkey access'
+            notice={
+              cloudError
+                ? 'Check your wallet backup'
+                : cloudSavedAt
+                  ? 'Encrypted cloud backup saved'
+                  : 'Save a wallet backup'
+            }
+            attention={Boolean(cloudError) || !cloudSavedAt}
+            access={{ value: 'Passkey', onClick: () => setSecuritySection('access') }}
+            backup={{
+              value: cloudError ? 'Needs attention' : cloudSavedAt ? 'Cloud copy saved' : 'Needed',
+              attention: Boolean(cloudError) || !cloudSavedAt,
+              onClick: () => setSecuritySection('backup'),
+              testId: 'security-kit',
+            }}
+            limits={{
+              value: `${prettyAmount(record.descriptor.spendingPolicy.txRecipientCapSats)} each`,
+              onClick: () => setSecuritySection('access'),
+            }}
+            renewal={{
+              value: coverage?.error
+                ? 'Needs attention'
+                : coverage?.available
+                  ? `${coverage.scheduled} of ${coverage.total} scheduled`
+                  : 'Check coverage',
+              attention: Boolean(coverage?.error),
+              onClick: () => setSecuritySection('renewal'),
+              testId: 'security-readiness',
+            }}
+          >
+            <HubGroup>
+              <HubRow
+                title='Recover directly to Bitcoin'
+                onClick={() =>
+                  void run(async () => {
+                    const archive = await loadLightRecoveryArchive(record.descriptor)
+                    if (!archive) throw new Error('Import a current backup to recover')
+                    setRecoveryFile({
+                      ...record,
+                      name: 'vaulted-light-recovery',
+                      version: 1,
+                      createdAt: archive.capturedAt,
+                      archive,
+                    })
+                    setPasskeyRecovery(true)
+                    setRecoveryReturn('security')
+                    setUseSavedRecovery(true)
+                    setExitStep('review')
+                    setView('emergency')
+                  })
+                }
+              />
+              <HubRow title='Switch wallet' onClick={onExit} />
+            </HubGroup>
+          </SecurityOverview>
         ) : null}
         {securitySection === 'access' ? (
           <>
-            <h1>Access and limits</h1>
             <div className='light-panel'>
               <ShieldCheck />
               <div>
@@ -1547,32 +1591,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   ? `Transaction paths saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
                   : 'Saving transaction paths…')}
             </p>
-          </>
-        ) : null}
-        {securitySection === 'overview' ? (
-          <>
-            <QgTextButton
-              label='Recover directly to Bitcoin'
-              onClick={() =>
-                void run(async () => {
-                  const archive = await loadLightRecoveryArchive(record.descriptor)
-                  if (!archive) throw new Error('Import a current backup to recover')
-                  setRecoveryFile({
-                    ...record,
-                    name: 'vaulted-light-recovery',
-                    version: 1,
-                    createdAt: archive.capturedAt,
-                    archive,
-                  })
-                  setPasskeyRecovery(true)
-                  setRecoveryReturn('security')
-                  setUseSavedRecovery(true)
-                  setExitStep('review')
-                  setView('emergency')
-                })
-              }
-            />
-            <QgTextButton label='Switch wallet' onClick={onExit} />
           </>
         ) : null}
       </QgScreen>

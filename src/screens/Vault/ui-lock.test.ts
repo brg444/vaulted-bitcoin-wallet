@@ -67,7 +67,7 @@ describe('vault UI lock', () => {
     expect(settings).not.toMatch(/settings-kit/)
     expect(settings).not.toMatch(/settings-hwsign/)
     expect(settings).toMatch(/Sign out/)
-    const keys = read('src/screens/Vault/Keys.tsx')
+    const keys = [read('src/screens/Vault/Keys.tsx'), read('src/screens/Vault/SecurityOverview.tsx')].join('\n')
     expect(keys).toMatch(/title='Recovery key'/)
     expect(keys).toMatch(/Your passkey/)
     expect(keys).toMatch(/Backups/)

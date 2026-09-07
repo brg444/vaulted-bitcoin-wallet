@@ -87,9 +87,9 @@ test('creates and resumes a Savings connector handoff through the passkey-backed
   await page.getByRole('button', { name: 'Open navigation' }).click()
   await page.getByTestId('account-savings').click()
   await expect(page.getByTestId('vault-balance')).toContainText('55,000')
-  await page.getByRole('button', { name: 'Move to Spending', exact: true }).click()
+  await page.getByRole('button', { name: 'Transfer', exact: true }).click()
   await page.getByTestId('vault-send-amount').fill('50000')
-  await page.getByRole('button', { name: 'Review move' }).click()
+  await page.getByRole('button', { name: 'Review transfer' }).click()
 
   await expect(page.getByRole('heading', { name: 'Review payment' })).toBeVisible()
   await expect(page.getByText('From Savings')).toBeVisible()

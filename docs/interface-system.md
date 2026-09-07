@@ -2,6 +2,8 @@
 
 Standard, Advanced, and Light share the same layout rules. New wallet screens use `QgScreen` for the header, scrolling content, and footer. Account screens use `AccountHome` and its single `AccountHome.module.css`, with `AccountBalance`, `VaultHistoryList`, and `VaultLauncher`. Both modes pass balances, supported actions, and account-specific notices into this composition. The shared component owns the header, balance metadata, and action markup. Send screens use `DestinationField` for the labeled address input and scanner, and the `qg-amount-entry` and `qg-review-amount` compositions for amounts.
 
+Security uses `SecurityOverview` and `SecurityOverview.module.css` for its status panel, four interactive tiles, and recovery actions. Standard, Advanced, and Light supply their own key access, backup, limit, and renewal state. Renewal coverage comes from renewal data; service availability alone does not establish that renewals are scheduled.
+
 ## Layout and typography
 
 `src/screens/Vault/qg/layout.css` owns geometry and text tokens. The active screen stylesheet consumes these tokens, as do guidance, installation, transaction references, and Light-specific surfaces.
