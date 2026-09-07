@@ -127,7 +127,7 @@ export async function prepareConnectorWithdrawal(status: VaultStatus, recipient:
     .sort((a, b) => a.txid.localeCompare(b.txid) || a.vout - b.vout)[0]
   if (!reserve)
     throw new ConnectorUserError(
-      `Fund the 1,000-sat signer reserve shown under Savings → Deposit, then wait for Bitcoin confirmation.`,
+      `Prepare a deposit under Savings → Deposit to fund the signer reserve automatically, then wait for Bitcoin confirmation.`,
     )
   const rate = estimates['3'] ?? estimates['6']
   if (!Number.isFinite(rate) || rate <= 0 || rate > contract.feerateCapSatPerV)

@@ -59,8 +59,8 @@ export default function VaultHardware() {
             <p data-testid='connector-import-address'>{connector.address}</p>
             <p>{connector.selectedPath}</p>
             <p>
-              Send exactly 1,000 sats to this address for the signer reserve. Savings deposits use a separate address
-              shown after setup.
+              Your first Savings deposit can fund this reserve in the same transaction. Prepare the deposit from Savings
+              → Deposit after setup.
             </p>
           </div>
         </section>
