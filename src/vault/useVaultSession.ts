@@ -19,7 +19,7 @@ import {
   signInWithPasskey,
   unlockLocalEnrollment,
 } from '../lib/vault/signIn'
-import { planReady, sameBip340Key, setupSpendingPolicy, type VaultSetupPlan } from '../lib/vault/setupPlan'
+import { planReady, setupSpendingPolicy, type VaultSetupPlan } from '../lib/vault/setupPlan'
 import { enrollWithPasskey, type EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import {
   connectorPinFromVerifiedStatus,
@@ -105,11 +105,7 @@ export function useVaultSession({
         reportError('Finish setup first.')
         return
       }
-      if (status?.externalOwnerWalletPub && !sameBip340Key(setup.hardwarePub, status.externalOwnerWalletPub)) {
-        reportError('This vault expects a different hardware key.')
-        return
-      }
-      if (!status?.enrolled && !setup.connector) {
+      if (!setup.connector) {
         reportError('Add a supported public wallet descriptor before creating this vault.')
         setScreen('hardware')
         return

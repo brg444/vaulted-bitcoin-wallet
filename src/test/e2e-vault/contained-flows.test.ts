@@ -1,3 +1,4 @@
+import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { test, expect, reachPasskeySetup } from './fixtures/passkey'
 
 for (const height of [667, 844]) {
@@ -25,3 +26,31 @@ for (const height of [667, 844]) {
     await expect(page.getByTestId('account-switcher')).toBeVisible()
   })
 }
+
+test('another vault on the same device accepts a different editable hardware descriptor', async ({
+  page,
+  authorizer,
+  passkey,
+}) => {
+  void passkey
+  await reachPasskeySetup(page)
+  await page.getByTestId('enrollment-token').fill(authorizer.invite)
+  await page.getByRole('button', { name: 'Create Vault' }).click()
+  await page.getByRole('button', { name: 'I’ll save a separate copy later' }).click()
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByTestId('settings-signout').click()
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await page.getByRole('button', { name: 'Set up another vault' }).click()
+  await page.getByRole('button', { name: /^Standard/ }).click()
+  const descriptor = page.getByRole('textbox', { name: 'Wallet descriptor' })
+  await expect(descriptor).toBeEditable()
+  await expect(descriptor).toBeEmpty()
+  await descriptor.fill(CONNECTOR_TEST_DESCRIPTOR.replace('/0/*)', '/1/*)'))
+  await page.getByRole('button', { name: 'Use this hardware key' }).click()
+  await expect(page.getByRole('heading', { name: 'Spending limits', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await expect(descriptor).toHaveValue(CONNECTOR_TEST_DESCRIPTOR.replace('/0/*)', '/1/*)'))
+  await expect(descriptor).toBeEditable()
+})

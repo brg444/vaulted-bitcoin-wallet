@@ -7,11 +7,13 @@ import { POLICY_VERSION } from '../lib/vault/constants'
 import { ENROLL_STORE, SELECTED_VAULT_STORE, SESSION_LOCK_STORE } from '../lib/vault/enrollmentStore'
 import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP } from '../lib/vault/lightningTestUtils'
 import { SAVINGS_TEMPLATE } from '../lib/vault/program/constants'
-import { SETUP_STORE_KEY } from '../lib/vault/setupPlan'
+import { emptySetupPlan, SETUP_STORE_KEY } from '../lib/vault/setupPlan'
 import type { VaultStatus } from '../lib/vault/types'
 import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
 import { persistVtxoSpend, VtxoReviewedReservationError, type VaultVtxoSpendQuote } from '../lib/vault/vtxo/spend'
 import { VaultContext, VaultProvider } from './vault'
+import VaultHardware from '../screens/Vault/onboard/Hardware'
+import { CONNECTOR_TEST_DESCRIPTOR, CONNECTOR_TEST_PUB } from '../test/e2e-vault/fixtures/connector'
 
 const mocks = vi.hoisted(() => ({
   availableSats: 20000,
@@ -276,6 +278,49 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       validUntil: 4_000_000_000,
       refundLocktime: 4_000_000_100,
     })
+  })
+
+  it('starts another vault with an editable descriptor and accepts a different hardware key', async () => {
+    const oldStatus = { ...status, externalOwnerWalletPub: golden.fixtures.exitHardwarePub }
+    mocks.fetchStatus.mockResolvedValue(oldStatus)
+    localStorage.setItem(
+      SETUP_STORE_KEY,
+      JSON.stringify({
+        ...emptySetupPlan(),
+        acceptedDesign: true,
+        complete: true,
+        hardwarePub: oldStatus.externalOwnerWalletPub,
+      }),
+    )
+    const savedEnrollment = localStorage.getItem(`${ENROLL_STORE}:vault-a`)
+    function SetupProbe() {
+      const vault = useContext(VaultContext)
+      return (
+        <>
+          <span data-testid='old-vault'>{vault.status?.vaultId}</span>
+          <span data-testid='new-key'>{vault.setup.hardwarePub}</span>
+          <span data-testid='setup-screen'>{vault.screen}</span>
+          <button onClick={() => vault.acceptDesign('standard')}>Start another vault</button>
+          {vault.screen === 'hardware' ? <VaultHardware /> : null}
+        </>
+      )
+    }
+    render(
+      <VaultProvider>
+        <SetupProbe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('old-vault')).toHaveTextContent('vault-a'))
+    fireEvent.click(screen.getByText('Start another vault'))
+    const input = screen.getByRole('textbox', { name: 'Wallet descriptor' })
+    expect(input).toHaveValue('')
+    expect(input).not.toHaveAttribute('readonly')
+    expect(screen.getByRole('button', { name: 'Use this hardware key' })).toBeDisabled()
+    fireEvent.change(input, { target: { value: CONNECTOR_TEST_DESCRIPTOR } })
+    fireEvent.click(screen.getByRole('button', { name: 'Use this hardware key' }))
+    await waitFor(() => expect(screen.getByTestId('setup-screen')).toHaveTextContent('conditions'))
+    expect(screen.getByTestId('new-key')).toHaveTextContent(CONNECTOR_TEST_PUB)
+    expect(localStorage.getItem(`${ENROLL_STORE}:vault-a`)).toBe(savedEnrollment)
   })
 
   it('resumes an existing Arkade payment with no available balance and without another reservation', async () => {

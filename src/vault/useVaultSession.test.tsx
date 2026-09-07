@@ -196,37 +196,71 @@ describe('Vault session enrollment passkey install', () => {
     },
   }
 
-  it('pins the enrolled program even when other-device passkey install fails twice', async () => {
-    mocks.enroll.mockResolvedValue({ enrollment, status })
-    mocks.enable.mockRejectedValue(new Error('authorizer did not persist passkey sign-in recovery data'))
-    mocks.makePin.mockReturnValue(pin)
-    const state = {
-      reportError: vi.fn(),
-      sealPlan: vi.fn(() => readySetup),
-      setAddressPin: vi.fn(),
-      setBusy: vi.fn(),
-      setEnrollment: vi.fn(),
-      setLocked: vi.fn(),
-      setScreen: vi.fn(),
-      setStatus: vi.fn(),
-    }
+  it('requires a new descriptor even when a previous vault is enrolled', async () => {
+    const reportError = vi.fn()
+    const setScreen = vi.fn()
     const hook = renderHook(() =>
       useVaultSession({
-        enrollment: null,
-        ...state,
-        setup: readySetup,
-        status: null,
+        enrollment,
+        status,
+        setup: { ...readySetup, connector: undefined },
+        reportError,
+        setScreen,
+        sealPlan: vi.fn(() => readySetup),
+        setAddressPin: vi.fn(),
+        setBusy: vi.fn(),
+        setEnrollment: vi.fn(),
+        setLocked: vi.fn(),
+        setStatus: vi.fn(),
       }),
     )
-
-    await act(async () => hook.result.current.enroll('a'.repeat(32)))
-
-    expect(mocks.enable).toHaveBeenCalledTimes(2)
-    expect(state.setAddressPin).toHaveBeenCalledWith(pin)
-    expect(state.setScreen).toHaveBeenCalledWith('created')
-    expect(state.setScreen).not.toHaveBeenCalledWith('problem')
-    expect(state.reportError).toHaveBeenCalledWith(expect.stringMatching(/sign-in after a restart is not on yet/i))
+    await act(async () => hook.result.current.enroll())
+    expect(mocks.enroll).not.toHaveBeenCalled()
+    expect(setScreen).toHaveBeenCalledWith('hardware')
+    expect(reportError).toHaveBeenCalledWith(expect.stringContaining('public wallet descriptor'))
   })
+
+  it.each([null, { ...status, externalOwnerWalletPub: '03' + '22'.repeat(32) }])(
+    'enrolls the new descriptor independently of a previous vault status %j',
+    async (previousStatus) => {
+      mocks.enroll.mockResolvedValue({ enrollment, status })
+      mocks.enable.mockRejectedValue(new Error('authorizer did not persist passkey sign-in recovery data'))
+      mocks.makePin.mockReturnValue(pin)
+      const state = {
+        reportError: vi.fn(),
+        sealPlan: vi.fn(() => readySetup),
+        setAddressPin: vi.fn(),
+        setBusy: vi.fn(),
+        setEnrollment: vi.fn(),
+        setLocked: vi.fn(),
+        setScreen: vi.fn(),
+        setStatus: vi.fn(),
+      }
+      const hook = renderHook(() =>
+        useVaultSession({
+          enrollment: null,
+          ...state,
+          setup: readySetup,
+          status: previousStatus,
+        }),
+      )
+
+      await act(async () => hook.result.current.enroll('a'.repeat(32)))
+
+      expect(mocks.enroll).toHaveBeenCalledWith(
+        'a'.repeat(32),
+        expect.objectContaining({
+          hardwarePub: readySetup.hardwarePub,
+          connector: expect.objectContaining({ connectorPub: readySetup.hardwarePub }),
+        }),
+      )
+      expect(mocks.enable).toHaveBeenCalledTimes(2)
+      expect(state.setAddressPin).toHaveBeenCalledWith(pin)
+      expect(state.setScreen).toHaveBeenCalledWith('created')
+      expect(state.setScreen).not.toHaveBeenCalledWith('problem')
+      expect(state.reportError).toHaveBeenCalledWith(expect.stringMatching(/sign-in after a restart is not on yet/i))
+    },
+  )
 })
 
 describe('local archive restore with unavailable live status', () => {

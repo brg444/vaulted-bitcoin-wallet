@@ -7,16 +7,13 @@ import '../qg/guidance.css'
 import QgScreen, { QgPrimary } from '../qg/QgScreen'
 
 export default function VaultHardware() {
-  const { applyConnectorDescriptor, applyHardware, error, navigate, setup, status } = useContext(VaultContext)
-  const required = status?.externalOwnerWalletPub || ''
-  const [value, setValue] = useState(required || setup.connector?.descriptor || '')
+  const { applyConnectorDescriptor, error, navigate, setup } = useContext(VaultContext)
+  const [value, setValue] = useState(setup.complete ? '' : setup.connector?.descriptor || '')
 
-  const ready = Boolean(required || value.trim())
+  const ready = Boolean(value.trim())
 
   const submit = () => {
-    const raw = (required || value).trim()
-    if (required) applyHardware(required)
-    else applyConnectorDescriptor(raw)
+    applyConnectorDescriptor(value.trim())
   }
 
   return (
@@ -33,15 +30,13 @@ export default function VaultHardware() {
     >
       <h1>Add your hardware key</h1>
       <p className='qg-copy'>
-        {required
-          ? 'This vault already has a hardware key. Check that you can still use the hardware wallet that holds it.'
-          : 'Paste your public wallet descriptor from Sparrow. This wallet will provide the second approval for Savings transfers.'}
+        Paste your public wallet descriptor from Sparrow. This wallet will provide the second approval for Savings
+        transfers.
       </p>
       <label className='qg-field'>
         <span>Wallet descriptor</span>
         <textarea
           value={value}
-          readOnly={Boolean(required)}
           data-testid='hardware-pub'
           aria-label='Wallet descriptor'
           placeholder='wpkh([fingerprint/path]xpub…/<0;1>/*)'
@@ -50,16 +45,14 @@ export default function VaultHardware() {
         />
         <small>Supports native SegWit (wpkh) and Taproot (tr) descriptors</small>
       </label>
-      {required ? null : (
-        <button
-          type='button'
-          className='qg-paste'
-          onClick={() => void pasteFromClipboard().then((next) => setValue(next || value))}
-        >
-          <Clipboard />
-          Paste descriptor
-        </button>
-      )}
+      <button
+        type='button'
+        className='qg-paste'
+        onClick={() => void pasteFromClipboard().then((next) => setValue(next || value))}
+      >
+        <Clipboard />
+        Paste descriptor
+      </button>
       <details className='qg-guidance'>
         <summary>Find and check your wallet descriptor</summary>
         <div className='qg-guidance-body'>

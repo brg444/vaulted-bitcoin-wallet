@@ -480,9 +480,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const acceptDesign = useCallback(
     (tier?: 'standard' | 'advanced') => {
-      const protectionTier = tier || setup.protectionTier
+      const draft = setup.complete ? emptySetupPlan() : setup
+      const protectionTier = tier || draft.protectionTier
       persist({
-        ...setup,
+        ...draft,
         acceptedDesign: true,
         protectionTier,
         ...(protectionTier === 'standard' ? { recoveryPub: '' } : {}),
@@ -500,9 +501,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         const network = status?.network || deployment?.network
         if (network !== 'mainnet' && network !== 'mutinynet') throw new Error('Vault network is not ready yet')
         const imported = importConnectorOrigin(raw.trim(), network)
-        if (status?.externalOwnerWalletPub && !sameBip340Key(imported.publicKey, status.externalOwnerWalletPub)) {
-          throw new Error('This vault expects a different hardware key.')
-        }
         persist({
           ...setup,
           hardwarePub: imported.publicKey,
@@ -521,7 +519,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setError(humanizeVaultError(err))
       }
     },
-    [persist, setup, status?.externalOwnerWalletPub, status?.network, deployment?.network],
+    [persist, setup, status?.network, deployment?.network],
   )
 
   const applyHardware = useCallback(
