@@ -147,9 +147,6 @@
   font-size: 1.5rem;
 }
 
-.light-account-balance {
-  cursor: default;
-}
 .light-allowance {
   display: flex;
   align-items: center;

@@ -18,6 +18,7 @@ import {
 } from '../../lib/vault/prefs'
 import { setSessionLocked } from '../../lib/vault/enrollmentStore'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
+import type { VaultStatus } from '../../lib/vault/types'
 import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
@@ -125,9 +126,26 @@ function ResetView({ onBack, onReset }: { onBack: () => void; onReset: () => voi
   )
 }
 
-export default function VaultSettings() {
-  const { balanceError, busy, liveNetwork, navigate, refreshBalance, refreshingBalance, reset, setup, status } =
-    useContext(VaultContext)
+export default function VaultSettings({
+  light,
+}: {
+  light?: {
+    status: VaultStatus | null
+    busy: boolean
+    onClose: () => void
+    refresh: () => Promise<void>
+    lock: () => void
+  }
+} = {}) {
+  const context = useContext(VaultContext)
+  const { reset, setup } = context
+  const status = light ? light.status : context.status
+  const busy = light ? light.busy : context.busy
+  const liveNetwork = light ? status?.network === 'mutinynet' : context.liveNetwork
+  const balanceError = light ? '' : context.balanceError
+  const refreshingBalance = light ? light.busy : context.refreshingBalance
+  const refreshBalance = light ? light.refresh : context.refreshBalance
+  const close = light ? light.onClose : () => context.navigate('home')
   const readiness = useVaultReadiness()
   const { toast } = useToast()
   const [view, setView] = useState<View>('menu')
@@ -234,7 +252,11 @@ export default function VaultSettings() {
       ['Policy version', status?.policyVersion],
       [
         'Protection tier',
-        tier === 'advanced' ? 'Advanced — separate recovery key' : 'Standard — no separate recovery key',
+        light
+          ? 'Light — passkey payments'
+          : tier === 'advanced'
+            ? 'Advanced — separate recovery key'
+            : 'Standard — no separate recovery key',
       ],
       ['Per-payment limit', prettyAmount(status?.txCap || setup.txCapSats)],
       ['Rolling allowance', prettyAmount(status?.periodAllowance || setup.dailyLimitSats)],
@@ -300,7 +322,7 @@ export default function VaultSettings() {
   if (view === 'reset') return <ResetView onBack={() => setView('menu')} onReset={reset} />
 
   return (
-    <QgScreen title='Settings' dismiss={() => navigate('home')}>
+    <QgScreen title='Settings' dismiss={close}>
       <div className='vault-security'>
         <HubGroup label='General'>
           <SettingsRow
@@ -323,27 +345,33 @@ export default function VaultSettings() {
         </HubGroup>
 
         <HubGroup label='This browser'>
-          <button
-            type='button'
-            role='switch'
-            aria-checked={privacyLock}
-            className='vault-hub-row'
-            data-testid='settings-privacy-lock'
-            onClick={() => {
-              const next = !privacyLock
-              setPrivacyLock(next)
-              saveVaultPrivacyLock(next)
-              setSessionLocked(next)
-              if (next) hapticLight()
-            }}
-          >
-            <div className='vault-hub-copy'>
-              <p>Require passkey to open</p>
-              <p>Hide balances until this device approves</p>
-            </div>
-            <span className={privacyLock ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
-          </button>
-          <SettingsRow label='Sign out' testId='settings-signout' danger onClick={() => setView('reset')} />
+          {light ? (
+            <SettingsRow label='Lock wallet' testId='settings-lock' onClick={light.lock} />
+          ) : (
+            <>
+              <button
+                type='button'
+                role='switch'
+                aria-checked={privacyLock}
+                className='vault-hub-row'
+                data-testid='settings-privacy-lock'
+                onClick={() => {
+                  const next = !privacyLock
+                  setPrivacyLock(next)
+                  saveVaultPrivacyLock(next)
+                  setSessionLocked(next)
+                  if (next) hapticLight()
+                }}
+              >
+                <div className='vault-hub-copy'>
+                  <p>Require passkey to open</p>
+                  <p>Hide balances until this device approves</p>
+                </div>
+                <span className={privacyLock ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
+              </button>
+              <SettingsRow label='Sign out' testId='settings-signout' danger onClick={() => setView('reset')} />
+            </>
+          )}
         </HubGroup>
       </div>
     </QgScreen>

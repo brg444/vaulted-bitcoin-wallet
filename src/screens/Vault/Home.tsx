@@ -1,14 +1,11 @@
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect } from 'react'
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, Clock3, QrCode, ScanLine, Shield, ShieldAlert } from 'lucide-react'
-import { useToast } from '../../components/Toast'
 import { prettyNumber } from '../../lib/format'
 import { hapticLight, hapticSubtle } from '../../lib/haptics'
-import { homeBalanceDisplay, type VaultFiatDisplayRate } from '../../lib/vault/fiatDisplay'
-import { loadVaultBalanceUnit, saveVaultBalanceUnit } from '../../lib/vault/prefs'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
 import Content from './Content'
-import QgAmount, { amountSizeStyle } from './qg/QgAmount'
+import AccountBalance from './AccountBalance'
 import VaultHistory from './History'
 import { QgMark } from './qg/QgScreen'
 
@@ -22,7 +19,6 @@ export default function VaultHome() {
     error,
     pendingPayments = [],
     openPendingPayment,
-    fiatDisplayRate,
     navigate,
     openSendScan,
     openRecover,
@@ -31,9 +27,7 @@ export default function VaultHome() {
     positions,
     clearSpendDraft,
     setSpendDraft,
-    setFiatDisplay,
   } = useContext(VaultContext)
-  const { toast } = useToast()
 
   useEffect(() => {
     void reloadIfNewerWallet()
@@ -44,68 +38,8 @@ export default function VaultHome() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  const [balanceUnit, setBalanceUnit] = useState<'sats' | 'usd'>('sats')
-  const [loadingFiat, setLoadingFiat] = useState(false)
-  const [homeFiatRate, setHomeFiatRate] = useState<VaultFiatDisplayRate | null>(fiatDisplayRate)
-
-  useEffect(() => {
-    if (fiatDisplayRate) setHomeFiatRate(fiatDisplayRate)
-  }, [fiatDisplayRate])
-
-  useEffect(() => {
-    let active = true
-    let preferred: 'sats' | 'usd' = 'sats'
-    try {
-      preferred = loadVaultBalanceUnit()
-    } catch {
-      return
-    }
-    if (preferred !== 'usd') return
-    setLoadingFiat(true)
-    void setFiatDisplay(true)
-      .then((rate) => {
-        if (!active) return
-        if (rate) {
-          setHomeFiatRate(rate)
-          setBalanceUnit('usd')
-        } else saveVaultBalanceUnit('sats')
-      })
-      .finally(() => {
-        if (active) setLoadingFiat(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [setFiatDisplay])
   const spending = account === 'spend'
   const position = spending ? positions.spending : positions.savings
-  const sats = position.totalSats
-  const balance = homeBalanceDisplay(sats, balanceUnit, fiatDisplayRate || homeFiatRate)
-
-  const toggleBalanceUnit = async () => {
-    if (!balancesLoaded || loadingFiat) return
-    hapticSubtle()
-    if (balanceUnit === 'usd') {
-      setBalanceUnit('sats')
-      setHomeFiatRate(null)
-      saveVaultBalanceUnit('sats')
-      await setFiatDisplay(false)
-      return
-    }
-    setLoadingFiat(true)
-    try {
-      const rate = fiatDisplayRate || (await setFiatDisplay(true))
-      if (!rate) {
-        toast('USD balance is unavailable. Try again later.')
-        return
-      }
-      setHomeFiatRate(rate)
-      setBalanceUnit('usd')
-      saveVaultBalanceUnit('usd')
-    } finally {
-      setLoadingFiat(false)
-    }
-  }
 
   return (
     <Content className='qg-home-content'>
@@ -170,29 +104,12 @@ export default function VaultHome() {
           </button>
         ) : null}
 
-        <button
-          type='button'
-          className='qg-balance'
-          data-testid='vault-balance'
-          data-balance-unit={balanceUnit}
-          style={amountSizeStyle(balance.amount)}
-          disabled={!balancesLoaded || loadingFiat}
-          aria-busy={!balancesLoaded || refreshingBalance || loadingFiat ? true : undefined}
-          aria-live='polite'
-          aria-label={
-            balancesLoaded
-              ? `${spending ? 'Spending' : 'Savings'} balance: ${balance.label}. Show ${
-                  balanceUnit === 'usd' ? 'bitcoin' : 'USD'
-                }`
-              : `${spending ? 'Spending' : 'Savings'} balance loading`
-          }
-          onClick={() => void toggleBalanceUnit()}
-        >
-          <strong>
-            <QgAmount value={balancesLoaded ? balance.amount : '—'} />
-          </strong>
-          {balancesLoaded && balance.unit ? <span>{balance.unit}</span> : null}
-        </button>
+        <AccountBalance
+          sats={position.totalSats}
+          account={spending ? 'Spending' : 'Savings'}
+          balancesLoaded={balancesLoaded}
+          refreshingBalance={refreshingBalance}
+        />
         {balancesLoaded && position.pendingSats > 0 ? (
           <p className='qg-available'>
             ₿{prettyNumber(position.availableSats)} available · ₿{prettyNumber(position.pendingSats)} pending
