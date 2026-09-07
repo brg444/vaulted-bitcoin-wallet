@@ -2,10 +2,10 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 12px;
+  gap: var(--qg-space-12);
   width: 100%;
-  margin-top: 28px;
-  padding: 16px;
+  margin-top: var(--qg-space-24);
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
   border-radius: var(--qg-surface-radius);
   background: var(--qg-paper);
@@ -19,14 +19,14 @@
 }
 .qg-install-notice strong {
   display: block;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--qg-body);
+  font-weight: var(--qg-weight-strong);
 }
 .qg-install-notice small {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--qg-space-4);
   color: var(--qg-muted);
-  font-size: 12px;
+  font-size: var(--qg-caption);
   line-height: 1.5;
 }
 .qg-install-sheet {
@@ -42,7 +42,7 @@
   overscroll-behavior: contain;
   border: 1px solid var(--qg-line);
   border-bottom: 0;
-  border-radius: 28px 28px 0 0;
+  border-radius: var(--qg-dialog-radius) var(--qg-dialog-radius) 0 0;
   background: var(--qg-oat);
   color: var(--qg-ink);
   box-shadow: 0 -16px 64px rgb(0 0 0 / 16%);
@@ -63,7 +63,7 @@
   place-items: center;
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: var(--qg-field-radius);
   background: var(--qg-paper);
 }
 .qg-install-heading button {
@@ -78,36 +78,36 @@
   cursor: pointer;
 }
 .qg-install-sheet h2 {
-  margin: 24px 0 12px;
-  font-size: 28px;
-  font-weight: 550;
+  margin: var(--qg-space-24) 0 var(--qg-space-12);
+  font-size: var(--qg-heading);
+  font-weight: var(--qg-weight-medium);
   line-height: 1.15;
   letter-spacing: -0.035em;
 }
 .qg-install-sheet p,
 .qg-install-sheet li {
-  font-size: 14px;
+  font-size: var(--qg-body);
   line-height: 1.6;
 }
 .qg-install-sheet p {
-  margin: 0 0 24px;
+  margin: 0 0 var(--qg-space-24);
   color: var(--qg-muted);
 }
 .qg-install-sheet ol {
   display: grid;
   list-style: decimal;
-  gap: 16px;
-  padding-left: 24px;
-  margin: 24px 0;
+  gap: var(--qg-space-16);
+  padding-left: var(--qg-space-24);
+  margin: var(--qg-space-24) 0;
 }
 .qg-install-sheet li {
-  padding-left: 4px;
+  padding-left: var(--qg-space-4);
 }
 .qg-install-sheet li::marker {
   color: var(--qg-muted);
 }
 .qg-install-sheet strong {
-  font-weight: 600;
+  font-weight: var(--qg-weight-strong);
 }
 .qg-install-sheet .qg-install-inline-icon {
   display: inline-block;
@@ -118,7 +118,7 @@
 .qg-install-sheet .qg-text {
   display: block;
   width: 100%;
-  margin-top: 12px;
+  margin-top: var(--qg-space-12);
 }
 @keyframes qg-install-enter {
   from {
@@ -135,7 +135,7 @@
     inset: 0;
     margin: auto;
     border-bottom: 1px solid var(--qg-line);
-    border-radius: 28px;
+    border-radius: var(--qg-dialog-radius);
   }
 }
 @media (prefers-reduced-motion: reduce) {

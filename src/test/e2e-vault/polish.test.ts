@@ -1,3 +1,4 @@
+import { expectWalletLayout } from './fixtures/layout'
 import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import AxeBuilder from '@axe-core/playwright'
@@ -27,6 +28,7 @@ test('@polish welcome is accessible and visually stable', async ({ page }) => {
   await expect(page.getByText('Everyday spending.', { exact: false })).toBeVisible()
   await expect(page.getByText('Setup needs an invite and a compatible hardware wallet.')).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('welcome.png', { animations: 'disabled', fullPage: true })
 
   await page.evaluate(
@@ -48,6 +50,7 @@ test('@polish welcome is accessible and visually stable', async ({ page }) => {
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Sign in with your passkey' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('sign-in.png', { animations: 'disabled', fullPage: true })
   await page.evaluate(() => localStorage.clear())
   await page.reload()
@@ -55,6 +58,7 @@ test('@polish welcome is accessible and visually stable', async ({ page }) => {
   await page.getByRole('button', { name: 'Get started' }).click()
   await expect(page.getByRole('heading', { name: 'Choose your Vault' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-how-it-works.png', { animations: 'disabled', fullPage: true })
 })
 
@@ -75,21 +79,25 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
   await page.goto('/')
   await page.getByRole('button', { name: 'Get started' }).click()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-protection-choice.png', { animations: 'disabled' })
   await page.getByRole('button', { name: /^Advanced/ }).click()
   await expect(page.getByRole('heading', { name: 'Hardware key', exact: true })).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'Wallet descriptor' })).toHaveCount(0)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-hardware-options.png', { animations: 'disabled', fullPage: true })
   await page.getByRole('button', { name: 'Paste', exact: true }).click()
   const hardwarePub = page.getByTestId('hardware-pub')
   await hardwarePub.fill(CONNECTOR_TEST_DESCRIPTOR)
   await hardwarePub.blur()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-hardware.png', { animations: 'disabled', fullPage: true })
 
   await page.getByRole('button', { name: 'Use this hardware key' }).click()
   await expect(page.getByTestId('recovery-pub')).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-protection-advanced.png', { animations: 'disabled', fullPage: true })
   await page.getByRole('button', { name: 'Change protection' }).click()
   await page.getByRole('button', { name: /^Standard/ }).click()
@@ -97,12 +105,14 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
 
   await expect(page.getByRole('heading', { name: 'Spending limits', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-spending-limits.png', {
     animations: 'disabled',
     fullPage: true,
   })
   await expect(page.getByTestId('policy-tx-cap')).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-spending-limits-custom.png', {
     animations: 'disabled',
     fullPage: true,
@@ -111,6 +121,7 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
 
   await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-review.png', { animations: 'disabled', fullPage: true })
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: 'Continue' }).click()
@@ -118,6 +129,7 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
   await expect(page.getByRole('heading', { name: 'Secure this device' })).toBeVisible()
   await expect(page.getByTestId('enrollment-token')).toBeVisible()
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('onboarding-device.png', { animations: 'disabled', fullPage: true })
 })
 
@@ -139,5 +151,6 @@ test('@polish render failures are safe, accessible, and visually stable', async 
   await expect(page.getByText(/^VLT-/)).toBeVisible()
   await expect(page.getByText(/raw render payload/)).toHaveCount(0)
   await expectNoBlockingAxeViolations(page)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('render-error.png', { animations: 'disabled', fullPage: true })
 })

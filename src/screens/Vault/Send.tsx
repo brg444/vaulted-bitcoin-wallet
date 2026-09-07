@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
-import { KeyRound, ScanLine } from 'lucide-react'
+import { KeyRound } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import { prettyAmount, prettyNumber } from '../../lib/format'
 import { decodeVaultBip21, isVaultBip21 } from '../../lib/vault/bip21'
@@ -15,6 +15,7 @@ import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { isSameVtxoPayment, loadPersistedVtxoSpend } from '../../lib/vault/vtxo/spend'
 import { VaultContext } from '../../vault/context'
 import Scanner from './Scanner'
+import DestinationField from './qg/DestinationField'
 import { amountSizeStyle } from './qg/QgAmount'
 import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 
@@ -274,27 +275,15 @@ export default function VaultSend() {
           </p>
         ) : null}
       </section>
-      <label className='qg-dest-field'>
-        <span>To</span>
-        <div>
-          <input
-            value={spend.address}
-            aria-label='To'
-            name='vault-send-destination'
-            autoComplete='off'
-            autoCapitalize='none'
-            autoCorrect='off'
-            spellCheck={false}
-            enterKeyHint='done'
-            placeholder={fromSavings ? 'Bitcoin address' : 'Payment address or Lightning invoice'}
-            onChange={(event) => setAddress(event.target.value)}
-          />
-          <button type='button' aria-label='Scan destination' onClick={() => setScan(true)}>
-            <ScanLine />
-          </button>
-        </div>
-        {fromSavings ? <small>Bitcoin address</small> : null}
-      </label>
+      <DestinationField
+        label='To'
+        value={spend.address}
+        name='vault-send-destination'
+        placeholder={fromSavings ? 'Bitcoin address' : 'Payment address or Lightning invoice'}
+        onChange={(event) => setAddress(event.target.value)}
+        onScan={() => setScan(true)}
+        hint={fromSavings ? 'Bitcoin address' : undefined}
+      />
       {fromSavings ? (
         <p className='qg-available'>₿{prettyNumber(positions.savings.availableSats, 0)} available to move</p>
       ) : (

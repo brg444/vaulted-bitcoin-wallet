@@ -20,7 +20,7 @@ export default defineConfig({
     toHaveScreenshot: {
       // Keep layout regressions strict while tolerating minor glyph rasterization
       // differences between ARM development containers and GitHub's x86 runner.
-      maxDiffPixelRatio: 0.015,
+      maxDiffPixelRatio: process.env.VAULT_UPDATE_SNAPSHOTS === '1' ? 0 : 0.015,
     },
   },
   use: {

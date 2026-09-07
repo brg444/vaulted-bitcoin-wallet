@@ -54,6 +54,8 @@ import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
 import { VaultHistoryList } from './History'
 import AccountBalance from './AccountBalance'
+import QgAmount, { amountSizeStyle } from './qg/QgAmount'
+import DestinationField from './qg/DestinationField'
 import VaultSettings from './Settings'
 import QgScreen, { QgMark, QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
 import QrCode from '../../components/QrCode'
@@ -537,8 +539,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <p className='qg-eyebrow'>Light</p>
         <h1>Set your spending limits</h1>
         <p className='qg-copy'>Use your passkey for payments, within the limits you choose.</p>
-        <div className='light-fields'>
-          <label>
+        <div className='qg-fields'>
+          <label className='qg-field'>
             Per-payment limit, in sats
             <input
               inputMode='numeric'
@@ -548,7 +550,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               onChange={(e) => setPolicy({ ...policy, txRecipientCapSats: Number(e.target.value) })}
             />
           </label>
-          <label>
+          <label className='qg-field'>
             Rolling 24-hour limit, in sats
             <input
               inputMode='numeric'
@@ -559,7 +561,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             />
           </label>
           {mode === 'token' ? (
-            <label>
+            <label className='qg-field'>
               Invite code
               <input autoComplete='off' value={invite} onChange={(e) => setInvite(e.target.value)} />
             </label>
@@ -660,7 +662,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               label={downloaded ? 'Download recovery file again' : 'Download recovery file'}
               onClick={() => backup(pending)}
             />
-            <label className='light-field'>
+            <label className='qg-field'>
               Choose the saved recovery file to verify it
               <input
                 type='file'
@@ -699,7 +701,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               The secret is shown during setup and is not saved in your browser. Keep it somewhere you can reach if you
               lose this device.
             </p>
-            <label className='light-field'>
+            <label className='qg-field'>
               Enter your saved secret to verify
               <textarea
                 value={confirmation}
@@ -950,7 +952,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           Operator is unavailable.
         </p>
         {!recoveryFile.exitPackage ? (
-          <label className='light-field'>
+          <label className='qg-field'>
             Bitcoin address to recover to
             <input
               value={recoveryDestination}
@@ -966,7 +968,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           </>
         )}
         {!recoveryFile.exitPackage ? (
-          <label className='light-field light-checkbox'>
+          <label className='qg-field light-checkbox'>
             <input
               type='checkbox'
               checked={useSavedRecovery}
@@ -981,7 +983,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           </p>
         ) : null}
         {!passkeyRecovery ? (
-          <label className='light-field'>
+          <label className='qg-field'>
             Recovery code
             <textarea
               value={confirmation}
@@ -1190,32 +1192,34 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <h1>Send bitcoin</h1>
-        <QgTextButton label='Scan address' onClick={() => navigate('scan-send')} />
-        <div className='light-fields'>
-          <label>
-            Arkade address
-            <textarea
-              value={address}
-              autoCapitalize='none'
-              autoCorrect='off'
-              onChange={(e) => setAddress(e.target.value)}
-              autoComplete='off'
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            Amount, in sats
+        <section className='qg-amount-entry' style={amountSizeStyle(amount)}>
+          <label htmlFor='light-send-amount'>Amount, in sats</label>
+          <div>
+            <span aria-hidden='true'>₿</span>
             <input
+              id='light-send-amount'
               inputMode='numeric'
               type='number'
               min='330'
+              placeholder='20,000'
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
-          </label>
-        </div>
-        <p className='qg-copy'>
+          </div>
+        </section>
+        <DestinationField
+          label='Arkade address'
+          value={address}
+          placeholder='Payment address'
+          onChange={(e) => setAddress(e.target.value)}
+          scanLabel='Scan address'
+          onScan={() => navigate('scan-send')}
+        />
+        <p className='qg-available'>
+          {sats(Math.max(0, Math.min(snapshot?.balance ?? 0, status.periodRemaining)))} available within your rolling
+          limit
+        </p>
+        <p className='qg-helper'>
           Up to {sats(status.txCap)} per payment. You will see the network fee before approving.
         </p>
       </QgScreen>
@@ -1248,17 +1252,27 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <p className='qg-eyebrow'>You are sending</p>
-        <h1>{sats(quote.amountSats)}</h1>
-        <div className='light-panel'>
+        <section className='qg-review-amount' style={amountSizeStyle(quote.amountSats.toLocaleString('en-US'))}>
+          <small>You are sending</small>
+          <strong>
+            <QgAmount value={`₿${quote.amountSats.toLocaleString('en-US')}`} />
+          </strong>
+        </section>
+        <div className='qg-details'>
           <div>
-            <small>To</small>
-            <p className='light-address'>{quote.destAddress}</p>
-            <p>Network fee: {sats(quote.feeSats)}</p>
-            <strong>Total: {sats(quote.amountSats + quote.feeSats)}</strong>
+            <span>To</span>
+            <strong className='light-address'>{quote.destAddress}</strong>
+          </div>
+          <div>
+            <span>Network fee</span>
+            <strong>{sats(quote.feeSats)}</strong>
+          </div>
+          <div>
+            <span>Total</span>
+            <strong>{sats(quote.amountSats + quote.feeSats)}</strong>
           </div>
         </div>
-        <p className='qg-copy'>Approve with your passkey to send this payment.</p>
+        <p className='qg-helper'>Approve with your passkey to send this payment.</p>
       </QgScreen>
     )
   else if (view === 'success')
@@ -1345,7 +1359,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <p className='qg-copy'>
           Add a receiving address from another Bitcoin wallet. That wallet controls spending and recovery.
         </p>
-        <label className='light-field'>
+        <label className='qg-field'>
           Bitcoin receiving address
           <input
             value={watchAddress}

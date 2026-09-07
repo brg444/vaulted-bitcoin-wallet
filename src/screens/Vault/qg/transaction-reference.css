@@ -1,8 +1,8 @@
 .qg-transaction-reference {
   width: 100%;
   min-width: 0;
-  margin: 20px 0;
-  padding: 16px 0;
+  margin: var(--qg-space-24) 0;
+  padding: var(--qg-space-16) 0;
   border-block: 1px solid var(--qg-line);
   text-align: left;
 }
@@ -17,8 +17,8 @@
 }
 .qg-transaction-reference code {
   display: block;
-  margin: 10px 0;
-  font-size: 13px;
+  margin: var(--qg-space-8) 0;
+  font-size: var(--qg-body);
   line-height: 1.6;
   overflow-wrap: anywhere;
   user-select: all;
@@ -29,16 +29,16 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 4px 16px;
+  gap: var(--qg-space-4) var(--qg-space-16);
 }
 .qg-transaction-reference-actions button,
 .qg-transaction-reference-actions a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--qg-space-8);
   min-height: 44px;
-  padding: 8px 0;
+  padding: var(--qg-space-8) 0;
   border: 0;
   background: transparent;
   color: var(--qg-ink);

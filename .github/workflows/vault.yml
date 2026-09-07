@@ -99,6 +99,7 @@ jobs:
         run: corepack pnpm test:e2e ${{ inputs.refresh_snapshots && '--update-snapshots' || '' }}
         env:
           CI: true
+          VAULT_UPDATE_SNAPSHOTS: ${{ inputs.refresh_snapshots && '1' || '0' }}
 
       - name: Browser failure screenshots
         if: failure()

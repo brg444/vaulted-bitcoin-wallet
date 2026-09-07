@@ -1,0 +1,47 @@
+/* Shared geometry for Standard, Advanced, and Light. Layout follows an 8px
+ * grid; 4px subdivisions keep labels and dense controls grouped. Optical icon
+ * geometry, safe areas, and responsive amount fitting are separate concerns. */
+:root {
+  --qg-space-4: 4px;
+  --qg-space-8: 8px;
+  --qg-space-12: 12px;
+  --qg-space-16: 16px;
+  --qg-space-24: 24px;
+  --qg-space-32: 32px;
+  --qg-space-40: 40px;
+  --qg-space-48: 48px;
+  --qg-space-64: 64px;
+  --qg-space-88: 88px;
+  --qg-gutter: var(--qg-space-24);
+  --qg-section-gap: var(--qg-space-24);
+  --qg-caption: 0.75rem;
+  --qg-body: 0.875rem;
+  --qg-title: 1rem;
+  --qg-section: 1.125rem;
+  --qg-subheading: 1.25rem;
+  --qg-heading: 1.75rem;
+  --qg-weight-regular: 400;
+  --qg-weight-medium: 500;
+  --qg-weight-strong: 600;
+  --qg-field-radius: 12px;
+  --qg-surface-radius: 16px;
+  --qg-dialog-radius: 24px;
+  --qg-control-height: 56px;
+  --qg-touch-target: 44px;
+}
+
+[data-testid='vault-app'] {
+  --qg-field-border: var(--qg-muted);
+}
+
+@media (max-width: 359px) {
+  :root {
+    --qg-gutter: var(--qg-space-16);
+  }
+}
+
+@media (max-height: 740px) {
+  :root {
+    --qg-section-gap: var(--qg-space-16);
+  }
+}

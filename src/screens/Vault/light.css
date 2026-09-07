@@ -9,65 +9,33 @@
 .light-app h1 {
   overflow-wrap: anywhere;
 }
-.light-app h2 {
-  font-size: 1.125rem;
-  margin-top: 2rem;
+.light-app .qg-main h2 {
+  font-size: var(--qg-section);
+  margin-top: var(--qg-space-32);
 }
 .light-panel {
+  font-size: var(--qg-body);
+  min-width: 0;
   display: flex;
   align-items: flex-start;
-  gap: 1rem;
+  gap: var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 1.25rem;
-  padding: 1.25rem;
-  margin-block: 1.25rem;
+  border-radius: var(--qg-surface-radius);
+  padding: var(--qg-space-16);
+  margin-block: var(--qg-section-gap);
 }
 .light-panel > svg {
   flex: 0 0 24px;
 }
 .light-panel p {
-  margin: 0.5rem 0 0;
+  margin: var(--qg-space-8) 0 0;
   line-height: 1.5;
 }
-.light-fields {
-  display: grid;
-  gap: 1.25rem;
-  margin-block: 1.5rem;
-}
-.light-fields label,
-.light-field {
-  display: grid;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-}
-.light-fields input,
-.light-fields textarea,
-.light-field input,
-.light-field textarea {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 3.5rem;
-  padding: 0.875rem 1rem;
-  border: 1px solid var(--qg-line);
-  border-radius: 1rem;
-  background: var(--qg-paper);
-  color: inherit;
-  font: inherit;
-  font-size: 1rem;
-  box-shadow: none;
-}
-.light-fields textarea,
-.light-field textarea {
-  min-height: 6rem;
-  resize: vertical;
-  overflow-wrap: anywhere;
-}
-
-.light-field.light-checkbox {
+.qg-field.light-checkbox {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: var(--qg-space-12);
 }
 .light-checkbox input[type='checkbox'] {
   flex: 0 0 1.25rem;
@@ -79,8 +47,8 @@
 }
 .light-secret-label {
   display: block;
-  margin-block: 1.5rem;
-  font-size: 0.875rem;
+  margin-block: var(--qg-section-gap);
+  font-size: var(--qg-body);
 }
 .light-secret,
 .light-address {
@@ -90,11 +58,11 @@
 }
 .light-secret {
   display: block;
-  margin-top: 0.75rem;
-  padding: 1rem;
+  margin-top: var(--qg-space-12);
+  padding: var(--qg-space-16);
   border: 1px solid var(--qg-line);
-  border-radius: 1rem;
-  font-size: 1rem;
+  border-radius: var(--qg-field-radius);
+  font-size: var(--qg-title);
   user-select: all;
 }
 .light-success {
@@ -105,7 +73,7 @@
   justify-content: center;
   border: 1px solid currentColor;
   border-radius: 50%;
-  margin-block: 1.5rem;
+  margin-block: var(--qg-section-gap);
 }
 .light-success svg {
   width: 2rem;
@@ -117,23 +85,19 @@
   left: 1rem;
   right: 1rem;
   top: 4rem;
-  padding: 1rem;
-  border-radius: 1rem;
+  padding: var(--qg-space-16);
+  border-radius: var(--qg-field-radius);
   background: var(--qg-paper, #fffdf9);
   color: var(--qg-ink, #171618);
   box-shadow: 0 4px 24px #0002;
   max-height: 30%;
   overflow: auto;
 }
-.light-field :is(input, textarea):focus,
-.light-fields :is(input, textarea):focus {
-  outline: none;
-}
 
 .light-message {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: var(--qg-space-12);
 }
 .light-message > span {
   flex: 1;
@@ -150,20 +114,24 @@
 .light-allowance {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-space-24);
 }
 .light-details {
-  margin-top: 1.5rem;
+  margin-top: var(--qg-space-24);
   border-top: 1px solid var(--qg-line);
 }
 .light-details summary {
   cursor: pointer;
-  padding-block: 1rem;
-  font-size: 0.875rem;
+  padding-block: var(--qg-space-16);
+  font-size: var(--qg-body);
 }
 
 .light-app > .content {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.light-panel > div {
+  min-width: 0;
 }

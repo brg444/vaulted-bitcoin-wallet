@@ -1,3 +1,4 @@
+import { expectWalletLayout } from './fixtures/layout'
 import { test, expect } from './fixtures/passkey'
 import { lightTestEnrollment, lightTestStatus } from '../../lib/vault/light/testdata/helpers'
 import AxeBuilder from '@axe-core/playwright'
@@ -94,6 +95,7 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   expect(await page.getByTestId('vault-balance').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
   const axe = await new AxeBuilder({ page }).analyze()
   expect(axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')).toEqual([])
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('light-home.png', { animations: 'disabled' })
   await page.getByTestId('vault-balance').click()
   await expect(page.getByTestId('vault-balance')).toHaveAttribute('data-balance-unit', 'usd')
@@ -107,6 +109,7 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await expect(page.getByTestId('settings-haptics')).toBeVisible()
   await expect(page.getByTestId('settings-signout')).toHaveCount(0)
   await expect(page.getByTestId('settings-privacy-lock')).toHaveCount(0)
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('light-settings.png', { animations: 'disabled' })
   await page.getByTestId('settings-about').click()
   await expect(page.getByText('Light — passkey payments')).toBeVisible()
@@ -115,6 +118,7 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await page.getByRole('radio', { name: 'Dark', exact: true }).click()
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('light-home-dark.png', { animations: 'disabled' })
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Review payment' })).toBeInViewport({ ratio: 1 })
@@ -123,9 +127,13 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Arkade address' })).toHaveValue('draft address')
   await page.getByRole('spinbutton', { name: 'Amount, in sats' }).fill('1000')
+  await expectWalletLayout(page, true)
+  await expect(page).toHaveScreenshot('light-send.png', { animations: 'disabled' })
   await page.getByRole('button', { name: 'Review payment' }).click()
-  await expect(page.getByText('Total: 1,020 sats')).toBeVisible()
+  await expect(page.locator('.qg-details > div').filter({ hasText: 'Total' })).toHaveText('Total1,020 sats')
   await expect(page.getByRole('button', { name: 'Approve 1,000 sats' })).toBeInViewport({ ratio: 1 })
+  await expectWalletLayout(page, true)
+  await expect(page).toHaveScreenshot('light-review.png', { animations: 'disabled' })
   await page.getByRole('button', { name: 'Approve 1,000 sats' }).click()
   await expect(page.getByRole('heading', { name: 'Payment sent', exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: 'Done', exact: true }).click()
