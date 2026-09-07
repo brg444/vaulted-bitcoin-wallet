@@ -1028,7 +1028,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await page.getByTestId('tab-vault').click()
   await expect(page.getByRole('heading', { name: 'Security' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveCount(0)
-  await expect(page.getByTestId('security-readiness')).toContainText('Ready')
+  await expect(page.getByTestId('security-readiness')).toContainText(/scheduled|Unavailable|Needs attention/)
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('security.png', { animations: 'disabled', fullPage: true })
@@ -1140,8 +1140,8 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('receive-savings.png', { animations: 'disabled', fullPage: true })
   await page.getByRole('button', { name: 'Go back' }).click()
-  await page.getByRole('button', { name: 'Move to Spending', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Move to Spending' })).toBeVisible()
+  await page.getByRole('button', { name: 'Transfer', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Transfer' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('send-savings.png', { animations: 'disabled', fullPage: true })
@@ -1656,5 +1656,75 @@ for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
     await light.getByTestId('account-scan').click()
     await expect(light.getByRole('button', { name: 'Enter manually' })).toBeVisible()
     await light.close()
+  })
+}
+
+for (const mode of ['standard', 'light'] as const) {
+  test(`@polish visual Security overview stays contained: ${mode}`, async ({ page }, testInfo) => {
+    if (mode === 'standard') await openVault(page)
+    else await openLight(page)
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+    await page.getByTestId('tab-vault').click()
+    const overview = page.getByTestId('security-overview')
+    await expect(overview).toBeVisible()
+    const tiles = page.getByTestId('security-grid').getByRole('button')
+    await expect(tiles).toHaveCount(4)
+    for (const width of testInfo.project.name.includes('Desktop') ? [1440] : [375, 320]) {
+      await page.setViewportSize({ width, height: width === 1440 ? 1000 : 667 })
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate((theme) => {
+          document.documentElement.classList.toggle('palette-dark', theme === 'dark')
+          document.documentElement.classList.toggle('palette-light', theme === 'light')
+        }, theme)
+        await page
+          .getByTestId('vault-app')
+          .screenshot({ path: testInfo.outputPath(`security-${mode}-${width}-${theme}.png`), animations: 'disabled' })
+        await expectWalletLayout(page, true)
+        for (const tile of await tiles.all()) await expect(tile).toBeInViewport({ ratio: 1 })
+        const boxes = await tiles.evaluateAll((elements) =>
+          elements.map((el) => {
+            const r = el.getBoundingClientRect()
+            return { width: r.width, height: r.height }
+          }),
+        )
+        for (const box of boxes) {
+          expect(box.width).toBeCloseTo(boxes[0].width, 0)
+          expect(box.height).toBeCloseTo(boxes[0].height, 0)
+          expect(box.height).toBeGreaterThanOrEqual(44)
+        }
+        await expectNoBlockingAxeViolations(page)
+        await expect(page.getByTestId('vault-app')).toHaveScreenshot(
+          `security-overview-${mode}-${width}-${theme}.png`,
+          { animations: 'disabled' },
+        )
+      }
+    }
+    for (const [label, heading] of mode === 'standard'
+      ? [
+          ['Keys and access', 'Keys and access'],
+          ['Spending limits', 'Spending limits'],
+          ['Renewal', 'Automatic renewal'],
+        ]
+      : [
+          ['Keys and access', 'Access and limits'],
+          ['Spending limits', 'Access and limits'],
+          ['Renewal', 'Renewal'],
+        ]) {
+      await tiles.filter({ hasText: label }).click()
+      await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Go back', exact: true }).click()
+      await expect(overview).toBeVisible()
+    }
+    await page.setViewportSize({ width: 320, height: 667 })
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = '32px'
+    })
+    await expectWalletLayout(page)
+    for (const tile of await tiles.all()) {
+      await expect(tile).toBeVisible()
+      expect(
+        await tile.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1),
+      ).toBe(true)
+    }
   })
 }

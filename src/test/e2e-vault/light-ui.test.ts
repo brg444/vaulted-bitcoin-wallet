@@ -75,7 +75,7 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await expect(page.getByText('Watch only', { exact: true })).toBeVisible()
   await launcher(page, 'Security')
-  for (const name of ['Access and limits', 'Automatic renewal', 'Backups']) {
+  for (const name of ['Keys and access', 'Spending limits', 'Renewal', 'Backups']) {
     await page.getByRole('button', { name: new RegExp(`^${name}`) }).click()
     await expect(page.getByRole('button', { name: 'Lock wallet' })).toBeInViewport({ ratio: 1 })
     await page.getByRole('button', { name: 'Go back', exact: true }).click()

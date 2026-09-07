@@ -8,6 +8,7 @@ import { HubGroup, HubRow } from './ui'
 import RecoveryExplanation from './qg/RecoveryExplanation'
 import { useBackupConfirmation } from './qg/useBackupConfirmation'
 import QgScreen from './qg/QgScreen'
+import SecurityOverview from './SecurityOverview'
 
 function SecurityTile({
   icon,
@@ -101,34 +102,44 @@ export default function VaultKeys() {
       back={view !== 'overview' ? () => setView('overview') : undefined}
     >
       {view === 'overview' ? (
-        <>
-          <p className='qg-copy'>{vaultReady ? 'Your vault is available.' : 'Check the items that need attention.'}</p>
+        <SecurityOverview
+          title={protectionTier === 'advanced' ? 'Advanced vault' : 'Standard vault'}
+          description={hasRecovery ? 'Passkey, hardware and recovery key' : 'Passkey + hardware wallet'}
+          notice={
+            !vaultReady
+              ? 'Check keys and service access'
+              : !confirmed
+                ? 'Save a separate backup'
+                : 'Vault service available'
+          }
+          attention={!vaultReady || !confirmed}
+          access={{
+            value: !phoneCovered ? 'Passkey needed' : devicesCovered ? 'Passkey available' : 'This device only',
+            attention: !phoneCovered,
+            onClick: () => setView('keys'),
+          }}
+          backup={{
+            value: confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'Save a copy' : 'Needed',
+            attention: !confirmed,
+            onClick: () => openRecover('kit', 'keys'),
+            testId: 'security-kit',
+          }}
+          limits={{ value: `${prettyAmount(perPayment)} each`, onClick: () => setView('limits') }}
+          renewal={{
+            value: spendingRenewals?.error
+              ? 'Needs attention'
+              : spendingRenewals?.available
+                ? `${Object.values(spendingRenewals.operations).filter((operation) => operation.status?.state === 'armed' && operation.status.expiresAt * 1000 > Date.now()).length} scheduled`
+                : 'Unavailable',
+            attention: Boolean(spendingRenewals?.error),
+            onClick: () => setView('renewal'),
+            testId: 'security-readiness',
+          }}
+        >
           <HubGroup>
-            <HubRow
-              title='Keys and access'
-              status={protectionTier === 'advanced' ? 'Advanced' : 'Standard'}
-              onClick={() => setView('keys')}
-            />
-            <HubRow
-              title='Backups'
-              status={confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'Save a separate copy' : 'Needed'}
-              onClick={() => openRecover('kit', 'keys')}
-              testId='security-kit'
-            />
-            <HubRow
-              title='Spending limits'
-              status={`${prettyAmount(perPayment)} each`}
-              onClick={() => setView('limits')}
-            />
-            <HubRow
-              title='Automatic renewal'
-              status={spendingRenewals?.error ? 'Needs attention' : readinessLabel}
-              onClick={() => setView('renewal')}
-              testId='security-readiness'
-            />
             <HubRow title='I lost a key' onClick={() => openRecover('lost', 'keys')} testId='security-lost' />
           </HubGroup>
-        </>
+        </SecurityOverview>
       ) : view === 'keys' ? (
         <>
           <HubGroup label='Keys'>

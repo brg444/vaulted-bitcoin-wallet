@@ -9,7 +9,7 @@
 .light-app h1 {
   overflow-wrap: anywhere;
 }
-.light-app .qg-main h2 {
+.light-app .qg-main > h2 {
   font-size: var(--qg-section);
   margin-top: var(--qg-space-32);
 }

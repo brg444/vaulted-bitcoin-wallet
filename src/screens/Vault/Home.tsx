@@ -50,7 +50,7 @@ export default function VaultHome() {
       onScan={openSendScan}
       onReceive={() => navigate('receive')}
       primaryAction={{
-        label: spending ? 'Send' : 'Move to Spending',
+        label: spending ? 'Send' : 'Transfer',
         disabled: spending ? !canSend : positions.savings.availableSats <= 330,
         onClick: () => {
           clearSpendDraft()

@@ -188,7 +188,7 @@ export default function VaultSend() {
 
   return (
     <QgScreen
-      title={movingToSpending ? 'Move to Spending' : fromSavings ? 'Send from Savings' : 'Send'}
+      title={movingToSpending ? 'Transfer' : fromSavings ? 'Send from Savings' : 'Send'}
       dismiss={() => navigate('home')}
       footer={
         <>
