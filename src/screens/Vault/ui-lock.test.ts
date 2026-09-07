@@ -132,7 +132,7 @@ describe('vault UI lock', () => {
   })
 
   it('rejects the retired singleton home chrome', () => {
-    const home = read('src/screens/Vault/Home.tsx')
+    const home = [read('src/screens/Vault/Home.tsx'), read('src/screens/Vault/AccountHome.tsx')].join('\n')
     expect(home).toContain('account-switcher')
     expect(home).not.toContain('in your rolling 24-hour')
     expect(read('src/screens/Vault/Send.tsx')).toMatch(/rolling limit/)
@@ -153,6 +153,7 @@ describe('vault UI lock', () => {
   it('rejects obsolete balance, biometric, success, and recovery copy', () => {
     const productCopy = [
       read('src/screens/Vault/Home.tsx'),
+      read('src/screens/Vault/AccountHome.tsx'),
       read('src/screens/Vault/Review.tsx'),
       read('src/screens/Vault/Success.tsx'),
       read('src/screens/Vault/Recover.tsx'),

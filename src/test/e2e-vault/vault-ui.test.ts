@@ -1622,8 +1622,15 @@ for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
         await expect
           .poll(
             async () => {
-              const standardPixels = await page.getByTestId('vault-app').screenshot({ animations: 'disabled' })
-              const lightPixels = await light.getByTestId('vault-app').screenshot({ animations: 'disabled' })
+              // Nested GPU layers can antialias the outer rounded corners differently
+              // on Linux. Normal baselines above cover that frame; compare the content
+              // exactly without changing layout or masking any controls.
+              const capture = {
+                animations: 'disabled' as const,
+                style: '[data-testid="vault-app"] { border-radius: 0 !important; }',
+              }
+              const standardPixels = await page.getByTestId('vault-app').screenshot(capture)
+              const lightPixels = await light.getByTestId('vault-app').screenshot(capture)
               const equal = lightPixels.equals(standardPixels)
               if (!equal) {
                 await writeFile(testInfo.outputPath('standard-parity.png'), standardPixels)
