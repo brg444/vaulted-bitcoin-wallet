@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { hex } from '@scure/base'
 import { Fingerprint, FileKey, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
@@ -25,6 +25,9 @@ import RecoveryHelp from './RecoveryHelp'
 import { HubGroup, HubRow } from './ui'
 import { useBackupConfirmation } from './qg/useBackupConfirmation'
 import QgScreen, { QgCheck, QgPrimary, QgSecondary } from './qg/QgScreen'
+import { portableRecoverySource } from '../../lib/vault/recovery/portable'
+import { spendingRecoveryCoverage } from '../../lib/vault/recovery/coverage'
+import { vaultRecoveryBinding } from '../../lib/vault/vtxo/recoveryArchive'
 
 function downloadJson(name: string, body: string) {
   const hidden = document.createElement('a')
@@ -95,7 +98,7 @@ export default function VaultRecover() {
   } = useContext(VaultContext)
   const { toast } = useToast()
   const { confirmed, confirm } = useBackupConfirmation()
-  const [backupView, setBackupView] = useState<'overview' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding'>(
+  const [backupView, setBackupView] = useState<'overview' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding' | 'exit'>(
     'overview',
   )
   const [recoveryTask, setRecoveryTask] = useState<'cancel' | 'claim' | null>(null)
@@ -109,6 +112,13 @@ export default function VaultRecover() {
     setFromKit(false)
   }, [recoverEntry])
   const [pasted, setPasted] = useState('')
+  const fileRead = useRef(0)
+  useEffect(
+    () => () => {
+      fileRead.current++
+    },
+    [],
+  )
   const [localError, setLocalError] = useState('')
   const [claimant, setClaimant] = useState<Claimant>('hardware')
   const [claimDest, setClaimDest] = useState('')
@@ -164,7 +174,19 @@ export default function VaultRecover() {
     const raw = pasted.trim() || kitJson
     if (!raw) return null
     try {
-      return inspectRecoveryKit(parseRecoveryKit(JSON.parse(raw)))
+      const data = JSON.parse(raw)
+      if (data?.name === 'vaulted-recovery-package') {
+        const source = portableRecoverySource(data)
+        return {
+          ...inspectRecoveryKit(source.header.kit),
+          coverage: spendingRecoveryCoverage(
+            source.archive.spending,
+            vaultRecoveryBinding(source.header.kit, source.header.status),
+            null,
+          ),
+        }
+      }
+      return inspectRecoveryKit(parseRecoveryKit(data))
     } catch (err) {
       return { error: err instanceof Error ? err.message : 'That file is not a Recovery Kit' }
     }
@@ -214,6 +236,7 @@ export default function VaultRecover() {
           onBack={backToKit ? () => setView('kit') : fromHome ? undefined : () => navigate(recoverExit)}
           onDismiss={!backToKit && fromHome ? () => navigate('home') : undefined}
           protectionTier={currentKit?.protectionTier}
+          templateVersion={currentKit?.descriptor.templateVersion}
           mainnet={currentKit?.descriptor.network === 'mainnet'}
           onPrepare={
             currentKit
@@ -614,10 +637,12 @@ export default function VaultRecover() {
             : backupView === 'cloud'
               ? 'Automatic backup'
               : backupView === 'file'
-                ? 'Save encrypted backup'
+                ? 'Save recovery package'
                 : backupView === 'boarding'
                   ? 'Recover received Bitcoin'
-                  : 'Check Recovery Kit'
+                  : backupView === 'exit'
+                    ? 'Recover to Bitcoin'
+                    : 'Check recovery package'
       }
       dismiss={backupView === 'overview' && fromHome ? () => navigate('home') : undefined}
       back={
@@ -634,10 +659,12 @@ export default function VaultRecover() {
             />
           ) : backupView === 'file' ? (
             <QgPrimary
-              label='Download encrypted recovery archive'
+              label='Download recovery package'
               disabled={busy}
               onClick={() =>
-                runBackup(async () => downloadJson('Vaulted encrypted recovery.json', await downloadRecoveryArchive()))
+                runBackup(async () =>
+                  downloadJson('Vaulted recovery package.json', await downloadRecoveryArchive('portable')),
+                )
               }
             />
           ) : backupView === 'kit' ? (
@@ -682,13 +709,18 @@ export default function VaultRecover() {
               detail={recoveryArchiveStatus || 'Save transaction data for every account'}
               onClick={() => setBackupView('cloud')}
             />
-            <HubRow title='Save encrypted backup file' onClick={() => setBackupView('file')} />
+            <HubRow title='Save recovery package' onClick={() => setBackupView('file')} />
             <HubRow
               title='Recovery Kit'
               status={confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'On this device' : 'Needed'}
               onClick={() => setBackupView('kit')}
             />
-            <HubRow title='Check a saved Recovery Kit' onClick={() => setBackupView('inspect')} />
+            <HubRow title='Check a recovery package' onClick={() => setBackupView('inspect')} />
+            <HubRow
+              title='Recover to Bitcoin'
+              detail='Use your saved Spending paths'
+              onClick={() => setBackupView('exit')}
+            />
             <HubRow
               title='I lost a key'
               onClick={() => {
@@ -750,14 +782,62 @@ export default function VaultRecover() {
         <>
           <h1>{backupView === 'cloud' ? 'Back up automatically' : 'Keep a local backup'}</h1>
           <p className='qg-copy'>
-            Save encrypted transaction data for recovery across every account. Keep access to the passkey needed to
-            unlock your backup.
+            {backupView === 'file'
+              ? 'Keep this file private: its Spending paths and Bitcoin addresses are readable without your passkey. Private keys and payment journals remain encrypted. Advanced Spending can use its hardware and recovery keys without unlocking the phone.'
+              : 'Save encrypted transaction data for recovery across every account. Keep access to the passkey needed to unlock your backup.'}
           </p>
+          {backupView === 'file' ? (
+            <p className='qg-copy'>
+              Keep a copy of the{' '}
+              <a href='https://github.com/brg444/vaulted-emergency-recovery' target='_blank' rel='noreferrer'>
+                recovery application
+              </a>{' '}
+              with this data. Bitcoin access, the required signing keys, fees and waiting periods still apply.
+            </p>
+          ) : null}
+          {backupView === 'file' ? (
+            <details className='qg-guidance'>
+              <summary>Encrypted archive only</summary>
+              <p>This older format requires your original passkey to access its Spending paths.</p>
+              <QgSecondary
+                label='Download encrypted recovery archive'
+                disabled={busy}
+                onClick={() =>
+                  runBackup(async () =>
+                    downloadJson('Vaulted encrypted recovery.json', await downloadRecoveryArchive()),
+                  )
+                }
+              />
+            </details>
+          ) : null}
           <p className='qg-copy'>
             {recoveryArchiveStatus ||
               (backupView === 'file'
                 ? 'A file covers the data available when it is saved. Save an updated copy after activity.'
                 : 'Approve with your passkey to enable automatic backup.')}
+          </p>
+        </>
+      ) : backupView === 'exit' ? (
+        <>
+          <h1>Recover Spending independently</h1>
+          <p className='qg-copy'>
+            Use your saved recovery package and the independent recovery application to move eligible Spending funds to
+            a Bitcoin address without new Guardian or Operator approval.
+          </p>
+          <p className='qg-copy'>
+            {currentKit?.protectionTier === 'advanced'
+              ? 'You need your hardware and recovery keys. The new portable package makes Spending paths accessible without unlocking the phone.'
+              : 'You need the wallet key unlocked by your original passkey and your hardware key.'}
+          </p>
+          <p className='qg-copy'>
+            Bitcoin fees and waiting periods apply. A file covers the paths saved at that time; later payments and
+            renewals need updated data. Savings has different service requirements.
+          </p>
+          <QgPrimary label='Save recovery package' onClick={() => setBackupView('file')} />
+          <p className='qg-copy'>
+            <a href='https://github.com/brg444/vaulted-emergency-recovery' target='_blank' rel='noreferrer'>
+              Get the recovery application and instructions
+            </a>
           </p>
         </>
       ) : backupView === 'boarding' ? (
@@ -771,24 +851,65 @@ export default function VaultRecover() {
         </>
       ) : (
         <>
-          <h1>Inspect a saved kit</h1>
+          <h1>Check your saved file</h1>
           <p className='qg-copy'>
-            Paste a public Recovery Kit to check its vault information. This does not restore access.
+            Open a portable recovery package or public Recovery Kit. This checks saved data without restoring the wallet
+            or broadcasting a transaction.
           </p>
           <label className='qg-field'>
-            <span>Recovery Kit JSON</span>
-            <textarea
-              value={pasted}
-              data-testid='recovery-kit-json'
-              onChange={(event) => setPasted(event.target.value)}
+            <span>Recovery file</span>
+            <input
+              type='file'
+              accept='.json,application/json'
+              onChange={(event) => {
+                const revision = ++fileRead.current
+                const file = event.target.files?.[0]
+                setPasted('')
+                if (!file) return
+                if (file.size > 32_000_000) {
+                  setLocalError('Choose a recovery file smaller than 32 MB')
+                  return
+                }
+                setLocalError('')
+                void file
+                  .text()
+                  .then((text) => {
+                    if (revision === fileRead.current) setPasted(text)
+                  })
+                  .catch(() => {
+                    if (revision === fileRead.current) setLocalError('Could not read this recovery file')
+                  })
+              }}
             />
           </label>
-          {report && 'trees' in report ? (
+          <details className='qg-guidance'>
+            <summary>Paste recovery JSON</summary>
+            <label className='qg-field'>
+              <span>Recovery Kit JSON</span>
+              <textarea
+                value={pasted}
+                data-testid='recovery-kit-json'
+                onChange={(event) => {
+                  fileRead.current++
+                  setPasted(event.target.value)
+                }}
+              />
+            </label>
+          </details>
+          {report && 'coverage' in report && pasted.trim() ? (
             <p className='qg-copy'>
-              This kit is for vault {report.vaultId.slice(0, 8)}… · {report.trees.length} addresses
+              This file contains Spending paths for {prettyAmount(report.coverage.archivedSats)}, saved{' '}
+              {new Date(report.coverage.capturedAt!).toLocaleString()}. This check does not establish coverage of later
+              activity or verify access to your signing keys.
             </p>
           ) : null}
-          {report && 'error' in report && pasted.trim() ? <RecoverAlert text={report.error} /> : null}
+          {report && 'trees' in report && pasted.trim() ? (
+            <p className='qg-copy'>
+              This kit is for vault {report.vaultId.slice(0, 8)}… · {report.trees.length} addresses. Public scripts
+              alone do not contain your Spending transaction paths.
+            </p>
+          ) : null}
+          {report && 'error' in report && report.error && pasted.trim() ? <RecoverAlert text={report.error} /> : null}
         </>
       )}
     </QgScreen>

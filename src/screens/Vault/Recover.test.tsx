@@ -200,7 +200,7 @@ describe('recovery archive failure feedback', () => {
     })
     expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible()
     expect(screen.getByText('Transaction recovery data saved on this device earlier')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Save encrypted backup file' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save recovery package' })).toBeEnabled()
     expect(screen.getByRole('button', { name: /Recovery Kit.*On this device/ })).toBeEnabled()
   })
 
@@ -209,12 +209,32 @@ describe('recovery archive failure feedback', () => {
       .fn()
       .mockRejectedValue(new Error('Spending operation is missing its exact transaction bundle'))
     renderKit({ downloadRecoveryArchive, recoveryArchiveStatus: '', recoveryArchiveError: '' })
-    fireEvent.click(screen.getByRole('button', { name: 'Save encrypted backup file' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Download encrypted recovery archive' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save recovery package' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Download recovery package' }))
     await waitFor(() =>
       expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible(),
     )
     expect(downloadRecoveryArchive).toHaveBeenCalledOnce()
     expect(screen.queryByText(/Transaction recovery data saved/)).toBeNull()
+  })
+})
+
+describe('recovery package navigation', () => {
+  it('explains Bitcoin exit without starting an action or claiming that the saved amount is current', () => {
+    const downloadRecoveryArchive = vi.fn()
+    renderKit({ downloadRecoveryArchive })
+    fireEvent.click(screen.getByRole('button', { name: /Recover to Bitcoin/ }))
+    expect(screen.getByTestId('screen-title')).toHaveTextContent('Recover to Bitcoin')
+    expect(screen.getByText(/later payments and renewals need updated data/)).toBeVisible()
+    expect(downloadRecoveryArchive).not.toHaveBeenCalled()
+  })
+  it('checks an older public kit without presenting it as complete Spending recovery data', () => {
+    renderKit()
+    fireEvent.click(screen.getByRole('button', { name: /Check a recovery package/ }))
+    expect(screen.queryByText(/This file contains Spending paths/)).toBeNull()
+    fireEvent.click(screen.getByText('Paste recovery JSON'))
+    fireEvent.change(screen.getByTestId('recovery-kit-json'), { target: { value: JSON.stringify(kit) } })
+    expect(screen.queryByText(/This file contains Spending paths/)).toBeNull()
+    expect(screen.getByText(/Public scripts alone do not contain your Spending transaction paths/)).toBeVisible()
   })
 })

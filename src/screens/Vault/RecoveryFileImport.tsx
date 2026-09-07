@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { MAX_PORTABLE_RECOVERY_BYTES, parsePortableRecoveryPackage } from '../../lib/vault/recovery/portable'
 import ErrorMessage from '../../components/Error'
-import { MAX_RECOVERY_BACKUP_BYTES, parseEncryptedRecoveryBackup } from '../../lib/vault/recovery/backupCodec'
+import { parseEncryptedRecoveryBackup } from '../../lib/vault/recovery/backupCodec'
 
 export default function RecoveryFileImport({
   busy,
@@ -26,8 +27,8 @@ export default function RecoveryFileImport({
   async function importFile(file: File) {
     if (active.current || busyNow.current) return
     setError('')
-    if (file.size > MAX_RECOVERY_BACKUP_BYTES) {
-      setError('That file is too large. Choose an encrypted recovery backup up to 3 MB.')
+    if (file.size > MAX_PORTABLE_RECOVERY_BYTES) {
+      setError('That file is too large. Choose a recovery package up to 32 MB.')
       return
     }
     active.current = true
@@ -38,12 +39,16 @@ export default function RecoveryFileImport({
       try {
         const text = await file.text()
         if (request !== generation.current || busyNow.current) return
-        if (new TextEncoder().encode(text).length > MAX_RECOVERY_BACKUP_BYTES) throw new Error('File too large')
-        parsed = parseEncryptedRecoveryBackup(JSON.parse(text))
+        if (new TextEncoder().encode(text).length > MAX_PORTABLE_RECOVERY_BYTES) throw new Error('File too large')
+        const raw = JSON.parse(text)
+        parsed =
+          raw?.name === 'vaulted-recovery-package'
+            ? parsePortableRecoveryPackage(raw).backup
+            : parseEncryptedRecoveryBackup(raw)
       } catch {
         if (request === generation.current)
           setError(
-            'Choose an encrypted recovery backup JSON file. Use Access and recovery help to check a public Recovery Kit.',
+            'Choose an encrypted recovery backup or recovery package JSON file. Use Access and recovery help to check a public Recovery Kit.',
           )
         return
       }
@@ -79,6 +84,7 @@ export default function RecoveryFileImport({
           if (file) void importFile(file)
         }}
       />
+      <p className='qg-copy'>Accepts recovery packages and encrypted archives. Your original passkey is required.</p>
       <ErrorMessage error={Boolean(error)} text={error} />
     </>
   )

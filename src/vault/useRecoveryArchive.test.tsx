@@ -62,11 +62,59 @@ describe('automatic program recovery backups', () => {
     expect(result.current.recoveryArchiveStatus).toContain('cloud backup verified')
     mocks.capture.mockRejectedValueOnce(new Error('Incomplete exit graph'))
     act(() => event())
+    expect(result.current.recoveryArchiveStatus).not.toContain('verified')
     await waitFor(() => expect(result.current.recoveryArchiveError).toBe('Incomplete exit graph'))
     expect(mocks.sync).toHaveBeenCalledTimes(1)
     act(() => event())
     await waitFor(() => expect(mocks.sync).toHaveBeenCalledTimes(2))
     expect(mocks.open).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+  it('does not let an older capture report current after another wallet event', async () => {
+    const { result, unmount } = renderHook(() => useRecoveryArchive(enrollment, status, false))
+    let finish!: (value: typeof file) => void
+    mocks.capture.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    let operation!: Promise<void>
+    await act(async () => {
+      operation = result.current.backupRecoveryArchive()
+    })
+    act(() => event())
+    await act(async () => {
+      finish(file)
+      await operation
+    })
+    expect(mocks.sync).not.toHaveBeenCalled()
+    expect(result.current.recoveryArchiveStatus).not.toContain('verified')
+    unmount()
+  })
+  it('does not restore a cloud session whose unlock finished after the wallet locked', async () => {
+    let finish!: (value: unknown) => void
+    mocks.open.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const { result, rerender, unmount } = renderHook(({ locked }) => useRecoveryArchive(enrollment, status, locked), {
+      initialProps: { locked: false },
+    })
+    let operation!: Promise<void>
+    act(() => {
+      operation = result.current.backupRecoveryArchive()
+    })
+    const rejected = expect(operation).rejects.toThrow('Unlock this vault again')
+    rerender({ locked: true })
+    await act(async () => {
+      finish({ header: file.header })
+      await rejected
+    })
+    expect(mocks.sync).not.toHaveBeenCalled()
+    expect(result.current.recoveryArchiveStatus).toBe('')
     unmount()
   })
   it('drops the cloud capability when locked and exports locally without requiring cloud availability', async () => {

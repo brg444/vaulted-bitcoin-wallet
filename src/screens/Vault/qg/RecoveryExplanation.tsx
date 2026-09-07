@@ -1,7 +1,16 @@
 import { PROGRAM_CSV } from '../../../lib/vault/program/constants'
 import './guidance.css'
+import SavingsAvailability from './SavingsAvailability'
 
-export default function RecoveryExplanation({ advanced, mainnet = false }: { advanced: boolean; mainnet?: boolean }) {
+export default function RecoveryExplanation({
+  advanced,
+  mainnet = false,
+  templateVersion,
+}: {
+  advanced: boolean
+  mainnet?: boolean
+  templateVersion?: string
+}) {
   return (
     <details className='qg-guidance'>
       <summary>Keys, waiting periods, and service availability</summary>
@@ -29,10 +38,7 @@ export default function RecoveryExplanation({ advanced, mainnet = false }: { adv
           Eligible remaining keys can cancel a pending recovery. The keys required depend on who started it and whether
           the recovery services are available.
         </p>
-        <p>
-          If the services are unavailable, both normal keys can still approve an ordinary Savings transfer using
-          compatible signing software. A new delayed recovery requires the services.
-        </p>
+        <SavingsAvailability templateVersion={templateVersion} />
         <p>
           The app checks for recovery activity while open. Continuous monitoring and guaranteed notifications are
           unavailable.

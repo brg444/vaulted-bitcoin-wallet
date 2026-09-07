@@ -3,6 +3,7 @@ import { parseRecoveryKit, type RecoveryKit } from '../../lib/vault/program/kit'
 import type { ProtectionTier } from '../../lib/vault/protectionTier'
 import type { Claimant } from '../../lib/vault/program/constants'
 import RecoveryExplanation from './qg/RecoveryExplanation'
+import SavingsAvailability from './qg/SavingsAvailability'
 import QgScreen, { QgSecondary } from './qg/QgScreen'
 
 type Scenario = 'passkey' | 'hardware' | 'both' | 'service'
@@ -18,12 +19,14 @@ export default function RecoveryHelp({
   onBack,
   onDismiss,
   protectionTier,
+  templateVersion,
   mainnet = false,
   onPrepare,
 }: {
   onBack?: () => void
   onDismiss?: () => void
   protectionTier?: ProtectionTier
+  templateVersion?: string
   mainnet?: boolean
   onPrepare?: (claimant: Claimant) => void
 }) {
@@ -118,10 +121,7 @@ export default function RecoveryHelp({
           ) : (
             <>
               <h2>Keep keys and saved recovery data</h2>
-              <p>
-                Both normal keys can approve an ordinary Savings transfer without the recovery services, using
-                compatible signing software. Starting a new delayed recovery requires both services.
-              </p>
+              <SavingsAvailability templateVersion={kit?.descriptor.templateVersion || templateVersion} />
               <p>
                 If a recovery transaction is already confirmed, its initiating key can claim after the Bitcoin waiting
                 period without the services. Check the confirmed transaction and which key started it before taking
@@ -187,7 +187,13 @@ export default function RecoveryHelp({
           </div>
         </details>
       ) : null}
-      {tier ? <RecoveryExplanation advanced={tier === 'advanced'} mainnet={isMainnet} /> : null}
+      {tier ? (
+        <RecoveryExplanation
+          advanced={tier === 'advanced'}
+          mainnet={isMainnet}
+          templateVersion={kit?.descriptor.templateVersion || templateVersion}
+        />
+      ) : null}
       <details className='qg-guidance'>
         <summary>What happens during Savings recovery?</summary>
         <div className='qg-guidance-body'>

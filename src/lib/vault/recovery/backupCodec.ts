@@ -161,6 +161,18 @@ export function validateRecoveryHeader(header: RecoveryHeader) {
   return header
 }
 
+/** Shared identity check for complete backups and readable transaction-only data. */
+export function validateRecoveryDataBinding(headerValue: RecoveryHeader, archiveValue: VaultRecoveryArchive) {
+  const header = validateRecoveryHeader(headerValue)
+  const archive = validateVaultRecoveryArchive(archiveValue)
+  if (
+    JSON.stringify(recoveryStatusFacts(archive.status)) !== JSON.stringify(header.status) ||
+    archive.kit.descriptorHash !== header.kit.descriptorHash
+  )
+    throw new Error('Recovery data does not match its encrypted identity')
+  return { header, archive }
+}
+
 export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
   if (
     !file ||
@@ -169,13 +181,7 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
     JSON.stringify(file).length > MAX_RECOVERY_PLAIN_BYTES
   )
     throw new Error('Invalid recovery file')
-  const header = validateRecoveryHeader(file.header)
-  const archive = validateVaultRecoveryArchive(file.archive)
-  if (
-    JSON.stringify(recoveryStatusFacts(archive.status)) !== JSON.stringify(header.status) ||
-    archive.kit.descriptorHash !== header.kit.descriptorHash
-  )
-    throw new Error('Recovery data does not match its encrypted identity')
+  const { header } = validateRecoveryDataBinding(file.header, file.archive)
   if (isConnectorTemplate(header.binding.templateVersion)) {
     validateConnectorRecoveryJournal(
       { vaultId: header.binding.vaultId, enrollmentDigest: header.status.connectorEnrollment!.enrollmentDigest },

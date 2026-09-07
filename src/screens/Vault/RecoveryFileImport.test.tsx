@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
-import { buildRecoveryHeader, MAX_RECOVERY_BACKUP_BYTES } from '../../lib/vault/recovery/backupCodec'
+import { buildRecoveryHeader } from '../../lib/vault/recovery/backupCodec'
+import { MAX_PORTABLE_RECOVERY_BYTES } from '../../lib/vault/recovery/portable'
 import { recoveryFixture } from '../../lib/vault/recovery/testdata/helpers'
 import RecoveryFileImport from './RecoveryFileImport'
 import VaultWelcome from './Welcome'
@@ -9,7 +10,7 @@ import VaultUnlock from './Unlock'
 
 vi.mock('../../lib/vault/webauthn', () => ({ isCoarsePhone: () => false }))
 
-const { kit, status } = recoveryFixture(false)
+const { kit, status, archive } = recoveryFixture(false)
 const envelope = {
   name: 'vaulted-recovery-backup',
   version: 1,
@@ -71,10 +72,16 @@ describe('local encrypted recovery backup import', () => {
       expect(context.signIn).not.toHaveBeenCalled()
     },
   )
+  it('restores only the authenticated encrypted body of a portable recovery package', async () => {
+    const restore = vi.fn().mockResolvedValue(undefined)
+    render(<RecoveryFileImport busy={false} restore={restore} />)
+    choose(file(JSON.stringify({ name: 'vaulted-recovery-package', version: 1, archive, backup: envelope })))
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(envelope))
+  })
   it('rejects oversized files before reading or requesting a passkey', () => {
     const restore = vi.fn()
     render(<RecoveryFileImport busy={false} restore={restore} />)
-    const oversized = file('', MAX_RECOVERY_BACKUP_BYTES + 1)
+    const oversized = file('', MAX_PORTABLE_RECOVERY_BYTES + 1)
     choose(oversized)
     expect(screen.getByRole('alert')).toHaveTextContent('too large')
     expect(oversized.text).not.toHaveBeenCalled()

@@ -110,7 +110,7 @@ describe('vault UI lock', () => {
     for (const network of ['mainnet', 'mutinynet']) {
       const page = read(`tools/offline-recovery/programs/${network}/index.html`)
       expect(page).toMatch(/Recovery file/)
-      expect(page).toMatch(/Save prepared recovery/)
+      expect(page).toMatch(/Save recovery plan/)
       expect(page).toMatch(/Start or resume Bitcoin recovery/)
       expect(page).not.toMatch(/\bRP ID\b|private key input|WIF or 64-char/)
     }
