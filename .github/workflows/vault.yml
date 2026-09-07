@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      refresh_snapshots:
+        description: Generate native Linux browser baselines for review
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request:
@@ -91,7 +96,7 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: corepack pnpm exec playwright install chromium webkit
       - name: Vault Playwright
-        run: corepack pnpm test:e2e
+        run: corepack pnpm test:e2e ${{ inputs.refresh_snapshots && '--update-snapshots' || '' }}
         env:
           CI: true
 
@@ -103,3 +108,11 @@ jobs:
           path: test-results/**/*.png
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Native Linux screenshot baselines
+        if: success() && inputs.refresh_snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-screenshot-baselines
+          path: src/test/e2e-vault/**/*-linux.png
+          retention-days: 7
