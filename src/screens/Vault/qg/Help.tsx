@@ -67,6 +67,17 @@ export default function WalletHelp() {
                   >
                     Restore backup
                   </button>
+                  {!wallet.light ? (
+                    <a
+                      className='qg-secondary'
+                      href='https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/ledger-guide.md'
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      aria-label='Ledger setup and signing guide (opens in a new tab)'
+                    >
+                      Ledger setup and signing guide
+                    </a>
+                  ) : null}
                   <InstallNotice autoOffer={false} />
                 </>
               ) : view === 'access' ? (
