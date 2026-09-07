@@ -346,11 +346,6 @@ html.palette-dark [data-testid='vault-app'] {
   color: var(--vault-ink);
 }
 
-.vault-screen-home > .content {
-  --padding-bottom: 0;
-  max-width: none;
-}
-
 .vault-home-content > .content-shell {
   display: flex;
   flex-direction: column;

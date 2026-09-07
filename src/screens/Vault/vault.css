@@ -1267,10 +1267,6 @@ button.vault-status-card {
   background: var(--vault-hero);
 }
 
-.vault-screen-home > .content {
-  max-width: none;
-}
-
 .vault-home-content > .content-shell {
   min-height: 100%;
   height: auto;

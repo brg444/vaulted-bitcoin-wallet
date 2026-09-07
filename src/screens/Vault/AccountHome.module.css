@@ -1,0 +1,104 @@
+.content:global(.content) {
+  --padding-bottom: 0;
+  width: 100%;
+  max-width: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.content,
+.content :global(.content-shell) {
+  background: var(--qg-oat);
+}
+
+.content:global(.content) > :global(.content-shell) {
+  padding: 0;
+}
+
+.home {
+  color: var(--qg-ink);
+  min-height: 0;
+  padding: 0 var(--qg-gutter) var(--qg-space-88);
+  container-type: inline-size;
+}
+
+:global(.qg-account-bar) {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+:global(.qg-account) {
+  display: flex;
+  min-height: var(--qg-touch-target);
+  align-items: center;
+  gap: var(--qg-space-8);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  pointer-events: none;
+}
+
+:global(.qg-account .qg-mark) {
+  width: 23px;
+  height: 23px;
+}
+
+:global(.qg-account strong) {
+  font-size: var(--qg-title);
+  font-weight: var(--qg-weight-medium);
+}
+
+:global(.qg-utilities) {
+  display: flex;
+  gap: 2px;
+}
+
+:global(.qg-utilities button) {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--qg-muted);
+}
+
+:global(.qg-utilities .qg-recovery-shortcut) {
+  position: relative;
+  color: var(--qg-ink);
+}
+
+:global(.qg-recovery-shortcut span) {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--qg-oat);
+  border-radius: 50%;
+  background: var(--qg-orange);
+}
+
+:global(.qg-utility-divider) {
+  width: 1px;
+  height: 20px;
+  align-self: center;
+  margin: 0 3px;
+  background: var(--qg-line);
+}
+
+.home :global(.vault-history) {
+  padding-inline-end: max(0px, calc(56px + var(--qg-space-8) - var(--qg-gutter)));
+}
+.description {
+  display: grid;
+  gap: var(--qg-space-8);
+  margin-top: var(--qg-space-24);
+}
+.description :global(p) {
+  margin: 0;
+}

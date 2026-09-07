@@ -1,6 +1,6 @@
 # Interface system
 
-Standard, Advanced, and Light share the same layout rules. New wallet screens use `QgScreen` for the header, scrolling content, and footer. Account screens share `AccountBalance`, `VaultHistoryList`, and `VaultLauncher`. Send screens use `DestinationField` for the labeled address input and scanner, and the `qg-amount-entry` and `qg-review-amount` compositions for amounts.
+Standard, Advanced, and Light share the same layout rules. New wallet screens use `QgScreen` for the header, scrolling content, and footer. Account screens use `AccountHome` and its single `AccountHome.module.css`, with `AccountBalance`, `VaultHistoryList`, and `VaultLauncher`. Both modes pass balances, supported actions, and account-specific notices into this composition. The shared component owns the header, balance metadata, and action markup. Send screens use `DestinationField` for the labeled address input and scanner, and the `qg-amount-entry` and `qg-review-amount` compositions for amounts.
 
 ## Layout and typography
 
@@ -23,6 +23,6 @@ Keep ordinary steps contained at 320px and 375px widths, allowing expanded help,
 
 ## Verification
 
-`src/test/e2e-vault/layout.test.ts` covers small screens in both themes, enlarged text, field contrast, and a short keyboard viewport. The shared `expectWalletLayout` helper checks horizontal overflow and footer access across the existing visual states. Light tests also cover shared payment forms, large balances, and long history.
+`src/test/e2e-vault/layout.test.ts` covers small screens in both themes, enlarged text, field contrast, and a short keyboard viewport. The shared `expectWalletLayout` helper checks horizontal overflow and footer access across the existing visual states. Light tests also cover shared payment forms, large balances, and long history. Direct Standard/Light comparisons feed identical empty, funded, pending, and long-history states into the real screens, then compare computed layout and pixels at 320px, 375px, and desktop widths in both themes. History amounts must remain outside the draggable navigation tab’s horizontal path.
 
 Run the unit, type, lint, format, build, and browser checks before a release. Review screenshot changes at mobile and desktop sizes. The CI `refresh_snapshots` input records native Linux baselines with zero pixel tolerance so deliberate changes are captured; ordinary verification retains the existing rasterization tolerance. Local baseline recording can use `VAULT_UPDATE_SNAPSHOTS=1 pnpm test:e2e --update-snapshots`.

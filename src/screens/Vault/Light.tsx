@@ -35,8 +35,6 @@ import {
 } from '../../lib/vault/light/recovery'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
   Check,
   Clock3,
   Copy,
@@ -44,20 +42,18 @@ import {
   Fingerprint,
   ShieldCheck,
   Shield,
-  QrCode as QrIcon,
   Plus,
   Pencil,
   Settings as SettingsIcon,
 } from 'lucide-react'
-import Content from './Content'
+import AccountHome from './AccountHome'
 import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
 import { VaultHistoryList } from './History'
-import AccountBalance from './AccountBalance'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import DestinationField from './qg/DestinationField'
 import VaultSettings from './Settings'
-import QgScreen, { QgMark, QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
+import QgScreen, { QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
 import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
 import { fetchPublicStatus, fetchVaultStatusUnpinned } from '../../lib/vault/status'
@@ -474,27 +470,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   }
   const activity = (rows: VaultHistoryItem[], account: 'spend' | 'savings' = 'spend', loaded = true) => (
     <VaultHistoryList account={account} balancesLoaded={loaded} history={rows} openTx={openTransaction} />
-  )
-  const accountHeader = (account: 'Spending' | 'Savings') => (
-    <header className='qg-account-bar vault-account-bar'>
-      <div className='qg-account'>
-        <QgMark />
-        <strong>{account}</strong>
-      </div>
-      <div className='qg-utilities'>
-        <button type='button' disabled={busy} aria-label='Open Security' onClick={() => navigate('security')}>
-          <Shield />
-        </button>
-        {account === 'Spending' ? (
-          <button type='button' aria-label='Receive to Spending' disabled={!status} onClick={() => navigate('receive')}>
-            <QrIcon />
-          </button>
-        ) : null}
-      </div>
-    </header>
-  )
-  const balance = (value: number | null, account: 'Spending' | 'Savings') => (
-    <AccountBalance sats={value ?? 0} account={account} balancesLoaded={value !== null} />
   )
   const lock = () =>
     run(async () => {
@@ -1067,74 +1042,65 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'home' && record)
     content = (
-      <Content className='qg-home-content' onRefresh={() => run(refresh)}>
-        <main className='qg-home'>
-          {accountHeader('Spending')}
-          {balance(snapshot ? snapshot.balance + (snapshot.pendingBalance || 0) : null, 'Spending')}
-          <div className='qg-actions'>
-            <button type='button' disabled={busy || !status || !snapshot?.balance} onClick={() => navigate('send')}>
-              <span>
-                <ArrowUpRight />
-                <b>Send</b>
-              </span>
-            </button>
-            <button type='button' disabled={busy || !status} onClick={() => navigate('receive')}>
-              <span>
-                <ArrowDownLeft />
-                <b>Receive</b>
-              </span>
-            </button>
-          </div>
-          {snapshot?.pendingBalance ? (
-            <p className='qg-available'>
-              {sats(snapshot.balance)} available · {sats(snapshot.pendingBalance)} pending
-            </p>
-          ) : null}
-          {coverage?.cancelling ? (
-            <p className='qg-copy' role='status'>
-              Guardian is resolving a previous renewal. Payments may be temporarily unavailable.
-            </p>
-          ) : null}
-          <p className='qg-copy light-allowance'>
-            {status ? sats(status.periodRemaining) : '…'} remaining in your limit
+      <AccountHome
+        account='Spending'
+        totalSats={snapshot ? snapshot.balance + (snapshot.pendingBalance || 0) : 0}
+        availableSats={snapshot?.balance || 0}
+        pendingSats={snapshot?.pendingBalance || 0}
+        balancesLoaded={snapshot !== null}
+        onRefresh={() => run(refresh)}
+        security={{ label: 'Open Security', disabled: busy, onClick: () => navigate('security') }}
+        onScan={() => navigate('scan-send')}
+        onReceive={() => navigate('receive')}
+        utilitiesDisabled={busy || !status}
+        primaryAction={{
+          label: 'Send',
+          disabled: busy || !status || !snapshot?.balance,
+          onClick: () => navigate('send'),
+        }}
+        secondaryAction={{ label: 'Receive', disabled: busy || !status, onClick: () => navigate('receive') }}
+      >
+        {coverage?.cancelling ? (
+          <p className='qg-copy' role='status'>
+            Guardian is resolving a previous renewal. Payments may be temporarily unavailable.
           </p>
-          {cloudError ? (
-            <p className='qg-copy' role='status'>
-              Cloud backup needs attention. Open Security to retry.
-            </p>
-          ) : null}
-          {renewalTiming?.due && (!coverage?.available || coverage.pending > 0) ? (
-            <div className='light-panel'>
-              <Clock3 />
-              <div>
-                <strong>{renewalTiming.expired ? 'Check expired Spending' : 'Spending needs renewal soon'}</strong>
-                <p>
-                  {renewalTiming.expired
-                    ? 'Some Spending has expired. Open Security to check your recovery options.'
-                    : `Some funds still need renewal authorization. The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to check coverage.`}
-                </p>
-              </div>
+        ) : null}
+        {cloudError ? (
+          <p className='qg-copy' role='status'>
+            Cloud backup needs attention. Open Security to retry.
+          </p>
+        ) : null}
+        {renewalTiming?.due && (!coverage?.available || coverage.pending > 0) ? (
+          <div className='light-panel'>
+            <Clock3 />
+            <div>
+              <strong>{renewalTiming.expired ? 'Check expired Spending' : 'Spending needs renewal soon'}</strong>
+              <p>
+                {renewalTiming.expired
+                  ? 'Some Spending has expired. Open Security to check your recovery options.'
+                  : `Some funds still need renewal authorization. The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to check coverage.`}
+              </p>
             </div>
-          ) : null}
-          {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
-          {status && loadPersistedVtxoSpend(status.vaultId) ? (
-            <QgSecondary
-              label='Resume pending payment'
-              onClick={() =>
-                void run(async () => {
-                  await refresh()
-                  const p = loadPersistedVtxoSpend(status.vaultId)
-                  if (p) {
-                    setQuote(quoteFromPersistedVtxoSpend(p))
-                    setView('review')
-                  } else setNotice('Payment reconciled')
-                })
-              }
-            />
-          ) : null}
-          {activity(snapshot?.history || [], 'spend', snapshot !== null)}
-        </main>
-      </Content>
+          </div>
+        ) : null}
+        {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
+        {status && loadPersistedVtxoSpend(status.vaultId) ? (
+          <QgSecondary
+            label='Resume pending payment'
+            onClick={() =>
+              void run(async () => {
+                await refresh()
+                const p = loadPersistedVtxoSpend(status.vaultId)
+                if (p) {
+                  setQuote(quoteFromPersistedVtxoSpend(p))
+                  setView('review')
+                } else setNotice('Payment reconciled')
+              })
+            }
+          />
+        ) : null}
+        {activity(snapshot?.history || [], 'spend', snapshot !== null)}
+      </AccountHome>
     )
   else if (view === 'receive' && status)
     content = (
@@ -1293,40 +1259,37 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'savings' && record)
     content = (
-      <Content className='qg-home-content' onRefresh={openSavings}>
-        <main className='qg-home'>
-          {accountHeader('Savings')}
-          {watched ? balance(savings?.balance ?? null, 'Savings') : null}
-          <p className='qg-copy light-allowance'>
-            <Eye size={16} aria-hidden /> Watch only
-          </p>
-          {!watched ? <p className='qg-copy'>See Savings held in another Bitcoin wallet.</p> : null}
-          <div className='qg-actions'>
-            <button
-              type='button'
-              disabled={busy}
-              onClick={() => {
-                setWatchAddress(watched?.address || '')
-                navigate('savings-address')
-              }}
-            >
-              <span>
-                {watched ? <Pencil /> : <Plus />}
-                <b>{watched ? 'Edit address' : 'Add address'}</b>
-              </span>
-            </button>
-            {watched ? (
-              <button type='button' onClick={() => void run(() => copy(watched.address))}>
-                <span>
-                  <Copy />
-                  <b>Copy address</b>
-                </span>
-              </button>
-            ) : null}
-          </div>
-          {watched ? activity(savings?.history || [], 'savings', savings !== null) : null}
-        </main>
-      </Content>
+      <AccountHome
+        account='Savings'
+        totalSats={watched ? (savings?.balance ?? 0) : undefined}
+        balancesLoaded={savings !== null}
+        onRefresh={openSavings}
+        security={{ label: 'Open Security', disabled: busy, onClick: () => navigate('security') }}
+        description={
+          <>
+            <p className='qg-copy'>
+              <Eye size={16} aria-hidden /> Watch only
+            </p>
+            {!watched ? <p className='qg-copy'>See Savings held in another Bitcoin wallet.</p> : null}
+          </>
+        }
+        primaryAction={{
+          label: watched ? 'Edit address' : 'Add address',
+          icon: watched ? <Pencil /> : <Plus />,
+          disabled: busy,
+          onClick: () => {
+            setWatchAddress(watched?.address || '')
+            navigate('savings-address')
+          },
+        }}
+        secondaryAction={
+          watched
+            ? { label: 'Copy address', icon: <Copy />, onClick: () => void run(() => copy(watched.address)) }
+            : undefined
+        }
+      >
+        {watched ? activity(savings?.history || [], 'savings', savings !== null) : null}
+      </AccountHome>
     )
   else if (view === 'savings-address' && record)
     content = (

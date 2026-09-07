@@ -1167,52 +1167,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   }
 }
 
-.qg-home-content,
-.qg-home-content .content-shell {
-  background: var(--qg-oat);
-}
-
-.content.qg-home-content > .content-shell {
-  padding: 0;
-}
-
-.qg-home {
-  min-height: 0;
-  padding: 0 var(--qg-gutter) var(--qg-space-88);
-  container-type: inline-size;
-}
-
-.qg-account-bar {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.qg-account {
-  display: flex;
-  min-height: var(--qg-touch-target);
-  align-items: center;
-  gap: var(--qg-space-8);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  pointer-events: none;
-}
-
-.qg-account .qg-mark {
-  width: 23px;
-  height: 23px;
-}
-
 .qg-account small {
   color: var(--qg-muted);
-}
-
-.qg-account strong {
-  font-size: var(--qg-title);
-  font-weight: var(--qg-weight-medium);
 }
 
 .qg-account-chevron {
@@ -1329,46 +1285,6 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   .qg-account-chevron {
     transition: none;
   }
-}
-
-.qg-utilities {
-  display: flex;
-  gap: 2px;
-}
-
-.qg-utilities button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--qg-muted);
-}
-
-.qg-utilities .qg-recovery-shortcut {
-  position: relative;
-  color: var(--qg-ink);
-}
-
-.qg-recovery-shortcut span {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 7px;
-  height: 7px;
-  border: 2px solid var(--qg-oat);
-  border-radius: 50%;
-  background: var(--qg-orange);
-}
-
-.qg-utility-divider {
-  width: 1px;
-  height: 20px;
-  align-self: center;
-  margin: 0 3px;
-  background: var(--qg-line);
 }
 
 .qg-balance {

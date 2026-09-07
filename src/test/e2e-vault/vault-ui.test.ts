@@ -1,9 +1,10 @@
+import { openLight } from './fixtures/light-ui'
 import { expectWalletLayout } from './fixtures/layout'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { decodeVaultBip21 } from '../../lib/vault/bip21'
 import { POLICY_VERSION } from '../../lib/vault/constants'
@@ -1525,3 +1526,118 @@ test('@interaction Home camera returns to its originating account on cancel and 
     }
   }
 })
+
+// Both production modes receive identical presentation data. This catches wrapper/CSS
+// drift as well as missing controls; independent screenshots cannot establish parity.
+for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
+  test(`@polish Spending home has identical Standard and Light layout: ${state}`, async ({
+    page,
+    context,
+  }, testInfo) => {
+    const balance = state === 'empty' ? 0 : 27459
+    const pendingBalance = state === 'pending' ? 2000 : 0
+    const history =
+      state === 'empty'
+        ? []
+        : Array.from({ length: state === 'long' ? 12 : 2 }, (_, i) => ({
+            account: 'spend',
+            txid: i.toString(16).padStart(64, '0'),
+            amount: i % 2 ? 32475 : 5000,
+            type: i % 2 ? 'received' : 'sent',
+            confirmed: true,
+            blockTime: 1788739200,
+          }))
+    await page.route('**/src/screens/Vault/Home.tsx*', async (route) => {
+      if (new URL(route.request().url()).searchParams.has('parity-original')) return route.continue()
+      await route.fulfill({
+        contentType: 'application/javascript',
+        body: "export { default } from '/src/test/e2e-vault/fixtures/home-parity.tsx'",
+      })
+    })
+    await page.addInitScript((data) => Reflect.set(window, '__vaultHomeParity', data), {
+      balance,
+      pendingBalance,
+      history,
+    })
+    await openVault(page)
+    const light = await context.newPage()
+    await light.addInitScript(() => {
+      Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', { value: async () => [] })
+    })
+    await openLight(light, false, false, { balance, pendingBalance, history })
+    for (const width of testInfo.project.name.includes('Desktop') ? [1440] : [320, 375]) {
+      for (const theme of ['light', 'dark']) {
+        for (const target of [page, light]) {
+          await target.setViewportSize({ width, height: width === 1440 ? 1000 : 667 })
+          await target.evaluate((theme) => {
+            document.documentElement.classList.toggle('palette-dark', theme === 'dark')
+            document.documentElement.classList.toggle('palette-light', theme === 'light')
+          }, theme)
+          await expectWalletLayout(target)
+          await expect(target.getByTestId('account-scan')).toBeVisible()
+          await expect(target.locator('.qg-actions')).toBeInViewport({ ratio: 1 })
+          await expect(target.getByTestId('account-receive')).toBeVisible()
+          expect(await target.getByRole('button', { name: 'Send', exact: true }).isDisabled()).toBe(!balance)
+        }
+        const layout = (target: Page) =>
+          target.locator('.qg-home').evaluate((home) => {
+            const app = document.querySelector('[data-testid="vault-app"]')!.getBoundingClientRect()
+            return [
+              home,
+              ...home.querySelectorAll(
+                'header, .qg-account, .qg-utilities, .qg-utilities button, .qg-balance, .qg-available, .qg-actions, .qg-actions button, .vault-history, .vault-history-row, .vault-history-amt',
+              ),
+            ].map((el) => {
+              const r = el.getBoundingClientRect(),
+                s = getComputedStyle(el)
+              return {
+                className: el.className,
+                x: r.x - app.x,
+                y: r.y - app.y,
+                width: r.width,
+                height: r.height,
+                font: s.font,
+                color: s.color,
+                background: s.backgroundColor,
+                padding: s.padding,
+                margin: s.margin,
+                gap: s.gap,
+              }
+            })
+          })
+        expect(await layout(light)).toEqual(await layout(page))
+        for (const target of [page, light]) {
+          await expect(target.getByTestId('vault-app')).toHaveScreenshot(`home-parity-${state}-${width}-${theme}.png`, {
+            animations: 'disabled',
+          })
+          const trigger = await target.getByRole('button', { name: 'Open navigation', exact: true }).boundingBox()
+          // The amount column must stay clear of the launcher at any vertical position.
+          for (const amount of await target.locator('.vault-history-amt').all()) {
+            const box = await amount.boundingBox()
+            expect(box!.x + box!.width).toBeLessThanOrEqual(trigger!.x - 7)
+          }
+        }
+        // Capture the visible wallet frame, so long history does not resize the
+        // viewport and move the floating navigation during screenshot capture.
+        await expect
+          .poll(
+            async () => {
+              const standardPixels = await page.getByTestId('vault-app').screenshot({ animations: 'disabled' })
+              const lightPixels = await light.getByTestId('vault-app').screenshot({ animations: 'disabled' })
+              const equal = lightPixels.equals(standardPixels)
+              if (!equal) {
+                await writeFile(testInfo.outputPath('standard-parity.png'), standardPixels)
+                await writeFile(testInfo.outputPath('light-parity.png'), lightPixels)
+              }
+              return equal
+            },
+            { message: 'Standard and Light Home pixels must match' },
+          )
+          .toBe(true)
+      }
+    }
+    await light.getByTestId('account-scan').click()
+    await expect(light.getByRole('button', { name: 'Enter manually' })).toBeVisible()
+    await light.close()
+  })
+}
