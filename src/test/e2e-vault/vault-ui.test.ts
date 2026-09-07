@@ -699,7 +699,8 @@ test('validates a pasted Recovery Kit against its committed descriptor', async (
   await page.getByTestId('tab-vault').click()
   await page.getByTestId('security-kit').click()
   await expect(page.getByRole('heading', { name: 'Backups', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Check a saved Recovery Kit' }).click()
+  await page.getByRole('button', { name: 'Check a recovery package' }).click()
+  await page.getByText('Paste recovery JSON', { exact: true }).click()
 
   const input = page.getByTestId('recovery-kit-json')
   await input.fill(JSON.stringify(tampered))
@@ -1039,7 +1040,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expectNoBlockingAxeViolations(page)
   // Archive capture is asynchronous and independent of this navigation tour.
   // Its failure/retained-copy states are tested in Recover and useRecoveryArchive.
-  await expect(page.getByRole('button', { name: 'Save encrypted backup file', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save recovery package', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /^Recovery Kit/ })).toBeVisible()
   await page.getByRole('button', { name: /I lost a key/ }).click()
   await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()

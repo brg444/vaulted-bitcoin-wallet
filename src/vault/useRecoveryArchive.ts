@@ -12,9 +12,12 @@ import { buildRecoveryHeader, encryptRecoveryBackup, recoveryBackupKey } from '.
 import { kitFromFacts } from '../lib/vault/program/kitBackup'
 import { lightBackupScheduler } from '../lib/vault/light/backupScheduler'
 import { subscribeVaultWalletEvents } from '../lib/vault/vtxo/walletWorker'
+import { createPortableRecoveryPackage } from '../lib/vault/recovery/portable'
 
 export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status: VaultStatus | null, locked: boolean) {
   const session = useRef<RecoveryBackupSession | null>(null)
+  const contextEpoch = useRef(0)
+  const activityEpoch = useRef(0)
   const [recoveryArchiveStatus, setRecoveryArchiveStatus] = useState('')
   const [recoveryArchiveError, setRecoveryArchiveError] = useState('')
   const current = useRef({ enrollment, status, locked })
@@ -24,16 +27,22 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     setRecoveryArchiveStatus('')
     setRecoveryArchiveError('')
     return () => {
+      contextEpoch.current++
       session.current = null
     }
   }, [enrollment?.vaultId, locked])
   const capture = useCallback(async () => {
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault to update recovery data')
+    const context = contextEpoch.current
+    const activity = activityEpoch.current
+    const unchanged = () => context === contextEpoch.current && activity === activityEpoch.current
     const file = await captureVaultRecoveryFile(status, enrollment)
+    if (!unchanged()) return file
     const active = session.current
     if (active && active.header.binding.vaultId === status.vaultId) {
       await syncRecoveryCloudBackup(active, file)
+      if (!unchanged()) return file
       setRecoveryArchiveStatus(`Encrypted cloud backup verified ${new Date().toLocaleString()}`)
     } else setRecoveryArchiveStatus(`Transaction recovery data saved on this device ${new Date().toLocaleString()}`)
     setRecoveryArchiveError('')
@@ -47,26 +56,33 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
         if (document.visibilityState !== 'hidden') await capture()
       },
       (error) => {
-        if (active)
+        if (active) {
+          setRecoveryArchiveStatus('Recovery data update incomplete')
           setRecoveryArchiveError(
             error instanceof Error ? error.message : 'Recovery update failed; the previous copy is retained',
           )
+        }
       },
     )
-    const unsubscribe = subscribeVaultWalletEvents(status, scheduler.request)
-    scheduler.request()
-    const timer = window.setInterval(scheduler.request, 30000)
-    window.addEventListener('focus', scheduler.request)
-    window.addEventListener('online', scheduler.request)
-    document.addEventListener('visibilitychange', scheduler.request)
+    const request = () => {
+      activityEpoch.current++
+      setRecoveryArchiveStatus('Checking recovery data against your wallet…')
+      scheduler.request()
+    }
+    const unsubscribe = subscribeVaultWalletEvents(status, request)
+    request()
+    const timer = window.setInterval(request, 30000)
+    window.addEventListener('focus', request)
+    window.addEventListener('online', request)
+    document.addEventListener('visibilitychange', request)
     return () => {
       active = false
       scheduler.dispose()
       unsubscribe()
       clearInterval(timer)
-      window.removeEventListener('focus', scheduler.request)
-      window.removeEventListener('online', scheduler.request)
-      document.removeEventListener('visibilitychange', scheduler.request)
+      window.removeEventListener('focus', request)
+      window.removeEventListener('online', request)
+      document.removeEventListener('visibilitychange', request)
     }
   }, [enrollment?.vaultId, status?.vaultId, locked, capture])
   const backupRecoveryArchive = useCallback(async () => {
@@ -75,20 +91,29 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     const kit = kitFromFacts({ status, enrollment })
     if (!kit) throw new Error('Recovery descriptor is unavailable')
     const header = buildRecoveryHeader(kit, status, enrollment)
-    if (!session.current || Date.parse(session.current.expiresAt) <= Date.now())
-      session.current = await openRecoveryCloudBackup(header)
+    if (!session.current || Date.parse(session.current.expiresAt) <= Date.now()) {
+      const epoch = contextEpoch.current
+      const opened = await openRecoveryCloudBackup(header)
+      if (epoch !== contextEpoch.current) throw new Error('Unlock this vault again to enable backup')
+      session.current = opened
+    }
     await capture()
   }, [capture])
-  const downloadRecoveryArchive = useCallback(async () => {
+  const downloadRecoveryArchive = useCallback(async (format: 'encrypted' | 'portable' = 'encrypted') => {
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault first')
     const file = await captureVaultRecoveryFile(status, enrollment)
+    const encode = async (key: CryptoKey) =>
+      JSON.stringify(
+        format === 'portable' ? await createPortableRecoveryPackage(file, key) : await encryptRecoveryBackup(file, key),
+        null,
+        2,
+      )
     const active = session.current
-    if (active?.header.binding.vaultId === status.vaultId)
-      return JSON.stringify(await encryptRecoveryBackup(file, active.key), null, 2)
+    if (active?.header.binding.vaultId === status.vaultId) return encode(active.key)
     const phone = await unlockPhoneBip340(enrollment, status)
     try {
-      return JSON.stringify(await encryptRecoveryBackup(file, await recoveryBackupKey(phone, file.header)), null, 2)
+      return await encode(await recoveryBackupKey(phone, file.header))
     } finally {
       phone.fill(0)
     }

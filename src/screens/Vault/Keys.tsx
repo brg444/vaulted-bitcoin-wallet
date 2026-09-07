@@ -158,7 +158,7 @@ export default function VaultKeys() {
               <HubRow
                 icon={<FileKey />}
                 title='Recovery key'
-                detail='Separate key for delayed Savings recovery'
+                detail='Spending recovery if you lose your phone'
                 status={shortKey(recoveryPub)}
               />
             ) : null}
@@ -168,7 +168,11 @@ export default function VaultKeys() {
               {busy ? 'Waiting for passkey…' : 'Use on another device'}
             </button>
           ) : null}
-          <RecoveryExplanation advanced={protectionTier === 'advanced'} mainnet={status?.network === 'mainnet'} />
+          <RecoveryExplanation
+            advanced={protectionTier === 'advanced'}
+            mainnet={status?.network === 'mainnet'}
+            templateVersion={status?.templateVersion}
+          />
           {!addressCovered && status?.enrolled ? (
             <p className='qg-copy'>Vault addresses are not restored on this device. Sign in again to restore them.</p>
           ) : null}

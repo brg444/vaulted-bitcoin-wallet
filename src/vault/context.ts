@@ -59,7 +59,7 @@ export interface VaultContextProps {
   skipRecovery: () => void
   downloadRecoveryKit: () => string
   backupRecoveryArchive: () => Promise<void>
-  downloadRecoveryArchive: () => Promise<string>
+  downloadRecoveryArchive: (format?: 'encrypted' | 'portable') => Promise<string>
   recoveryArchiveStatus: string
   recoveryArchiveError: string
   backupRecoveryKit: () => Promise<boolean>

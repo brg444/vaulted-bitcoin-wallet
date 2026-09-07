@@ -7,6 +7,7 @@ import {
 } from '../recovery/exitArchive'
 import { lightExitRepository } from './exitRepository'
 import { lightDescriptorDigest, validateLightDescriptor, type LightDescriptor } from './contract'
+import { requireSpendingRecoveryCoverage } from '../recovery/coverage'
 
 export type LightRecoveryArchive = ExitArchive
 export const normalizeLightRecoveryChain = normalizeRecoveryChain
@@ -112,12 +113,5 @@ export function assertLightArchiveMatchesVtxos(
   expected?: { txid: string; vout: number; value: number; script: string }[],
 ) {
   if (!expected) return
-  const { coins } = validateLightRecoveryArchive(archive, d)
-  const fingerprint = (values: { txid: string; vout: number; value: number; script: string }[]) =>
-    values
-      .map((v) => `${v.txid}:${v.vout}:${v.value}:${v.script}`)
-      .sort()
-      .join('|')
-  if (fingerprint(expected) !== fingerprint(coins))
-    throw new Error('Transaction paths are catching up with your wallet. The previous backup is retained.')
+  requireSpendingRecoveryCoverage(archive, binding(d), expected)
 }

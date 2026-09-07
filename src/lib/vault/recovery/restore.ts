@@ -23,11 +23,18 @@ import { loadEnrollment, saveEnrollment, saveSelectedVaultId } from '../enrollme
 import { saveAddressPin, pinFromEnrolledStatus, loadAddressPin } from '../pin'
 import { saveLocalKit } from '../program/kitStore'
 import { provisionBoardingKey } from '../vtxo/board'
-import { recoveryFileStore } from './fileStore'
+import { storeRecoveryImport } from './fileStore'
 
 /** Idempotent, conservative import; no archived status is treated as current chain state. */
 export async function restoreVaultRecoveryFile(value: VaultRecoveryFile, phone: Uint8Array) {
   const file = validateVaultRecoveryFile(JSON.parse(JSON.stringify(value)))
+  if (!navigator.locks) throw new Error('Web Locks required to restore complete recovery data')
+  return navigator.locks.request(`vaulted:complete-recovery:${file.header.binding.descriptorHash}`, () =>
+    restoreLocked(file, phone),
+  )
+}
+
+async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array) {
   const { status, enrollment } = file.header
   validateRecoveryJournals(status, file as VaultRecoveryFile & RecoveryJournals)
   if (hex.encode(schnorr.getPublicKey(phone)) !== file.header.kit.descriptor.keys.phoneBip340.slice(2))
@@ -68,11 +75,11 @@ export async function restoreVaultRecoveryFile(value: VaultRecoveryFile, phone: 
       saveConnectorRecoveryKit(connectorKitFromVerifiedStatus(status))
     }
     await storeVaultRecoveryArchive(file.archive)
+    await storeRecoveryImport(file.header.binding.descriptorHash, file)
     saveLocalKit(file.header.kit)
     saveAddressPin(pin)
     saveEnrollment(enrollment)
     saveSelectedVaultId(status.vaultId)
-    await recoveryFileStore(file.header.binding.descriptorHash, file)
     return file
   } finally {
     await Promise.allSettled([contracts[Symbol.asyncDispose](), swaps[Symbol.asyncDispose]()])

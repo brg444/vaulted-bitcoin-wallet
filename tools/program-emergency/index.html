@@ -15,7 +15,7 @@
       }
       main {
         max-width: 620px;
-        margin: 48px auto;
+        margin: 24px auto;
         padding: 24px;
       }
       h1 {
@@ -48,7 +48,7 @@
       }
       button {
         cursor: pointer;
-        background: #a54422;
+        background: #171619;
         color: white;
         margin: 8px 0;
       }
@@ -70,7 +70,7 @@
         overflow-wrap: anywhere;
       }
       a {
-        color: #a54422;
+        color: #4621a4;
       }
       select {
         width: 100%;
@@ -78,7 +78,8 @@
         font: inherit;
       }
       #signature {
-        border: 2px solid #a54422;
+        border: 1px solid #cfc8be;
+        border-radius: 16px;
         padding: 18px;
         margin: 20px 0;
       }
@@ -91,31 +92,57 @@
         background: #fff9ed;
         border-radius: 12px;
       }
+      #amount {
+        font-size: 24px;
+        font-weight: 600;
+        color: #171619;
+      }
+      #change-file {
+        width: auto;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: #4621a4;
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
     <main>
       <p>Vaulted recovery</p>
-      <p><a href="/light/">Older Light backup with a recovery code</a></p>
-      <h1>Recover with your saved transaction paths</h1>
-      <p>
-        Open a recovery archive or Recovery Kit. Each account keeps the keys and delays defined when it was created.
-      </p>
-      <label>Recovery file<input id="file" type="file" accept=".json,.zip,application/json,application/zip" /></label>
-      <p id="origin"></p>
-      <button id="open" hidden>Open encrypted backup with passkey</button>
+      <h1>Recover to Bitcoin</h1>
+      <section id="import">
+        <p>
+          Open your recovery file to check the saved funds and the keys you need. Nothing is broadcast until you approve
+          recovery.
+        </p>
+        <label>Recovery file<input id="file" type="file" accept=".json,.zip,application/json,application/zip" /></label>
+        <details>
+          <summary>Older Light recovery file</summary>
+          <p><a href="/light/">Open a Light backup with a recovery code</a></p>
+        </details>
+      </section>
+      <button id="change-file" hidden>Open another recovery file</button>
+      <details id="unlock" hidden>
+        <summary>Unlock protected backup</summary>
+        <p id="origin"></p>
+        <button id="open" hidden>Open encrypted backup with passkey</button>
+      </details>
       <section id="review" hidden>
-        <h2>Your saved accounts</h2>
+        <h2>1. Check your saved funds</h2>
         <p id="facts"></p>
+        <p id="amount"></p>
         <p id="coverage" class="note"></p>
-        <label>Recovery path<select id="program"></select></label>
+        <label>Account or recovery action<select id="program"></select></label>
+        <p id="requirements" class="note"></p>
         <label id="coin-label">Saved Bitcoin output<select id="coin"></select></label
         ><button id="scan">Check Bitcoin outputs</button>
+        <h2>2. Choose your destination</h2>
         <label>Bitcoin destination<input id="destination" autocomplete="off" spellcheck="false" /></label>
         <label id="fee-label"
           >Network fee for a Savings transaction, sats<input id="fee" type="number" value="500" min="0"
         /></label>
-        <button id="prepare">Prepare recovery</button>
+        <button id="prepare">Review and sign recovery</button>
         <p>
           Preparation does not broadcast. Signatures must come from the keys shown in the signing request. Hardware
           signatures use an exact partial PSBT handoff; physical-device compatibility must be checked with your signing
@@ -123,22 +150,34 @@
         </p>
       </section>
       <section id="signature" hidden>
-        <h2>Sign the exact transaction</h2>
+        <h2>3. Approve recovery</h2>
         <p id="signers"></p>
-        <pre id="signing-summary"></pre>
-        <label>PSBT for your signing device<textarea id="psbt" readonly rows="4"></textarea></label
-        ><button class="sign-control" id="save-signing">Save signing request and resume data</button
-        ><button class="sign-control" id="sign-phone">Sign with original passkey</button
-        ><label>Signed partial PSBT<textarea id="signed" rows="4" spellcheck="false"></textarea></label
-        ><button class="sign-control" id="accept-signature">Import signature</button
+        <div id="signing-outputs"></div>
+        <p id="signing-fee"></p>
+        <p>Compare every destination and amount on your signing device before approving.</p>
+        <details>
+          <summary>Transaction and key details</summary>
+          <pre id="signing-summary"></pre>
+          <p id="signing-keys"></p>
+        </details>
+        <button class="sign-control" id="save-psbt">Download PSBT for your signer</button>
+        <label>Signed PSBT file<input class="sign-control" id="signed-file" type="file" accept=".psbt,.txt" /></label>
+        <button class="sign-control" id="sign-phone">Sign with original passkey</button>
+        <details>
+          <summary>Copy or paste a PSBT</summary>
+          <label>PSBT for your signing device<textarea id="psbt" readonly rows="4"></textarea></label>
+          <label>Signed partial PSBT<textarea id="signed" rows="4" spellcheck="false"></textarea></label>
+          <button class="sign-control" id="accept-signature">Import signature</button>
+        </details>
+        <button class="sign-control" id="save-signing">Save signing progress</button
         ><button class="sign-control" id="finish-signing">Continue with these signatures</button>
         <p id="sign-error" role="alert"></p>
       </section>
       <section id="prepared" hidden>
-        <h2>Prepared recovery</h2>
+        <h2>4. Save and start recovery</h2>
         <button id="change-path">Choose another recovery path</button>
         <pre id="details"></pre>
-        <button id="save">Save prepared recovery</button><button id="export-psbt">Export PSBT</button
+        <button id="save">Save recovery plan</button><button id="export-psbt">Export PSBT</button
         ><label id="fee-key-label">Key for separate Bitcoin fee funding<select id="fee-key"></select></label>
         <p id="funding"></p>
         <button id="execute">Start or resume Bitcoin recovery</button><button id="stop" hidden>Pause recovery</button>

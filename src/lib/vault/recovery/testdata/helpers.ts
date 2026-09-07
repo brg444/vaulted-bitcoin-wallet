@@ -1,3 +1,4 @@
+import { buildConnectorEnrollmentPreview } from '../../program/connectorEnrollmentCore'
 import { p2tr } from '@scure/btc-signer'
 import { packExitArchive } from '../exitArchive'
 import { ArkAddress, ChainTxType, Transaction, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
@@ -49,9 +50,11 @@ export function recoveryFixture(
   network: 'mainnet' | 'mutinynet' = 'mutinynet',
   phoneDirectP256 = PROGRAM_FIXTURE.phoneDirectP256,
   derivedBoardingPub?: string,
+  connector?: { templateVersion: string; connectorType: 'p2tr' | 'p2wpkh' },
 ) {
   const d = buildVaultProgramDescriptor({
     ...PROGRAM_FIXTURE,
+    ...connector,
     network,
     phoneDirectP256,
     protectionTier: advanced ? 'advanced' : 'standard',
@@ -143,6 +146,42 @@ export function recoveryFixture(
     savings: d,
     boarding,
   })
+  if (connector) {
+    const origin = {
+      connectorType: connector.connectorType,
+      connectorPub: d.keys.hardware,
+      connectorFingerprint: 0x12345678,
+      connectorPath: [
+        connector.connectorType === 'p2tr' ? 0x80000056 : 0x80000054,
+        network === 'mainnet' ? 0x80000000 : 0x80000001,
+        0x80000000,
+        0,
+        0,
+      ],
+    }
+    const preview = buildConnectorEnrollmentPreview({
+      templateVersion: connector.templateVersion,
+      vaultId: d.vaultId,
+      network,
+      protectionTier: d.protectionTier,
+      phonePub: d.keys.phoneBip340,
+      phoneDirectP256: d.keys.phoneDirectP256,
+      recoveryPub: d.keys.recovery,
+      vaultCosignerBase: d.keys.vaultCosignerBase,
+      arkadeCosignerBase: d.keys.arkadeCosignerBase,
+      arkadeOrigin: d.arkadeCosigner.origin,
+      arkadeVersion: d.arkadeCosigner.version,
+      spendingPolicy: defaultSpendingPolicy(network),
+      origin,
+      boarding,
+    })
+    status.vtxoBoardingDescriptorHash = preview.boardingHash
+    status.connectorEnrollment = {
+      ...origin,
+      enrollmentDigest: preview.digest,
+      descriptorHash: preview.compositeHash,
+    }
+  }
   const binding = vaultRecoveryBinding(kit, status)
   const archive: VaultRecoveryArchive = {
     name: 'vaulted-program-recovery-data',

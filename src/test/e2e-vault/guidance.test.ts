@@ -23,7 +23,11 @@ for (const dark of [false, true]) {
     await expect(page.getByText(/This kit uses Standard protection/)).toBeVisible()
     await page.getByRole('button', { name: 'Go back' }).click()
     await page.getByRole('radio', { name: 'The service is unavailable' }).click()
-    await expect(page.getByText(/Starting a new delayed recovery requires both services/)).toBeVisible()
+    await expect(
+      page
+        .getByRole('region', { name: 'Recovery guidance' })
+        .getByText(/Starting a new delayed recovery requires both services/),
+    ).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
     expect(overflow).toBe(false)
     await page.screenshot({ path: testInfo.outputPath('access-help.png'), fullPage: true })

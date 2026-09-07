@@ -9,6 +9,7 @@ import { buildRecoveryHeader, type VaultRecoveryFile } from './backupCodec'
 import { recoveryLightningBinding } from './journals'
 import { restoreVaultRecoveryFile } from './restore'
 import { loadVaultRecoveryArchive } from '../vtxo/recoveryArchive'
+import { recoveryFileStore } from './fileStore'
 import { loadEnrollment } from '../enrollmentStore'
 
 beforeEach(() => {
@@ -71,6 +72,15 @@ describe('fresh-device program archive restore', () => {
       }
     },
   )
+  it('keeps a newer complete snapshot when restoring an older file', async () => {
+    const old = await fixture(false)
+    const newer = structuredClone(old)
+    newer.archive.spending.capturedAt = '2026-09-07T00:00:00Z'
+    const key = newer.header.binding.descriptorHash
+    await recoveryFileStore(key, newer)
+    await restoreVaultRecoveryFile(old, scalarSecret(3))
+    expect(await recoveryFileStore(key)).toEqual(newer)
+  })
   it('refuses foreign keys or a missing journal without replacing enrollment', async () => {
     const file = await fixture(false)
     await expect(restoreVaultRecoveryFile(file, scalarSecret(4))).rejects.toThrow('phone key')

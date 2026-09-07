@@ -8,7 +8,7 @@ import {
   ReadonlySingleKey,
   type Identity,
 } from '@arkade-os/sdk'
-import { p2tr } from '@scure/btc-signer'
+import { Address, OutScript, p2tr } from '@scure/btc-signer'
 import { hex } from '@scure/base'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import {
@@ -80,11 +80,24 @@ import { networkPins } from '../../src/lib/vault/networkPins'
 import { readBounded } from '../../src/lib/vault/bounded'
 import { allowPasskey, passkeyGetOptions, prfExtension, prfFrom } from '../../src/lib/vault/webauthn'
 import { PRF_SALT, unwrapPhoneSecret } from '../../src/lib/vault/prfEnvelope'
+import {
+  parsePortableRecoveryPackage,
+  portableRecoverySource,
+  validateReadableRecoverySource,
+  type ReadableRecoverySource,
+} from '../../src/lib/vault/recovery/portable'
+import { spendingRecoveryCoverage } from '../../src/lib/vault/recovery/coverage'
+import { vaultRecoveryBinding } from '../../src/lib/vault/vtxo/recoveryArchive'
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const value = (id: string) => el<HTMLInputElement>(id).value.trim()
 const bitcoin = new EsploraProvider('/esplora')
-type Source = { full?: VaultRecoveryFile; light?: LightRecoveryFile; publicKit?: PublicKit; originalKit?: unknown }
+type Source = {
+  full?: VaultRecoveryFile | ReadableRecoverySource
+  light?: LightRecoveryFile
+  publicKit?: PublicKit
+  originalKit?: unknown
+}
 type Prepared =
   | SavingsRecoveryFile
   | SpendingRecoveryPackage
@@ -218,13 +231,18 @@ function select(id: string, options: { value: string; label: string }[]) {
 }
 function review() {
   network()
+  el('import').hidden = true
+  el('change-file').hidden = false
   el('review').hidden = false
   el('prepared').hidden = !prepared
   const k = source.full?.header.kit || source.publicKit
   el('facts').textContent =
-    `${source.light ? 'Light' : k?.protectionTier} · ${network()} · ${status()?.vaultId || k?.descriptor.vaultId}`
+    `${source.light ? 'Light' : k?.protectionTier} · ${network()} · Wallet ${(status()?.vaultId || k?.descriptor.vaultId || '').slice(0, 8)}`
+  el('amount').textContent = source.full
+    ? `${spendingRecoveryCoverage(source.full.archive.spending, vaultRecoveryBinding(source.full.header.kit, source.full.header.status), null).archivedSats.toLocaleString()} sats in saved Spending paths`
+    : ''
   el('coverage').textContent = source.full
-    ? `Saved ${source.full.archive.spending.capturedAt}. Includes Spending, boarding, Savings states and saved payment journals.`
+    ? `Saved ${new Date(source.full.archive.spending.capturedAt).toLocaleString()}. Later wallet activity may need a newer file. ${source.full?.name === 'vaulted-readable-recovery' ? 'Unlock the protected backup only for payment journals or saved connector approvals.' : ''}`
     : source.light
       ? `Saved ${source.light.createdAt}. The archive covers its saved Spending and Lightning lockup paths.`
       : `${(source.originalKit as { name?: string })?.name === 'arkade-connector-enrollment' ? 'Connector enrollment kit' : `Recovery Kit version ${(source.originalKit as { version?: number })?.version || k?.version}`}. Public transaction scripts are verified independently; offchain Spending needs a complete archive. ${k && kitHasUnlock(k as PublicKit) ? 'This file can unlock the phone key with its original passkey.' : ''}`
@@ -248,13 +266,15 @@ function review() {
           })
       }
   }
-  const journal = source.full?.lightningJournal || source.light?.lightningJournal
+  const journal =
+    (source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined) ||
+    source.light?.lightningJournal
   for (const entry of journal?.entries || [])
     options.push({
       value: `lightning:${entry.record.rfqId}`,
       label: `Lightning refund — ${entry.record.rfqId.slice(0, 12)}`,
     })
-  if (source.full?.connectorJournal?.pending)
+  if (source.full?.name === 'vaulted-recovery' && source.full.connectorJournal?.pending)
     options.push({ value: 'connector', label: 'Saved connector payment — resume exact approval' })
   select('program', options)
   select(
@@ -289,6 +309,12 @@ function paintCoins() {
 }
 function programChanged() {
   const program = value('program')
+  el('requirements').textContent =
+    program === 'spending'
+      ? `Required: ${source.light ? 'your owner key' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
+      : program === 'connector'
+        ? 'This finishes the saved payment using its retained service approvals and the required hardware signature.'
+        : 'Use the keys and waiting conditions in this saved account. Review the signing request before approving.'
   el('fee-label').hidden =
     program === 'spending' || program === 'boarding' || program === 'connector' || program.startsWith('lightning:')
   el('coin-label').hidden = program === 'spending' || program === 'connector' || program.startsWith('lightning:')
@@ -355,7 +381,41 @@ async function requestSignature(psbt: string, required: { role: string; publicKe
   el('sign-error').textContent = ''
   el('psbt').textContent = psbt
   el<HTMLTextAreaElement>('psbt').value = psbt
-  el('signers').textContent = `Required keys: ${required.map((k) => `${k.role} (${k.publicKey})`).join(', ')}`
+  el('signers').textContent = `Required keys: ${required.map((k) => k.role).join(' and ')}`
+  el('signing-keys').textContent = required.map((k) => `${k.role}: ${k.publicKey}`).join('\n')
+  const outputs = Array.from({ length: tx.outputsLength }, (_, index) => {
+    const output = tx.getOutput(index)
+    const row = document.createElement('p')
+    const amount = document.createElement('strong')
+    amount.textContent = `${output.amount!.toLocaleString()} sats`
+    let destination: string
+    try {
+      destination = Address(getNetwork(networkPins(network()).sdkNetwork)).encode(OutScript.decode(output.script!))
+    } catch {
+      destination = `Script output: ${hex.encode(OutScript.decode(output.script!))}`
+    }
+    row.append(amount, document.createElement('br'), document.createTextNode(destination))
+    return row
+  })
+  el('signing-outputs').replaceChildren(...outputs)
+  let inputAmount = 0n
+  let knownInputs = true
+  for (let index = 0; index < tx.inputsLength; index++) {
+    const input = tx.getInput(index).witnessUtxo
+    if (!input) {
+      knownInputs = false
+      break
+    }
+    inputAmount += input.amount
+  }
+  const outputAmount = Array.from({ length: tx.outputsLength }, (_, index) => tx.getOutput(index).amount!).reduce(
+    (total, amount) => total + amount,
+    0n,
+  )
+  el('signing-fee').textContent = knownInputs
+    ? `Transaction fee: ${(inputAmount - outputAmount).toLocaleString()} sats. Separate parent fee funding may still be needed.`
+    : 'Transaction fee is unavailable because an input amount is missing.'
+  el('sign-phone').hidden = !required.some((k) => k.role === 'phone')
   el('signing-summary').textContent =
     `Transaction ${tx.id}\n${tx.inputsLength} inputs; ${tx.outputsLength} outputs. Review the destination and amount on your signing device.`
   return new Promise<string>((resolve) => {
@@ -370,6 +430,34 @@ async function signatureAction(action: () => Promise<void>) {
     el('sign-error').textContent = err instanceof Error ? err.message : String(err)
   }
 }
+el('save-psbt').onclick = () => {
+  if (!request) return
+  const url = URL.createObjectURL(
+    new Blob([Uint8Array.from(recoveryPsbtBytes(request.psbt))], { type: 'application/octet-stream' }),
+  )
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'Vaulted recovery.psbt'
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+el<HTMLInputElement>('signed-file').onchange = () =>
+  void signatureAction(async () => {
+    const file = el<HTMLInputElement>('signed-file').files?.[0]
+    const pending = request
+    if (!pending || !file || file.size > 2_000_000) throw new Error('Choose a signed PSBT smaller than 2 MB')
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    if (request !== pending) throw new Error('The signing request changed. Choose the signed file again.')
+    const text = new TextDecoder().decode(bytes).trim()
+    request.psbt = acceptRecoveryPsbtSignatures(
+      request.psbt,
+      bytes[0] === 0x70 && bytes[1] === 0x73 ? hex.encode(bytes) : text,
+      request.keys.map((k) => k.publicKey),
+    )
+    el<HTMLTextAreaElement>('psbt').value = request.psbt
+    if (draft) draft.signatures[request.key] = request.psbt
+    el<HTMLInputElement>('signed-file').value = ''
+  })
 el('accept-signature').onclick = () =>
   void signatureAction(async () => {
     if (!request) throw new Error('No signing request')
@@ -478,7 +566,8 @@ async function prepare() {
       key.fill(0)
     }
   } else if (d.program === 'connector') {
-    if (!source.full?.connectorJournal?.pending) throw new Error('No saved connector operation')
+    if (source.full?.name !== 'vaulted-recovery' || !source.full.connectorJournal?.pending)
+      throw new Error('No saved connector operation')
     let file: ConnectorRecoveryFile = {
       name: 'vaulted-connector-recovery',
       version: 1,
@@ -495,7 +584,9 @@ async function prepare() {
     }
     prepared = file
   } else if (d.program.startsWith('lightning:')) {
-    const journal = source.full?.lightningJournal || source.light?.lightningJournal
+    const journal =
+      (source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined) ||
+      source.light?.lightningJournal
     const entry = journal?.entries.find((e) => e.record.rfqId === d.program.slice(10))
     if (!entry || !status()) throw new Error('Saved Lightning lockup is missing')
     prepared = await prepareLightningRecovery(
@@ -595,7 +686,11 @@ el('scan').onclick = () =>
           allowUnknownOutputs: true,
         })
         const output = tx.getOutput(coin.vout)
-        if (tx.id !== coin.txid || hex.encode(output.script!) !== tree.script || Number(output.amount) !== coin.value)
+        if (
+          tx.id !== coin.txid ||
+          hex.encode(OutScript.decode(output.script!)) !== tree.script ||
+          Number(output.amount) !== coin.value
+        )
           throw new Error('Bitcoin parent changed')
         found.set(`${coin.txid}:${coin.vout}`, { ...coin, script: tree.script, parentHex: parentHex.trim() })
       }
@@ -615,20 +710,44 @@ el('export-psbt').onclick = () => {
   else if (prepared.name === 'vaulted-connector-recovery')
     save('Vaulted connector.psbt', connectorRecoveryHandoff(prepared))
 }
-async function load(data: unknown) {
-  const x = data as { name?: string; version?: number; source?: Source; prepared?: Prepared }
+function clearSource() {
   prepared = undefined
   draft = undefined
   source = {}
-  raw = data
+  raw = undefined
   el('signature').hidden = true
+  el('review').hidden = true
+  el('prepared').hidden = true
   el('open').hidden = true
+  el('unlock').hidden = true
+  el<HTMLDetailsElement>('unlock').open = false
+  coins = []
+  el('import').hidden = false
+  el('change-file').hidden = true
+  el('status').textContent = ''
+}
+async function load(data: unknown) {
+  const x = data as { name?: string; version?: number; source?: Source; prepared?: Prepared }
+  clearSource()
+  raw = data
+  if (x.name === 'vaulted-recovery-package') {
+    const pkg = parsePortableRecoveryPackage(data)
+    source = { full: portableRecoverySource(pkg) }
+    el('origin').textContent =
+      `Spending paths can be read without a passkey. Unlock payment journals at ${pkg.backup.header.origin}.`
+    el('open').hidden = false
+    el('unlock').hidden = false
+    review()
+    return
+  }
   if (x.name === 'vaulted-recovery-backup' || x.name === 'vaulted-light-backup') {
     const header = (data as any).header
     const n = header.binding?.network || header.descriptor.network
     requireReleaseNetwork(n)
     el('origin').textContent = `Use your original passkey at ${header.origin}`
     el('open').hidden = false
+    el('unlock').hidden = false
+    el<HTMLDetailsElement>('unlock').open = true
     el('review').hidden = true
     el('prepared').hidden = true
     return
@@ -661,7 +780,10 @@ async function load(data: unknown) {
 function validateSource() {
   if ([source.full, source.light, source.publicKit].filter(Boolean).length !== 1)
     throw new Error('Recovery source must identify one wallet')
-  if (source.full) validateVaultRecoveryFile(source.full)
+  if (source.full) {
+    if (source.full.name === 'vaulted-readable-recovery') validateReadableRecoverySource(source.full)
+    else validateVaultRecoveryFile(source.full)
+  }
   if (source.light) validateLightRecoveryFile(source.light)
   if (source.publicKit) source.publicKit = parsePublicKit(source.originalKit || source.publicKit)
   network()
@@ -700,20 +822,30 @@ function validatePrepared() {
 el<HTMLInputElement>('file').onchange = () =>
   void run(async () => {
     const f = el<HTMLInputElement>('file').files?.[0]
-    if (!f || f.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
+    if (!f) return
+    clearSource()
+    if (f.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
     await load(JSON.parse(extractRecoveryKitJson(new Uint8Array(await f.arrayBuffer()))))
   })
 el('open').onclick = () =>
   void run(async () => {
     const name = (raw as { name?: string }).name
-    if (name === 'vaulted-recovery-backup') source = { full: await openLocalRecoveryBackup(raw) }
+    if (name === 'vaulted-recovery-package')
+      source = { full: await openLocalRecoveryBackup(parsePortableRecoveryPackage(raw).backup) }
+    else if (name === 'vaulted-recovery-backup') source = { full: await openLocalRecoveryBackup(raw) }
     else {
       const parsed = parseLightEncryptedBackup(raw)
       source = { light: (await openLocalLightBackup(parsed)).file }
     }
     el('open').hidden = true
+    el('unlock').hidden = true
     review()
   })
+el('change-file').onclick = () => {
+  if (busy) return
+  el('import').hidden = false
+  el('change-file').hidden = true
+}
 el('stop').onclick = () => {
   controller?.abort()
   el('status').textContent = 'Recovery paused. Keep the prepared file.'
