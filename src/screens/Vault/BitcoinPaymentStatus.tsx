@@ -4,7 +4,7 @@ import { hex } from '@scure/base'
 import { prettyAmount } from '../../lib/format'
 import { vaultAddressNetwork } from '../../lib/vault/bitcoin'
 import { bitcoinPlanOutputs, type BitcoinPaymentJournal } from '../../lib/vault/spendingBitcoinStore'
-import { checkSpendingBitcoin } from '../../lib/vault/spendingBitcoinFunding'
+import { checkSpendingBitcoin, cancelSpendingBitcoin } from '../../lib/vault/spendingBitcoinFunding'
 import type { VaultStatus } from '../../lib/vault/types'
 import { QgSecondary } from './qg/QgScreen'
 
@@ -66,6 +66,26 @@ export default function BitcoinPaymentStatus({
             .finally(() => setBusy(false))
         }}
       />
+      {!operation.final && !operation.receipt?.commitmentTxid ? (
+        <QgSecondary
+          label='Cancel payment'
+          disabled={busy}
+          onClick={() => {
+            setBusy(true)
+            setMessage('')
+            void cancelSpendingBitcoin(status)
+              .then((result) =>
+                setMessage(
+                  result && ['released', 'cancelled', 'rejected'].includes(result.state)
+                    ? 'Payment cancelled. Its reservation has been released.'
+                    : 'Cancellation is still being checked. Funds remain reserved until it is confirmed.',
+                ),
+              )
+              .catch((error) => setMessage((error as Error).message))
+              .finally(() => setBusy(false))
+          }}
+        />
+      ) : null}
     </>
   )
 }

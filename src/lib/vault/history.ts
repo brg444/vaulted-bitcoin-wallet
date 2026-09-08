@@ -13,6 +13,7 @@ export interface VaultHistoryItem {
   account: 'spend' | 'savings'
   activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector' | 'bitcoin'
   bitcoinOperationId?: string
+  bitcoinStage?: string
   connectorStage?: 'approval' | 'signer' | 'broadcast'
   displayAmount?: number
   fee?: number

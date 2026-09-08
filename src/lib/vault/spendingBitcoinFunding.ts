@@ -1,8 +1,5 @@
 import {
   ArkAddress,
-  Batch,
-  InMemoryContractRepository,
-  InMemoryWalletRepository,
   RestArkProvider,
   RestIndexerProvider,
   SingleKey,
@@ -15,6 +12,8 @@ import { Address, OutScript } from '@scure/btc-signer'
 import { scriptHexFromAddress, vaultAddressNetwork } from './bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { consoleLog } from '../logs'
+import { ensureVaultWalletWorker } from './vtxo/walletWorker'
+import { BitcoinPaymentError } from './bitcoinPaymentError'
 import { vaultGet, vaultPost } from './api'
 import { connectorIdentity } from './connectorWithdrawal'
 import { checkConnectorSetup } from './connectorSetup'
@@ -89,32 +88,31 @@ export async function checkSpendingBitcoin(status: VaultStatus): Promise<LightRe
     const journal = readSpendingBitcoin(status)
     if (!journal) return null
     const body = { vaultId: journal.vaultId, operationId: journal.operationId }
-    let result = await bitcoinPaymentClient.status(body)
-    if (journal.stage === 'preparing' && result.state === 'not_found') {
-      if (journal.prepareRequest!.expiresAt * 1000 <= Date.now() - 15000) {
-        clearBitcoinPayment(journal)
-        return { state: 'cancelled' }
-      }
-      const prepared = validateSpendingBitcoinPlan(await bitcoinPaymentClient.prepare(journal.prepareRequest!), status)
-      journal.plan = prepared
-      journal.stage = 'prepared'
-      saveBitcoinPayment(journal)
-      readSpendingBitcoin(status) // Recheck the complete retained request/plan binding.
-      result = await bitcoinPaymentClient.status(body)
-    }
+    const result = await bitcoinPaymentClient.status(body)
     if (
-      [
-        'prepared',
-        'register_authorized',
-        'register_dispatched',
-        'registered',
-        'final_authorized',
-        'delete_authorized',
-        'delete_dispatched',
-        'delete_result',
-      ].includes(result.state)
-    )
-      result = await bitcoinPaymentClient.release({ ...body, deleteIntent: journal.deleteIntent })
+      journal.stage === 'preparing' &&
+      result.state === 'not_found' &&
+      journal.prepareRequest!.expiresAt * 1000 <= Date.now() - 15000
+    ) {
+      clearBitcoinPayment(journal)
+      return { state: 'cancelled' }
+    }
+    retainBitcoinOutcome(status, result)
+    return result
+  })
+}
+/** Cancellation is a user action, never a side effect of status polling. */
+export async function cancelSpendingBitcoin(status: VaultStatus): Promise<LightRenewalResponse | null> {
+  return withVtxoSendLock(status.vaultId, async () => {
+    const journal = readSpendingBitcoin(status)
+    if (!journal) return null
+    if (journal.final || journal.receipt?.commitmentTxid)
+      throw new BitcoinPaymentError('pending', 'This payment has reached final submission. Check its status instead.')
+    const result = await bitcoinPaymentClient.release({
+      vaultId: journal.vaultId,
+      operationId: journal.operationId,
+      deleteIntent: journal.deleteIntent,
+    })
     retainBitcoinOutcome(status, result)
     return result
   })
@@ -125,6 +123,8 @@ class SpendingBitcoinProvider extends RestArkProvider {
     url: string,
     private journal: BitcoinPaymentJournal,
     private status: VaultStatus,
+    private authorization: Pick<LightRenewalRegisterRequest, 'assertion' | 'directSig'>,
+    private signal: AbortSignal,
   ) {
     super(url)
   }
@@ -148,11 +148,42 @@ class SpendingBitcoinProvider extends RestArkProvider {
     this.journal = { ...this.journal, stage: 'submitted', receipt: result }
     saveBitcoinPayment(this.journal)
   }
-  override async registerIntent(): Promise<string> {
-    throw new Error('Bitcoin payment requires Vault approval')
+  override async registerIntent(intent: Parameters<RestArkProvider['registerIntent']>[0]): Promise<string> {
+    await waitForVaultSettlementStream(`${this.journal.txid}:${this.journal.vout}`)
+    const saved = readSpendingBitcoin(this.status)
+    if (!saved || saved.operationId !== this.journal.operationId || !saved.deleteIntent)
+      throw new Error('Bitcoin payment cancellation proof is unavailable')
+    this.journal = { ...saved, stage: 'registering' }
+    saveBitcoinPayment(this.journal)
+    const result = await bitcoinPaymentClient.register({
+      vaultId: this.journal.vaultId,
+      operationId: this.journal.operationId,
+      psbt: intent.proof,
+      message: JSON.stringify(intent.message),
+      ...this.authorization,
+    })
+    retainBitcoinOutcome(this.status, result)
+    if (terminal(result.state))
+      throw new BitcoinPaymentError(
+        'not_sent',
+        `Bitcoin payment was not sent.${result.reason ? ` ${result.reason}` : ' Registration was rejected.'}`,
+      )
+    if (result.state !== 'registered' || !result.intentId)
+      throw new BitcoinPaymentError(
+        'pending',
+        'Payment registration is still being checked. Open the pending payment before trying again.',
+      )
+    this.journal = { ...this.journal, stage: 'registered' }
+    saveBitcoinPayment(this.journal)
+    return result.intentId
+  }
+  override getEventStream(signal?: AbortSignal, topics?: string[]) {
+    return super.getEventStream(signal ? AbortSignal.any([signal, this.signal]) : this.signal, topics)
   }
   override async deleteIntent(): Promise<void> {
-    throw new Error('Use the saved Bitcoin payment to release this operation')
+    // SDK error cleanup cannot prove non-admission for a named Guardian operation.
+    // Its generic intent repository is deliberately not installed on this signing view.
+    // Keep the saved authorization until status or explicit cancellation proves release.
   }
 }
 
@@ -195,7 +226,6 @@ export async function sendSpendingToBitcoin(
     let wallet: Wallet | undefined
     const abort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
-    let stream: AsyncIterableIterator<import('@arkade-os/sdk').SettlementEvent> | undefined
     try {
       progress('Unlock Spending with your passkey')
       const auth = await unlocker.unlock()
@@ -274,7 +304,17 @@ export async function sendSpendingToBitcoin(
         throw new Error('Payment approval expired. Check this payment before trying again.')
       progress('Sending to Bitcoin. Keep this page open.')
       installVaultSettlementEventSource()
-      const provider = new SpendingBitcoinProvider(url, journal, status)
+      const provider = new SpendingBitcoinProvider(
+        url,
+        journal,
+        status,
+        {
+          assertion: auth.assertion,
+          directSig: vtxoSpendDirectSig(auth, prepared.planDigest),
+        },
+        abort.signal,
+      )
+      const runtime = await ensureVaultWalletWorker(status)
       const identity = SingleKey.fromPrivateKey(auth.phoneSecret)
       registerVaultPolicyV1ContractHandler()
       wallet = await Wallet.create({
@@ -283,11 +323,11 @@ export async function sendSpendingToBitcoin(
         arkServerUrl: url,
         esploraUrl: '/esplora',
         storage: {
-          walletRepository: new InMemoryWalletRepository(),
-          contractRepository: new InMemoryContractRepository(),
+          walletRepository: runtime.walletRepository,
+          contractRepository: runtime.contractRepository,
         },
         walletMode: 'static',
-        settlementConfig: { boardingUtxoSweep: false, deprecatedSignerMigration: false, autoRenewVtxos: false },
+        settlementConfig: false,
       })
       const address = new ArkAddress(
         hex.decode(context.operatorPub),
@@ -303,96 +343,64 @@ export async function sendSpendingToBitcoin(
         intentTapLeafScript: script.forfeit(),
         tapTree: script.encode(),
       }
-      // Retain the owner's exact non-monetary cancellation before registration.
-      // It remains usable after a reload without another passkey ceremony.
-      const deletion = await wallet.makeDeleteIntentSignature([input])
-      journal = { ...journal, deleteIntent: { proof: deletion.proof, message: JSON.stringify(deletion.message) } }
-      saveBitcoinPayment(journal)
-      const session = identity.signerSession()
-      const publicKey = hex.encode(await session.getPublicKey())
-      const intent = await wallet.makeRegisterIntentSignature(
-        [input],
-        [
-          { amount: BigInt(plan.changeSats), script: script.pkScript },
-          ...bitcoinPlanOutputs(plan).map((output) => ({
-            amount: BigInt(output.amountSats),
-            script: hex.decode(output.script),
-          })),
-        ],
-        outputs.map((_, i) => i + 1),
-        [publicKey],
-        undefined,
-        plan.registerExpireAt,
-      )
+      // The named program binds expiry; SDK defaults are not authorization.
+      const register = wallet.makeRegisterIntentSignature.bind(wallet)
+      wallet.makeRegisterIntentSignature = (...args) => {
+        args[5] = plan.registerExpireAt
+        return register(...args)
+      }
+      const deletion = wallet.makeDeleteIntentSignature.bind(wallet)
+      wallet.makeDeleteIntentSignature = async (...args) => {
+        const proof = await deletion(...args)
+        journal = { ...journal, deleteIntent: { proof: proof.proof, message: JSON.stringify(proof.message) } }
+        saveBitcoinPayment(journal)
+        return proof
+      }
+      const createHandler = wallet.createBatchHandler.bind(wallet)
+      wallet.createBatchHandler = (...args) => {
+        const handler = scopeBitcoinBatchFailures(createHandler(...args))
+        let batchExpiry = 0
+        let unsignedTree: TxTreeNode[] = []
+        const signing = handler.onTreeSigningStarted
+        handler.onTreeSigningStarted = async (event, tree) => {
+          const decision = await signing(event, tree)
+          if (!decision.skip) unsignedTree = flattenTree(tree)
+          return decision
+        }
+        const start = handler.onBatchStarted
+        handler.onBatchStarted = async (event) => {
+          const decision = await start(event)
+          if (!decision.skip) batchExpiry = Number(event.batchExpiry)
+          return decision
+        }
+        const finalize = handler.onBatchFinalization
+        handler.onBatchFinalization = async (event, tree, connectors) => {
+          if (!tree || !connectors || !Number.isSafeInteger(batchExpiry) || batchExpiry <= 0)
+            throw new Error('Payment recovery paths are incomplete')
+          provider.finalEvidence = {
+            batchId: event.id,
+            batchExpiry,
+            commitmentPsbt: event.commitmentTx,
+            vtxoTree: serializeLightRenewalTree(tree, unsignedTree),
+            connectors: flattenTree(connectors),
+          }
+          await finalize(event, tree, connectors)
+        }
+        return handler
+      }
       timeout = setTimeout(() => abort.abort(), Math.max(1000, plan.registerExpireAt * 1000 - Date.now() + 30_000))
-      stream = provider.getEventStream(abort.signal, [publicKey, `${coin.txid}:${coin.vout}`])
-      const first = stream.next()
-      void first.catch(() => {})
-      await waitForVaultSettlementStream(`${coin.txid}:${coin.vout}`)
-      const source = stream
-      const primed = (async function* () {
-        const next = await first
-        if (!next.done) yield next.value
-        yield* source
-      })()
-      journal = { ...journal, stage: 'registering' }
-      saveBitcoinPayment(journal)
-      const registered = await bitcoinPaymentClient.register({
-        vaultId: journal.vaultId,
-        operationId: journal.operationId,
-        psbt: intent.proof,
-        message: JSON.stringify(intent.message),
-        assertion: auth.assertion,
-        directSig: vtxoSpendDirectSig(auth, prepared.planDigest),
-      })
-      if (registered.state !== 'registered' || !registered.intentId)
-        throw new Error('Payment registration is still being checked. Check again before trying again.')
-      journal = { ...journal, stage: 'registered' }
-      saveBitcoinPayment(journal)
-      const handler = scopeBitcoinBatchFailures(
-        wallet.createBatchHandler(
-          registered.intentId,
-          [input],
-          [
-            { address, amount: plan.changeSats },
+      const commitment = await wallet.settle(
+        {
+          inputs: [input],
+          outputs: [
+            { address, amount: BigInt(plan.changeSats) },
             ...bitcoinPlanOutputs(plan).map((output) => ({
               address: Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(output.script))),
-              amount: output.amountSats,
+              amount: BigInt(output.amountSats),
             })),
           ],
-          session,
-        ),
-      )
-      let batchExpiry = 0
-      let unsignedTree: TxTreeNode[] = []
-      const signing = handler.onTreeSigningStarted
-      handler.onTreeSigningStarted = async (event, tree) => {
-        const decision = await signing(event, tree)
-        if (!decision.skip) unsignedTree = flattenTree(tree)
-        return decision
-      }
-      const start = handler.onBatchStarted
-      handler.onBatchStarted = async (event) => {
-        const decision = await start(event)
-        if (!decision.skip) batchExpiry = Number(event.batchExpiry)
-        return decision
-      }
-      const finalize = handler.onBatchFinalization
-      handler.onBatchFinalization = async (event, tree, connectors) => {
-        if (!tree || !connectors || !Number.isSafeInteger(batchExpiry) || batchExpiry <= 0)
-          throw new Error('Payment recovery paths are incomplete')
-        provider.finalEvidence = {
-          batchId: event.id,
-          batchExpiry,
-          commitmentPsbt: event.commitmentTx,
-          vtxoTree: serializeLightRenewalTree(tree, unsignedTree),
-          connectors: flattenTree(connectors),
-        }
-        await finalize(event, tree, connectors)
-      }
-      const commitment = await Batch.join(primed, handler, {
-        abortController: abort,
-        eventCallback: async (event) => {
+        },
+        (event) => {
           if (
             ['batch_started', 'tree_signing_started', 'batch_finalization', 'batch_finalized', 'batch_failed'].includes(
               event.type,
@@ -400,7 +408,7 @@ export async function sendSpendingToBitcoin(
           )
             consoleLog(`Bitcoin payment batch: ${event.type}`)
         },
-      })
+      )
       if (!commitment || !/^[a-f0-9]{64}$/.test(commitment))
         throw new Error(
           'The batch connection ended before Bitcoin payment completed. Check the pending payment before trying again.',
@@ -408,13 +416,39 @@ export async function sendSpendingToBitcoin(
       progress('Waiting for Bitcoin confirmation')
       const receipt = await bitcoinPaymentClient.status({ vaultId: journal.vaultId, operationId: journal.operationId })
       retainBitcoinOutcome(status, receipt)
+      if (!['submitted', 'confirmed'].includes(receipt.state))
+        throw new BitcoinPaymentError(
+          'pending',
+          'The batch completed. Its Bitcoin payment receipt is still being checked.',
+        )
       return receipt
+    } catch (error) {
+      if (error instanceof BitcoinPaymentError) throw error
+      const saved = readSpendingBitcoin(status)
+      if (saved) {
+        const receipt = await bitcoinPaymentClient
+          .status({ vaultId: saved.vaultId, operationId: saved.operationId })
+          .catch(() => null)
+        if (receipt) {
+          retainBitcoinOutcome(status, receipt)
+          if (['submitted', 'confirmed'].includes(receipt.state)) return receipt
+          if (terminal(receipt.state))
+            throw new BitcoinPaymentError(
+              'not_sent',
+              `Bitcoin payment was not sent.${receipt.reason ? ` ${receipt.reason}` : ' Its reservation has been released.'}`,
+            )
+        }
+        throw new BitcoinPaymentError(
+          'pending',
+          'This payment has not completed. Open it in Recent to check its status before trying again.',
+        )
+      }
+      throw error
     } finally {
       if (timeout) clearTimeout(timeout)
       abort.abort()
-      await stream?.return?.().catch(() => {})
-      await wallet?.dispose()
       unlocker.dispose()
+      await wallet?.dispose().catch(() => consoleLog('Bitcoin payment signing session cleanup failed'))
     }
   })
 }

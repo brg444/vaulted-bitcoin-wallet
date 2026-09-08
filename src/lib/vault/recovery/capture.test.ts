@@ -6,8 +6,16 @@ import { buildRecoveryHeader, type VaultRecoveryFile } from './backupCodec'
 import { recoveryFileStore } from './fileStore'
 import { captureVaultRecoveryFile } from './capture'
 
-const mocks = vi.hoisted(() => ({ capture: vi.fn(), journals: vi.fn(), setup: vi.fn(), clearBitcoinPayment: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  capture: vi.fn(),
+  journals: vi.fn(),
+  setup: vi.fn(),
+  clearBitcoinPayment: vi.fn(),
+  snapshot: vi.fn(),
+}))
+vi.mock('../vtxo/walletWorker', () => ({ fetchVaultWalletVtxoSnapshot: mocks.snapshot }))
 vi.mock('../spendingBitcoinStore', () => ({
+  bitcoinPlanOutputs: (plan: { outputs: unknown[] }) => plan.outputs,
   readSpendingBitcoin: mocks.setup,
   clearBitcoinPayment: mocks.clearBitcoinPayment,
 }))
@@ -25,6 +33,7 @@ afterEach(() => {
 })
 
 async function fixture() {
+  mocks.snapshot.mockReset().mockResolvedValue({ history: [] })
   mocks.setup.mockReset().mockReturnValue(null)
   mocks.clearBitcoinPayment.mockReset()
   const f = recoveryFixture()
@@ -89,8 +98,8 @@ it('keeps confirmed signer setup until the exact replacement recovery output has
   const f = await fixture()
   const setup = {
     stage: 'confirmed',
-    receipt: { receiverTxid: 'ee'.repeat(32), receiverVout: 0 },
-    plan: { plan: { changeSats: f.coin.value } },
+    receipt: { receiverTxid: 'ee'.repeat(32), receiverVout: 0, commitmentTxid: 'ab'.repeat(32) },
+    plan: { plan: { changeSats: f.coin.value, feeSats: 200, outputs: [{ amountSats: 1500 }] } },
   }
   mocks.setup.mockReturnValue(setup)
   await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('Bitcoin payment recovery data')
@@ -99,6 +108,11 @@ it('keeps confirmed signer setup until the exact replacement recovery output has
   setup.receipt.receiverTxid = f.coin.txid
   mocks.clearBitcoinPayment.mockImplementation(async () => {
     expect(await recoveryFileStore(f.key)).not.toBeNull()
+  })
+  await captureVaultRecoveryFile(f.status, f.enrollment)
+  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
+  mocks.snapshot.mockResolvedValue({
+    history: [{ account: 'spend', type: 'sent', txid: setup.receipt.commitmentTxid, amount: 1700 }],
   })
   const saved = await captureVaultRecoveryFile(f.status, f.enrollment)
   expect(mocks.clearBitcoinPayment).toHaveBeenCalledWith(setup)

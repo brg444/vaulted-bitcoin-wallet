@@ -54,7 +54,7 @@ test('funds the signer from Spending and retains replacement recovery paths', as
       return credential
     }
   }, prior?.prf || null)
-  const outcomes: unknown[] = []
+  const outcomes: unknown[] = resume ? JSON.parse(await readFile(join(directory, 'setup-outcomes.json'), 'utf8')) : []
   const requests: unknown[] = []
   page.on('request', (r) => {
     const u = new URL(r.url())
@@ -146,6 +146,33 @@ test('funds the signer from Spending and retains replacement recovery paths', as
   }
   try {
     await expect(page.getByTestId('account-switcher')).toBeVisible({ timeout: 60000 })
+    const priorSecond = resume
+      ? await readFile(join(directory, 'second-payment.json'), 'utf8')
+          .then(JSON.parse)
+          .catch(() => null)
+      : null
+    if (priorSecond) {
+      const verified = await page.evaluate(async (second) => {
+        const base = '/src/lib/vault/'
+        const store = await import(base + 'enrollmentStore.ts')
+        const id = store.loadSelectedVaultId()
+        const status = await (await fetch(`/v1/status?vault=${id}`)).json()
+        const { checkSpendingBitcoin } = await import(base + 'spendingBitcoinFunding.ts')
+        await checkSpendingBitcoin(status)
+        const { fetchVaultWalletVtxoSnapshot } = await import(base + 'vtxo/walletWorker.ts')
+        const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+        const rows = snapshot.history.filter(
+          (row: any) => row.txid === second.receipt.commitmentTxid && row.type === 'sent',
+        )
+        if (rows.length !== 1 || rows[0].amount !== 1500 + second.operation.plan.plan.feeSats)
+          throw new Error('Second payment history mismatch')
+        const { captureVaultRecoveryFile } = await import(base + 'recovery/capture.ts')
+        await captureVaultRecoveryFile(status, store.loadEnrollment(localStorage, id))
+        return { history: snapshot.history, expectedOutflow: rows[0].amount, receipt: second.receipt }
+      }, priorSecond)
+      await save('second-payment-verified.json', verified)
+      return
+    }
     if (resume)
       await page.evaluate(
         async (saved) => {
@@ -188,13 +215,14 @@ test('funds the signer from Spending and retains replacement recovery paths', as
       .poll(
         async () => {
           const error = page.getByRole('alert')
-          if (await error.isVisible()) throw new Error(await error.innerText())
+          if ((await error.isVisible()) && (await error.innerText()) !== 'Waiting for Bitcoin confirmation.')
+            throw new Error(await error.innerText())
           if (await page.getByRole('heading', { name: 'Your signer is ready' }).isVisible()) return true
           const check = page.getByRole('button', { name: 'Check status', exact: true })
           if ((await check.isVisible()) && (await check.isEnabled())) await check.click()
           return page.getByRole('heading', { name: 'Your signer is ready' }).isVisible()
         },
-        { timeout: 120000, intervals: [5000] },
+        { timeout: 300000, intervals: [5000] },
       )
       .toBe(true)
     const confirmed = [...outcomes, ...(priorComplete?.outcomes || [])]
@@ -250,6 +278,58 @@ test('funds the signer from Spending and retains replacement recovery paths', as
     await page.getByRole('button', { name: 'Set up Savings signer' }).click()
     await expect(page.getByRole('heading', { name: 'Your signer is ready' })).toBeVisible({ timeout: 60000 })
     await expect(page.getByRole('button', { name: 'Fund from Spending', exact: true })).toHaveCount(0)
+    // A second payment must spend the first batch's change, survive reload,
+    // and appear once in the SDK-derived history with the actual account outflow.
+    const second = await page.evaluate(async () => {
+      const base = '/src/lib/vault/'
+      const store = await import(base + 'enrollmentStore.ts')
+      const id = store.loadSelectedVaultId()
+      const status = await (await fetch(`/v1/status?vault=${id}`)).json()
+      const funding = await import(base + 'spendingBitcoinFunding.ts')
+      const setup = await import(base + 'connectorSetup.ts')
+      const { scriptHexFromAddress } = await import(base + 'bitcoin.ts')
+      const checked = await setup.checkConnectorSetup(status)
+      if (checked.state !== 'checked') throw new Error('Signer address unavailable')
+      const outputs = [{ script: scriptHexFromAddress(checked.address, status.network), amountSats: 1500 }]
+      const receipt = await funding.sendSpendingToBitcoin(
+        store.loadEnrollment(localStorage, id),
+        status,
+        outputs,
+        async (plan: any) => {
+          if (plan.outputs.length !== 1 || plan.outputs[0].amountSats !== 1500) throw new Error('Wrong second payment')
+          return true
+        },
+        () => {},
+      )
+      return { receipt, operation: funding.readSpendingBitcoin(status) }
+    })
+    await save('second-payment.json', second)
+    expect(second.operation?.txid).toBe(confirmed.receiverTxid)
+    expect(['submitted', 'confirmed']).toContain(second.receipt.state)
+    await page.reload()
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(
+            async (receipt) => {
+              const base = '/src/lib/vault/'
+              const store = await import(base + 'enrollmentStore.ts')
+              const id = store.loadSelectedVaultId()
+              const status = await (await fetch(`/v1/status?vault=${id}`)).json()
+              const { checkSpendingBitcoin } = await import(base + 'spendingBitcoinFunding.ts')
+              await checkSpendingBitcoin(status)
+              const { fetchVaultWalletVtxoSnapshot } = await import(base + 'vtxo/walletWorker.ts')
+              const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+              const rows = snapshot.history.filter(
+                (row: any) => row.txid === receipt.commitmentTxid && row.type === 'sent',
+              )
+              return rows.length === 1 && rows[0].amount === receipt.expectedOutflow
+            },
+            { ...second.receipt, expectedOutflow: 1500 + second.operation!.plan.plan.feeSats },
+          ),
+        { timeout: 180000, intervals: [5000] },
+      )
+      .toBe(true)
     await save('complete.json', {
       outcomes,
       replacement: recovery.replacement,
