@@ -15,7 +15,7 @@ import { validateLightRecoveryFile, type LightRecoveryFile } from '../light/reco
 import { IndexedDBWalletRepository } from '@arkade-os/sdk'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 import { requireSpendingRecoveryCoverage } from './coverage'
-import { readSavingsSetup, clearSetup } from '../savingsSetupStore'
+import { readSpendingBitcoin, clearBitcoinPayment } from '../spendingBitcoinStore'
 import { validateExitArchive } from './exitArchive'
 
 export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: EnrollmentSecrets) {
@@ -55,11 +55,11 @@ export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: 
       requireSpendingRecoveryCoverage(archive.spending, binding, await knownOutputs())
       // A confirmed setup creates a replacement Spending output. Keep its
       // journal and the previous backup until that exact exit path is durable.
-      const setup = readSavingsSetup(status)
+      const setup = readSpendingBitcoin(status)
       // The retained final may already authorize replacement of the input even
       // before the indexer reports it. Do not label the old snapshot as current.
       if (setup?.final && setup.stage !== 'confirmed')
-        throw new Error('Signer funding is still being confirmed. The previous recovery file is retained.')
+        throw new Error('Bitcoin payment is still being confirmed. The previous recovery file is retained.')
       if (setup?.stage === 'confirmed') {
         const receipt = setup.receipt!
         const coins = validateExitArchive(archive.spending, binding).coins
@@ -72,10 +72,10 @@ export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: 
               c.script === binding.scriptPubKey,
           )
         )
-          throw new Error('Signer setup recovery data is still syncing. The previous backup is retained.')
+          throw new Error('Bitcoin payment recovery data is still syncing. The previous backup is retained.')
       }
       await recoveryFileStore(key, file)
-      if (setup?.stage === 'confirmed') clearSetup(setup)
+      if (setup?.stage === 'confirmed') clearBitcoinPayment(setup)
       return file
     } finally {
       await wallet[Symbol.asyncDispose]()

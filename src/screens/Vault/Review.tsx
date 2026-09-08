@@ -1,3 +1,4 @@
+import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useState } from 'react'
 import { useToast } from '../../components/Toast'
@@ -14,6 +15,7 @@ export default function VaultReview() {
     account,
     approveSend,
     boardingAddress,
+    bitcoinOutputs,
     busy,
     error,
     navigate,
@@ -25,6 +27,7 @@ export default function VaultReview() {
   const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
   const fromSavings = account === 'savings'
+  const bitcoinSend = !fromSavings && isVaultBitcoinAddress(spend.address, status?.network)
   const hardwareFirst = fromSavings && status?.templateVersion === DUAL_CONNECTOR_TEMPLATE
   const movingToSpending = fromSavings && Boolean(boardingAddress) && spend.address === boardingAddress
   const lightning = isVaultLightningInput(spend.address)
@@ -54,7 +57,7 @@ export default function VaultReview() {
   return (
     <QgScreen
       title={resumingPayment ? 'Resume payment' : 'Review payment'}
-      back={() => navigate(resumingPayment ? 'home' : 'send')}
+      back={() => navigate(resumingPayment || bitcoinSend ? 'home' : 'send')}
       footer={
         <>
           {error ? (
@@ -77,7 +80,9 @@ export default function VaultReview() {
                       : 'Sign on this device'
                     : resumingPayment
                       ? 'Continue payment'
-                      : 'Approve payment'
+                      : bitcoinSend
+                        ? 'Confirm Bitcoin payment'
+                        : 'Approve payment'
             }
           />
         </>
@@ -91,13 +96,19 @@ export default function VaultReview() {
         <p>{fromSavings ? 'From Savings' : 'From Spending'}</p>
         {resumingPayment ? (
           <p>Continue the original payment from its last saved step.</p>
-        ) : (
+        ) : !bitcoinSend ? (
           <QgTextButton onClick={() => navigate('send')} label='Edit amount' />
-        )}
+        ) : null}
         {resumingPayment && lightning ? (
           <p>An expired Lightning invoice may need a refund after this transaction completes.</p>
         ) : null}
       </section>
+      {bitcoinSend && bitcoinOutputs && bitcoinOutputs.length > 1 ? (
+        <p className='qg-copy'>
+          {bitcoinOutputs.length} separate Bitcoin outputs:{' '}
+          {bitcoinOutputs.map((output) => `${output.amountSats} sats`).join(' + ')}.
+        </p>
+      ) : null}
       <section className='qg-details' aria-label='Payment details'>
         <div>
           <span>To</span>
@@ -120,9 +131,11 @@ export default function VaultReview() {
             <button type='button' className='qg-text' onClick={() => setRevealed((open) => !open)}>
               {revealed ? 'Hide' : 'Reveal'}
             </button>
-            <button type='button' className='qg-text' onClick={() => navigate('send')}>
-              Edit
-            </button>
+            {!bitcoinSend ? (
+              <button type='button' className='qg-text' onClick={() => navigate('send')}>
+                Edit
+              </button>
+            ) : null}
           </div>
         )}
         <div>
@@ -154,7 +167,9 @@ export default function VaultReview() {
             ? hardwareFirst
               ? 'Sign with your external wallet, then approve with your passkey to send.'
               : 'Approve with your passkey, then sign with your external wallet.'
-            : 'Approve with your passkey. The vault service checks your payment limits.'}
+            : bitcoinSend
+              ? 'Confirm this destination and fee. Keep the wallet open while your payment joins a batch; Bitcoin confirmation follows.'
+              : 'Approve with your passkey. The vault service checks your payment limits.'}
         </p>
       ) : null}
       {lightning ? (

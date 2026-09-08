@@ -1,3 +1,4 @@
+import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { useContext, useEffect, useState } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
 import { KeyRound } from 'lucide-react'
@@ -85,7 +86,11 @@ export default function VaultSend() {
   const [amountRate, setAmountRate] = useState(fiatDisplayRate)
   const availableSpend = Math.max(0, Math.min(dailyRemaining, positions.spending.availableSats))
   const available = fromSavings ? positions.savings.availableSats : availableSpend
-  const maximum = Math.max(0, Math.min(available - Math.max(0, spend.fee), fromSavings ? available : setup.txCapSats))
+  const bitcoinChange = !fromSavings && isVaultBitcoinAddress(spend.address, destNetwork) ? 330 : 0
+  const maximum = Math.max(
+    0,
+    Math.min(available - Math.max(0, spend.fee) - bitcoinChange, fromSavings ? available : setup.txCapSats),
+  )
   const pendingSend = !fromSavings && status?.vaultId ? loadPersistedVtxoSpend(status.vaultId) : undefined
   const resumingPayment = Boolean(pendingSend && isSameVtxoPayment(pendingSend, spend.address, spend.amount))
   const reservedSats = pendingSend?.reservedInputs?.reduce((total, input) => total + input.valueSats, 0)
