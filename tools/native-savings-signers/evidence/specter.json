@@ -1,0 +1,232 @@
+[
+  {
+    "tier": "standard",
+    "full": false,
+    "sameScript": true,
+    "descriptor": "tr(f17d5884dd993f3be7469768f3f7e59ac94f2d102a171bc7e80ac576e257e3d3,{{and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*)),and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),and_v(v:pk(4f546445842093cfd2c06c01279c8fda520974a1ff83644d646c9e3a2b14d479),pk(fc692eb1118a8374a2c547d3d8927bca5107e1aeb976d47c3d3057df2e6a1965)))},and_v(v:pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*),and_v(v:pk(649b811dc94ba82c9041fe98efa8a91b6927ee77e2782d90b57f1cbf9c0eda45),pk(a35102e2544aa6d885a06e46ece065dfbd121a40342f6266de184262cd9121c5)))})",
+    "recognizedInput": true,
+    "recognizedKeyOccurrences": 2,
+    "signatureAdded": 1,
+    "psbt": "cHNidP8BAIkCAAAAARYa4dFxXlXdxW/bvTF8niUA3wxj+wKNpIhCfu6lSAAjAQAAAAD/////AiBOAAAAAAAAIlEgqOH2lGSV15e9o8PGqIzzQ3UTDFekKpZsmgUIvzzC/BqYNAEAAAAAACJRIHs4NeiwrCiruaPmw2kZ3Ef7p9In5R185OSGgUZrSvdDAAAAAAABASughgEAAAAAACJRIHs4NeiwrCiruaPmw2kZ3Ef7p9In5R185OSGgUZrSvdDQRT5MIoBkljDEEk0T4X4nVIptTHIRYNvmbCGAfETvOA2+ZZuk0mQSwdUyXGb0Ena/itwvHdDfU/YwUUdaTUGN9twQC1/DGROkFABy4mDcB3JadOvEt+6a06s8AvJZ2cutwtkLTfvwv/AlyinS3LpwRFQWe2kaLCZU3/a7mS1WmpkNnJBFH6feCHK7No53Ycvg4eWK8zCw5UXRNkmYJqt2QtpTA+slm6TSZBLB1TJcZvQSdr+K3C8d0N9T9jBRR1pNQY323BBP0FB1Ip9+iT+uZHS6fCpSc0e0bgehEFcrDU3U7tQ1OJa4SkMjC7ijFJzCNizZfWa3CvBi8kTzGHtbsPJnPYVqAEAAAA=",
+    "reviewMetadata": {
+      "inputs": [
+        {
+          "label": "Untitled",
+          "value": 100000,
+          "sequence": 4294967295
+        }
+      ],
+      "outputs": [
+        {
+          "value": 20000,
+          "change": false,
+          "address": "bcrt1p4rsld9ryjhte00drc0r23r8ngd63xrzh5s4fvmy6q5yt70xzlsdqzdszde"
+        },
+        {
+          "value": 79000,
+          "change": false,
+          "address": "bcrt1p0vurt69s4s52hwdrumpkjxwugla60538u5whee8ys6q5v6627aps8vtf62"
+        }
+      ],
+      "default_asset": "tBTC",
+      "signed_inputs": 0,
+      "tx_version": 2,
+      "locktime": 0,
+      "fee": 1000
+    },
+    "deviceDisplayTested": false,
+    "bitcoinValidation": {
+      "accepted": {
+        "txid": "2c286cbcb4daf0b73310532b718ec3a5b9f73d4fb52b983b48f25ce1cad4189c",
+        "wtxid": "5db8664a99aef6347be71cf8463e0287a87f0ceb35e00b61b74654b1c0fa6801",
+        "allowed": true,
+        "vsize": 213,
+        "fees": {
+          "base": 0.00001,
+          "effective-feerate": 0.00004694,
+          "effective-includes": [
+            "5db8664a99aef6347be71cf8463e0287a87f0ceb35e00b61b74654b1c0fa6801"
+          ]
+        }
+      },
+      "changedDestination": {
+        "txid": "ae5dab49d19c84e4d47fd4962ac5a9fea12cbf02989d1b21f20293c69b2f1175",
+        "wtxid": "76299c3de2f724e3a8eaff336ae6d6cd213bc357bf348a03d18e6fa7bc35dac4",
+        "allowed": false,
+        "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+        "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of ae5dab49d19c84e4d47fd4962ac5a9fea12cbf02989d1b21f20293c69b2f1175 (wtxid 76299c3de2f724e3a8eaff336ae6d6cd213bc357bf348a03d18e6fa7bc35dac4), spending 230048a5ee7e4288a48d02fb630cdf00259e7c31bddb6fc5dd555e71d1e11a16:1"
+      },
+      "hardwareSighash": "ALL"
+    }
+  },
+  {
+    "tier": "standard",
+    "full": true,
+    "sameScript": true,
+    "descriptor": "tr(f17d5884dd993f3be7469768f3f7e59ac94f2d102a171bc7e80ac576e257e3d3,{{and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*)),and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),and_v(v:pk(4f546445842093cfd2c06c01279c8fda520974a1ff83644d646c9e3a2b14d479),pk(fc692eb1118a8374a2c547d3d8927bca5107e1aeb976d47c3d3057df2e6a1965)))},and_v(v:pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*),and_v(v:pk(649b811dc94ba82c9041fe98efa8a91b6927ee77e2782d90b57f1cbf9c0eda45),pk(a35102e2544aa6d885a06e46ece065dfbd121a40342f6266de184262cd9121c5)))})",
+    "recognizedInput": true,
+    "recognizedKeyOccurrences": 2,
+    "signatureAdded": 1,
+    "psbt": "cHNidP8BAF4CAAAAAbJRfp2xaUDvV8FWMP9A+CaL8LHWDGFkCPYcPj1TwwKGAQAAAAD/////AbiCAQAAAAAAIlEgqOH2lGSV15e9o8PGqIzzQ3UTDFekKpZsmgUIvzzC/BoAAAAAAAEBK6CGAQAAAAAAIlEgezg16LCsKKu5o+bDaRncR/un0iflHXzk5IaBRmtK90NBFPkwigGSWMMQSTRPhfidUim1MchFg2+ZsIYB8RO84Db5lm6TSZBLB1TJcZvQSdr+K3C8d0N9T9jBRR1pNQY323BAWRV/s0tYakN697CLMQ7ngT+JJQOYc7lkOalgWOlSKgQTmSBL/9EffAhG4TcejuiY/neq/FQn124F2tbs+zGJFUEUfp94Icrs2jndhy+Dh5YrzMLDlRdE2SZgmq3ZC2lMD6yWbpNJkEsHVMlxm9BJ2v4rcLx3Q31P2MFFHWk1BjfbcEEABzB1ZVWxJGjR8D9jym3v4EhiTpAfSwWz8K+cf41cbFzpG5xKqddOIZ6TMeX9wegFTOxFF8ZZ5bSZ/UKqANDBAQAA",
+    "reviewMetadata": {
+      "inputs": [
+        {
+          "label": "Untitled",
+          "value": 100000,
+          "sequence": 4294967295
+        }
+      ],
+      "outputs": [
+        {
+          "value": 99000,
+          "change": false,
+          "address": "bcrt1p4rsld9ryjhte00drc0r23r8ngd63xrzh5s4fvmy6q5yt70xzlsdqzdszde"
+        }
+      ],
+      "default_asset": "tBTC",
+      "signed_inputs": 0,
+      "tx_version": 2,
+      "locktime": 0,
+      "fee": 1000
+    },
+    "deviceDisplayTested": false,
+    "bitcoinValidation": {
+      "accepted": {
+        "txid": "cb53e8d932cde41b87706593bd1a13ec3518019db717b50f734f732849992317",
+        "wtxid": "d24b495aba9316b9124e5f29a9221f0abd920fe59fb5991986f78fbbfa604f0a",
+        "allowed": true,
+        "vsize": 170,
+        "fees": {
+          "base": 0.00001,
+          "effective-feerate": 0.00005882,
+          "effective-includes": [
+            "d24b495aba9316b9124e5f29a9221f0abd920fe59fb5991986f78fbbfa604f0a"
+          ]
+        }
+      },
+      "changedDestination": {
+        "txid": "8d80c57ede1cd031c4c34427dbe276906dd83a2e8b2ea0a7774cbdcaf94df012",
+        "wtxid": "38a64bf08125a5bdba873512a004e56fa17265574f943b796c08cf104918b83e",
+        "allowed": false,
+        "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+        "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 8d80c57ede1cd031c4c34427dbe276906dd83a2e8b2ea0a7774cbdcaf94df012 (wtxid 38a64bf08125a5bdba873512a004e56fa17265574f943b796c08cf104918b83e), spending 8602c3533d3e1cf60864610cd6b1f08b26f840ff3056c157ef4069b19d7e51b2:1"
+      },
+      "hardwareSighash": "ALL"
+    }
+  },
+  {
+    "tier": "advanced",
+    "full": false,
+    "sameScript": true,
+    "descriptor": "tr(f17d5884dd993f3be7469768f3f7e59ac94f2d102a171bc7e80ac576e257e3d3,{{and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*)),and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),and_v(v:pk(adcc91ef3c73dc3f1b81bd617acfeac87ea350525c34f4e387ade53d68f194a9),pk(6096072eb07387596c351507e30e025bbe00b35d52de85864e22d8b7f68c4265)))},{and_v(v:pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*),and_v(v:pk(d1dafa2d7303b796fd16e4e81adfb4089ea2158833408022407ce212dd5ece18),pk(786b2bb611578953109b849649e5167b56bc46e8ea412f110f3cf945deab9331))),and_v(v:pk(2f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4),and_v(v:pk(0512d873f9c20bb9d8cb7efb57c4d2b93be1c26c2ca0611298cdc87d97ca8816),pk(a9c961dddc8e3dbdb11fc77e52cec994d2b393547ee5cdd4ae9c49e96c409f16)))}})",
+    "recognizedInput": true,
+    "recognizedKeyOccurrences": 2,
+    "signatureAdded": 1,
+    "psbt": "cHNidP8BAIkCAAAAAY+r+iekBKkrJDo6DPLMk1nBWCfl2t0sD/eOrWnyFnmgAAAAAAD/////AiBOAAAAAAAAIlEgqOH2lGSV15e9o8PGqIzzQ3UTDFekKpZsmgUIvzzC/BqYNAEAAAAAACJRIDQ+3S/gB4C7aDfyfuQRGSmajpASdRcNgz3k/bs2xU0vAAAAAAABASughgEAAAAAACJRIDQ+3S/gB4C7aDfyfuQRGSmajpASdRcNgz3k/bs2xU0vQRT5MIoBkljDEEk0T4X4nVIptTHIRYNvmbCGAfETvOA2+ZZuk0mQSwdUyXGb0Ena/itwvHdDfU/YwUUdaTUGN9twQGso/ux7R/FzW4FLDMyrsFPFKDD69zft+HIg+eoRUESVJuSbgJmDShpfN3k2mytts6XKP0YtyW0Tkh9lrgfoJnpBFH6feCHK7No53Ycvg4eWK8zCw5UXRNkmYJqt2QtpTA+slm6TSZBLB1TJcZvQSdr+K3C8d0N9T9jBRR1pNQY323BB49hVSNw1YE6xDehnZy5VXRS9q9KguOQd8nGDQJ2ed+37ReJdIK5tS31ay7GbAKZxaBTuuJ0K5BdTt//5Y2uoqAEAAAA=",
+    "reviewMetadata": {
+      "inputs": [
+        {
+          "label": "Untitled",
+          "value": 100000,
+          "sequence": 4294967295
+        }
+      ],
+      "outputs": [
+        {
+          "value": 20000,
+          "change": false,
+          "address": "bcrt1p4rsld9ryjhte00drc0r23r8ngd63xrzh5s4fvmy6q5yt70xzlsdqzdszde"
+        },
+        {
+          "value": 79000,
+          "change": false,
+          "address": "bcrt1pxsld6tlqq7qtk6ph7flwgyge9xdgayqjw5tsmqeaun7mkdk9f5hs03lrra"
+        }
+      ],
+      "default_asset": "tBTC",
+      "signed_inputs": 0,
+      "tx_version": 2,
+      "locktime": 0,
+      "fee": 1000
+    },
+    "deviceDisplayTested": false,
+    "bitcoinValidation": {
+      "accepted": {
+        "txid": "744b9bfa3057d4f26bd84e2deb237000114e23a70da5a481d8fa1f6358f7b55d",
+        "wtxid": "8a6ce8d6018025cdec79d1cb94657fb9294cbb5f1a3cafcfa0a976d835cba2cf",
+        "allowed": true,
+        "vsize": 213,
+        "fees": {
+          "base": 0.00001,
+          "effective-feerate": 0.00004694,
+          "effective-includes": [
+            "8a6ce8d6018025cdec79d1cb94657fb9294cbb5f1a3cafcfa0a976d835cba2cf"
+          ]
+        }
+      },
+      "changedDestination": {
+        "txid": "14ef2cb953a3884a24ff0df076c8e6220e36f26193fbb2f9370214184edd887d",
+        "wtxid": "486aef7dd78c43c7a728e1a923a0b89d0d3a691faf98a1759a796b069f163417",
+        "allowed": false,
+        "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+        "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 14ef2cb953a3884a24ff0df076c8e6220e36f26193fbb2f9370214184edd887d (wtxid 486aef7dd78c43c7a728e1a923a0b89d0d3a691faf98a1759a796b069f163417), spending a07916f269ad8ef70f2cdddae52758c15993ccf20c3a3a242ba904a427faab8f:0"
+      },
+      "hardwareSighash": "ALL"
+    }
+  },
+  {
+    "tier": "advanced",
+    "full": true,
+    "sameScript": true,
+    "descriptor": "tr(f17d5884dd993f3be7469768f3f7e59ac94f2d102a171bc7e80ac576e257e3d3,{{and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*)),and_v(v:pk(f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9),and_v(v:pk(adcc91ef3c73dc3f1b81bd617acfeac87ea350525c34f4e387ade53d68f194a9),pk(6096072eb07387596c351507e30e025bbe00b35d52de85864e22d8b7f68c4265)))},{and_v(v:pk([2de67592/86'/1'/0'/0]tpubDEh5Jo5zKk5fGnuZ3LMQqp7YV5rVGB4Vueznwcg3bs98CfRK9YkeU2RTCHV5STwo9NFg2RtCRw3M3YK3yyMQbTJJdMMN5159WEpJT2oriDb/*),and_v(v:pk(d1dafa2d7303b796fd16e4e81adfb4089ea2158833408022407ce212dd5ece18),pk(786b2bb611578953109b849649e5167b56bc46e8ea412f110f3cf945deab9331))),and_v(v:pk(2f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4),and_v(v:pk(0512d873f9c20bb9d8cb7efb57c4d2b93be1c26c2ca0611298cdc87d97ca8816),pk(a9c961dddc8e3dbdb11fc77e52cec994d2b393547ee5cdd4ae9c49e96c409f16)))}})",
+    "recognizedInput": true,
+    "recognizedKeyOccurrences": 2,
+    "signatureAdded": 1,
+    "psbt": "cHNidP8BAF4CAAAAAT6W8g1gxtYbdXS1HAGcue8sR8L4jGkY1TCV6mXqoUfVAAAAAAD/////AbiCAQAAAAAAIlEgqOH2lGSV15e9o8PGqIzzQ3UTDFekKpZsmgUIvzzC/BoAAAAAAAEBK6CGAQAAAAAAIlEgND7dL+AHgLtoN/J+5BEZKZqOkBJ1Fw2DPeT9uzbFTS9BFPkwigGSWMMQSTRPhfidUim1MchFg2+ZsIYB8RO84Db5lm6TSZBLB1TJcZvQSdr+K3C8d0N9T9jBRR1pNQY323BABn5N0kmqsAfZAKFRjO1lTbIDrNBg/H95NoAzHc2BkkS/3zCwm9HzAwgRYsPxw6aqkNAUSJFMuRt6w3MMyr5hPUEUfp94Icrs2jndhy+Dh5YrzMLDlRdE2SZgmq3ZC2lMD6yWbpNJkEsHVMlxm9BJ2v4rcLx3Q31P2MFFHWk1BjfbcEGenqUNi65Bb32MwsTa41RYBZ75FDSoYi51mTv/c8P7069KP/m+DFlpfXq7BhrtVohSC7pE7deH0b22JQxzt7zrAQAA",
+    "reviewMetadata": {
+      "inputs": [
+        {
+          "label": "Untitled",
+          "value": 100000,
+          "sequence": 4294967295
+        }
+      ],
+      "outputs": [
+        {
+          "value": 99000,
+          "change": false,
+          "address": "bcrt1p4rsld9ryjhte00drc0r23r8ngd63xrzh5s4fvmy6q5yt70xzlsdqzdszde"
+        }
+      ],
+      "default_asset": "tBTC",
+      "signed_inputs": 0,
+      "tx_version": 2,
+      "locktime": 0,
+      "fee": 1000
+    },
+    "deviceDisplayTested": false,
+    "bitcoinValidation": {
+      "accepted": {
+        "txid": "9139bc98f3c75e23809ac2c637610f6ffdca09f7715998cb35c0cb421cc613b0",
+        "wtxid": "9926388fd91c099144b6cb08b28827419f34a33f92f47499ff2f051ff7b9e2ba",
+        "allowed": true,
+        "vsize": 170,
+        "fees": {
+          "base": 0.00001,
+          "effective-feerate": 0.00005882,
+          "effective-includes": [
+            "9926388fd91c099144b6cb08b28827419f34a33f92f47499ff2f051ff7b9e2ba"
+          ]
+        }
+      },
+      "changedDestination": {
+        "txid": "ba880380c8e418c968c96ee7496b0ad56cd4ab18c69af703e2baa2c88340c20e",
+        "wtxid": "6935c27edaba88c138d8ee1952579c12321322dcf5c6e063c0e702779e24c2ca",
+        "allowed": false,
+        "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+        "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of ba880380c8e418c968c96ee7496b0ad56cd4ab18c69af703e2baa2c88340c20e (wtxid 6935c27edaba88c138d8ee1952579c12321322dcf5c6e063c0e702779e24c2ca), spending d547a1ea65ea9530d518698cf8c2472cefb99c011cb574751bd6c6600df2963e:0"
+      },
+      "hardwareSighash": "ALL"
+    }
+  }
+]
