@@ -1,5 +1,6 @@
+import BitcoinPaymentStatus from './BitcoinPaymentStatus'
 import { useContext, useEffect, useState } from 'react'
-import { ChevronRight, Clock3, ShieldAlert } from 'lucide-react'
+import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
 import ConnectorSetup from './ConnectorSetup'
@@ -12,7 +13,7 @@ export default function VaultHome() {
   const {
     account,
     status,
-    savingsSetup,
+    spendingBitcoin,
     balancesLoaded,
     boardingAddress,
     canSend,
@@ -65,7 +66,7 @@ export default function VaultHome() {
       primaryAction={{
         label: spending ? 'Send' : 'Transfer',
         disabled: spending
-          ? !canSend || !!savingsSetup?.operation || !!savingsSetup?.error
+          ? !canSend || !!spendingBitcoin?.operation || !!spendingBitcoin?.error
           : positions.savings.availableSats <= 330,
         onClick: () => {
           clearSpendDraft()
@@ -94,24 +95,8 @@ export default function VaultHome() {
         ) : null
       }
     >
-      {savingsSetup?.operation || savingsSetup?.error ? (
-        <section className='qg-arrival' aria-label='Pending signer setup'>
-          <span className='qg-status-icon' aria-hidden>
-            <Clock3 />
-          </span>
-          <div>
-            <strong>Savings signer setup</strong>
-            <p>
-              {savingsSetup.error ||
-                (savingsSetup.operation?.stage === 'confirmed'
-                  ? 'Funding confirmed. Saving updated Spending recovery data.'
-                  : 'Funding is pending. Reserved funds remain visible but cannot be sent again.')}
-            </p>
-            <button className='qg-text' type='button' onClick={() => setSetupView('setup')}>
-              Check signer setup
-            </button>
-          </div>
-        </section>
+      {spending && status && (spendingBitcoin?.operation || spendingBitcoin?.error) ? (
+        <BitcoinPaymentStatus status={status} operation={spendingBitcoin.operation} error={spendingBitcoin.error} />
       ) : null}
       {spending
         ? pendingPayments.map((payment) => (

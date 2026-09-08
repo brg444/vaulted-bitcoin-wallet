@@ -35,6 +35,7 @@
     { "source": "/v1/light/renew/:phase", "destination": "/api/gateway?route=light-renew&phase=:phase" },
     { "source": "/v1/light/delegate/:phase", "destination": "/api/gateway?route=light-delegate&phase=:phase" },
     { "source": "/v1/vtxo/savings-setup/:phase", "destination": "/api/gateway?route=savings-setup&phase=:phase" },
+    { "source": "/v1/vtxo/bitcoin/:phase", "destination": "/api/gateway?route=bitcoin&phase=:phase" },
     { "source": "/v1/vtxo/delegate/:phase", "destination": "/api/gateway?route=vtxo-delegate&phase=:phase" },
     { "source": "/v1/recovery-archive/:phase", "destination": "/api/gateway?route=recovery-archive&phase=:phase" },
     { "source": "/v1/light/backup/:phase", "destination": "/api/gateway?route=light-backup&phase=:phase" },

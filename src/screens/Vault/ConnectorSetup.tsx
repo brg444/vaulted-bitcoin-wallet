@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import BitcoinPaymentStatus from './BitcoinPaymentStatus'
+import { useContext, useEffect, useRef, useState } from 'react'
 import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
-import SpendingSignerFunding from './SpendingSignerFunding'
+import { VaultContext } from '../../vault/context'
 import {
-  readSavingsSetup,
-  supportsSpendingSignerSetup,
-  checkSpendingSignerFunding,
-} from '../../lib/vault/savingsSetupFunding'
-import { SETUP_EVENT } from '../../lib/vault/savingsSetupStore'
+  readSpendingBitcoin,
+  supportsSpendingBitcoin,
+  checkSpendingBitcoin,
+} from '../../lib/vault/spendingBitcoinFunding'
+import { BITCOIN_PAYMENT_EVENT } from '../../lib/vault/spendingBitcoinStore'
 import { checkConnectorSetup } from '../../lib/vault/connectorSetup'
 import type { VaultStatus } from '../../lib/vault/types'
 import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
@@ -32,7 +33,7 @@ export default function ConnectorSetup({
   const [spendingSupported, setSpendingSupported] = useState(false)
   const [pendingFunding, setPendingFunding] = useState(false)
   const [fundingMessage, setFundingMessage] = useState('')
-  const [fundingBusy, setFundingBusy] = useState(false)
+  const { fundSavingsSigner, busy: fundingBusy, error: paymentError } = useContext(VaultContext)
   const latestStatus = useRef(status)
   latestStatus.current = status
   useEffect(() => {
@@ -43,17 +44,17 @@ export default function ConnectorSetup({
     setError('')
     setPendingFunding(false)
     void (async () => {
-      if (readSavingsSetup(status)) {
-        const payment = await checkSpendingSignerFunding(status)
-        if (readSavingsSetup(status)) {
+      if (readSpendingBitcoin(status)) {
+        const payment = await checkSpendingBitcoin(status)
+        if (readSpendingBitcoin(status)) {
           if (active) {
             setPendingFunding(true)
             setFundingMessage(
               payment?.state === 'confirmed'
-                ? 'Signer funding confirmed. Saving the updated Spending recovery data.'
+                ? 'Bitcoin payment confirmed. Saving updated Spending recovery data.'
                 : payment?.state === 'submitted'
                   ? 'Waiting for Bitcoin confirmation.'
-                  : 'Funding is still pending. Check its status before trying again.',
+                  : 'A Bitcoin payment is still pending. Check its status before trying again.',
             )
           }
           return null
@@ -61,7 +62,7 @@ export default function ConnectorSetup({
       }
       if (active) setPendingFunding(false)
       const next = await checkConnectorSetup(status)
-      const supported = await supportsSpendingSignerSetup(status).catch(() => false)
+      const supported = await supportsSpendingBitcoin(status).catch(() => false)
       if (active) setSpendingSupported(supported)
       return next
     })()
@@ -81,7 +82,7 @@ export default function ConnectorSetup({
 
   useEffect(() => {
     const outcome = () => {
-      const saved = readSavingsSetup(latestStatus.current)
+      const saved = readSpendingBitcoin(latestStatus.current)
       return saved ? `${saved.operationId}:${saved.stage}:${saved.receipt?.state || ''}` : ''
     }
     let previous = ''
@@ -99,8 +100,8 @@ export default function ConnectorSetup({
         setError((error as Error).message)
       }
     }
-    window.addEventListener(SETUP_EVENT, changed)
-    return () => window.removeEventListener(SETUP_EVENT, changed)
+    window.addEventListener(BITCOIN_PAYMENT_EVENT, changed)
+    return () => window.removeEventListener(BITCOIN_PAYMENT_EVENT, changed)
   }, [status.vaultId, fundingBusy])
 
   const ready = result?.state === 'checked' && result.confirmed >= result.required
@@ -132,11 +133,9 @@ export default function ConnectorSetup({
         You can receive Bitcoin in Savings now. Before moving it, your signer needs small approval outputs that return
         to its address after each transfer.
       </p>
-      {error ? <p role='alert'>{error}</p> : null}
+      {error || paymentError ? <p role='alert'>{error || paymentError}</p> : null}
       {pendingFunding ? (
-        <p className='qg-copy' role='status'>
-          {fundingMessage}
-        </p>
+        <BitcoinPaymentStatus status={status} operation={readSpendingBitcoin(status)} error={fundingMessage} />
       ) : null}
       {result?.state === 'deposit' ? (
         <>
@@ -157,10 +156,10 @@ export default function ConnectorSetup({
           {canFund ? (
             <>
               {spendingSupported ? (
-                <SpendingSignerFunding
-                  status={status}
-                  onBusyChange={setFundingBusy}
-                  onFinished={() => setRevision((value) => value + 1)}
+                <QgPrimary
+                  label={fundingBusy ? 'Preparing payment…' : 'Fund from Spending'}
+                  disabled={fundingBusy}
+                  onClick={() => void fundSavingsSigner()}
                 />
               ) : (
                 <p className='qg-copy'>Funding from Spending is unavailable on this deployment.</p>

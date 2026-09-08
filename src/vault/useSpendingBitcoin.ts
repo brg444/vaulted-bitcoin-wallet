@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { readSavingsSetup, SETUP_EVENT, type SetupJournal } from '../lib/vault/savingsSetupStore'
-import { checkSpendingSignerFunding } from '../lib/vault/savingsSetupFunding'
+import {
+  readSpendingBitcoin,
+  BITCOIN_PAYMENT_EVENT,
+  type BitcoinPaymentJournal,
+} from '../lib/vault/spendingBitcoinStore'
+import { checkSpendingBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import type { VaultStatus } from '../lib/vault/types'
 
-export function useSavingsSetup(status: VaultStatus | null, locked: boolean) {
-  const [pending, setPending] = useState<{ operation: SetupJournal | null; error: string }>({
+export function useSpendingBitcoin(status: VaultStatus | null, locked: boolean) {
+  const [pending, setPending] = useState<{ operation: BitcoinPaymentJournal | null; error: string }>({
     operation: null,
     error: '',
   })
@@ -16,7 +20,7 @@ export function useSavingsSetup(status: VaultStatus | null, locked: boolean) {
     const load = () => {
       if (!active) return
       try {
-        setPending({ operation: !locked && latest.current ? readSavingsSetup(latest.current) : null, error: '' })
+        setPending({ operation: !locked && latest.current ? readSpendingBitcoin(latest.current) : null, error: '' })
       } catch (error) {
         setPending({ operation: null, error: (error as Error).message })
       }
@@ -25,7 +29,7 @@ export function useSavingsSetup(status: VaultStatus | null, locked: boolean) {
       if (running || locked || !latest.current?.enrolled) return
       running = true
       try {
-        if (readSavingsSetup(latest.current)) await checkSpendingSignerFunding(latest.current)
+        if (readSpendingBitcoin(latest.current)) await checkSpendingBitcoin(latest.current)
       } catch {
         // The saved operation stays visible during a network or reconciliation failure.
       } finally {
@@ -36,13 +40,13 @@ export function useSavingsSetup(status: VaultStatus | null, locked: boolean) {
     load()
     void refresh()
     const timer = window.setInterval(() => void refresh(), 15000)
-    window.addEventListener(SETUP_EVENT, load)
+    window.addEventListener(BITCOIN_PAYMENT_EVENT, load)
     window.addEventListener('storage', load)
     window.addEventListener('focus', refresh)
     return () => {
       active = false
       window.clearInterval(timer)
-      window.removeEventListener(SETUP_EVENT, load)
+      window.removeEventListener(BITCOIN_PAYMENT_EVENT, load)
       window.removeEventListener('storage', load)
       window.removeEventListener('focus', refresh)
     }

@@ -1,3 +1,4 @@
+import { Address, TEST_NETWORK } from '@scure/btc-signer'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
@@ -56,6 +57,33 @@ describe('payment review continuity', () => {
     expect(value.approveSend).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: 'Go back' }))
     expect(value.navigate).toHaveBeenCalledWith('home')
+  })
+
+  it.each([false, true])('preserves the fixed Bitcoin outputs across approval, busy=%s', (busy) => {
+    const address = Address(TEST_NETWORK).encode({ type: 'wpkh', hash: new Uint8Array(20).fill(0x43) })
+    const { value } = review({
+      busy,
+      spend: { address, amount: 1000, fee: 400 },
+      bitcoinOutputs: [
+        { script: '0014' + '43'.repeat(20), amountSats: 500 },
+        { script: '0014' + '43'.repeat(20), amountSats: 500 },
+      ],
+    })
+    expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull()
+    expect(screen.getByText('2 separate Bitcoin outputs: 500 sats + 500 sats.')).toBeVisible()
+    expect(screen.getByText('Total').parentElement).toHaveTextContent('₿1,400')
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal' }))
+    expect(screen.getByText(address)).toBeVisible()
+    if (busy) {
+      expect(screen.queryByRole('button', { name: 'Go back' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Completing payment…' })).toBeDisabled()
+      expect(value.approveSend).not.toHaveBeenCalled()
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm Bitcoin payment' }))
+      expect(value.approveSend).toHaveBeenCalledOnce()
+      fireEvent.click(screen.getByRole('button', { name: 'Go back' }))
+      expect(value.navigate).toHaveBeenCalledWith('home')
+    }
   })
 
   it.each([false, true])('retains the Savings amount during approval, hardware first=%s', (hardwareFirst) => {

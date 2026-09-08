@@ -3,11 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultSuccess from './Success'
 
-function renderSuccess(lastTxKind: VaultContextProps['lastTxKind'], network = 'mutinynet') {
+function renderSuccess(lastTxKind: VaultContextProps['lastTxKind'], network = 'mutinynet', account = 'savings') {
   render(
     <VaultContext.Provider
       value={
         {
+          account,
           boardingAddress: 'tb1pboarding',
           lastSend: { address: 'tark1destination', amount: 12_000, fee: 0 },
           lastTxid: 'transaction-id',
@@ -71,4 +72,10 @@ it.each([
   expect(screen.getByText('transaction-id')).toBeVisible()
   expect(screen.getByRole('link')).toHaveAttribute('href', url)
   expect(screen.getByRole('link')).toHaveAttribute('rel', 'noopener noreferrer')
+})
+
+it('labels Spending-to-Bitcoin as a payment instead of a Savings transfer', () => {
+  renderSuccess('onchain', 'mainnet', 'spend')
+  expect(screen.getByText('Bitcoin payment submitted')).toBeVisible()
+  expect(screen.queryByText('Savings transfer submitted')).toBeNull()
 })
