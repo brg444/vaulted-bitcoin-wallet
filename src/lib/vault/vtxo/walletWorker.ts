@@ -42,7 +42,7 @@ import {
   vaultWalletWorkerScope,
 } from './walletWorkerNames'
 import { listPersistedVtxoSpends, vaultArkServer } from './spend'
-import { readSavingsSetup } from '../savingsSetupStore'
+import { readSpendingBitcoin } from '../spendingBitcoinStore'
 import { vtxoBalanceWithPending } from './pendingBalance'
 import { requireBoardingStatus } from './board'
 
@@ -631,7 +631,7 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
   const detectedBoardingHistory = historyFromBoardingUtxos(boardingUtxos).filter(
     (item) => !knownTransactions.has(item.txid),
   )
-  const setup = readSavingsSetup(status)
+  const setup = readSpendingBitcoin(status)
   const position = vtxoBalanceWithPending(
     vtxos,
     listPersistedVtxoSpends(status.vaultId),

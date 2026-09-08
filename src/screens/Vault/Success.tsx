@@ -8,7 +8,7 @@ import TransactionReference from './qg/TransactionReference'
 import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
 
 export default function VaultSuccess() {
-  const { boardingAddress, lastSend, lastTxid, lastTxKind, navigate, status } = useContext(VaultContext)
+  const { account, boardingAddress, lastSend, lastTxid, lastTxKind, navigate, status } = useContext(VaultContext)
   const movingToSpending = Boolean(lastSend && boardingAddress && lastSend.address === boardingAddress)
   const lightning = lastTxKind === 'lightning'
   const onchain = lastTxKind === 'onchain'
@@ -16,7 +16,13 @@ export default function VaultSuccess() {
     ? vaultTransactionExplorer(lastTxid, lastTxKind === 'onchain' ? 'onchain' : 'arkade', status?.network)
     : null
 
-  const headline = onchain ? 'Savings transfer submitted' : lightning ? 'Payment started' : 'Payment sent'
+  const headline = onchain
+    ? account === 'savings'
+      ? 'Savings transfer submitted'
+      : 'Bitcoin payment submitted'
+    : lightning
+      ? 'Payment started'
+      : 'Payment sent'
   const copy = movingToSpending
     ? 'Bitcoin confirmation is next'
     : lightning

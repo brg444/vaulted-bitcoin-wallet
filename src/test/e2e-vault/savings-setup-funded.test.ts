@@ -1,6 +1,9 @@
 import { test, expect, reachPasskeySetup } from './fixtures/passkey'
 import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { HDKey } from '@scure/bip32'
+import { hex } from '@scure/base'
 
 test.skip(process.env.VAULT_SAVINGS_SETUP_LIVE !== 'mutinynet', 'Opt-in funded Mutinynet drill only')
 test('funds the signer from Spending and retains replacement recovery paths', async ({ page, passkey }) => {
@@ -82,7 +85,11 @@ test('funds the signer from Spending and retains replacement recovery paths', as
       headers: request.headers(),
       data: request.postData() || undefined,
     })
-    if (!response.ok() || url.pathname.startsWith('/v1/vtxo/savings-setup/')) {
+    if (
+      !response.ok() ||
+      url.pathname.startsWith('/v1/vtxo/savings-setup/') ||
+      url.pathname.startsWith('/v1/vtxo/bitcoin/')
+    ) {
       outcomes.push({ path: url.pathname, status: response.status(), body: await response.text() })
       await save('setup-outcomes.json', outcomes)
     }
@@ -99,7 +106,13 @@ test('funds the signer from Spending and retains replacement recovery paths', as
     }, saved.localStorage)
     await page.getByRole('button', { name: 'Sign in to an existing vault', exact: true }).click()
   } else {
-    await reachPasskeySetup(page, false)
+    // A shared fixture key can already have approval outputs from an earlier
+    // funded drill. Give each new run its own disposable signing wallet.
+    const signer = HDKey.fromMasterSeed(randomBytes(32), { public: 0x043587cf, private: 0x04358394 })
+    const account = signer.derive("m/84'/1'/0'")
+    const signerDescriptor = `wpkh([${signer.fingerprint.toString(16).padStart(8, '0')}/84'/1'/0']${account.publicExtendedKey}/0/*)`
+    const hardwareSecret = hex.encode(account.derive('m/0/0').privateKey!)
+    await reachPasskeySetup(page, false, signerDescriptor)
     await page.getByRole('button', { name: 'Create Vault', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Download Recovery Kit' })).toBeVisible({ timeout: 120000 })
     await page.getByRole('button', { name: 'I’ll save a separate copy later' }).click()
@@ -123,7 +136,7 @@ test('funds the signer from Spending and retains replacement recovery paths', as
         secret.fill(0)
       }
     })
-    await save('private-wallet.json', { ...state, credentials: await passkey.credentials() })
+    await save('private-wallet.json', { ...state, hardwareSecret, credentials: await passkey.credentials() })
     await writeFile(join(directory, 'funding-requested'), state.status.spendingArkAddress, { flag: 'wx', mode: 0o600 })
     const funded = await page.request.post('https://faucet.mutinynet.arkade.sh/faucet', {
       data: { address: state.status.spendingArkAddress, amount: 10000 },
@@ -159,10 +172,17 @@ test('funds the signer from Spending and retains replacement recovery paths', as
         { timeout: 300000, intervals: [5000] },
       )
       .toBe(true)
+    if (!resume) await expect(page.getByRole('button', { name: 'Fund from Spending', exact: true })).toBeVisible()
     if (await page.getByRole('button', { name: 'Fund from Spending', exact: true }).isVisible()) {
       await page.getByRole('button', { name: 'Fund from Spending', exact: true }).click()
-      await expect(page.getByRole('heading', { name: 'Review signer funding' })).toBeVisible({ timeout: 45000 })
-      await page.getByRole('button', { name: 'Confirm signer funding' }).click()
+      await expect(page.getByRole('heading', { name: 'Review payment' })).toBeVisible({ timeout: 45000 })
+      await page.getByRole('button', { name: 'Confirm Bitcoin payment' }).click()
+      await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible({ timeout: 300000 })
+      await page.getByRole('button', { name: 'Done', exact: true }).click()
+      await page.getByRole('button', { name: 'Open navigation' }).click()
+      await page.getByTestId('account-savings').click()
+      await page.getByTestId('account-receive').click()
+      await page.getByRole('button', { name: 'Set up Savings signer' }).click()
     }
     await expect
       .poll(

@@ -9,13 +9,13 @@ import {
 } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import type { VaultStatus } from '../../../lib/vault/types'
-import { readSavingsSetup, saveSetup } from '../../../lib/vault/savingsSetupStore'
+import { readSpendingBitcoin, saveBitcoinPayment } from '../../../lib/vault/spendingBitcoinStore'
 import { vaultPolicyV1ScriptFromStatus, vaultArkServer } from '../../../lib/vault/vtxo/spend'
 import { registerVaultPolicyV1ContractHandler, vaultPolicyV1Contract } from '../../../lib/vault/vtxo/contractHandler'
 export async function retainPrototypeCancellation(status: VaultStatus, privateKey: string) {
   if (status.network !== 'mutinynet' || location.hostname !== 'localhost')
     throw new Error('Local Mutinynet fixture only')
-  const journal = readSavingsSetup(status)
+  const journal = readSpendingBitcoin(status)
   if (!journal || journal.deleteIntent) return
   const secret = hex.decode(privateKey)
   const url = vaultArkServer(status.network)
@@ -44,7 +44,10 @@ export async function retainPrototypeCancellation(status: VaultStatus, privateKe
         intentTapLeafScript: script.forfeit(),
       },
     ])
-    saveSetup({ ...journal, deleteIntent: { proof: deletion.proof, message: JSON.stringify(deletion.message) } })
+    saveBitcoinPayment({
+      ...journal,
+      deleteIntent: { proof: deletion.proof, message: JSON.stringify(deletion.message) },
+    })
   } finally {
     await wallet.dispose()
     secret.fill(0)
