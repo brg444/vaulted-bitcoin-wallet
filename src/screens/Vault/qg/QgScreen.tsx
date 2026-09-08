@@ -3,7 +3,7 @@ import { VaultContext } from '../../../vault/context'
 import WalletHelp from './Help'
 import { ArrowLeft } from 'lucide-react'
 import { hapticLight } from '../../../lib/haptics'
-import { SCREEN_EASE } from './useScreenMotion'
+import { animateScreenEntrance } from './useScreenMotion'
 
 function revealFocusedField(main: HTMLElement, target: HTMLElement) {
   const field = (target.closest('.qg-dest-field, .qg-amount-entry') as HTMLElement | null) || target
@@ -108,13 +108,25 @@ export function QgSecondary({
   )
 }
 
-export function QgTextButton({ label, onClick, testId }: { label: string; onClick: () => void; testId?: string }) {
+export function QgTextButton({
+  label,
+  onClick,
+  testId,
+  disabled,
+}: {
+  label: string
+  onClick: () => void
+  testId?: string
+  disabled?: boolean
+}) {
   return (
     <button
       type='button'
       className='qg-text'
       data-testid={testId}
+      disabled={disabled}
       onClick={() => {
+        if (disabled) return
         hapticLight()
         onClick()
       }}
@@ -182,15 +194,7 @@ export default function QgScreen({
   useLayoutEffect(() => {
     if (previousTitle.current === title) return
     previousTitle.current = title
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const animation = mainRef.current?.animate?.(
-      [
-        { opacity: 0.6, transform: 'translateY(8px)' },
-        { opacity: 1, transform: 'none' },
-      ],
-      { duration: 200, easing: SCREEN_EASE },
-    )
-    return () => animation?.cancel()
+    return animateScreenEntrance(mainRef.current, 'translateY(8px)')
   }, [title])
 
   useEffect(() => {

@@ -19,6 +19,7 @@ export async function openLight(
   watch = false,
   local = false,
   snapshot?: { balance: number; pendingBalance: number; history: Record<string, unknown>[] },
+  pendingPayment?: { amountSats: number; destAddress: string; feeSats: number },
 ) {
   const record = await lightTestEnrollment()
   const status = lightTestStatus(record.descriptor)
@@ -57,6 +58,12 @@ export async function openLight(
     reconcilePersistedVtxoSpend: `async () => {}`,
     reserveVaultVtxo: `async (_record,_status,address,amount) => ({destAddress:address,amountSats:amount,feeSats:20})`,
     sendVaultVtxo: `async () => ({txid:'${'ef'.repeat(32)}'})`,
+    ...(pendingPayment
+      ? {
+          loadPersistedVtxoSpend: `() => (${JSON.stringify(pendingPayment)})`,
+          quoteFromPersistedVtxoSpend: `(payment) => payment`,
+        }
+      : {}),
   })
   await override(page, 'lib/fiat.ts', { getPriceFeed: `async () => ({usd:100000})` })
   if (watch) {

@@ -2,7 +2,7 @@ import { useContext, useEffect } from 'react'
 import ErrorMessage from '../../components/Error'
 import { isCoarsePhone } from '../../lib/vault/webauthn'
 import { VaultContext } from '../../vault/context'
-import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
+import QgScreen, { QgMark, QgPrimary, QgTextButton } from './qg/QgScreen'
 
 export default function VaultWelcome() {
   const { busy, enrollmentMode, lightAvailable, error, hasLocalEnrollment, locked, navigate, signIn } =
@@ -49,6 +49,7 @@ export default function VaultWelcome() {
         </>
       }
     >
+      <QgMark className='qg-mark qg-mark-imprint qg-welcome-mark' />
       <p className='qg-eyebrow'>Bitcoin, vaulted</p>
       <h1>
         Everyday spending.

@@ -56,6 +56,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   line-height: 1.5;
   display: grid;
   grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(0, 1fr) auto;
+  position: relative;
   flex: 1 1 auto;
   align-self: stretch;
   width: 100%;
@@ -182,6 +183,39 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   grid-area: 3 / 2;
 }
 
+/* The existing mark supplies the material detail; controls stay flat. */
+.qg-mark-imprint {
+  --qg-imprint-surface: var(--qg-paper);
+  --qg-imprint-shade: rgb(17 16 21 / 22%);
+  --qg-imprint-highlight: rgb(255 255 255 / 85%);
+  width: 48px;
+  height: 48px;
+  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.qg-mark-imprint i {
+  width: 100%;
+  height: 100%;
+  background: var(--qg-imprint-surface);
+  box-shadow:
+    inset 1px 1px 2px var(--qg-imprint-shade),
+    inset -1px -1px 1px var(--qg-imprint-highlight);
+}
+
+html.palette-dark .qg-mark-imprint {
+  --qg-imprint-shade: rgb(0 0 0 / 65%);
+  --qg-imprint-highlight: rgb(255 255 255 / 9%);
+}
+
+.qg-welcome-mark {
+  --qg-imprint-surface: var(--qg-oat);
+  width: 72px;
+  height: 72px;
+  margin-bottom: var(--qg-section-gap);
+}
+
 .qg-header {
   display: grid;
   align-items: center;
@@ -258,7 +292,7 @@ html.palette-dark body:has([data-testid='vault-app'] > .qg-screen) {
   display: flex;
   flex-direction: column;
   justify-content: safe center;
-  padding: var(--qg-space-32) var(--qg-gutter);
+  padding: var(--qg-space-24) var(--qg-gutter);
 }
 
 .qg-screen h1 {
@@ -759,7 +793,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-progress-screen {
-  justify-content: center;
+  justify-content: safe center;
+  overflow: auto;
   padding-top: calc(28px + var(--qg-top-inset));
 }
 
@@ -812,6 +847,32 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   text-align: left;
 }
 
+.qg-result {
+  width: 100%;
+  min-width: 0;
+  padding: var(--qg-gutter);
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-surface-radius);
+  background: var(--qg-paper);
+}
+
+.qg-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qg-space-16);
+  margin-bottom: var(--qg-space-16);
+}
+
+.qg-result-heading .qg-success-label {
+  margin-bottom: 0;
+}
+
+.qg-result > .qg-transaction-reference:last-child {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
 .qg-success-label {
   display: flex;
   align-items: center;
@@ -820,12 +881,17 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   color: var(--qg-green);
 }
 
+.qg-success-label[data-state='submitted'],
+.qg-success-label[data-state='started'] {
+  color: var(--qg-muted);
+}
+
 .qg-success-label span {
   display: grid;
   width: 26px;
   height: 26px;
   place-items: center;
-  border: 1px solid var(--qg-green);
+  border: 1px solid currentColor;
   border-radius: 50%;
 }
 
@@ -1294,6 +1360,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   }
 }
 
+/* The same fitting rule serves balances, entry, review, and transaction amounts. */
+.qg-balance strong,
+.qg-amount-entry input,
+.qg-review-amount strong,
+.qg-main .qg-transaction-amount h1 {
+  font-size: min(3.5rem, calc((100cqi - var(--qg-amount-reserve, 8px)) / var(--qg-amount-length, 6) * 1.6));
+}
+
 .qg-balance {
   display: flex;
   align-items: baseline;
@@ -1315,7 +1389,6 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-balance strong {
   max-width: 100%;
-  font-size: min(3.5rem, calc((100cqi - 8px) / var(--qg-amount-length, 6) * 1.6));
   font-variant-numeric: tabular-nums;
   font-weight: var(--qg-weight-regular);
   letter-spacing: -0.035em;
@@ -1324,7 +1397,6 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-balance[data-balance-unit='usd'] strong {
-  font-size: min(3.5rem, calc((100cqi - 8px) / var(--qg-amount-length, 6) * 1.6));
   letter-spacing: -0.045em;
 }
 
@@ -1502,6 +1574,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-amount-entry {
+  --qg-amount-reserve: 100px;
   padding: var(--qg-space-16);
   margin-bottom: var(--qg-section-gap);
   border: 1px solid var(--qg-field-border);
@@ -1529,7 +1602,6 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   outline: 0;
   background: transparent;
   color: inherit;
-  font-size: min(3.5rem, calc((100cqi - 100px) / var(--qg-amount-length, 6) * 1.6));
   letter-spacing: -0.035em;
   min-width: 0;
   flex: 1 1 auto;
@@ -1663,7 +1735,9 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-review-amount {
-  padding: var(--qg-space-8) 0 var(--qg-space-32);
+  width: 100%;
+  min-width: 0;
+  padding: var(--qg-space-8) 0 var(--qg-space-12);
   text-align: center;
   container-type: inline-size;
 }
@@ -1678,7 +1752,6 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-review-amount strong {
   display: block;
   margin-top: var(--qg-space-12);
-  font-size: min(3.5rem, calc((100cqi - 8px) / var(--qg-amount-length, 6) * 1.6));
   font-weight: var(--qg-weight-regular);
   letter-spacing: -0.04em;
   line-height: 1.2;
@@ -1701,15 +1774,16 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   border-top: 1px solid var(--qg-line);
 }
 
-.qg-details div {
+.qg-details > div {
   display: flex;
-  min-height: var(--qg-control-height);
+  flex-wrap: wrap;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
   gap: var(--qg-space-16);
   border-bottom: 1px solid var(--qg-line);
   font-size: var(--qg-body);
-  padding: var(--qg-space-12) 0;
+  padding: var(--qg-space-8) 0;
 }
 
 .qg-details span {
@@ -1723,6 +1797,15 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   font-weight: var(--qg-weight-medium);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+.qg-details strong:has(> .qg-amount) {
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.qg-details .qg-amount {
+  white-space: normal;
 }
 
 .qg-approvals {
@@ -2586,7 +2669,6 @@ html.palette-dark .qg-progress {
   container-type: inline-size;
 }
 .qg-main .qg-transaction-amount h1 {
-  font-size: min(3.5rem, calc((100cqi - 8px) / var(--qg-amount-length, 6) * 1.6));
   font-weight: var(--qg-weight-regular);
 }
 .qg-home .vault-history-amt {
@@ -2796,25 +2878,12 @@ html.palette-dark .qg-progress {
   top: max(8px, var(--qg-top-inset));
   right: var(--qg-gutter);
 }
-.qg-screen {
-  position: relative;
-}
-.qg-screen-welcome {
-  grid-template-rows: calc(52px + var(--qg-top-inset)) minmax(0, 1fr) auto;
-}
-.qg-screen-welcome .qg-main {
-  overflow: auto;
-  padding-block: var(--qg-space-24);
-}
 .qg-screen-unlock {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 .qg-screen-unlock .qg-main {
   overflow: auto;
   padding-top: var(--qg-space-64);
-}
-.qg-main {
-  padding-top: var(--qg-space-24);
 }
 .qg-main > h1 {
   font-size: var(--qg-heading);
@@ -2831,8 +2900,7 @@ html.palette-dark .qg-progress {
   padding-top: var(--qg-space-12);
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
 }
-.qg-summary > div,
-.qg-details > div {
+.qg-summary > div {
   min-height: 40px;
   padding-block: var(--qg-space-8);
 }
@@ -2906,14 +2974,6 @@ html.palette-dark .qg-progress {
 .qg-help-dialog > .qg-screen {
   height: min(680px, calc(100dvh - 100px));
 }
-.qg-transaction-reference summary {
-  cursor: pointer;
-  padding-block: var(--qg-space-12);
-}
-.qg-transaction-reference:not([open]) {
-  display: block;
-  padding-block: 0;
-}
 .qg-receive .qg-qr {
   width: min(330px, 72dvh, 100%);
   margin-block: var(--qg-space-12);
@@ -2923,13 +2983,14 @@ html.palette-dark .qg-progress {
   max-width: 100%;
   height: auto;
 }
-.qg-review-amount {
-  padding-block: var(--qg-space-8) var(--qg-space-12);
-}
 .qg-methods {
   margin-block: var(--qg-space-16);
 }
 @media (max-height: 740px) {
+  .qg-welcome-mark {
+    width: 48px;
+    height: 48px;
+  }
   .qg-main {
     padding-top: var(--qg-space-16);
   }

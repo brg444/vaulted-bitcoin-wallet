@@ -55,7 +55,7 @@ import homeStyles from './AccountHome.module.css'
 import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
 import { VaultHistoryList } from './History'
-import QgAmount, { amountSizeStyle } from './qg/QgAmount'
+import { amountSizeStyle } from './qg/QgAmount'
 import DestinationField from './qg/DestinationField'
 import VaultSettings from './Settings'
 import QgScreen, { QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
@@ -101,6 +101,9 @@ import type { VaultStatus } from '../../lib/vault/types'
 import type { VaultHistoryItem } from '../../lib/vault/history'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { useScreenMotion } from './qg/useScreenMotion'
+import PaymentResult from './qg/PaymentResult'
+import ReviewAmount from './qg/ReviewAmount'
+import PendingPayment from './qg/PendingPayment'
 import { useIntentPress } from './qg/useIntentPress'
 import './light.css'
 
@@ -174,12 +177,14 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [address, setAddress] = useState('')
   const [amount, setAmount] = useState('')
   const [quote, setQuote] = useState<VaultVtxoSpendQuote | null>(null)
+  const [resumingPayment, setResumingPayment] = useState(false)
   const [lastTx, setLastTx] = useState('')
   const [selectedTx, setSelectedTx] = useState<VaultHistoryItem | null>(null)
   const [renewalReview, setRenewalReview] = useState<LightRenewalPlan | null>(null)
   const renewalApproval = useRef<((accepted: boolean) => void) | null>(null)
   useEffect(() => () => renewalApproval.current?.(false), [])
   const [busy, setBusy] = useState(false)
+  const [balanceRefreshes, setBalanceRefreshes] = useState(0)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const busyRef = useRef(false)
@@ -323,14 +328,19 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   }, [])
   const refresh = useCallback(async () => {
     if (!record) return
-    const st = lightStatusMatchesDescriptor(
-      await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
-      record.descriptor,
-    )
-    await reconcilePersistedVtxoSpend(st)
-    const next = await fetchVaultWalletVtxoSnapshot(st)
-    setStatus(st)
-    setSnapshot(next)
+    setBalanceRefreshes((count) => count + 1)
+    try {
+      const st = lightStatusMatchesDescriptor(
+        await fetchVaultStatusUnpinned(undefined, record.descriptor.vaultId),
+        record.descriptor,
+      )
+      await reconcilePersistedVtxoSpend(st)
+      const next = await fetchVaultWalletVtxoSnapshot(st)
+      setStatus(st)
+      setSnapshot(next)
+    } finally {
+      setBalanceRefreshes((count) => count - 1)
+    }
   }, [record])
   useEffect(() => {
     if (!status || !record || view === 'unlock') return
@@ -476,7 +486,13 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     setNotice('Copied')
   }
   const activity = (rows: VaultHistoryItem[], account: 'spend' | 'savings' = 'spend', loaded = true) => (
-    <VaultHistoryList account={account} balancesLoaded={loaded} history={rows} openTx={openTransaction} />
+    <VaultHistoryList
+      account={account}
+      balancesLoaded={loaded}
+      history={rows}
+      openTx={openTransaction}
+      refreshingBalance={account === 'spend' && balanceRefreshes > 0}
+    />
   )
   const lock = () =>
     run(async () => {
@@ -489,6 +505,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       setStatus(null)
       setView('unlock')
     })
+  const pendingPayment = view === 'home' && status ? loadPersistedVtxoSpend(status.vaultId) : null
   let content: React.ReactNode
   if (view === 'setup')
     content = (
@@ -1053,6 +1070,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         availableSats={snapshot?.balance || 0}
         pendingSats={snapshot?.pendingBalance || 0}
         balancesLoaded={snapshot !== null}
+        refreshingBalance={balanceRefreshes > 0}
         onRefresh={() => run(refresh)}
         security={{ label: 'Open Security', disabled: busy, onClick: () => navigate('security') }}
         onScan={() => navigate('scan-send')}
@@ -1089,15 +1107,19 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           </div>
         ) : null}
         {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
-        {status && loadPersistedVtxoSpend(status.vaultId) ? (
-          <QgSecondary
+        {status && pendingPayment ? (
+          <PendingPayment
+            amount={pendingPayment.amountSats}
+            description='Resume the saved payment to check its current status.'
             label='Resume pending payment'
-            onClick={() =>
+            disabled={busy}
+            onResume={() =>
               void run(async () => {
                 await refresh()
                 const p = loadPersistedVtxoSpend(status.vaultId)
                 if (p) {
                   setQuote(quoteFromPersistedVtxoSpend(p))
+                  setResumingPayment(true)
                   setView('review')
                 } else setNotice('Payment reconciled')
               })
@@ -1157,6 +1179,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               void run(async () => {
                 const q = await reserveVaultVtxo(record.enrollment, status, address, Number(amount))
                 setQuote(q)
+                setResumingPayment(false)
                 setView('review')
               })
             }
@@ -1169,6 +1192,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             <span aria-hidden='true'>₿</span>
             <input
               id='light-send-amount'
+              disabled={busy}
               inputMode='numeric'
               type='number'
               min='330'
@@ -1180,6 +1204,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         </section>
         <DestinationField
           label='Arkade address'
+          disabled={busy}
           value={address}
           placeholder='Payment address'
           onChange={(e) => setAddress(e.target.value)}
@@ -1198,11 +1223,13 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   else if (view === 'review' && quote && status && record)
     content = (
       <QgScreen
-        title='Review payment'
-        back={() => navigate('send')}
+        title={resumingPayment ? 'Resume payment' : 'Review payment'}
+        back={busy ? undefined : () => navigate(resumingPayment ? 'home' : 'send')}
         footer={
           <QgPrimary
-            label={`Approve ${sats(quote.amountSats)}`}
+            label={
+              busy ? 'Completing payment…' : resumingPayment ? 'Continue payment' : `Approve ${sats(quote.amountSats)}`
+            }
             loading={busy}
             onClick={() =>
               void run(async () => {
@@ -1217,18 +1244,16 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 setAddress('')
                 setAmount('')
                 setQuote(null)
+                setResumingPayment(false)
                 await refresh()
               })
             }
           />
         }
       >
-        <section className='qg-review-amount' style={amountSizeStyle(quote.amountSats.toLocaleString('en-US'))}>
-          <small>You are sending</small>
-          <strong>
-            <QgAmount value={`₿${quote.amountSats.toLocaleString('en-US')}`} />
-          </strong>
-        </section>
+        <ReviewAmount value={prettyAmount(quote.amountSats)} label='You are sending'>
+          {resumingPayment ? <p>Continue the original payment from its last saved step.</p> : null}
+        </ReviewAmount>
         <div className='qg-details'>
           <div>
             <span>To</span>
@@ -1248,18 +1273,13 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'success')
     content = (
-      <QgScreen
-        title='Payment sent'
-        footer={<QgPrimary label='Done' disabled={busy} onClick={() => navigate('home')} />}
-      >
-        <span className='light-success'>
-          <Check />
-        </span>
-        <h1>Payment sent</h1>
-        <TransactionReference
-          txid={lastTx}
-          explorer={status ? vaultTransactionExplorer(lastTx, 'arkade', status.network) : null}
-        />
+      <QgScreen variant='success' footer={<QgPrimary label='Done' disabled={busy} onClick={() => navigate('home')} />}>
+        <PaymentResult state='sent' title='Payment sent'>
+          <TransactionReference
+            txid={lastTx}
+            explorer={status ? vaultTransactionExplorer(lastTx, 'arkade', status.network) : null}
+          />
+        </PaymentResult>
       </QgScreen>
     )
   else if (view === 'savings' && record)

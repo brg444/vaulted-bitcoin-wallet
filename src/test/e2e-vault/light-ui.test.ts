@@ -9,6 +9,30 @@ async function launcher(page: Page, name: string) {
   await page.getByRole('button', { name, exact: true }).click()
 }
 
+test('Light resumes its saved payment through review and returns to the same home notice', async ({
+  page,
+  authorizer,
+}) => {
+  void authorizer
+  await page.setViewportSize({ width: 320, height: 667 })
+  await openLight(page, false, false, undefined, {
+    amountSats: 1000,
+    destAddress: 'tark1-saved-destination',
+    feeSats: 20,
+  })
+  await expect(page.getByRole('region', { name: 'Pending payment' })).toContainText('₿1,000')
+  await page.getByRole('button', { name: 'Resume pending payment' }).click()
+  await expect(page.getByRole('heading', { name: 'Resume payment' })).toBeVisible()
+  await expect(page.getByText('tark1-saved-destination')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Edit/ })).toHaveCount(0)
+  await expectWalletLayout(page)
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Resume pending payment' })).toBeVisible()
+  await page.getByRole('button', { name: 'Resume pending payment' }).click()
+  await page.getByRole('button', { name: 'Continue payment' }).click()
+  await expect(page.getByRole('heading', { name: 'Payment sent', exact: true })).toBeVisible()
+})
+
 test('@polish Light balance, history, settings and payment navigation stay accessible', async ({
   page,
   authorizer,

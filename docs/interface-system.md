@@ -4,6 +4,14 @@ Standard, Advanced, and Light share the same layout rules. New wallet screens us
 
 Security uses `SecurityOverview` and `SecurityOverview.module.css` for its status panel, four interactive tiles, and recovery actions. Standard, Advanced, and Light supply their own key access, backup, limit, and renewal state. Renewal coverage comes from renewal data; service availability alone does not establish that renewals are scheduled.
 
+Payment outcomes share `PaymentResult`, using the existing Qg screen, mark, detail rows, and transaction reference. Callers supply the evidenced status and available facts. Submitted and started operations retain neutral progress cues; sent payments retain their completion cue. Paper and a shallow impression of the existing mark provide selective material detail on outcomes and welcome, with everyday controls retaining their flat treatment. Decorative engraving and additional illustration assets are excluded.
+
+Screen entrances use the shared motion helper for both route changes and local title changes. One entrance owns each region, with pointer or keyboard input settling it immediately. Reduced motion renders directly, and transitions have no authority over payment state.
+
+Review amounts share `ReviewAmount`, including the amount retained during Savings approval. Approval disables edit and back controls until the operation returns control; resumed payments retain destination verification and the existing continuation handler. Detail rows accommodate long values and enlarged text without clipping. `PendingPayment` supplies the shared home notice, with callers providing the saved amount, status explanation, and resume action.
+
+Activity uses one shared header and empty-state composition. Initial loading remains distinct from a loaded empty account. Refresh keeps the last supplied rows or empty result visible and adds a quiet updating cue. Light supplies its active balance refresh count to the same balance and history components, including overlapping refresh requests.
+
 ## Layout and typography
 
 `src/screens/Vault/qg/layout.css` owns geometry and text tokens. The active screen stylesheet consumes these tokens, as do guidance, installation, transaction references, and Light-specific surfaces.

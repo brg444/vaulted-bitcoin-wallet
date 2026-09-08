@@ -1,13 +1,13 @@
 import BitcoinPaymentStatus from './BitcoinPaymentStatus'
 import { useContext, useEffect, useState } from 'react'
-import { ChevronRight, Clock3, ShieldAlert } from 'lucide-react'
-import { prettyNumber } from '../../lib/format'
+import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
 import ConnectorSetup from './ConnectorSetup'
 import ConnectorDeposit from './ConnectorDeposit'
 import AccountHome from './AccountHome'
 import VaultHistory from './History'
+import PendingPayment from './qg/PendingPayment'
 
 export default function VaultHome() {
   const {
@@ -100,27 +100,18 @@ export default function VaultHome() {
       ) : null}
       {spending
         ? pendingPayments.map((payment) => (
-            <section className='qg-arrival' aria-label='Pending payment' key={payment.operationId}>
-              <span className='qg-status-icon' aria-hidden>
-                <Clock3 />
-              </span>
-              <div>
-                <strong>Pending payment · ₿{prettyNumber(payment.amountSats)}</strong>
-                <p>
-                  {payment.authorized
-                    ? 'Not confirmed as paid. Its funds remain unavailable for another payment.'
-                    : 'Reserved for review; this payment has not been authorized.'}
-                </p>
-                <button
-                  className='qg-text'
-                  type='button'
-                  disabled={busy}
-                  onClick={() => void openPendingPayment(payment.operationId)}
-                >
-                  {payment.authorized ? 'Resume payment' : 'Review reserved payment'}
-                </button>
-              </div>
-            </section>
+            <PendingPayment
+              key={payment.operationId}
+              amount={payment.amountSats}
+              description={
+                payment.authorized
+                  ? 'Not confirmed as paid. Its funds remain unavailable for another payment.'
+                  : 'Reserved for review; this payment has not been authorized.'
+              }
+              label={payment.authorized ? 'Resume payment' : 'Review reserved payment'}
+              disabled={busy}
+              onResume={() => void openPendingPayment(payment.operationId)}
+            />
           ))
         : null}
       {error && pendingPayments.length > 0 ? (

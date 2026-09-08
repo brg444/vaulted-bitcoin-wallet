@@ -5,7 +5,8 @@ import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { truncateAddress } from '../../lib/vault/policy'
 import { VaultContext } from '../../vault/context'
 import TransactionReference from './qg/TransactionReference'
-import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
+import QgScreen, { QgPrimary } from './qg/QgScreen'
+import PaymentResult from './qg/PaymentResult'
 
 export default function VaultSuccess() {
   const { account, boardingAddress, lastSend, lastTxid, lastTxKind, navigate, status } = useContext(VaultContext)
@@ -35,15 +36,7 @@ export default function VaultSuccess() {
 
   return (
     <QgScreen variant='success' footer={<QgPrimary onClick={() => navigate('home')} label='Done' />}>
-      <div className='qg-centered qg-success-screen'>
-        <div className='qg-success-label'>
-          <span>
-            <QgCheck />
-          </span>
-          <p>{onchain ? 'Submitted' : lightning ? 'Started' : 'Sent'}</p>
-        </div>
-        <h1>{headline}</h1>
-        <p className='qg-copy'>{copy}</p>
+      <PaymentResult state={onchain ? 'submitted' : lightning ? 'started' : 'sent'} title={headline} copy={copy}>
         {lastSend ? (
           <section className='qg-details'>
             <div>
@@ -65,7 +58,7 @@ export default function VaultSuccess() {
           </section>
         ) : null}
         <TransactionReference txid={lastTxid} explorer={explorer} funding={lightning} />
-      </div>
+      </PaymentResult>
     </QgScreen>
   )
 }

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
-import VaultHistory from './History'
+import VaultHistory, { VaultHistoryList } from './History'
 
 function renderHistory(overrides: Partial<VaultContextProps>) {
   const value = {
@@ -24,6 +24,27 @@ function renderHistory(overrides: Partial<VaultContextProps>) {
 }
 
 describe('Vault history', () => {
+  it('retains rows and their action while refreshing, then clears the update cue', async () => {
+    const tx = { txid: 'known', type: 'received' as const, amount: 12000, confirmed: false, account: 'spend' as const }
+    const openTx = vi.fn()
+    const props = { account: 'spend' as const, balancesLoaded: true, history: [tx], openTx }
+    const { rerender } = render(<VaultHistoryList {...props} refreshingBalance />)
+    expect(screen.getByRole('status')).toHaveTextContent('Updating…')
+    expect(screen.queryByText('Loading activity…')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /Received ₿12,000/ }))
+    expect(openTx).toHaveBeenCalledWith(tx)
+    rerender(<VaultHistoryList {...props} />)
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    expect(screen.getByTestId('vault-history')).toHaveAttribute('aria-busy', 'false')
+  })
+
+  it('preserves a known empty result during refresh', () => {
+    renderHistory({ history: [], balancesLoaded: true, refreshingBalance: true })
+    expect(screen.getByText(/No Spending activity yet/)).toBeVisible()
+    expect(screen.queryByText('Loading activity…')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('Updating…')
+  })
+
   it('names the selected account in an actionable empty state', () => {
     renderHistory({ account: 'savings' })
     expect(screen.getByRole('heading', { name: 'Recent' })).toBeTruthy()

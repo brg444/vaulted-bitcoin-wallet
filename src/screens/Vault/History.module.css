@@ -3,3 +3,14 @@
   display: grid;
   gap: 0;
 }
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--qg-space-8);
+}
+.refresh {
+  color: var(--qg-muted);
+  font-size: var(--qg-caption);
+}
