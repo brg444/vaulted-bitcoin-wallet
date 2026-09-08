@@ -20,6 +20,11 @@ test('funds the signer from Spending and retains replacement recovery paths', as
   // CDP exports the P-256 credential but omits its PRF state. Retain the
   // test-only PRF alongside the virtual credential to resume this funded drill.
   const prior = resume ? JSON.parse(await readFile(join(directory, 'private-wallet.json'), 'utf8')) : null
+  const priorComplete = resume
+    ? await readFile(join(directory, 'complete.json'), 'utf8')
+        .then(JSON.parse)
+        .catch(() => null)
+    : null
   if (resume && !prior.prf) throw new Error('Saved virtual authenticator has no PRF state; do not request more funds')
   await page.addInitScript((savedPrf: number[] | null) => {
     const get = navigator.credentials.get.bind(navigator.credentials)
@@ -172,7 +177,7 @@ test('funds the signer from Spending and retains replacement recovery paths', as
         { timeout: 120000, intervals: [5000] },
       )
       .toBe(true)
-    const confirmed = outcomes
+    const confirmed = [...outcomes, ...(priorComplete?.outcomes || [])]
       .map((r: any) => {
         try {
           return JSON.parse(r.body)

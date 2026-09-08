@@ -101,3 +101,18 @@ it('keeps confirmed signer setup until the exact replacement recovery output has
   expect(mocks.clearSetup).toHaveBeenCalledWith(setup)
   expect(await recoveryFileStore(f.key)).toEqual(saved)
 })
+
+it('retains the complete file when a setup final appears during capture before its replacement is indexed', async () => {
+  const f = await fixture()
+  const setup = { stage: 'finalizing', final: { commitmentPsbt: 'retained-final' } }
+  mocks.journals.mockImplementation(async () => {
+    mocks.setup.mockReturnValue(setup)
+    return {}
+  })
+  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous recovery file is retained')
+  expect(await recoveryFileStore(f.key)).toEqual(f.previous)
+  expect(mocks.clearSetup).not.toHaveBeenCalled()
+  setup.stage = 'submitted'
+  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous recovery file is retained')
+  expect(await recoveryFileStore(f.key)).toEqual(f.previous)
+})

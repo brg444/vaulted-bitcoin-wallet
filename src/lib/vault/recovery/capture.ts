@@ -56,6 +56,10 @@ export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: 
       // A confirmed setup creates a replacement Spending output. Keep its
       // journal and the previous backup until that exact exit path is durable.
       const setup = readSavingsSetup(status)
+      // The retained final may already authorize replacement of the input even
+      // before the indexer reports it. Do not label the old snapshot as current.
+      if (setup?.final && setup.stage !== 'confirmed')
+        throw new Error('Signer funding is still being confirmed. The previous recovery file is retained.')
       if (setup?.stage === 'confirmed') {
         const receipt = setup.receipt!
         const coins = validateExitArchive(archive.spending, binding).coins
