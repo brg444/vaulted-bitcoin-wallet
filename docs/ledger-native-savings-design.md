@@ -1,6 +1,6 @@
 # Ledger-compatible native Savings
 
-Status: qualification prototype, 2026-09-08. Ledger is the primary signing target for this candidate. The earlier [unchanged-contract assessment](native-savings-signers.md) remains applicable to existing addresses; this candidate deliberately creates a new contract.
+Status: implementation foundation, 2026-09-08. Ledger is the primary signing target for this candidate. The earlier [unchanged-contract assessment](native-savings-signers.md) remains applicable to existing addresses; this candidate deliberately creates a new contract.
 
 ## Product flow
 
@@ -29,6 +29,8 @@ The initial Standard run passed registration and both address checks but reached
 
 Evidence and reproducible entry points are in [the native signing harness](../tools/native-savings-signers/README.md).
 
+The implementation rerun uses the shared wallet constructors and context-bound chain codes. Both tiers passed registration, address agreement and both withdrawal cases again. All recorded payment screens match the expected full-detail flow, with one final signature approval and no additional warning screen. The relevant wallet suite passed 281 tests; typecheck and lint passed after initializing the pinned recovery submodule. Runtime Savings tests, race tests and vet passed, including byte-for-byte agreement with the wallet's public vectors.
+
 ## Policy construction
 
 The candidate uses the same logical Savings branches as the original native design:
@@ -40,9 +42,9 @@ The candidate uses the same logical Savings branches as the original native desi
 | Hardware recovery initiation | Ledger recovery key and both program cosigners         |
 | Advanced recovery initiation | Separate recovery authority and both program cosigners |
 
-Ledger requires disjoint derivations when a key expression occurs in multiple branches. The candidate assigns normal keys to `/<0;1>/*` and recovery-initiation keys to `/<2;3>/*`. The two branches within each expression represent receive and change. These paths are relative to the registered account; production hardened account selection remains to be specified. Prototype BIP86 testnet origins are public fixtures.
+Ledger requires disjoint derivations when a key expression occurs in multiple branches. The candidate assigns normal keys to `/<0;1>/*` and recovery-initiation keys to `/<2;3>/*`. The two branches within each expression represent receive and change. Account origins are BIP86, `m/86'/0'/account'` on mainnet and `m/86'/1'/account'` on Mutinynet, with account numbers zero through 100. Construction accepts public account xpubs whose depth, child index and network match their origins. Ownership remains subject to device registration; parsing an xpub alone cannot prove it.
 
-The internal key derives from a BIP341 NUMS point encoded as an extended public key. Its chain code is deterministic and public, with a domain identifying the candidate. Public derivation adds known tweaks to a point with an unknown discrete logarithm, preserving an unspendable key path under the standard assumptions. The final context encoding must commit the vault, network, tier, contract version and policy, with independent reconstruction on client and server. The current fixture domain is only for testing.
+The internal key derives from a BIP341 NUMS point encoded as an extended public key. Its chain code is deterministic and public. Public derivation adds known tweaks to a point with an unknown discrete logarithm, preserving an unspendable key path under the standard assumptions. The implemented context commits the vault, network, tier, contract version, Spending policy digest, user account origins, phone authentication key and both cosigner bases. Client and server independently reconstruct the same length-prefixed encoding. Program parents additionally commit the exact program hash, claimant and cosigner role.
 
 Standard uses seven policy entries: NUMS, phone, Ledger, and two program cosigners for each of the two recovery-initiation branches. Advanced adds a recovery authority and its two program cosigners, for ten entries. Both templates fit Ledger's fifteen-key and 512-byte template limits. Every onchain cooperative leaf remains two ordinary signature checks.
 
@@ -57,7 +59,7 @@ enrolled cosigner base
   → allowed receive/change child at the enrolled index
 ```
 
-The prototype checks that public and private BIP32 derivation produce identical child keys after the program tweak. It uses actual v1 transition programs as fixtures, but it does not constitute a complete new recovery contract. Its quarantine and pending destinations are inherited test fixtures; all final recovery families and registrations still need explicit construction and qualification.
+Wallet and runtime tests check that public and private BIP32 derivation produce identical child keys after the program tweak. Four shared vectors cover both networks and protection tiers, including identical policy templates, key vectors, receive addresses and change addresses. They use actual v1 transition programs with inherited quarantine and pending destinations. The complete new recovery contract, its final families and registrations still require construction and qualification.
 
 Both signing services must reconstruct the named program, chain code and permitted derivation from the immutable enrollment. The signer verifies the prevout and Tapscript commitment, evaluates the program against the exact transaction, derives the expected child inside its key boundary, and returns only the appropriate signature. The caller cannot choose an arbitrary chain code, child path, program or signing digest.
 
@@ -87,4 +89,17 @@ The full recovery suite must exercise lost phone, lost Ledger, advanced recovery
 4. Exercise funded regtest normal and recovery lifecycles, then repeat registration, review, cancellation, reconnect and signing on a physical Ledger.
 5. Prepare an isolated RC candidate only after those gates pass. Existing native and connector coins need explicit migration transactions; their funded scripts remain unchanged.
 
-The executable prototype is confined to `tools/native-savings-signers/ledger-candidate.*` and its evidence files. It is absent from enrollment, wallet execution, the runtime Contract Pack and RC builds.
+## Reuse and removal
+
+The first implementation lives in wallet `program/ledgerNativeKeys.ts` and `program/ledgerNativePolicy.ts`, with matching runtime `internal/vault/savings/ledger_keys.go` and `ledger_policy.go`. Both use the existing native Savings leaf constructor. The qualification harness now calls that implementation; its duplicated tree and ad hoc key construction have been removed.
+
+| Component                                                                                     | Implementation direction                                                                                                                         |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Native Savings PSBT construction and signature verification                                   | Reuse `savingsSpend.ts`, adding enrolled input origins and Ledger change metadata.                                                               |
+| Recovery transitions, chain observation and timed claims                                      | Reuse the native recovery machinery; adapt key selection and qualify every Ledger participation step.                                            |
+| Exact transaction persistence and lost-response handling                                      | Retain existing lifecycle guarantees while removing connector-specific fields.                                                                   |
+| Recovery Kit, enrollment and address pins                                                     | Extend with account origins, policy authorization and the new contract binding. Existing records retain their original identities.               |
+| Reserve funding, dual-input approval, connector proof packet and connector withdrawal screens | Remove from the new enrollment and withdrawal path once the native path passes its gates.                                                        |
+| Already-funded connector contracts                                                            | Keep the required migration/signing path until funds and unresolved operations are explicitly migrated, then remove the obsolete implementation. |
+
+The database retains its current authenticated schema and migration history. Restoring the prior native contract model does not mean reverting database versions or reinterpreting funded scripts. The new identity is `phone-ledger-recovery-savings-v1`; it remains absent from the live template registry and Contract Pack during qualification. There is no new user-facing contract selector, signing endpoint or RC deployment in this implementation increment.

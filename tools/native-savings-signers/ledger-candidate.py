@@ -1,5 +1,5 @@
 """Run inside the existing Speculos fixture container. Public test mnemonic only."""
-import json, os, threading, time, socket
+import json, os, threading, time, socket, hashlib
 from pathlib import Path
 import requests
 from speculos.client import SpeculosClient
@@ -45,8 +45,8 @@ for fixture in fixtures:
     try:
         client=NewClient(comm,chain=Chain.TEST,debug=False)
         wallet=WalletPolicy('Vaulted Savings',fixture['template'],fixture['keys'])
-        cache_file=root/('candidate-registration-'+name+'.json')
-        binding=fixture['template']+'|'.join(fixture['keys'])
+        binding=json.dumps(['Vaulted Savings',fixture['template'],fixture['keys']],separators=(',',':'))
+        cache_file=root/('candidate-registration-'+hashlib.sha256(binding.encode()).hexdigest()+'.json')
         if cache_file.exists():
             cache=json.loads(cache_file.read_text()); assert cache['binding']==binding
             wallet_id=bytes.fromhex(cache['walletId']);hmac=bytes.fromhex(cache['hmac'])

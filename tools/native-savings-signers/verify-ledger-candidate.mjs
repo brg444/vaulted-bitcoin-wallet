@@ -14,6 +14,22 @@ for (const fixture of input) {
   assert(device?.registered)
   for (const payment of fixture.payments) {
     const signed = device.payments.find((p) => p.full === payment.full)
+    const expectedScreens = [
+      /^Loading transaction$/,
+      /^Transaction signed$/,
+      /^Bitcoin Testnet \| app is ready$/,
+      /^Review transaction \| to send Bitcoin$/,
+      /^From \| Vaulted Savings$/,
+      /^Amount \| [0-9.]+ TEST$/,
+      /^To \(\d+\/\d+\) \| .+$/,
+      /^Fees \| [0-9.]+ TEST$/,
+      /^Sign transaction$/,
+    ]
+    assert(
+      signed.screens.every((screen) => expectedScreens.some((pattern) => pattern.test(screen))),
+      'Unexpected Ledger screen or warning during normal withdrawal',
+    )
+    assert.equal(signed.screens.filter((screen) => screen === 'Sign transaction').length, 1)
     assert.equal(signed.signatures.length, 1)
     assert.equal(signed.signatures[0].index, 0)
     assert.equal(signed.signatures[0].pubkey, fixture.hardware)
@@ -45,11 +61,12 @@ for (const fixture of input) {
       for (let i = 0; i < tx.outputsLength; i++) {
         const out = tx.getOutput(i)
         if ((mutation === 'recipient' && i === 0) || (mutation === 'change' && i === 1)) {
-          out.script = out.script.slice()
-          out.script[out.script.length - 1] ^= 1
+          // Substitute a different, valid Bitcoin destination, without stale PSBT metadata.
+          assert.notEqual(hex.encode(out.script), hex.encode(inp.witnessUtxo.script))
+          out.script = inp.witnessUtxo.script.slice()
         }
         if (mutation === 'amount' && i === 0) out.amount -= 1n
-        altered.addOutput(out)
+        altered.addOutput({ script: out.script, amount: out.amount })
       }
       if (mutation === 'extra-output') altered.addOutput({ script: new Uint8Array([0x6a]), amount: 0n })
       assert(!schnorr.verify(signature, digest(altered), pubkey), mutation)

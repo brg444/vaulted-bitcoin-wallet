@@ -2,7 +2,7 @@
 
 These isolated regtest and source-level tests assess the original `phone-hww-recovery-savings-v1` contract; [the assessment](../../docs/native-savings-signers.md) records the results and remaining release gates.
 
-The separate `ledger-candidate.*` prototype assesses a new Ledger-compatible contract described in [the candidate design](../../docs/ledger-native-savings-design.md). It changes derived keys and addresses and is absent from production wallet execution.
+The separate `ledger-candidate.*` harness assesses a new Ledger-compatible contract described in [the candidate design](../../docs/ledger-native-savings-design.md). It calls the wallet's new key and native policy constructors. The new contract changes derived keys and addresses and remains outside live enrollment and execution.
 
 The recorded results use the wallet's actual tree generator. `core.mjs` maps its CHECKSIG leaves to an exact full descriptor, checks script equality, signs funded regtest spends and tests recipient mutation. `specter.py` executes Specter DIY's parser, wallet manager review preparation, and streaming PSBT signing with public HD fixtures. Its GUI and persistence are stubbed; its signing functions are unchanged. `verify-specter.mjs` merges the returned partial PSBT with the original and validates the complete transaction in Core.
 
@@ -52,9 +52,19 @@ node tools/native-savings-signers/verify-ledger-candidate.mjs
 
 The container uses the same pinned Ledger build described above, with the native fixture directory created before copying files. The generator needs this wallet's installed dependencies. The runner bounds each tier to 900 seconds and can select one tier with `CANDIDATE_TIER=standard` or `advanced`, writing the corresponding result filename. It caches successful registration authorization inside the disposable container and binds reuse to the exact policy and keys.
 
-The checked-in `ledger-candidate.json` combines the initial Advanced success with the successful Standard rerun after a shorter timeout. `ledger-candidate-initial.json` preserves that first run's diagnostic trace. The verifier independently checks the signatures, DEFAULT/ALL restriction, exact recipient/amount/fee screen text, output-mutation failures and finalized sizes. Both tiers passed full and partial signing, measuring 169 and 212 vB respectively.
+The current `ledger-candidate.json` records the implementation's complete simulator run. `ledger-candidate-initial.json` preserves the earlier prototype's diagnostic trace, whose ad hoc chain codes differ from the implementation. The verifier independently checks the signatures, DEFAULT/ALL restriction, exact recipient/amount/fee screen text, output-mutation failures and finalized sizes. Both tiers passed full and partial signing, measuring 169 and 212 vB respectively.
 
-Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, subsequent change spending, malicious metadata rejection, recovery, physical review and user cancellation remain separate release requirements. The recovery programs in the generator are mathematical fixtures from the existing family; the new runtime derivation and complete recovery contract remain unimplemented.
+Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, subsequent change spending, malicious metadata rejection, recovery, physical review and user cancellation remain separate release requirements. The recovery programs in the generator are mathematical fixtures from the existing family; service signing with the new derived keys and the complete recovery contract remain unimplemented.
+
+`ledger-key-vectors.mjs` regenerates the reviewed public derivation vectors at `src/lib/vault/program/ledger-key-vectors.json`. The same bytes live in the runtime's `internal/vault/savings/testdata/ledger-key-vectors.json`. Wallet and Go tests independently verify account derivations, program parents, policy templates and output scripts, including private/public derivation agreement. Fixture regeneration requires comparing both repositories; changed golden values represent a contract change.
+
+```sh
+node tools/native-savings-signers/ledger-key-vectors.mjs
+pnpm exec prettier --write src/lib/vault/program/ledger-key-vectors.json
+pnpm exec vitest run --maxWorkers=2 src/lib/vault/program src/lib/vault/savingsSpend.test.ts
+```
+
+Initialize the pinned `tools/offline-recovery` submodule before running the wallet's Recovery Kit tests or typecheck. Copy the formatted vector file into the runtime fixture path before running `go test -race ./internal/vault/savings` and `go vet ./internal/vault/savings` there.
 
 ## Sparrow and Electrum
 
