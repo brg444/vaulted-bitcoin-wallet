@@ -76,6 +76,23 @@ describe('same-origin authorizer gateway', () => {
     }
   })
 
+  it.each([
+    ['default', defaultDeployment],
+    ['mainnet', mainnetDeployment],
+  ] as const)('routes %s signer funding and preserves the enrollment query', (_network, config) => {
+    const index = config.rewrites.findIndex((route) => route.source === '/v1/vtxo/savings-setup/:phase')
+    expect(index).toBeGreaterThanOrEqual(0)
+    expect(index).toBeLessThan(config.rewrites.findIndex((route) => route.source === '/v1/:path*'))
+    for (const phase of ['info', 'prepare', 'register', 'final', 'status', 'release']) {
+      const url = config.rewrites[index].destination.replace(':phase', phase)
+      expect(publicAuthorizerPath(url)).toBe(`/v1/vtxo/savings-setup/${phase}`)
+    }
+    expect(publicAuthorizerPath('/api/gateway?route=savings-setup&phase=info&vaultId=vault%2Bid')).toBe(
+      '/v1/vtxo/savings-setup/info?vaultId=vault%2Bid',
+    )
+    expect(publicAuthorizerPath('/api/gateway?route=savings-setup&phase=sign')).not.toContain('/v1/')
+  })
+
   it('maps function URLs back to authorizer paths', () => {
     expect(publicAuthorizerPath('/api/health')).toBe('/health')
     expect(publicAuthorizerPath('/api/ready')).toBe('/ready')

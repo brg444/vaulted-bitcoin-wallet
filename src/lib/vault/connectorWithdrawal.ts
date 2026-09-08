@@ -132,7 +132,7 @@ export async function prepareConnectorWithdrawal(status: VaultStatus, recipient:
   const [reserve, secondReserve] = selectedReserves
   if (selectedReserves.length !== (dual ? 2 : 1))
     throw new ConnectorUserError(
-      `Prepare a deposit under Savings → Deposit to fund the signer reserve automatically, then wait for Bitcoin confirmation.`,
+      `Open Security → Savings signer setup to fund the approval outputs, then wait for Bitcoin confirmation.`,
     )
   const rate = estimates['3'] ?? estimates['6']
   if (!Number.isFinite(rate) || rate <= 0 || rate > contract.feerateCapSatPerV)

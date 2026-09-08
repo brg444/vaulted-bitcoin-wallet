@@ -44,6 +44,16 @@ test('funds Savings and its reserve in one signed deposit and resumes after relo
     await page.getByRole('button', { name: 'Open navigation' }).click()
     await page.getByTestId('account-savings').click()
     await page.getByTestId('account-receive').click()
+    await expect(page.getByRole('heading', { name: 'Receive' })).toBeVisible()
+    await expect(page.getByTestId('receive-address')).toBeVisible()
+    await page.getByRole('button', { name: 'Set up Savings signer' }).click()
+    const resume = page.getByRole('button', { name: 'Continue prepared deposit' })
+    await expect(resume.or(page.getByText('Advanced: fund with a Savings deposit'))).toBeVisible()
+    if (await resume.isVisible()) await resume.click()
+    else {
+      await page.getByText('Advanced: fund with a Savings deposit').click()
+      await page.getByRole('button', { name: 'Prepare combined deposit' }).click()
+    }
   }
   await openDeposit()
   await page

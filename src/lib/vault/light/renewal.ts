@@ -150,7 +150,7 @@ export async function checkLightRenewal(record: LightEnrollment): Promise<LightR
 
 // The SDK constructs and validates intents, trees, MuSig sessions and forfeits.
 // Vault code supplies the named cosigner boundary and durable recovery journal.
-function flattenTree(tree: TxTree): TxTreeNode[] {
+export function flattenTree(tree: TxTree): TxTreeNode[] {
   const result: TxTreeNode[] = []
   const queue = [tree]
   const seen = new Set<string>()

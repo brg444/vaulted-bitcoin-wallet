@@ -1,14 +1,18 @@
-import { useContext, useEffect } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { ChevronRight, Clock3, ShieldAlert } from 'lucide-react'
 import { prettyNumber } from '../../lib/format'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
+import ConnectorSetup from './ConnectorSetup'
+import ConnectorDeposit from './ConnectorDeposit'
 import AccountHome from './AccountHome'
 import VaultHistory from './History'
 
 export default function VaultHome() {
   const {
     account,
+    status,
+    savingsSetup,
     balancesLoaded,
     boardingAddress,
     canSend,
@@ -35,6 +39,15 @@ export default function VaultHome() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
+  const [setupView, setSetupView] = useState<'home' | 'setup' | 'deposit'>('home')
+  if (status && setupView === 'setup')
+    return (
+      <ConnectorSetup status={status} onBack={() => setSetupView('home')} onDeposit={() => setSetupView('deposit')} />
+    )
+  if (status && setupView === 'deposit')
+    return (
+      <ConnectorDeposit status={status} onBack={() => setSetupView('setup')} onAddress={() => setSetupView('home')} />
+    )
   const spending = account === 'spend'
   const position = spending ? positions.spending : positions.savings
 
@@ -51,7 +64,9 @@ export default function VaultHome() {
       onReceive={() => navigate('receive')}
       primaryAction={{
         label: spending ? 'Send' : 'Transfer',
-        disabled: spending ? !canSend : positions.savings.availableSats <= 330,
+        disabled: spending
+          ? !canSend || !!savingsSetup?.operation || !!savingsSetup?.error
+          : positions.savings.availableSats <= 330,
         onClick: () => {
           clearSpendDraft()
           if (!spending && boardingAddress) setSpendDraft({ address: boardingAddress })
@@ -79,6 +94,25 @@ export default function VaultHome() {
         ) : null
       }
     >
+      {savingsSetup?.operation || savingsSetup?.error ? (
+        <section className='qg-arrival' aria-label='Pending signer setup'>
+          <span className='qg-status-icon' aria-hidden>
+            <Clock3 />
+          </span>
+          <div>
+            <strong>Savings signer setup</strong>
+            <p>
+              {savingsSetup.error ||
+                (savingsSetup.operation?.stage === 'confirmed'
+                  ? 'Funding confirmed. Saving updated Spending recovery data.'
+                  : 'Funding is pending. Reserved funds remain visible but cannot be sent again.')}
+            </p>
+            <button className='qg-text' type='button' onClick={() => setSetupView('setup')}>
+              Check signer setup
+            </button>
+          </div>
+        </section>
+      ) : null}
       {spending
         ? pendingPayments.map((payment) => (
             <section className='qg-arrival' aria-label='Pending payment' key={payment.operationId}>

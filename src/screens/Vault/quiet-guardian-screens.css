@@ -1810,7 +1810,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-qr {
-  width: min(100%, 340px);
+  width: min(100%, 510px);
   margin: var(--qg-space-16) auto var(--qg-space-8);
 }
 
@@ -2888,7 +2888,7 @@ html.palette-dark .qg-progress {
   padding-block: 0;
 }
 .qg-receive .qg-qr {
-  width: min(220px, 48dvh, 100%);
+  width: min(330px, 72dvh, 100%);
   margin-block: var(--qg-space-12);
 }
 .qg-receive .qg-qr canvas,

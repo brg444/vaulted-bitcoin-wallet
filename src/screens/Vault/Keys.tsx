@@ -9,6 +9,9 @@ import RecoveryExplanation from './qg/RecoveryExplanation'
 import { useBackupConfirmation } from './qg/useBackupConfirmation'
 import QgScreen from './qg/QgScreen'
 import SecurityOverview from './SecurityOverview'
+import ConnectorSetup from './ConnectorSetup'
+import ConnectorDeposit from './ConnectorDeposit'
+import { isConnectorTemplate } from '../../lib/vault/program/connector'
 
 function SecurityTile({
   icon,
@@ -64,7 +67,7 @@ export default function VaultKeys() {
     spendingArkAddress,
     status,
   } = useContext(VaultContext)
-  const [view, setView] = useState<'overview' | 'keys' | 'limits' | 'renewal'>('overview')
+  const [view, setView] = useState<'overview' | 'keys' | 'limits' | 'renewal' | 'signer' | 'deposit'>('overview')
   const { confirmed } = useBackupConfirmation()
   const phoneCovered = Boolean(status?.enrolled)
   const devicesCovered = Boolean(status?.passkeyLoginAvailable)
@@ -86,6 +89,10 @@ export default function VaultKeys() {
           ? 'Unavailable'
           : 'Can’t reach'
   const vaultReady = phoneCovered && addressCovered && readiness.state === 'ready'
+
+  if (view === 'signer' && status)
+    return <ConnectorSetup status={status} onBack={() => setView('overview')} onDeposit={() => setView('deposit')} />
+  if (view === 'deposit' && status) return <ConnectorDeposit status={status} onBack={() => setView('signer')} />
 
   return (
     <QgScreen
@@ -137,6 +144,9 @@ export default function VaultKeys() {
           }}
         >
           <HubGroup>
+            {isConnectorTemplate(status?.templateVersion) ? (
+              <HubRow title='Savings signer setup' onClick={() => setView('signer')} />
+            ) : null}
             <HubRow title='I lost a key' onClick={() => openRecover('lost', 'keys')} testId='security-lost' />
           </HubGroup>
         </SecurityOverview>
