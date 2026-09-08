@@ -1,4 +1,4 @@
-import type { SetupJournal } from '../lib/vault/savingsSetupStore'
+import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
 import { createContext } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
@@ -52,7 +52,7 @@ export interface VaultContextProps {
   acceptDesign: (tier?: 'standard' | 'advanced') => void
   account: VaultAccount
   spendingRenewals?: SpendingRenewalJournal | null
-  savingsSetup?: { operation: SetupJournal | null; error: string }
+  spendingBitcoin?: { operation: BitcoinPaymentJournal | null; error: string }
   positions: VaultAccountPositions
   applyHardware: (raw: string) => void
   applyConnectorDescriptor: (raw: string) => void
@@ -117,6 +117,8 @@ export interface VaultContextProps {
   refreshingBalance: boolean
   reset: () => void
   reviewSpend: () => Promise<void>
+  fundSavingsSigner: () => Promise<void>
+  bitcoinOutputs?: BitcoinPaymentOutput[]
   rebroadcastingConnector: boolean
   resumingPayment: boolean
   pendingPayments: { operationId: string; amountSats: number; authorized: boolean }[]
@@ -206,6 +208,7 @@ export const VaultContext = createContext<VaultContextProps>({
   refreshingBalance: false,
   reset: () => {},
   reviewSpend: async () => {},
+  fundSavingsSigner: async () => {},
   rebroadcastingConnector: false,
   resumingPayment: false,
   pendingPayments: [],

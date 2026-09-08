@@ -4,10 +4,10 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import ConnectorSetup from './ConnectorSetup'
 import type { VaultStatus } from '../../lib/vault/types'
 
-vi.mock('../../lib/vault/savingsSetupFunding', () => ({
-  readSavingsSetup: () => null,
-  supportsSpendingSignerSetup: async () => false,
-  checkSpendingSignerFunding: vi.fn(),
+vi.mock('../../lib/vault/spendingBitcoinFunding', () => ({
+  readSpendingBitcoin: () => null,
+  supportsSpendingBitcoin: async () => false,
+  checkSpendingBitcoin: vi.fn(),
 }))
 
 const check = vi.hoisted(() => vi.fn())

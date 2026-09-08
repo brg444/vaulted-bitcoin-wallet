@@ -1,3 +1,5 @@
+import { Address, OutScript, TEST_NETWORK } from '@scure/btc-signer'
+const bitcoinDestination = Address(TEST_NETWORK).encode(OutScript.decode(hex.decode('0014' + '43'.repeat(20))))
 import { ArkAddress } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -16,6 +18,8 @@ import VaultHardware from '../screens/Vault/onboard/Hardware'
 import { CONNECTOR_TEST_DESCRIPTOR, CONNECTOR_TEST_PUB } from '../test/e2e-vault/fixtures/connector'
 
 const mocks = vi.hoisted(() => ({
+  bitcoinSend: vi.fn(),
+  signerOutputs: vi.fn(),
   availableSats: 20000,
   refreshBalance: vi.fn(),
   loadLightningFunding: vi.fn(),
@@ -37,6 +41,12 @@ const mocks = vi.hoisted(() => ({
     phoneSecret: new Uint8Array(32).fill(7),
     scalar: new Uint8Array(32).fill(8),
   })),
+}))
+
+vi.mock('../lib/vault/spendingBitcoinFunding', async (original) => ({
+  ...(await original<typeof import('../lib/vault/spendingBitcoinFunding')>()),
+  sendSpendingToBitcoin: mocks.bitcoinSend,
+  signerFundingOutputs: mocks.signerOutputs,
 }))
 
 vi.mock('../lib/vault/status', async (importOriginal) => {
@@ -199,6 +209,12 @@ function Probe() {
       <button type='button' onClick={() => vault.openSendScan()}>
         Open scan
       </button>
+      <button type='button' onClick={() => vault.setSpendDraft({ address: bitcoinDestination, amount: 1500 })}>
+        Set Bitcoin draft
+      </button>
+      <button type='button' onClick={vault.fundSavingsSigner}>
+        Fund signer
+      </button>
       <button type='button' onClick={vault.reviewSpend}>
         Review
       </button>
@@ -228,6 +244,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   })
 
   beforeEach(() => {
+    mocks.bitcoinSend.mockReset()
     mocks.refreshBalance.mockReset().mockResolvedValue(undefined)
     mocks.availableSats = 20000
     mocks.loadLightningFunding.mockResolvedValue(undefined)
@@ -280,6 +297,93 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     })
   })
 
+  it('reviews and completes a Bitcoin payment through the canonical send route with one confirmation', async () => {
+    mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, outputs, approve) => {
+      expect(outputs).toEqual([{ script: '0014' + '43'.repeat(20), amountSats: 1500 }])
+      const approved = await approve({ feeSats: 400 })
+      return approved ? { state: 'submitted', commitmentTxid: 'ab'.repeat(32) } : { state: 'cancelled' }
+    })
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByText('Set Bitcoin draft'))
+    fireEvent.click(screen.getByText('Review'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
+    expect(screen.getByTestId('sent-amount')).toHaveTextContent('1500')
+    expect(screen.getByTestId('sent-destination')).toHaveTextContent(bitcoinDestination)
+    expect(mocks.bitcoinSend).toHaveBeenCalledOnce()
+  })
+  it.each(['uncertain', 'lost response'])(
+    'leaves Review after approval when Bitcoin payment has %s',
+    async (outcome) => {
+      mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, _outputs, approve) => {
+        expect(await approve({ feeSats: 400 })).toBe(true)
+        if (outcome === 'lost response') throw new Error('Payment response unavailable')
+        return { state: 'uncertain' }
+      })
+      render(
+        <VaultProvider>
+          <Probe />
+        </VaultProvider>,
+      )
+      await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+      fireEvent.click(screen.getByText('Set Bitcoin draft'))
+      fireEvent.click(screen.getByText('Review'))
+      await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+      fireEvent.click(screen.getByText('Approve'))
+      await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('home'))
+      expect(mocks.bitcoinSend).toHaveBeenCalledOnce()
+      expect(mocks.send).not.toHaveBeenCalled()
+      expect(screen.getByTestId('sent-amount')).toBeEmptyDOMElement()
+    },
+  )
+  it('funds signer approval outputs through the same Review and confirmation', async () => {
+    const outputs = Array.from({ length: 2 }, () => ({ script: '0014' + '43'.repeat(20), amountSats: 500 }))
+    mocks.signerOutputs.mockResolvedValue({ address: bitcoinDestination, outputs })
+    mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, actual, approve) => {
+      expect(actual).toEqual(outputs)
+      return (await approve({ feeSats: 400 }))
+        ? { state: 'submitted', commitmentTxid: 'ab'.repeat(32) }
+        : { state: 'cancelled' }
+    })
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByText('Fund signer'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    expect(screen.getByTestId('fee')).toHaveTextContent('400')
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
+    expect(screen.getByTestId('sent-amount')).toHaveTextContent('1000')
+    expect(mocks.bitcoinSend).toHaveBeenCalledOnce()
+  })
+  it('cancels Bitcoin approval when leaving Review without submitting another payment', async () => {
+    let approved: boolean | undefined
+    mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, _outputs, approve) => {
+      approved = await approve({ feeSats: 400 })
+      return { state: 'cancelled' }
+    })
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByText('Set Bitcoin draft'))
+    fireEvent.click(screen.getByText('Review'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    fireEvent.click(screen.getByText('Go home'))
+    await waitFor(() => expect(approved).toBe(false))
+    expect(screen.getByTestId('screen')).toHaveTextContent('home')
+  })
   it('starts another vault with an editable descriptor and accepts a different hardware key', async () => {
     const oldStatus = { ...status, externalOwnerWalletPub: golden.fixtures.exitHardwarePub }
     mocks.fetchStatus.mockResolvedValue(oldStatus)

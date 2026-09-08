@@ -18,7 +18,7 @@ it.skipIf(!directory)(
     if (file.archive.status.network !== 'mutinynet') throw new Error('Mutinynet drill only')
     const saved = JSON.parse(readFileSync(join(directory, 'private-wallet.json'), 'utf8'))
     const phone = hex.decode(saved.phoneSecret)
-    const hardware = connectorTestSecret()
+    const hardware = saved.hardwareSecret ? hex.decode(saved.hardwareSecret) : connectorTestSecret()
     const commitment = readFileSync(join(directory, 'commitment.hex'), 'utf8').trim()
     const commitmentId = Transaction.fromRaw(hex.decode(commitment)).id
     const bitcoin = JSON.parse(readFileSync(join(directory, 'commitment.json'), 'utf8'))
