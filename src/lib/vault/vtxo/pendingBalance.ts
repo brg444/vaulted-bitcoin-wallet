@@ -6,7 +6,19 @@ type BalanceCoin = Parameters<typeof hasTerminalSpend>[0] & { txid: string; vout
 /** Project the same reserved outpoints and protected change onto the SDK snapshot.
  * Reserved value stays visible, but never becomes available for another payment.
  */
-export function vtxoBalanceWithPending(coins: readonly BalanceCoin[], operations: readonly PersistedVtxoSpend[]) {
+export function vtxoBalanceWithPending(
+  coins: readonly BalanceCoin[],
+  operations: readonly PersistedVtxoSpend[],
+  setup?: {
+    txid: string
+    vout: number
+    valueSats: number
+    changeSats?: number
+    receiverTxid?: string
+    receiverVout?: number
+    submitted: boolean
+  } | null,
+) {
   const byOutpoint = new Map(coins.map((coin) => [`${coin.txid}:${coin.vout}`, coin]))
   const observedTransactions = new Set(coins.map((coin) => coin.txid))
   const reservedOutpoints = new Set(
@@ -42,6 +54,17 @@ export function vtxoBalanceWithPending(coins: readonly BalanceCoin[], operations
     ) {
       pendingSats += operation.changeSats
       projectedChange.add(changeKey)
+    }
+  }
+  if (setup) {
+    const inputKey = `${setup.txid}:${setup.vout}`
+    const changeKey = `${setup.receiverTxid}:${setup.receiverVout}`
+    const input = byOutpoint.get(inputKey)
+    if (!locked.has(inputKey)) {
+      locked.add(inputKey)
+      const submitted = setup.submitted || byOutpoint.has(changeKey) || (input && hasTerminalSpend(input))
+      if (!submitted) pendingSats += setup.valueSats
+      else if (!byOutpoint.has(changeKey) && !reservedOutpoints.has(changeKey)) pendingSats += setup.changeSats || 0
     }
   }
   let availableSats = 0

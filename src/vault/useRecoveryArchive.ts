@@ -74,6 +74,7 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     const timer = window.setInterval(request, 30000)
     window.addEventListener('focus', request)
     window.addEventListener('online', request)
+    window.addEventListener('vaulted-savings-setup', request)
     document.addEventListener('visibilitychange', request)
     return () => {
       active = false
@@ -82,6 +83,7 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
       clearInterval(timer)
       window.removeEventListener('focus', request)
       window.removeEventListener('online', request)
+      window.removeEventListener('vaulted-savings-setup', request)
       document.removeEventListener('visibilitychange', request)
     }
   }, [enrollment?.vaultId, status?.vaultId, locked, capture])

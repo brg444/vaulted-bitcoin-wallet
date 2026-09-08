@@ -1,3 +1,4 @@
+import { useSavingsSetup } from '../vault/useSavingsSetup'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
 import { clearSpendingRenewalReads } from '../lib/vault/vtxo/guardianRenewal'
 import { useRecoveryArchive } from '../vault/useRecoveryArchive'
@@ -1409,12 +1410,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [enrollment, refreshBalance, status])
 
   const spendingRenewals = useSpendingRenewals(status, enrollment, locked)
+  const savingsSetup = useSavingsSetup(status, locked)
 
   const value = useMemo<VaultContextProps>(
     () => ({
       acceptDesign,
       account,
       spendingRenewals,
+      savingsSetup,
       applyHardware,
       applyConnectorDescriptor,
       applyRecovery,
@@ -1554,6 +1557,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       acceptDesign,
       account,
       spendingRenewals,
+      savingsSetup,
       applyHardware,
       applyConnectorDescriptor,
       applyRecovery,

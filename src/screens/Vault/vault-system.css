@@ -323,7 +323,7 @@ html.palette-dark [data-testid='vault-app'] {
 .vault-psbt-qr {
   box-sizing: content-box;
   width: calc(100% - 18px);
-  max-width: 280px;
+  max-width: 420px;
   padding: 8px;
   margin-inline: auto;
   border: 1px solid var(--vault-line);
