@@ -1,3 +1,4 @@
+import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
 import { createContext } from 'react'
@@ -92,6 +93,8 @@ export interface VaultContextProps {
   enroll: (token?: string) => Promise<void>
   enrolled: boolean
   error: string
+  paymentError?: BitcoinPaymentError
+  dismissError?: () => void
   fiatDisplayRate: VaultFiatDisplayRate | null
   fiatDisplayEnabled: boolean
   setFiatDisplay: (enabled: boolean) => Promise<VaultFiatDisplayRate | null>
