@@ -4,7 +4,9 @@ Research date: 2026-09-08. Contract baseline: wallet `72227a1774a140580e5971a8df
 
 ## Recommendation
 
-Keep the original native Savings contract as the candidate and qualify **Specter DIY** next on an actual device. Its current source accepted the complete Savings descriptor, recognized the input, produced the correct recipient review data, and signed the Savings input. Bitcoin Core accepted the resulting transactions. This required real HD origin metadata for the hardware key; it did not require connectors, new recovery branches, or different Bitcoin scripts.
+Ledger is now the priority for a [new native Savings contract](ledger-native-savings-design.md), with explicit migration and recovery qualification. The results below concern the unchanged original contract and remain relevant to existing addresses.
+
+For that unchanged contract, **Specter DIY** remains the strongest hardware candidate for physical testing. Its current source accepted the complete Savings descriptor, recognized the input, produced the correct recipient review data, and signed the Savings input. Bitcoin Core accepted the resulting transactions. This required real HD origin metadata for the hardware key; it did not require connectors, new recovery branches, or different Bitcoin scripts.
 
 Ledger, BitBox02 and Jade remain preferred commercial hardware targets, but none passed qualification for this exact contract. Their blockers are specific enough to discuss with maintainers. A documented feature such as Taproot, Miniscript, or PSBT support is insufficient evidence of compatibility.
 
