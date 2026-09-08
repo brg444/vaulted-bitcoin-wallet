@@ -1,3 +1,5 @@
+import PaymentNotice from '../../../screens/Vault/qg/PaymentNotice'
+import { BitcoinPaymentError, bitcoinPaymentRejected } from '../../../lib/vault/bitcoinPaymentError'
 import { useContext, useEffect, useState } from 'react'
 import { Address, OutScript } from '@scure/btc-signer'
 import { hex } from '@scure/base'
@@ -20,6 +22,7 @@ export default function BitcoinPaymentUi() {
     window.addEventListener('bitcoin-payment-view', change)
     return () => window.removeEventListener('bitcoin-payment-view', change)
   }, [])
+  const reviewError = mode === 9 ? bitcoinPaymentRejected('INTERNAL_ERROR: example rejection') : undefined
   const status = context.status
   if (!status) return null
   const script = '0014' + '43'.repeat(20)
@@ -37,6 +40,45 @@ export default function BitcoinPaymentUi() {
     [{ txid: 'receive', amount: 27259, type: 'received', confirmed: true, account: 'spend' }],
     operation,
   )
+  if (mode >= 5 && mode <= 8) {
+    const paymentError =
+      mode >= 7
+        ? new BitcoinPaymentError(
+            'pending',
+            'The payment outcome is still being checked. Open the pending payment for its status.',
+          )
+        : bitcoinPaymentRejected(
+            'INVALID_PSBT_INPUT (5): vtxo [redacted] expires after 2026-10-07 12:18:19.47932425 +0000 UTC m=+2519147.005463777 (minExpiryGap: 695h53m36s)',
+            Date.UTC(2026, 8, 9, 10, 15),
+          )
+    return (
+      <VaultContext.Provider
+        value={{
+          ...context,
+          error: mode === 5 || mode === 7 ? paymentError.message : '',
+          paymentError,
+          dismissError: () => setMode(mode + 1),
+        }}
+      >
+        <AccountHome
+          account='Spending'
+          totalSats={25859}
+          balancesLoaded
+          security={{ label: 'Recovery', onClick: () => {} }}
+          primaryAction={{ label: 'Send', disabled: mode >= 7, onClick: () => {} }}
+          secondaryAction={{ label: 'Receive', onClick: () => {} }}
+        >
+          {mode === 5 || mode === 7 ? <PaymentNotice message={paymentError.message} /> : null}
+          <VaultHistoryList
+            account='spend'
+            balancesLoaded
+            history={mode < 7 ? history.map((tx) => ({ ...tx, confirmed: true })) : history}
+            openTx={() => setMode(4)}
+          />
+        </AccountHome>
+      </VaultContext.Provider>
+    )
+  }
   if (mode === 3)
     return (
       <AccountHome
@@ -68,6 +110,9 @@ export default function BitcoinPaymentUi() {
       value={{
         ...context,
         account: 'spend',
+        error: reviewError?.message || '',
+        paymentError: reviewError,
+        dismissError: () => setMode(1),
         busy: false,
         spend: { address, amount, fee: 400 },
         bitcoinOutputs: outputs,

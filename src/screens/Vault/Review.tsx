@@ -1,3 +1,4 @@
+import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useState } from 'react'
@@ -61,11 +62,7 @@ export default function VaultReview() {
       back={busy ? undefined : () => navigate(resumingPayment || bitcoinSend ? 'home' : 'send')}
       footer={
         <>
-          {error ? (
-            <p className='qg-footer-error' role='alert'>
-              {error}
-            </p>
-          ) : null}
+          {error ? <PaymentNotice message={error} /> : null}
           <QgPrimary
             onClick={() => void approveSend()}
             disabled={busy}

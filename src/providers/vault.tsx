@@ -1,3 +1,4 @@
+import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
@@ -165,6 +166,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [deployment, setDeployment] = useState<PublicAuthorizerStatus | null>(null)
   const [enrollment, setEnrollment] = useState<EnrollmentSecrets | null>(null)
   const [error, setError] = useState('')
+  const [paymentError, setPaymentError] = useState<BitcoinPaymentError | undefined>()
   const [busy, setBusy] = useState(false)
   const [spend, setSpend] = useState<VaultSpend>({ address: '', amount: 0, fee: 0 })
   const spendRef = useRef(spend)
@@ -868,6 +870,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setError('Sign in with the passkey that created this vault.')
         return
       }
+      setPaymentError(undefined)
+      setError('')
       setBitcoinOutputs(outputs)
       setBusy(true)
       setLightningQuote(null)
@@ -910,6 +914,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           /* Payment outcome is independent of balance refresh. */
         }
       } catch (err) {
+        setPaymentError(err instanceof BitcoinPaymentError ? err : undefined)
         setError(humanizeVaultError(err))
         if (approvalAccepted) setScreen('home')
       } finally {
@@ -1587,6 +1592,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       enroll,
       enrolled,
       error,
+      paymentError: paymentError?.message === error ? paymentError : undefined,
+      dismissError: clearError,
       fiatDisplayRate,
       fiatDisplayEnabled,
       setFiatDisplay,
@@ -1729,6 +1736,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       signIn,
       enrolled,
       error,
+      paymentError,
+      clearError,
       fiatDisplayRate,
       fiatDisplayEnabled,
       setFiatDisplay,

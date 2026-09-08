@@ -345,7 +345,7 @@ it('reconciles a new Bitcoin payment through the shared status path without crea
   expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
 })
 
-it.each(['rejected', 'uncertain'])(
+it.each(['rejected', 'expiry', 'uncertain'])(
   'SDK settlement preserves the Guardian %s outcome without retrying or cancelling',
   async (state) => {
     const f = bitcoinFixture(1)
@@ -355,8 +355,9 @@ it.each(['rejected', 'uncertain'])(
       contractRepository: new InMemoryContractRepository(),
     }
     const dispose = vi.fn()
+    const unlock = vi.fn(async () => ({ phoneSecret: scalarSecret(3), scalar: scalarSecret(4), assertion: {} }))
     vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({
-      unlock: async () => ({ phoneSecret: scalarSecret(3), scalar: scalarSecret(4), assertion: {} }),
+      unlock,
       dispose,
     } as never)
     vi.spyOn(spendModule, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
@@ -394,7 +395,13 @@ it.each(['rejected', 'uncertain'])(
       const proof = Transaction.fromPSBT(base64.decode(request.psbt))
       expect(proof.inputsLength).toBe(2)
       expect(hex.encode(proof.getOutput(1).script!)).toBe(f.plan.outputs![0].script)
-      return { state, reason: 'input already spent' }
+      return {
+        state: state === 'expiry' ? 'rejected' : state,
+        reason:
+          state === 'expiry'
+            ? 'INVALID_PSBT_INPUT (5): vtxo [redacted] expires after 2026-10-07 (minExpiryGap: 1h0m0s)'
+            : 'input already spent',
+      }
     })
     const released = vi.spyOn(bitcoinPaymentClient, 'release')
     let error: unknown
@@ -413,7 +420,24 @@ it.each(['rejected', 'uncertain'])(
     expect(released).not.toHaveBeenCalled()
     expect(dispose).toHaveBeenCalledOnce()
     if (state === 'rejected') {
-      expect(humanizeVaultError(error)).toContain('Bitcoin payment was not sent. input already spent')
+      expect(humanizeVaultError(error)).toContain('funds changed or are in use')
+      expect(readSpendingBitcoin(f.status)).toBeNull()
+    } else if (state === 'expiry') {
+      expect(humanizeVaultError(error)).toContain('Expected availability')
+      expect(humanizeVaultError(error)).not.toContain('INVALID_PSBT_INPUT')
+      expect(readSpendingBitcoin(f.status)).toBeNull()
+      await expect(
+        sendSpendingToBitcoin(
+          { vaultId: f.status.vaultId } as never,
+          f.status,
+          f.plan.outputs!,
+          async () => true,
+          () => {},
+        ),
+      ).rejects.toThrow('Expected availability')
+      expect(unlock).toHaveBeenCalledOnce()
+      expect(bitcoinPaymentClient.prepare).toHaveBeenCalledOnce()
+      expect(registered).toHaveBeenCalledOnce()
       expect(readSpendingBitcoin(f.status)).toBeNull()
     } else {
       expect(humanizeVaultError(error)).toContain('registration is still being checked')

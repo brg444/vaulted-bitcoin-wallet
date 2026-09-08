@@ -1,3 +1,4 @@
+import PaymentNotice from './qg/PaymentNotice'
 import { useContext, useEffect, useState } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
@@ -95,11 +96,7 @@ export default function VaultHome() {
         ) : null
       }
     >
-      {spending && spendingBitcoin?.error ? (
-        <p className='qg-footer-error' role='alert'>
-          {spendingBitcoin.error}
-        </p>
-      ) : null}
+      {spending && spendingBitcoin?.error ? <PaymentNotice message={spendingBitcoin.error} /> : null}
       {spending
         ? pendingPayments.map((payment) => (
             <PendingPayment
@@ -116,11 +113,7 @@ export default function VaultHome() {
             />
           ))
         : null}
-      {error && (pendingPayments.length > 0 || error !== balanceError) ? (
-        <p className='qg-footer-error' role='alert'>
-          {error}
-        </p>
-      ) : null}
+      {error && (pendingPayments.length > 0 || error !== balanceError) ? <PaymentNotice message={error} /> : null}
 
       {!spending ? (
         <button
