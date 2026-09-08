@@ -1,3 +1,4 @@
+import QgGuidance from './qg/QgGuidance'
 import { useContext, useState, type ReactNode } from 'react'
 import { Fingerprint, FileKey, Server, ShieldCheck } from 'lucide-react'
 import { prettyAmount } from '../../lib/format'
@@ -169,11 +170,10 @@ export default function VaultKeys() {
               {busy ? 'Waiting for passkey…' : 'Use on another device'}
             </button>
           ) : null}
-          <details className='qg-guidance'>
-            <summary>Key details</summary>
+          <QgGuidance title='Key details'>
             <p>Hardware wallet: {shortKey(hardwarePub)}</p>
             {hasRecovery ? <p>Recovery key: {shortKey(recoveryPub)}</p> : null}
-          </details>
+          </QgGuidance>
           <RecoveryExplanation
             advanced={protectionTier === 'advanced'}
             mainnet={status?.network === 'mainnet'}

@@ -362,15 +362,22 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 .qg-primary,
 .qg-secondary {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   justify-content: center;
   gap: var(--qg-space-8);
+  padding: var(--qg-space-12) var(--qg-space-24);
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
   font: inherit;
   cursor: pointer;
 }
 
 .qg-primary svg,
 .qg-secondary svg {
+  flex-shrink: 0;
   width: 18px;
   height: 18px;
   stroke-width: 2.1;

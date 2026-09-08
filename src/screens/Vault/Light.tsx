@@ -1,3 +1,4 @@
+import QgGuidance from './qg/QgGuidance'
 import TransactionReference from './qg/TransactionReference'
 import { WalletHelpContext } from './qg/Help'
 import { syncCompleteLightBackup as syncLightCloudBackup } from '../../lib/vault/recovery/capture'
@@ -715,11 +716,10 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       >
         <h1>Welcome back</h1>
         <p className='qg-copy'>Use face recognition, a fingerprint or your device PIN to unlock your wallet key.</p>
-        <details className='qg-guidance'>
-          <summary>Use a local passkey</summary>
+        <QgGuidance title='Use a local passkey'>
           <p>Use the wallet access already saved on this device.</p>
           <QgTextButton label='Unlock on this device' onClick={() => void unlockLocally()} />
-        </details>
+        </QgGuidance>
       </QgScreen>
     )
   else if (view === 'restore')
@@ -1020,8 +1020,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         {busy && recoveryController.current ? (
           <QgSecondary label='Stop and resume later' onClick={() => recoveryController.current?.abort()} />
         ) : null}
-        <details className='qg-guidance'>
-          <summary>Recovery progress and transactions</summary>
+        <QgGuidance title='Recovery progress and transactions'>
           <div className='light-recovery-log' role='log' aria-live='polite'>
             {Array.from(
               new Map(
@@ -1043,7 +1042,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               )
             })}
           </div>
-        </details>
+        </QgGuidance>
       </QgScreen>
     )
   else if (view === 'home' && record)
@@ -1444,13 +1443,12 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               Keep access to the device or passkey provider you used during setup. You need the same passkey to unlock
               your backup.
             </p>
-            <details className='qg-guidance'>
-              <summary>How your passkey is used</summary>
+            <QgGuidance title='How your passkey is used'>
               <p>
                 Your passkey unlocks the wallet key. Vaulted approves normal payments within your Spending limits; a
                 delayed Bitcoin exit uses the wallet key directly.
               </p>
-            </details>
+            </QgGuidance>
           </>
         ) : null}
         {securitySection === 'limits' ? (
@@ -1494,8 +1492,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   </p>
                 ) : null}
                 {coverage?.error ? <p role='status'>{coverage.error}</p> : null}
-                <details className='qg-guidance'>
-                  <summary>How renewal works</summary>
+                <QgGuidance title='How renewal works'>
                   <p>
                     Scheduled outputs can renew while this wallet is closed. New receipts and replacement outputs need
                     your next normal unlock or payment before another renewal can be scheduled.
@@ -1511,7 +1508,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                     <p>Some expiry dates are unavailable. Reconnect to check them.</p>
                   ) : null}
                   <p>The same spending limits apply. You can also renew here when needed.</p>
-                </details>
+                </QgGuidance>
               </div>
             </div>
             <QgSecondary
@@ -1600,8 +1597,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 {recoveryDataError}
               </p>
             ) : null}
-            <details className='qg-guidance'>
-              <summary>Backup details</summary>
+            <QgGuidance title='Backup details'>
               <p>
                 Your backup includes saved transaction data for recovery to Bitcoin. Network fees and the exit waiting
                 period apply. Save an updated file after payments or renewals.
@@ -1611,7 +1607,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   ? `Transaction data saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
                   : 'Saving transaction data…'}
               </p>
-            </details>
+            </QgGuidance>
           </>
         ) : null}
       </QgScreen>

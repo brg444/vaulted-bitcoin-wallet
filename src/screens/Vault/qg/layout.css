@@ -45,3 +45,26 @@
     --qg-section-gap: var(--qg-space-16);
   }
 }
+
+/* Stacks own section spacing; prose owns spacing between related text and fields.
+ * Reset child margins so disclosure, field, and browser defaults do not add up. */
+.qg-stack,
+.qg-prose {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--qg-section-gap);
+  min-width: 0;
+}
+
+.qg-prose {
+  gap: var(--qg-space-12);
+  font-size: var(--qg-body);
+  line-height: 1.55;
+}
+
+.qg-screen .qg-stack > *,
+.qg-screen .qg-prose > * {
+  min-width: 0;
+  margin-block: 0;
+}
