@@ -1,5 +1,7 @@
 import {
   CSVMultisigTapscript,
+  Extension,
+  ExtensionNotFoundError,
   Intent,
   PrevArkTxField,
   Transaction,
@@ -55,7 +57,44 @@ export function buildRollingRenewal(
   validAt: number,
   expireAt: number,
 ): RollingRenewalTransaction {
-  const ctx = context(params, sources, debits, false)
+  return renewal(params, sources, debits, fee, validAt, expireAt, true)
+}
+
+/** Preserves asset-free principal exactly; it cannot consume controller allowance. */
+export function buildRollingPrincipalRenewal(
+  params: RollingContractParameters,
+  sources: readonly RollingSource[],
+  validAt: number,
+  expireAt: number,
+): Pick<RollingRenewalTransaction, 'proof' | 'message'> {
+  const result = renewal(params, sources, [], 0, validAt, expireAt, false)
+  return { proof: result.proof, message: result.message }
+}
+
+function renewal(
+  params: RollingContractParameters,
+  sources: readonly RollingSource[],
+  debits: readonly RollingDebit[],
+  fee: number,
+  validAt: number,
+  expireAt: number,
+  controller: boolean,
+): RollingRenewalTransaction {
+  const ctx = context(params, sources, debits, false, controller)
+  if (!controller) {
+    for (let i = 0; i < sources.length; i++) {
+      let ext: Extension
+      try {
+        ext = Extension.fromTx(ctx.previous[i])
+      } catch (error) {
+        if (error instanceof ExtensionNotFoundError) continue
+        throw error
+      }
+      for (const group of ext.getAssetPacket()?.groups ?? [])
+        if (group.outputs.some((output) => output.vout === sources[i].index && output.amount > 0n))
+          throw new Error('Principal renewal cannot consume an asset output')
+    }
+  }
   if (
     !Number.isSafeInteger(validAt) ||
     !Number.isSafeInteger(expireAt) ||
@@ -114,13 +153,14 @@ export function buildRollingRenewal(
   const entries = sources.map((_, i) =>
     concat(new Uint8Array([i + 1, 0]), compact(code.length), code, compact(encodedWitness.length), encodedWitness),
   )
+  const packets = [{ type: 1, data: concat(compact(entries.length), ...entries) }]
+  if (controller) {
+    packets.unshift({ type: 0, data: marker })
+    packets.push({ type: 2, data: encodeRollingState(after) })
+  }
   proof.addOutput({
     amount: 0n,
-    script: encodeExtension([
-      { type: 0, data: marker },
-      { type: 1, data: concat(compact(entries.length), ...entries) },
-      { type: 2, data: encodeRollingState(after) },
-    ]),
+    script: encodeExtension(packets),
   })
   const stripped = proof.toBytes(false, false).length
   if (fee > stripped * params.policy.feerateCap) throw new Error('Renewal feerate exceeds limit')
@@ -224,9 +264,11 @@ function context(
   sources: readonly RollingSource[],
   debits: readonly RollingDebit[],
   credit: boolean,
+  controller = true,
 ) {
   const script = new RollingAllowanceScript(params)
-  if (sources.length < 1 || sources.length > 5 || sources[0].index !== 0) throw new Error('Invalid rolling sources')
+  if (sources.length < 1 || sources.length > (controller ? 5 : 4) || (controller && sources[0].index !== 0))
+    throw new Error('Invalid rolling sources')
   const seen = new Set<string>()
   let principal = 0
   const previous = sources.map((source, i) => {
@@ -243,16 +285,16 @@ function context(
       output.amount > 2_100_000_000_000_000n
     )
       throw new Error('Rolling source contract or value mismatch')
-    if (i === 0 && output.amount !== 330n) throw new Error('Controller value mismatch')
+    if (controller && i === 0 && output.amount !== 330n) throw new Error('Controller value mismatch')
     const id = `${tx.id}:${source.index}`
     if (seen.has(id)) throw new Error('Duplicate source')
     seen.add(id)
-    if (i > 0) principal += Number(output.amount)
+    if (!controller || i > 0) principal += Number(output.amount)
     if (!Number.isSafeInteger(principal) || principal > 2_100_000_000_000_000) throw new Error('Principal overflow')
     return tx
   })
-  const before = stateFromTransaction(previous[0])
-  verifyRollingHistory(before, debits, params.policy.budget)
+  const before = controller ? stateFromTransaction(previous[0]) : { remaining: 0, sequence: 0, root: '0'.repeat(64) }
+  if (controller) verifyRollingHistory(before, debits, params.policy.budget)
   const leaf = credit ? script.credit() : script.spend()
   const inputs = sources.map((s, i) => ({
     txid: previous[i].id,

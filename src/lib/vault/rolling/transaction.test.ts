@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { getArkPsbtFields, PrevArkTxField, Transaction } from '@arkade-os/sdk'
+import { Extension, getArkPsbtFields, PrevArkTxField, Transaction } from '@arkade-os/sdk'
 import { bytesToHex, hexToBytes } from '../hex'
 import vectors from './testdata/rolling-allowance-v1.json'
 import { type RollingContractParameters } from './contract'
-import { buildRollingPayment, buildRollingCredit, buildRollingRenewal } from './transaction'
+import {
+  buildRollingPayment,
+  buildRollingCredit,
+  buildRollingRenewal,
+  buildRollingPrincipalRenewal,
+} from './transaction'
 import { encodeRollingState } from './allowance'
 
 const params: RollingContractParameters = {
@@ -21,6 +26,28 @@ const sources = [
 ]
 
 describe('rolling wallet transaction construction', () => {
+  it('matches runtime principal-only renewal without consuming the controller or charging a fee', () => {
+    const vector = vectors.principalRenewal
+    const result = buildRollingPrincipalRenewal(params, [sources[1]], vector.validAt, vector.expireAt)
+    expect(result.message).toBe(vector.message)
+    expect(bytesToHex(result.proof.toBytes(true, false))).toBe(vector.proofTx)
+    expect(result.proof.getOutput(0).amount).toBe(Transaction.fromRaw(hexToBytes(vectors.sourceTx)).getOutput(1).amount)
+    const ext = Extension.fromTx(result.proof)
+    expect(ext.getAssetPacket()).toBeNull()
+    expect(ext.getPacketByType(2)).toBeNull()
+    expect(getArkPsbtFields(result.proof, 1, PrevArkTxField).map(bytesToHex)).toEqual([vectors.sourceTx])
+    expect(() =>
+      buildRollingPrincipalRenewal(
+        params,
+        [{ previousTxHex: vectors.paymentTx, index: 0 }],
+        vector.validAt,
+        vector.expireAt,
+      ),
+    ).toThrow()
+    expect(() =>
+      buildRollingPrincipalRenewal(params, [sources[1], sources[1]], vector.validAt, vector.expireAt),
+    ).toThrow()
+  })
   it('matches runtime renewal proofs with and without a shared allowance fee', () => {
     for (const vector of vectors.renewals) {
       const result = buildRollingRenewal(params, sources, [], vector.fee, vector.validAt, vector.expireAt)
