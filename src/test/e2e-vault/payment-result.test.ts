@@ -5,12 +5,13 @@ import { expectWalletLayout } from './fixtures/layout'
 // Render the real result component with explicit outcome fixtures. No payment is submitted.
 for (const width of [320, 375]) {
   for (const theme of ['light', 'dark']) {
-    for (const [kind, title, label] of [
-      ['vtxo', 'Payment sent', 'Sent'],
-      ['onchain', 'Savings transfer submitted', 'Submitted'],
-      ['lightning', 'Payment started', 'Started'],
+    for (const [account, kind, title, label] of [
+      ['spend', 'vtxo', 'Payment sent', 'Sent'],
+      ['savings', 'onchain', 'Savings transfer submitted', 'Submitted'],
+      ['spend', 'onchain', 'Bitcoin payment submitted', 'Submitted'],
+      ['spend', 'lightning', 'Payment started', 'Started'],
     ]) {
-      test(`payment result preserves ${kind} at ${width}px in ${theme}`, async ({ page }, testInfo) => {
+      test(`payment result preserves ${account} ${kind} at ${width}px in ${theme}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width, height: 667 })
         await mockEnrollmentAccess(page, 'open')
         await page.route('**/src/screens/Vault/Welcome.tsx*', (route) =>
@@ -23,7 +24,7 @@ for (const width of [320, 375]) {
               export default function ResultFixture() {
                 const current = React.useContext(VaultContext);
                 return React.createElement(VaultContext.Provider, {value: {
-                  ...current, lastTxKind: ${JSON.stringify(kind)},
+                  ...current, account: ${JSON.stringify(account)}, lastTxKind: ${JSON.stringify(kind)},
                   lastTxid: '${'ab'.repeat(32)}',
                   lastSend: {address: 'tark1-test-destination', amount: 12000, fee: 0},
                   status: {network: 'mutinynet'}
@@ -37,7 +38,7 @@ for (const width of [320, 375]) {
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
         await expect(page.locator('.qg-success-label')).toHaveText(label)
         await expectWalletLayout(page)
-        await page.screenshot({ path: testInfo.outputPath(`${kind}-${width}-${theme}.png`) })
+        await page.screenshot({ path: testInfo.outputPath(`${account}-${kind}-${width}-${theme}.png`) })
         await page
           .getByText(kind === 'lightning' ? 'View funding transaction' : 'View transaction', { exact: true })
           .click()
