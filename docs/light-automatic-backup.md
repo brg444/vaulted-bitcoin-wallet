@@ -67,11 +67,17 @@ old, correctly encrypted file. It must reconcile current VTXOs when online.
 
 **Save recovery package** downloads readable Spending paths alongside the existing
 encrypted owner and payment-journal backup. **Check a recovery package** validates
-the saved paths without unlocking keys or broadcasting. The Saved copies panel
-compares local, verified service, downloaded and checked Spending paths; key access,
-other account requirements and later activity need separate verification. The
-original passkey remains required for Light owner access. Older encrypted files
-are accepted by the wallet and both companion entry points.
+the saved paths. The optional **Check protected contents with passkey** decrypts
+and validates the owner envelope and payment records, checks that both sections
+contain the same Spending paths, and clears the unlocked owner key afterward.
+It leaves wallet balances, renewal authorizations and Bitcoin state unchanged.
+
+The Saved copies panel compares paths and protected records separately across local,
+verified service, downloaded and checked copies. Matching Spending paths can coexist
+with different payment records, and older files without journals are identified.
+The original passkey remains required for Light owner access. Later activity and
+Bitcoin eligibility require separate checks. Older encrypted files remain accepted
+by the wallet and both companion entry points.
 
 ## Unilateral exit
 

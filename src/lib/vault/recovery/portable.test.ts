@@ -135,3 +135,79 @@ describe('portable recovery data', () => {
     expect(() => parsePortableRecoveryPackage({ ...pkg, archive: foreign.file.archive })).toThrow()
   })
 })
+
+// File checks use the real authenticated codec and only substitute the passkey
+// ceremony; a callback that restores balances or authorizes renewals is absent.
+describe('protected package checks', () => {
+  it('detects changed payment records even when the saved Spending paths match', async () => {
+    const { file } = await fixture()
+    const { recoveryFileFacts } = await import('./packageCheck')
+    const previous = recoveryFileFacts(file)
+    const newer = structuredClone(file)
+    newer.spendingJournal!.resolved = [
+      {
+        operationId: 'ab'.repeat(16),
+        destAddress: file.archive.status.spendingArkAddress!,
+        amountSats: 1000,
+        arkTxid: 'cd'.repeat(32),
+      },
+    ]
+    const current = recoveryFileFacts(newer)
+    expect(current.contents.digest).not.toBe(previous.contents.digest)
+    expect(current.archive).toEqual(previous.archive)
+    const refreshed = structuredClone(file)
+    refreshed.archive.spending.capturedAt = new Date().toISOString()
+    expect(recoveryFileFacts(refreshed).contents.digest).toBe(previous.contents.digest)
+    const legacy = structuredClone(file)
+    delete legacy.spendingJournal
+    delete legacy.lightningJournal
+    expect(recoveryFileFacts(legacy).contents.journalsPresent).toBe(false)
+    expect(recoveryFileFacts(legacy).contents.digest).not.toBe(previous.contents.digest)
+  })
+  it('opens with the original passkey, records content checks and wipes the signing key without restoring', async () => {
+    const { IDBFactory } = await import('fake-indexeddb')
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    const { file, key } = await fixture()
+    const pkg = await createPortableRecoveryPackage(file, key)
+    const signing = await import('../savingsSpend')
+    const secret = scalarSecret(3)
+    const unlock = vi.spyOn(signing, 'unlockPhoneBip340').mockResolvedValue(secret)
+    vi.stubGlobal('location', { origin: file.header.origin, hostname: file.header.rpId })
+    const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('services unavailable'))
+    try {
+      const { checkProtectedRecoveryPackage, recordRecoveryFileCopy } = await import('./packageCheck')
+      const { readRecoveryCopies, recoveryContentsDescription } = await import('./copyStatus')
+      await recordRecoveryFileCopy('local', file)
+      const result = await checkProtectedRecoveryPackage(pkg, file.header.binding)
+      expect(result.contents.journalsPresent).toBe(true)
+      expect(unlock).toHaveBeenCalledOnce()
+      expect(secret.every((byte) => byte === 0)).toBe(true)
+      expect(network).not.toHaveBeenCalled()
+      const copies = await readRecoveryCopies(file.header.binding.vaultId, file.header.binding.network)
+      expect(recoveryContentsDescription(copies, 'checked')).toContain('Matches the locally saved recovery data')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+  it('rejects another wallet before prompting and rejects a public/protected generation mismatch', async () => {
+    const { file, key } = await fixture()
+    const pkg = await createPortableRecoveryPackage(file, key)
+    const signing = await import('../savingsSpend')
+    const unlock = vi.spyOn(signing, 'unlockPhoneBip340').mockImplementation(async () => scalarSecret(3))
+    vi.stubGlobal('location', { origin: file.header.origin, hostname: file.header.rpId })
+    try {
+      const { checkProtectedRecoveryPackage } = await import('./packageCheck')
+      await expect(
+        checkProtectedRecoveryPackage(pkg, { ...file.header.binding, vaultId: 'ff'.repeat(16) }),
+      ).rejects.toThrow('another wallet')
+      expect(unlock).not.toHaveBeenCalled()
+      const changed = structuredClone(pkg)
+      changed.archive.spending.coins = '[]'
+      changed.archive.spending.branches = {}
+      changed.archive.spending.transactions = {}
+      await expect(checkProtectedRecoveryPackage(changed, file.header.binding)).rejects.toThrow('paths disagree')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})

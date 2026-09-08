@@ -27,18 +27,29 @@ recovery application separately; the JSON package contains data, not a runtime.
 | Your hardware key | The signing device or compatible software and its own backup. |
 | Your recovery key | A separate key if you chose Advanced; it is required for Advanced Spending exit when the phone is lost. |
 
-**Check a recovery package** opens a file without signing or broadcasting.
-It reports the Spending paths and amount found in that file. It cannot prove
-coverage of later activity, access to signing keys or current Bitcoin eligibility.
-The public Recovery Kit under **Wallet details** records Savings scripts and rules; it cannot
-replace a missing Spending transaction graph.
+**Check a recovery package** first checks readable Spending paths and the amount
+found in the file. **Check protected contents with passkey** uses the original
+passkey to decrypt and validate the payment, Lightning and Savings action records,
+then compares the readable and protected transaction data. The check clears the
+unlocked signing key afterward and leaves the wallet and Bitcoin state unchanged.
+External hardware and recovery keys, later activity and current Bitcoin eligibility
+still require verification. Advanced Spending can use the readable paths without
+performing this optional phone-dependent check.
 
-**Saved copies** records the local Spending paths, verified service copy,
-requested download and most recently checked file separately. Matching paths
-establish agreement between those saved copies. Key availability, Savings and
-pending-operation requirements, later activity and the location of a downloaded
-file still need their own checks. Light uses the same package and file-check
-actions while retaining its original passkey requirement.
+The public Recovery Kit under **Wallet details** records Savings scripts and rules;
+it cannot replace a missing Spending transaction graph. Onboarding offers this map
+without recording a backup-readiness acknowledgement and directs users to Security
+→ Recovery for the package checks.
+
+**Saved copies** records local data, verified service copies, downloads and file
+checks separately. Spending paths and protected records have separate comparisons,
+so identical paths with different payment journals show a content difference.
+Copies recorded by earlier versions retain their path comparison until a complete
+file is checked. The panel identifies missing legacy journals and shows counts of
+unresolved payment records, retained Lightning contracts and pending Savings actions.
+A matching file establishes agreement with the locally saved generation; its location,
+external keys and subsequent activity still need checking. Light retains its original
+passkey requirement.
 
 Automatic capture runs while the wallet is available. Encrypted cloud updates
 require an active backup session and a working connection. Local storage and

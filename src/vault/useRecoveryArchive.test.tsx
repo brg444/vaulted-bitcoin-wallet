@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   unlock: vi.fn(),
 }))
 vi.mock('../lib/vault/recovery/capture', () => ({ captureVaultRecoveryFile: mocks.capture }))
-vi.mock('../lib/vault/recovery/copyStatus', () => ({ recordRecoveryCopy: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../lib/vault/recovery/packageCheck', () => ({ recordRecoveryFileCopy: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../lib/vault/recovery/cloudBackup', () => ({
   openRecoveryCloudBackup: mocks.open,
   syncRecoveryCloudBackup: mocks.sync,

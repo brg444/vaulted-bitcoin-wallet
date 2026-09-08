@@ -4,7 +4,16 @@ import type { ExitArchive } from './exitArchive'
 import { publicExitArchive } from './portable'
 
 export type RecoveryCopyKind = 'local' | 'service' | 'downloaded' | 'checked'
-export type RecoveryCopies = Partial<Record<RecoveryCopyKind, { digest: string; at: string }>>
+export type RecoveryContents = {
+  digest: string
+  pendingPayments: number
+  lightningContracts: number
+  pendingConnector: boolean
+  journalsPresent: boolean
+}
+export type RecoveryCopies = Partial<
+  Record<RecoveryCopyKind, { digest: string; at: string; contents?: RecoveryContents }>
+>
 export const recoveryCopiesEvent = 'vaulted-recovery-copies'
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical)
@@ -61,6 +70,7 @@ export async function recordRecoveryCopy(
   network: string,
   kind: RecoveryCopyKind,
   archive: ExitArchive,
+  contents?: RecoveryContents,
 ) {
   const digest = recoveryPathDigest(archive),
     database = await db()
@@ -72,7 +82,7 @@ export async function recordRecoveryCopy(
       const get = store.get(key)
       get.onsuccess = () => {
         const copies: RecoveryCopies = get.result ?? {}
-        copies[kind] = { digest, at: new Date().toISOString() }
+        copies[kind] = { digest, at: new Date().toISOString(), ...(contents ? { contents } : {}) }
         store.put(copies, key)
       }
       tx.oncomplete = () => resolve()
@@ -92,4 +102,20 @@ export function recoveryCopyDescription(copies: RecoveryCopies, kind: RecoveryCo
   return copy.digest === copies.local.digest
     ? `Matches the locally saved Spending paths · ${date}`
     : `Differs from the locally saved Spending paths · ${date}`
+}
+
+/** Complete decrypted contents are compared separately from publicly readable paths. */
+export function recoveryContentsDescription(copies: RecoveryCopies, kind: RecoveryCopyKind) {
+  const contents = copies[kind]?.contents
+  if (!contents) return 'Protected contents have not been compared for this copy.'
+  const local = copies.local?.contents
+  const comparison =
+    kind === 'local'
+      ? 'Saved data includes'
+      : !local
+        ? 'Local protected contents have not been checked. This copy includes'
+        : contents.digest === local.digest
+          ? 'Matches the locally saved recovery data, including'
+          : 'Differs from the locally saved recovery data. This copy includes'
+  return `${comparison} ${contents.pendingPayments} unresolved payment records, ${contents.lightningContracts} Lightning contract records${contents.pendingConnector ? ', and a pending Savings action' : ''}. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals.'}`.trim()
 }

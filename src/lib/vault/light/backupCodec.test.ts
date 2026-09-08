@@ -173,3 +173,23 @@ describe('local restore owner ceremony', () => {
     expect(owner.every((byte) => byte === 0)).toBe(true)
   })
 })
+
+it('checks protected Light contents without the restore or renewal callbacks', async () => {
+  const { IDBFactory } = await import('fake-indexeddb')
+  vi.stubGlobal('indexedDB', new IDBFactory())
+  const file = await fixture()
+  const pkg = await createLightRecoveryPackage(file, await lightBackupKey(testOwner, file))
+  const owner = Uint8Array.from(testOwner)
+  vi.mocked(unlockLightWithPasskey).mockResolvedValueOnce(owner)
+  const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('services unavailable'))
+  try {
+    const { checkProtectedRecoveryPackage } = await import('../recovery/packageCheck')
+    const checked = await checkProtectedRecoveryPackage(pkg, file.descriptor)
+    expect(checked.contents.journalsPresent).toBe(false)
+    expect(owner.every((byte) => byte === 0)).toBe(true)
+    expect(network).not.toHaveBeenCalled()
+  } finally {
+    vi.unstubAllGlobals()
+    network.mockRestore()
+  }
+})

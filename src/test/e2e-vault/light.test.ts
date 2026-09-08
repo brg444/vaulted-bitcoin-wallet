@@ -81,7 +81,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible({ timeout: 45000 })
   await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
   await page.getByRole('button', { name: 'Security', exact: true }).click()
-  await page.getByRole('button', { name: /^Access and limits/ }).click()
+  await page.getByRole('button', { name: /^Spending limits/ }).click()
   await expect(page.getByText('Spending limits', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await page.getByRole('button', { name: /^Backups/ }).click()
@@ -99,6 +99,10 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   expect(saved.backup.header.recoveryBackup).toBeUndefined()
   await page.getByLabel('Check a recovery package').setInputFiles(path!)
   await expect(page.getByText(/found in this backup/)).toBeVisible()
+  await page.getByRole('button', { name: 'Check protected contents with passkey' }).click()
+  await expect(page.getByText(/Original passkey opened this file/)).toBeVisible()
+  await page.getByText('Saved copies', { exact: true }).click()
+  await expect(page.getByText(/Matches the locally saved recovery data/).first()).toBeVisible()
   // Keep the original authenticator but remove this device's app record.
   // Both cloud and local-file restoration retain the same script and policy.
   await page.evaluate(() => {

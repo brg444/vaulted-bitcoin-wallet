@@ -3,6 +3,7 @@ import {
   readRecoveryCopies,
   recoveryCopiesEvent,
   recoveryCopyDescription,
+  recoveryContentsDescription,
   type RecoveryCopies as Copies,
   type RecoveryCopyKind,
 } from '../../lib/vault/recovery/copyStatus'
@@ -52,12 +53,14 @@ export default function RecoveryCopies({ vaultId, network }: { vaultId: string; 
             </strong>
             <br />
             {recoveryCopyDescription(copies, kind)}
+            <br />
+            {recoveryContentsDescription(copies, kind)}
           </p>
         ))
       )}
       <p>
-        This compares saved Spending paths. It cannot confirm where a downloaded file is stored, access to your keys, or
-        later activity while this wallet is closed.
+        Saved paths and protected records are compared separately. A passkey file check confirms access at that time.
+        Hardware and recovery keys, later activity, and the location of your downloaded copy still need checking.
       </p>
     </details>
   )

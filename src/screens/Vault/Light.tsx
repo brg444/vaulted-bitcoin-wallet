@@ -12,6 +12,7 @@ import {
   parseLightRecoveryPackage,
   unwrapLightRecoveryPackage,
 } from '../../lib/vault/light/portable'
+import { recordRecoveryFileCopy, checkProtectedRecoveryPackage } from '../../lib/vault/recovery/packageCheck'
 import { recordRecoveryCopy } from '../../lib/vault/recovery/copyStatus'
 import RecoveryCopies from './RecoveryCopies'
 import { unlockLightWithPasskey } from '../../lib/vault/light/passkey'
@@ -216,6 +217,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   }, [record?.descriptor.vaultId, view === 'unlock', view === 'emergency'])
   const [recoveryDataError, setRecoveryDataError] = useState('')
   const [packageCheck, setPackageCheck] = useState('')
+  const [packageToCheck, setPackageToCheck] = useState<ReturnType<typeof parseLightRecoveryPackage> | null>(null)
+  const packageRead = useRef(0)
   const recoveryController = useRef<AbortController | null>(null)
   useEffect(() => () => recoveryController.current?.abort(), [])
   useEffect(() => {
@@ -229,7 +232,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const current = await fetchVaultWalletVtxoSnapshot(status)
         if (!current.recoveryVtxos) throw new Error('Wallet output snapshot is unavailable')
         const archive = await captureLightRecoveryArchive(record.descriptor, current.recoveryVtxos)
-        await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'local', archive)
+        await recordRecoveryFileCopy('local', await captureLightRecoveryFile(record, archive))
         const coins = validateLightRecoveryArchive(archive, record.descriptor).coins
         if (!active) return
         setRecoveryDataDate(archive.capturedAt)
@@ -238,7 +241,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const session = cloudSession.current
         if (session) {
           const saved = await syncLightCloudBackup(session, archive)
-          await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'service', archive)
+          await recordRecoveryFileCopy('service', saved)
           if (active) {
             setCloudSavedAt(saved.createdAt)
             setCloudError('')
@@ -428,10 +431,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const key = await lightBackupKey(owner, record)
         if (!status) throw new Error('Open the wallet before saving a backup')
         const archive = await captureCurrent(record, status)
-        const saved = await createLightRecoveryPackage(await captureLightRecoveryFile(record, archive), key)
+        const file = await captureLightRecoveryFile(record, archive)
+        const saved = await createLightRecoveryPackage(file, key)
         downloadJSON(saved, `vaulted-light-${record.descriptor.vaultId.slice(0, 8)}.json`)
-        await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'local', archive)
-        await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'downloaded', archive)
+        await recordRecoveryFileCopy('local', file)
+        await recordRecoveryFileCopy('downloaded', file)
         setNotice('Recovery package downloaded with current Bitcoin exit paths')
       } finally {
         owner.fill(0)
@@ -1583,8 +1587,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   if (!status) throw new Error('Open the wallet before saving a backup')
                   const archive = await captureCurrent(record, status)
                   const saved = await syncLightCloudBackup(session, archive)
-                  await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'local', archive)
-                  await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'service', archive)
+                  await recordRecoveryFileCopy('local', saved)
+                  await recordRecoveryFileCopy('service', saved)
                   setCloudSavedAt(saved.createdAt)
                   setCloudError('')
                 })
@@ -1603,7 +1607,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 onChange={(event) => {
                   const file = event.currentTarget.files?.[0]
                   event.currentTarget.value = ''
+                  const revision = ++packageRead.current
                   setPackageCheck('')
+                  setPackageToCheck(null)
                   if (!file) return
                   void run(async () => {
                     if (file.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
@@ -1613,7 +1619,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                       pkg.backup.header.descriptor.network !== record.descriptor.network
                     )
                       throw new Error('This package belongs to another wallet')
+                    if (revision !== packageRead.current) return
                     const { coins } = validateLightRecoveryArchive(pkg.archive, record.descriptor)
+                    setPackageToCheck(pkg)
                     await recordRecoveryCopy(
                       record.descriptor.vaultId,
                       record.descriptor.network,
@@ -1627,6 +1635,22 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 }}
               />
             </label>
+            {packageToCheck ? (
+              <QgSecondary
+                label='Check protected contents with passkey'
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const revision = packageRead.current
+                    const { contents } = await checkProtectedRecoveryPackage(packageToCheck, record.descriptor)
+                    if (revision !== packageRead.current) return
+                    setPackageCheck(
+                      `Original passkey opened this file. It contains ${contents.pendingPayments} unresolved payment records and ${contents.lightningContracts} Lightning contract records. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals. '}No funds moved; Bitcoin eligibility remains unchecked.`,
+                    )
+                  })
+                }
+              />
+            ) : null}
             {packageCheck ? (
               <p className='qg-copy' role='status'>
                 {packageCheck}

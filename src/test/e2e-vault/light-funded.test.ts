@@ -133,7 +133,7 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   if (process.env.VAULT_LIGHT_TEST_RENEWAL === '1') {
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
     await page.getByRole('button', { name: 'Security', exact: true }).click()
-    await page.getByRole('button', { name: /^Automatic renewal/ }).click()
+    await page.getByRole('button', { name: /^Renewal/ }).click()
     await page.getByRole('button', { name: 'Renew Spending', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Keep your Spending active', exact: true })).toBeVisible({
       timeout: 45000,
