@@ -1179,7 +1179,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           <p className='light-address'>{status.spendingArkAddress}</p>
           <p className='qg-copy'>Send from a wallet that supports Arkade. This is an Arkade receiving address.</p>
         </div>
-        {vaultLightningReceiveEnabled(status.network) ? (
+        {vaultLightningReceiveEnabled(status.network, status.vaultId) ? (
           <QgSecondary label='Receive Lightning' onClick={() => navigate('receive-lightning')} />
         ) : null}
       </QgScreen>

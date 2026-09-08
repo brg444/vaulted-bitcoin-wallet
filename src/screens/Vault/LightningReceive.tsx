@@ -130,8 +130,7 @@ export default function LightningReceive({
     setBusy(true)
     setError('')
     try {
-      if (!status.arkadeCosignerOrigin) throw new Error('The enrolled Emulator endpoint is missing.')
-      const emulatorInfo = await new RestEmulatorProvider(status.arkadeCosignerOrigin).getInfo()
+      const emulatorInfo = await new RestEmulatorProvider(networkPins(status.network).emulatorOrigin).getInfo()
       if (emulatorInfo.signerPubkey !== networkPins(status.network).emulatorSignerPub)
         throw new Error('The Lightning claim service does not match this wallet.')
       const verified = await discoverVaultLightningSolver(status.network)

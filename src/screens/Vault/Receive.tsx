@@ -159,7 +159,7 @@ export default function VaultReceive() {
           </section>
         ) : null}
       </div>
-      {spending && vaultLightningReceiveEnabled(status?.network) ? (
+      {spending && vaultLightningReceiveEnabled(status?.network, status?.vaultId) ? (
         <QgSecondary label='Receive Lightning' onClick={() => setView('lightning')} />
       ) : null}
       {!spending && isConnectorTemplate(status?.templateVersion) ? (

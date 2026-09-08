@@ -162,7 +162,13 @@ export function vaultLightningReceivePlan(amountSats: number, profile: VaultLigh
 
 export function vaultLightningReceiveEnabled(
   network: string | undefined,
+  vaultId?: string,
   value = import.meta.env.VITE_VAULT_LIGHTNING_RECEIVE,
+  qualifiedVault = import.meta.env.VITE_VAULT_LIGHTNING_RECEIVE_VAULT,
 ) {
-  return value === 'true' && vaultLightningSolverProfile(network) !== undefined
+  return (
+    value === 'true' &&
+    vaultLightningSolverProfile(network) !== undefined &&
+    (qualifiedVault === undefined || (!!vaultId && qualifiedVault === vaultId))
+  )
 }

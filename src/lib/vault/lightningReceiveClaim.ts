@@ -38,8 +38,7 @@ export async function reconcileVaultLightningReceives(input: {
   if (!records.length) return
   const operator = input.operator ?? new RestArkProvider(pins.operatorOrigin)
   const indexer = input.indexer ?? new RestIndexerProvider(pins.operatorOrigin)
-  if (!status.arkadeCosignerOrigin) throw new Error('Lightning receive requires the enrolled Emulator endpoint.')
-  const emulator = input.emulator ?? new RestEmulatorProvider(status.arkadeCosignerOrigin)
+  const emulator = input.emulator ?? new RestEmulatorProvider(pins.emulatorOrigin)
   const [info, emulatorInfo] = await Promise.all([operator.getInfo(), emulator.getInfo()])
   if (
     info.network !== pins.sdkNetwork ||

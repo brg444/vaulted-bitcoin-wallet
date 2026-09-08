@@ -17,6 +17,7 @@ import {
   discoverVaultLightningSolver,
   vaultLightningFundingForInvoice,
   vaultLightningReceivePlan,
+  vaultLightningReceiveEnabled,
 } from './lightningConfig'
 import {
   requestVaultLightningReceive,
@@ -60,7 +61,7 @@ async function harness(
     phoneBip340Pub: enrolled?.phonePub ?? '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798',
     spendingArkAddress: payout,
     spendingArkScript: hex.encode(ArkAddress.decode(payout).pkScript),
-    arkadeCosignerOrigin: 'https://emulator.invalid',
+    arkadeCosignerOrigin: 'urn:vaulted:mainnet-signer:v1',
   } as VaultStatus
   const { contracts, rows, createContract } = memoryContracts()
   const repository = new InMemoryAssetSwapRepository()
@@ -140,6 +141,14 @@ describe('Lightning receive', () => {
     expect(result.pruned).toEqual([])
     expect(await h.repository.getRfqSwap(r.rfqId)).toEqual(r)
     manager.stop()
+  })
+  it('enables a qualification build only for its selected enrolled wallet', () => {
+    expect(vaultLightningReceiveEnabled('mainnet', 'aa', 'true', 'aa')).toBe(true)
+    expect(vaultLightningReceiveEnabled('mainnet', 'bb', 'true', 'aa')).toBe(false)
+    expect(vaultLightningReceiveEnabled('mainnet', undefined, 'true', 'aa')).toBe(false)
+    expect(vaultLightningReceiveEnabled('mainnet', 'aa', 'false', 'aa')).toBe(false)
+    expect(vaultLightningReceiveEnabled('mainnet', 'aa', 'true', '')).toBe(false)
+    expect(vaultLightningReceiveEnabled('regtest', 'aa', 'true', 'aa')).toBe(false)
   })
   it('verifies the new signed card and prices the two directions independently', async () => {
     const profile = (await discoverVaultLightningSolver('mainnet'))!

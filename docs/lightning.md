@@ -66,7 +66,10 @@ signature-verified.
 `VITE_VAULT_LIGHTNING_RECEIVE=true` enables amount-specific receive into
 Spending for Light, Standard, and Advanced wallets. This flag is off by default,
 including in `build:mainnet`. Funded qualification is still required before
-production activation.
+production activation. A qualification build can also set
+`VITE_VAULT_LIGHTNING_RECEIVE_VAULT` to one enrolled Vault ID; receive is then
+visible only for that wallet. The flag scopes availability without changing the
+wallet's contract or recovery rules.
 
 ## Receive and fee confirmation
 
@@ -86,7 +89,9 @@ invoices, and insufficient claim windows.
 The wallet creates the payment secret locally, reconstructs both supported
 VHTLC layouts, and accepts only the layout whose address exactly matches the
 quote. It binds the payout to the enrolled Spending script and checks the
-Operator and Emulator signing keys. Recovery data is stored and read back
+Operator and Emulator signing keys. The Emulator endpoint comes from the
+network pins; the enrollment’s cosigner identifier can be a URN and is never
+used as an HTTP address. Recovery data is stored and read back
 before the quote is displayed; the encrypted backup must succeed before an
 approved invoice can be shared. Failed backup attempts keep the invoice hidden,
 including during subsequent status refreshes.
