@@ -29,7 +29,7 @@ export function bitcoinPaymentRejected(reason?: string, retryAt?: number): Bitco
 
 export function bitcoinPaymentWait(retryAt?: number, details?: string): BitcoinPaymentError {
   const message = retryAt
-    ? `Expected availability: ${new Date(retryAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}. Nothing was sent; try the onchain payment again then.`
-    : 'These funds need to wait before another onchain payment. Nothing was sent; try again later.'
+    ? `Expected availability: ${new Date(retryAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}. Nothing was sent or queued.`
+    : 'These funds need to wait before another onchain payment. Nothing was sent or queued.'
   return new BitcoinPaymentError('not_sent', message, details?.slice(0, 500), retryAt)
 }
