@@ -8,6 +8,10 @@ Payment outcomes share `PaymentResult`, using the existing Qg screen, mark, deta
 
 Screen entrances use the shared motion helper for both route changes and local title changes. One entrance owns each region, with pointer or keyboard input settling it immediately. Reduced motion renders directly, and transitions have no authority over payment state.
 
+Review amounts share `ReviewAmount`, including the amount retained during Savings approval. Approval disables edit and back controls until the operation returns control; resumed payments retain destination verification and the existing continuation handler. Detail rows accommodate long values and enlarged text without clipping. `PendingPayment` supplies the shared home notice, with callers providing the saved amount, status explanation, and resume action.
+
+Activity uses one shared header and empty-state composition. Initial loading remains distinct from a loaded empty account. Refresh keeps the last supplied rows or empty result visible and adds a quiet updating cue. Light supplies its active balance refresh count to the same balance and history components, including overlapping refresh requests.
+
 ## Layout and typography
 
 `src/screens/Vault/qg/layout.css` owns geometry and text tokens. The active screen stylesheet consumes these tokens, as do guidance, installation, transaction references, and Light-specific surfaces.

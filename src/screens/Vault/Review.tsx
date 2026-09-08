@@ -6,7 +6,8 @@ import { prettyAmount } from '../../lib/format'
 import { isVaultLightningInput } from '../../lib/vault/lightningConfig'
 import { truncateAddress } from '../../lib/vault/policy'
 import { VaultContext } from '../../vault/context'
-import QgAmount, { amountSizeStyle } from './qg/QgAmount'
+import QgAmount from './qg/QgAmount'
+import ReviewAmount from './qg/ReviewAmount'
 import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
 
 export default function VaultReview() {
@@ -43,8 +44,8 @@ export default function VaultReview() {
       <div className='qg-screen qg-screen-progress'>
         <main className='qg-main qg-centered qg-progress-screen'>
           <span className='qg-spinner' aria-hidden='true' />
-          <p className='qg-eyebrow'>Savings transfer</p>
-          <h1>{hardwareFirst ? 'Preparing approval' : 'Approve with passkey'}</h1>
+          <ReviewAmount value={prettyAmount(spend.amount)} label='Savings transfer' />
+          <h1 aria-live='polite'>{hardwareFirst ? 'Preparing approval' : 'Approve with passkey'}</h1>
           <p className='qg-copy'>Use Face ID, Touch ID, fingerprint, or your device PIN when prompted.</p>
         </main>
       </div>
@@ -54,7 +55,7 @@ export default function VaultReview() {
   return (
     <QgScreen
       title={resumingPayment ? 'Resume payment' : 'Review payment'}
-      back={() => navigate(resumingPayment ? 'home' : 'send')}
+      back={busy ? undefined : () => navigate(resumingPayment ? 'home' : 'send')}
       footer={
         <>
           {error ? (
@@ -83,21 +84,20 @@ export default function VaultReview() {
         </>
       }
     >
-      <section className='qg-review-amount'>
-        <small>{movingToSpending ? 'You’re transferring' : lightning ? 'You’re paying' : 'You’re sending'}</small>
-        <strong style={amountSizeStyle(prettyAmount(spend.amount))}>
-          <QgAmount value={prettyAmount(spend.amount)} />
-        </strong>
+      <ReviewAmount
+        value={prettyAmount(spend.amount)}
+        label={movingToSpending ? 'You’re transferring' : lightning ? 'You’re paying' : 'You’re sending'}
+      >
         <p>{fromSavings ? 'From Savings' : 'From Spending'}</p>
         {resumingPayment ? (
           <p>Continue the original payment from its last saved step.</p>
         ) : (
-          <QgTextButton onClick={() => navigate('send')} label='Edit amount' />
+          <QgTextButton onClick={() => navigate('send')} label='Edit amount' disabled={busy} />
         )}
         {resumingPayment && lightning ? (
           <p>An expired Lightning invoice may need a refund after this transaction completes.</p>
         ) : null}
-      </section>
+      </ReviewAmount>
       <section className='qg-details' aria-label='Payment details'>
         <div>
           <span>To</span>
@@ -120,9 +120,11 @@ export default function VaultReview() {
             <button type='button' className='qg-text' onClick={() => setRevealed((open) => !open)}>
               {revealed ? 'Hide' : 'Reveal'}
             </button>
-            <button type='button' className='qg-text' onClick={() => navigate('send')}>
-              Edit
-            </button>
+            {!resumingPayment ? (
+              <button type='button' className='qg-text' disabled={busy} onClick={() => navigate('send')}>
+                Edit
+              </button>
+            ) : null}
           </div>
         )}
         <div>

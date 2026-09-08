@@ -786,7 +786,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-progress-screen {
-  justify-content: center;
+  justify-content: safe center;
+  overflow: auto;
   padding-top: calc(28px + var(--qg-top-inset));
 }
 
@@ -1727,6 +1728,8 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-review-amount {
+  width: 100%;
+  min-width: 0;
   padding: var(--qg-space-8) 0 var(--qg-space-12);
   text-align: center;
   container-type: inline-size;
@@ -1766,6 +1769,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-details > div {
   display: flex;
+  flex-wrap: wrap;
   min-height: 40px;
   align-items: center;
   justify-content: space-between;
@@ -1786,6 +1790,15 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   font-weight: var(--qg-weight-medium);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+.qg-details strong:has(> .qg-amount) {
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.qg-details .qg-amount {
+  white-space: normal;
 }
 
 .qg-approvals {

@@ -108,13 +108,25 @@ export function QgSecondary({
   )
 }
 
-export function QgTextButton({ label, onClick, testId }: { label: string; onClick: () => void; testId?: string }) {
+export function QgTextButton({
+  label,
+  onClick,
+  testId,
+  disabled,
+}: {
+  label: string
+  onClick: () => void
+  testId?: string
+  disabled?: boolean
+}) {
   return (
     <button
       type='button'
       className='qg-text'
       data-testid={testId}
+      disabled={disabled}
       onClick={() => {
+        if (disabled) return
         hapticLight()
         onClick()
       }}
