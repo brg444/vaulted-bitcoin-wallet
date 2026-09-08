@@ -1,10 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildRecoveryKit } from '../../../lib/vault/program/kit'
 import { buildVaultProgramDescriptor } from '../../../lib/vault/program/descriptor'
 import { PROGRAM_FIXTURE } from '../../../lib/vault/program/fixtures'
 import { VaultContext, type VaultContextProps } from '../../../vault/context'
-import { useBackupConfirmation } from '../qg/useBackupConfirmation'
 import RecoveryExplanation from '../qg/RecoveryExplanation'
 import VaultKit from './Kit'
 import VaultReady from './Ready'
@@ -24,11 +23,6 @@ function value(overrides: Partial<VaultContextProps> = {}) {
     ...overrides,
   } as unknown as VaultContextProps
 }
-function BackupProbe() {
-  const { confirmed } = useBackupConfirmation()
-  return <p data-testid='confirmed'>{String(confirmed)}</p>
-}
-
 beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
@@ -48,29 +42,20 @@ describe('onboarding guidance', () => {
     if (!advanced) expect(screen.getByText(/Standard has no separate key/)).toBeTruthy()
   })
 
-  it('keeps a download distinct from a confirmed separate backup, scoped to this kit', async () => {
+  it('leaves package checks outstanding after a public map download, including previously acknowledged wallets', () => {
+    localStorage.setItem(`vaulted-backup-confirmed:${kit.descriptorHash}`, 'confirmed-by-user')
     const context = value()
-    const { rerender } = render(
+    render(
       <VaultContext.Provider value={context}>
         <VaultKit />
-        <BackupProbe />
       </VaultContext.Provider>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Download Recovery Kit' }))
     expect(context.navigate).not.toHaveBeenCalled()
-    expect(screen.getByTestId('confirmed')).toHaveTextContent('false')
-    expect(screen.getByRole('button', { name: 'Open your Vault' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.getByText(/leaves those backup checks outstanding/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open your Vault' }))
-    await waitFor(() => expect(screen.getByTestId('confirmed')).toHaveTextContent('true'))
     expect(context.navigate).toHaveBeenCalledWith('home')
-    const otherKit = buildRecoveryKit(buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, vaultId: '11'.repeat(16) }))
-    rerender(
-      <VaultContext.Provider value={value({ downloadRecoveryKit: () => JSON.stringify(otherKit) })}>
-        <BackupProbe />
-      </VaultContext.Provider>,
-    )
-    expect(screen.getByTestId('confirmed')).toHaveTextContent('false')
   })
 
   it('allows deferring backup without claiming it is complete', () => {
@@ -87,7 +72,7 @@ describe('onboarding guidance', () => {
         <VaultReady />
       </VaultContext.Provider>,
     )
-    expect(screen.getByTestId('backup-status')).toHaveTextContent('Backup reminder')
+    expect(screen.getByTestId('backup-status')).toHaveTextContent('Save a recovery package outside this device')
     expect(screen.queryByText('Loss recovery is ready')).toBeNull()
   })
 
