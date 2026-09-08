@@ -9,8 +9,10 @@ export function withBitcoinPaymentHistory(
   history: VaultHistoryItem[],
   operation: BitcoinPaymentJournal | null | undefined,
 ): VaultHistoryItem[] {
-  if (!operation?.plan) return history
-  const plan = operation.plan.plan
+  if (!operation) return history
+  const plan = operation.plan?.plan
+  const outputs = plan ? bitcoinPlanOutputs(plan) : operation.outputs
+  if (!outputs?.length) return history
   const txid = operation.receipt?.commitmentTxid || `bitcoin:${operation.operationId}`
   const observed = history.find((row) => row.account === 'spend' && row.txid === txid && row.type === 'sent')
   const row: VaultHistoryItem = {
@@ -18,8 +20,9 @@ export function withBitcoinPaymentHistory(
     txid,
     type: 'sent',
     // Match normal transaction history: account outflow includes the fee.
-    amount: bitcoinPlanOutputs(plan).reduce((total, output) => total + output.amountSats, 0) + plan.feeSats,
-    fee: plan.feeSats,
+    amount: outputs.reduce((total, output) => total + output.amountSats, 0) + (plan?.feeSats || 0),
+    fee: plan?.feeSats,
+    bitcoinStage: operation.stage,
     confirmed: operation.stage === 'confirmed',
     account: 'spend',
     activity: 'bitcoin',

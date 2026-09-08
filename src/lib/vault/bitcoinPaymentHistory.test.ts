@@ -70,6 +70,17 @@ describe('Bitcoin payment activity', () => {
     expect(withBitcoinPaymentHistory(observed, { ...journal, stage: 'confirmed' })[0].confirmed).toBe(true)
     expect(withBitcoinPaymentHistory(observed, null)).toEqual(observed)
   })
+  it('keeps a lost prepare reachable without inventing a quoted fee', () => {
+    const rows = withBitcoinPaymentHistory([received], {
+      ...journal,
+      plan: undefined,
+      receipt: undefined,
+      stage: 'preparing',
+      outputs: journal.plan!.plan.outputs,
+    })
+    expect(rows[0]).toMatchObject({ txid: 'bitcoin:payment', amount: 1000, bitcoinStage: 'preparing' })
+    expect(rows[0].fee).toBeUndefined()
+  })
   it('removes a released local payment without removing the original receive', () => {
     expect(withBitcoinPaymentHistory([received], null)).toEqual([received])
   })

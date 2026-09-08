@@ -597,6 +597,7 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
   for (const vtxo of vtxos) {
     commitmentIds.add(vtxo.txid)
     if (vtxo.arkTxId) commitmentIds.add(vtxo.arkTxId)
+    if (vtxo.settledBy) commitmentIds.add(vtxo.settledBy)
     for (const txid of vtxo.commitmentTxIds || []) commitmentIds.add(txid)
   }
   const [activities, swapRecords, lightningRecords, boardingUtxos, balance] = await Promise.all([

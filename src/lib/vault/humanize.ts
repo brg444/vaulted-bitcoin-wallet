@@ -1,3 +1,4 @@
+import { BitcoinPaymentError } from './bitcoinPaymentError'
 import { ConnectorUserError } from './connectorError'
 import { isVaultConcurrencyUnavailableError } from './vtxo/lock'
 import {
@@ -22,7 +23,7 @@ function nestedErrorMessages(err: unknown, seen = new Set<unknown>()): string[] 
 }
 
 export function humanizeVaultError(err: unknown): string {
-  if (err instanceof ConnectorUserError) return err.message
+  if (err instanceof ConnectorUserError || err instanceof BitcoinPaymentError) return err.message
   const parts = nestedErrorMessages(err)
   const raw = parts[0] || (err instanceof Error ? err.message : String(err || 'Something went wrong'))
   const name = err instanceof Error ? err.name.toLowerCase() : ''

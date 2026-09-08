@@ -46,6 +46,7 @@ export interface LightRenewalOperationRequest {
   operationId: string
 }
 export interface LightRenewalResponse {
+  reason?: string
   state: string
   intentId?: string
   commitmentTxid?: string

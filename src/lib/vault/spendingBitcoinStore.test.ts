@@ -1,3 +1,8 @@
+import * as spendModule from './vtxo/spend'
+import * as apiModule from './api'
+import * as workerModule from './vtxo/walletWorker'
+import * as streamModule from './vtxo/settlementEventSource'
+import { humanizeVaultError } from './humanize'
 import { writeFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { schnorr } from '@noble/curves/secp256k1.js'
@@ -7,6 +12,7 @@ import {
   Batch,
   SettlementEventType,
   RestArkProvider,
+  RestIndexerProvider,
   SingleKey,
   InMemoryContractRepository,
   InMemoryWalletRepository,
@@ -33,7 +39,9 @@ import { vaultRecoveryBinding } from './vtxo/recoveryArchive'
 import { registerVaultPolicyV1ContractHandler, vaultPolicyV1Contract } from './vtxo/contractHandler'
 import {
   bitcoinPaymentClient,
+  sendSpendingToBitcoin,
   checkSpendingBitcoin,
+  cancelSpendingBitcoin,
   scopeBitcoinBatchFailures,
   normalizeBitcoinResponse,
 } from './spendingBitcoinFunding'
@@ -117,37 +125,38 @@ describe('Spending signer setup binding and lifecycle', () => {
       expect(() => readSpendingBitcoin(f.status)).toThrow('authorization changed')
     }
   })
-  it('replays a lost prepare exactly, then releases it without signing a batch', async () => {
-    const f = setupFixture()
-    saveBitcoinPayment(f.journal)
-    vi.spyOn(bitcoinPaymentClient, 'status')
-      .mockResolvedValueOnce({ state: 'not_found' })
-      .mockResolvedValueOnce({ state: 'prepared' })
-    const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare').mockResolvedValue(f.prepared)
-    vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state: 'cancelled' })
-    expect((await checkSpendingBitcoin(f.status))?.state).toBe('cancelled')
-    expect(prepare).toHaveBeenCalledWith(f.journal.prepareRequest)
-    expect(readSpendingBitcoin(f.status)).toBeNull()
-  })
-  it('retains an uncertain prepare until absence is checked after its signed expiry', async () => {
+  it('checks a lost prepare without replaying it or cancelling it', async () => {
     const f = setupFixture()
     saveBitcoinPayment(f.journal)
     vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'not_found' })
-    const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare').mockRejectedValue(new Error('Insufficient allowance'))
-    await expect(checkSpendingBitcoin(f.status)).rejects.toThrow('allowance')
+    const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare')
+    const release = vi.spyOn(bitcoinPaymentClient, 'release')
+    expect((await checkSpendingBitcoin(f.status))?.state).toBe('not_found')
+    expect(prepare).not.toHaveBeenCalled()
+    expect(release).not.toHaveBeenCalled()
     expect(readSpendingBitcoin(f.status)).not.toBeNull()
     vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
     expect((await checkSpendingBitcoin(f.status))?.state).toBe('cancelled')
-    expect(prepare).toHaveBeenCalledTimes(1)
     expect(readSpendingBitcoin(f.status)).toBeNull()
   })
-  it('replays retained cancellation while keeping ambiguous funds reserved', async () => {
+  it.each(['prepared', 'registered', 'register_dispatched', 'delete_dispatched'])(
+    'status %s never requests cancellation',
+    async (state) => {
+      const f = setupFixture()
+      saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered' })
+      vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state })
+      const release = vi.spyOn(bitcoinPaymentClient, 'release')
+      expect((await checkSpendingBitcoin(f.status))?.state).toBe(state)
+      expect(release).not.toHaveBeenCalled()
+      expect(readSpendingBitcoin(f.status)).not.toBeNull()
+    },
+  )
+  it('explicit cancellation uses the retained proof and keeps ambiguous funds reserved', async () => {
     const f = setupFixture()
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
     saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
-    vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'delete_dispatched' })
     const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state: 'uncertain' })
-    expect((await checkSpendingBitcoin(f.status))?.state).toBe('uncertain')
+    expect((await cancelSpendingBitcoin(f.status))?.state).toBe('uncertain')
     expect(release).toHaveBeenCalledWith({
       vaultId: f.status.vaultId,
       operationId: f.plan.operationId,
@@ -155,7 +164,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     })
     expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deletion)
     release.mockResolvedValue({ state: 'released' })
-    expect((await checkSpendingBitcoin(f.status))?.state).toBe('released')
+    expect((await cancelSpendingBitcoin(f.status))?.state).toBe('released')
     expect(readSpendingBitcoin(f.status)).toBeNull()
   })
   it.each(['legacy', 'bitcoin'] as const)('uses the stock SDK to sign both intent inputs for %s', async (kind) => {
@@ -335,3 +344,80 @@ it('reconciles a new Bitcoin payment through the shared status path without crea
   expect(release).not.toHaveBeenCalled()
   expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
 })
+
+it.each(['rejected', 'uncertain'])(
+  'SDK settlement preserves the Guardian %s outcome without retrying or cancelling',
+  async (state) => {
+    const f = bitcoinFixture(1)
+    vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt - 240) * 1000)
+    const repositories = {
+      walletRepository: new InMemoryWalletRepository(),
+      contractRepository: new InMemoryContractRepository(),
+    }
+    const dispose = vi.fn()
+    vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({
+      unlock: async () => ({ phoneSecret: scalarSecret(3), scalar: scalarSecret(4), assertion: {} }),
+      dispose,
+    } as never)
+    vi.spyOn(spendModule, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
+    vi.spyOn(apiModule, 'vaultGet').mockResolvedValue({
+      version: 1,
+      maxInputs: 1,
+      descriptorHash: f.plan.descriptorHash,
+    })
+    vi.spyOn(workerModule, 'ensureVaultWalletWorker').mockResolvedValue(repositories as never)
+    vi.spyOn(streamModule, 'installVaultSettlementEventSource').mockImplementation(() => {})
+    vi.spyOn(streamModule, 'waitForVaultSettlementStream').mockResolvedValue(undefined)
+    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(
+      validateExitArchive(f.archive.spending, vaultRecoveryBinding(f.kit, f.status)).info,
+    )
+    vi.spyOn(RestArkProvider.prototype, 'getEventStream').mockImplementation(async function* () {})
+    vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({
+      vtxos: [
+        {
+          ...f.coin,
+          txid: f.plan.txid,
+          value: f.plan.valueSats,
+          script: hex.encode(f.spending.pkScript),
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 86400000),
+          isSpent: false,
+          virtualStatus: { state: 'settled' },
+          commitmentTxIds: ['cc'.repeat(32)],
+        },
+      ],
+    } as never)
+    vi.spyOn(bitcoinPaymentClient, 'prepare').mockResolvedValue(f.prepared)
+    const registered = vi.spyOn(bitcoinPaymentClient, 'register').mockImplementation(async (request) => {
+      expect(JSON.parse(request.message).expire_at).toBe(f.plan.registerExpireAt)
+      expect(readSpendingBitcoin(f.status)?.deleteIntent).toBeDefined()
+      const proof = Transaction.fromPSBT(base64.decode(request.psbt))
+      expect(proof.inputsLength).toBe(2)
+      expect(hex.encode(proof.getOutput(1).script!)).toBe(f.plan.outputs![0].script)
+      return { state, reason: 'input already spent' }
+    })
+    const released = vi.spyOn(bitcoinPaymentClient, 'release')
+    let error: unknown
+    try {
+      await sendSpendingToBitcoin(
+        { vaultId: f.status.vaultId } as never,
+        f.status,
+        f.plan.outputs!,
+        async () => true,
+        () => {},
+      )
+    } catch (caught) {
+      error = caught
+    }
+    expect(registered, String(error)).toHaveBeenCalledOnce()
+    expect(released).not.toHaveBeenCalled()
+    expect(dispose).toHaveBeenCalledOnce()
+    if (state === 'rejected') {
+      expect(humanizeVaultError(error)).toContain('Bitcoin payment was not sent. input already spent')
+      expect(readSpendingBitcoin(f.status)).toBeNull()
+    } else {
+      expect(humanizeVaultError(error)).toContain('registration is still being checked')
+      expect(readSpendingBitcoin(f.status)?.stage).toBe('registering')
+    }
+  },
+)

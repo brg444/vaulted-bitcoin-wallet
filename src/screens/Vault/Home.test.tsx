@@ -96,7 +96,7 @@ describe('Vault home account boundaries', () => {
     expect(screen.queryByText('Bitcoin payment from Spending')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Check payment status' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: /Sent ₿1,400.*Pending/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Bitcoin payment ₿1,400.*Pending/ }))
     expect(openTx).toHaveBeenCalledWith(tx)
   })
 
@@ -236,6 +236,11 @@ describe('Vault home account boundaries', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByText('Wallet activity is unavailable.')).toBeNull()
+  })
+
+  it('shows a rejected Bitcoin payment even with no retained pending operation', () => {
+    renderHome({ error: 'Bitcoin payment was not sent. Registration was rejected.', pendingPayments: [] })
+    expect(screen.getByRole('alert')).toHaveTextContent('Bitcoin payment was not sent')
   })
 
   it('does not show a background refresh failure over a known balance', () => {

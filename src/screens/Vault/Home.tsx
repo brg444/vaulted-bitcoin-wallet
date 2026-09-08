@@ -18,6 +18,7 @@ export default function VaultHome() {
     canSend,
     busy,
     error,
+    balanceError,
     pendingPayments = [],
     openPendingPayment,
     navigate,
@@ -115,7 +116,7 @@ export default function VaultHome() {
             />
           ))
         : null}
-      {error && pendingPayments.length > 0 ? (
+      {error && (pendingPayments.length > 0 || error !== balanceError) ? (
         <p className='qg-footer-error' role='alert'>
           {error}
         </p>
