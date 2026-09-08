@@ -2721,11 +2721,19 @@ html.palette-dark .qg-progress {
 
 /* Focused flows keep navigation and the current action in the app frame. */
 .qg-header {
+  --qg-header-side: var(--qg-touch-target);
   position: relative;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-columns: var(--qg-header-side) minmax(0, 1fr) var(--qg-header-side);
   gap: var(--qg-space-8);
 }
+.qg-header > :first-child {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+}
 .qg-header > h2 {
+  grid-column: 2;
+  grid-row: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2738,11 +2746,13 @@ html.palette-dark .qg-progress {
   font-size: var(--qg-caption);
 }
 .qg-header > .qg-header-aux {
-  position: absolute;
-  right: 94px;
+  position: static;
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: start;
 }
-.qg-header:has(> .qg-header-aux) > h2 {
-  padding-right: 44px;
+.qg-header:has(> .qg-header-aux):has(> .qg-help-trigger) {
+  --qg-header-side: calc(2 * var(--qg-touch-target) + var(--qg-space-8));
 }
 .qg-help-trigger,
 .qg-header .qg-help-trigger {
@@ -2763,6 +2773,16 @@ html.palette-dark .qg-progress {
 .qg-help-trigger svg {
   width: 18px;
   height: 18px;
+}
+.qg-header > .qg-help-trigger {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  width: var(--qg-touch-target);
+  padding: 0;
+}
+.qg-header > .qg-help-trigger > span {
+  display: none;
 }
 .qg-brand > .qg-help-trigger {
   margin-left: auto;
