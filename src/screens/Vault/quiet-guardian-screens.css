@@ -372,8 +372,59 @@ html.palette-dark .qg-mark-imprint {
   color: var(--qg-ink);
   text-align: left;
   font-size: var(--qg-body);
-  font-weight: var(--qg-weight-strong);
+  font-weight: var(--qg-weight-normal, 400);
   line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.qg-payment-notice {
+  position: relative;
+  margin: var(--qg-space-16) 0;
+  padding: 16px 44px 16px 16px;
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-field-radius);
+  background: var(--qg-orange-soft);
+  color: var(--qg-ink);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.qg-payment-notice-wait {
+  background: var(--qg-paper);
+}
+.qg-payment-notice p {
+  margin: 6px 0 0;
+}
+.qg-payment-notice strong {
+  font-weight: var(--qg-weight-strong);
+}
+.qg-payment-notice details {
+  margin-top: 12px;
+}
+.qg-payment-notice summary {
+  cursor: pointer;
+  color: var(--qg-muted);
+}
+.qg-payment-notice pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.qg-payment-notice-dismiss {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--qg-muted);
+  cursor: pointer;
 }
 
 html.palette-dark .qg-footer-error,

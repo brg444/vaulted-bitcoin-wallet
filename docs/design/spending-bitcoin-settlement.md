@@ -22,4 +22,15 @@ The signing view has automatic settlement disabled. Its provider cannot submit a
 
 A funded Mutinynet wallet received 10,000 sats, funded two 500-sat signer outputs, then paid 1,500 sats from the first payment's change. Both payments confirmed and appeared once in history after reload, leaving 7,500 sats. The approved fee was zero on this deployment; assertions use the actual quote. A resumed run verified the saved second payment and captured updated recovery data without sending another payment.
 
-This establishes the shared SDK settlement and history path. It does not establish why the earlier mainnet registration was rejected: the previous Guardian discarded that response. The mainnet retry must be checked after activating rejection diagnostics. No mainnet payment was initiated during this qualification.
+This establishes the shared SDK settlement and history path. The subsequent mainnet retry exposed an Operator expiry restriction, described below. No mainnet payment was initiated during this qualification.
+
+
+## Onchain eligibility and payment messages
+
+The mainnet retry on September 8 returned `INVALID_PSBT_INPUT` with `minExpiryGap: 695h53m36s`. The [Operator input check](https://github.com/arkade-os/arkd/blob/c4f16324/internal/core/application/service.go#L1649) rejects an input when its expiry exceeds the current time plus the configured gap. Eligibility begins at the input expiry minus that gap. The date printed in the rejection is the comparison cutoff. A fixed age rule based on receipt time would be incorrect because transfers can inherit an earlier batch expiry.
+
+The live public `/v1/info` response does not advertise this setting, and the inspected SDK and Arkade Wallet sources expose no corresponding preflight. Vaulted therefore records an eligibility estimate only after an explicit rejection for an exact input. The hint is scoped to the Operator, vault and descriptor, matches the input expiry, and expires after one day or when its estimated wait ends. The next attempt fetches current inputs before unlocking the passkey, prefers sufficient inputs without an observed restriction, and explains a known wait before creating another reservation. An initial attempt can still discover an unadvertised restriction. A new public Operator eligibility field would allow checking that first attempt without learning from a rejection.
+
+The estimate rounds up to the next minute and includes a minute for clock differences. It is display and input-selection data, with no signing, allowance or cancellation authority. A missing or malformed hint permits normal authoritative validation. The existing pending-operation guard runs first, and uncertain responses remain pending.
+
+Payment notices show concise outcome and action text with normal body weight. Known waiting periods use a neutral notice and an estimated local date and time. Sanitized Operator diagnostics remain in collapsed technical details. Dismissing a message clears presentation state only; the payment journal and history remain intact. The same notice appears on Send, Review and the account page.

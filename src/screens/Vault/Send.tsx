@@ -1,3 +1,4 @@
+import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { useContext, useEffect, useState } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
@@ -197,11 +198,7 @@ export default function VaultSend() {
       dismiss={() => navigate('home')}
       footer={
         <>
-          {error ? (
-            <p className='qg-footer-error' role='alert'>
-              {error}
-            </p>
-          ) : null}
+          {error ? <PaymentNotice message={error} /> : null}
           {!fromSavings
             ? pendingPayments.map((payment) => (
                 <QgSecondary

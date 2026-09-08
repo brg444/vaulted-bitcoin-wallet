@@ -13,7 +13,8 @@ import { scriptHexFromAddress, vaultAddressNetwork } from './bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { consoleLog } from '../logs'
 import { ensureVaultWalletWorker } from './vtxo/walletWorker'
-import { BitcoinPaymentError } from './bitcoinPaymentError'
+import { BitcoinPaymentError, bitcoinPaymentRejected } from './bitcoinPaymentError'
+import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
 import { vaultGet, vaultPost } from './api'
 import { connectorIdentity } from './connectorWithdrawal'
 import { checkConnectorSetup } from './connectorSetup'
@@ -54,6 +55,8 @@ import {
   type SpendingBitcoinPrepared,
 } from './spendingBitcoinStore'
 export { readSpendingBitcoin, type SpendingBitcoinPlan } from './spendingBitcoinStore'
+const eligibilityScope = (status: VaultStatus) =>
+  `${vaultArkServer(status.network)}:${status.vaultId}:${guardianRenewalContextDigest(status)}`
 const terminal = (state: string) => ['released', 'cancelled', 'rejected'].includes(state)
 
 const post = <T>(phase: string, body: unknown): Promise<T> => vaultPost(`/v1/vtxo/bitcoin/${phase}`, body)
@@ -125,6 +128,7 @@ class SpendingBitcoinProvider extends RestArkProvider {
     private status: VaultStatus,
     private authorization: Pick<LightRenewalRegisterRequest, 'assertion' | 'directSig'>,
     private signal: AbortSignal,
+    private coinExpiresAt: Date,
   ) {
     super(url)
   }
@@ -163,11 +167,14 @@ class SpendingBitcoinProvider extends RestArkProvider {
       ...this.authorization,
     })
     retainBitcoinOutcome(this.status, result)
-    if (terminal(result.state))
-      throw new BitcoinPaymentError(
-        'not_sent',
-        `Bitcoin payment was not sent.${result.reason ? ` ${result.reason}` : ' Registration was rejected.'}`,
+    if (terminal(result.state)) {
+      const retryAt = rememberBitcoinEligibility(
+        eligibilityScope(this.status),
+        { ...this.journal, expiresAt: this.coinExpiresAt },
+        result.reason,
       )
+      throw bitcoinPaymentRejected(result.reason, retryAt)
+    }
     if (result.state !== 'registered' || !result.intentId)
       throw new BitcoinPaymentError(
         'pending',
@@ -227,8 +234,7 @@ export async function sendSpendingToBitcoin(
     const abort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
     try {
-      progress('Unlock Spending with your passkey')
-      const auth = await unlocker.unlock()
+      progress('Checking funds for this Bitcoin payment')
       const script = vaultPolicyV1ScriptFromStatus(status)
       const url = vaultArkServer(status.network)
       const indexer = new RestIndexerProvider(url)
@@ -251,9 +257,14 @@ export async function sendSpendingToBitcoin(
           v.expiresAt &&
           v.expiresAt.getTime() > Date.now(),
       )
-      candidates.sort((a, b) => b.value - a.value)
-      const coin = candidates[0]
+      const coin = chooseBitcoinInput(
+        eligibilityScope(status),
+        candidates,
+        outputs.reduce((sum, output) => sum + output.amountSats, 0),
+      )
       if (!coin) throw new Error('No live Spending output is available for this Bitcoin payment')
+      progress('Unlock Spending with your passkey')
+      const auth = await unlocker.unlock()
       let journal: BitcoinPaymentJournal = {
         version: 1,
         vaultId: status.vaultId,
@@ -313,6 +324,7 @@ export async function sendSpendingToBitcoin(
           directSig: vtxoSpendDirectSig(auth, prepared.planDigest),
         },
         abort.signal,
+        coin.expiresAt!,
       )
       const runtime = await ensureVaultWalletWorker(status)
       const identity = SingleKey.fromPrivateKey(auth.phoneSecret)
@@ -432,11 +444,7 @@ export async function sendSpendingToBitcoin(
         if (receipt) {
           retainBitcoinOutcome(status, receipt)
           if (['submitted', 'confirmed'].includes(receipt.state)) return receipt
-          if (terminal(receipt.state))
-            throw new BitcoinPaymentError(
-              'not_sent',
-              `Bitcoin payment was not sent.${receipt.reason ? ` ${receipt.reason}` : ' Its reservation has been released.'}`,
-            )
+          if (terminal(receipt.state)) throw bitcoinPaymentRejected(receipt.reason)
         }
         throw new BitcoinPaymentError(
           'pending',

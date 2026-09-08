@@ -1848,3 +1848,34 @@ test('@polish Bitcoin payment review and pending status show exact outputs', asy
   await expectWalletLayout(page)
   await page.screenshot({ path: testInfo.outputPath('bitcoin-details.png'), fullPage: true })
 })
+
+test('@polish Bitcoin eligibility notice keeps diagnostics collapsed and preserves pending history when dismissed', async ({
+  page,
+}, testInfo) => {
+  await page.route('**/src/screens/Vault/Home.tsx*', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: "export { default } from '/src/test/e2e-vault/fixtures/bitcoin-payment-ui.tsx'",
+    }),
+  )
+  test.setTimeout(180000)
+  page.setDefaultNavigationTimeout(90000)
+  await openVault(page, {}, { readySelector: '.qg-review-amount', waitForBalance: false })
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('bitcoin-payment-view', { detail: 5 })))
+  await expect(page.locator('.qg-payment-notice[role=status]')).toContainText('Expected availability')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+  await expect(page.locator('.qg-payment-notice pre')).not.toBeVisible()
+  await expectWalletLayout(page)
+  await page.screenshot({ path: testInfo.outputPath('bitcoin-eligibility.png'), fullPage: true })
+  await page.getByText('Technical details', { exact: true }).click()
+  await expect(page.locator('.qg-payment-notice pre')).toContainText('INVALID_PSBT_INPUT')
+  await page.setViewportSize({ width: 320, height: 800 })
+  await expectWalletLayout(page)
+  await page.screenshot({ path: testInfo.outputPath('bitcoin-details-narrow.png'), fullPage: true })
+  await page.evaluate(() => document.documentElement.classList.add('palette-dark'))
+  await expectWalletLayout(page)
+  await page.screenshot({ path: testInfo.outputPath('bitcoin-details-dark.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Dismiss message' }).click()
+  await expect(page.locator('.qg-payment-notice')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Bitcoin payment.*Pending/ })).toBeVisible()
+})
