@@ -1,3 +1,5 @@
+import LightningReceive from './LightningReceive'
+import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
 import QgGuidance from './qg/QgGuidance'
 import TransactionReference from './qg/TransactionReference'
 import { WalletHelpContext } from './qg/Help'
@@ -114,6 +116,7 @@ type View =
   | 'unlock'
   | 'home'
   | 'receive'
+  | 'receive-lightning'
   | 'send'
   | 'review'
   | 'success'
@@ -187,6 +190,14 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [balanceRefreshes, setBalanceRefreshes] = useState(0)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const receiveSession = useRef({ record, vaultId: status?.vaultId })
+  receiveSession.current = { record, vaultId: status?.vaultId }
+  useEffect(
+    () => () => {
+      receiveSession.current = { record: null, vaultId: undefined }
+    },
+    [],
+  )
   const busyRef = useRef(false)
   const root = useRef<HTMLDivElement>(null)
   const file = useRef<HTMLInputElement>(null)
@@ -1129,6 +1140,24 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         {activity(snapshot?.history || [], 'spend', snapshot !== null)}
       </AccountHome>
     )
+  else if (view === 'receive-lightning' && status && record)
+    content = (
+      <LightningReceive
+        status={status}
+        refreshBalance={refresh}
+        onBack={() => navigate('receive')}
+        backupRecoveryArchive={async () => {
+          const session = cloudSession.current ?? (await openLightCloudBackup(record, authorizeRenewals))
+          const archive = await captureCurrent(record, status)
+          const saved = await syncLightCloudBackup(session, archive)
+          if (receiveSession.current.record !== record || receiveSession.current.vaultId !== status.vaultId)
+            throw new Error('Wallet session changed during Lightning backup.')
+          cloudSession.current = session
+          setCloudSavedAt(saved.createdAt)
+          setCloudError('')
+        }}
+      />
+    )
   else if (view === 'receive' && status)
     content = (
       <QgScreen
@@ -1150,6 +1179,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           <p className='light-address'>{status.spendingArkAddress}</p>
           <p className='qg-copy'>Send from a wallet that supports Arkade. This is an Arkade receiving address.</p>
         </div>
+        {vaultLightningReceiveEnabled(status.network) ? (
+          <QgSecondary label='Receive Lightning' onClick={() => navigate('receive-lightning')} />
+        ) : null}
       </QgScreen>
     )
   else if (view === 'scan-send')

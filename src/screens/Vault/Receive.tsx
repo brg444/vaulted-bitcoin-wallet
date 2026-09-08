@@ -1,3 +1,5 @@
+import LightningReceive from './LightningReceive'
+import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
 import ConnectorDeposit from './ConnectorDeposit'
 import ConnectorSetup from './ConnectorSetup'
 import { isConnectorTemplate } from '../../lib/vault/program/connector'
@@ -36,11 +38,20 @@ function AddressRow({
 }
 
 export default function VaultReceive() {
-  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status } = useContext(VaultContext)
+  const {
+    account,
+    boardingAddress,
+    navigate,
+    savingsAddress,
+    spendingArkAddress,
+    status,
+    backupRecoveryArchive,
+    refreshBalance,
+  } = useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
-  const [view, setView] = useState<'receive' | 'setup' | 'deposit'>('receive')
+  const [view, setView] = useState<'receive' | 'setup' | 'deposit' | 'lightning'>('receive')
   const unified = useMemo(
     () =>
       boardingAddress && spendingArkAddress
@@ -73,6 +84,16 @@ export default function VaultReceive() {
     }
     await copy(request, spending ? 'Payment request' : 'Savings address')
   }
+
+  if (view === 'lightning' && spending && status)
+    return (
+      <LightningReceive
+        status={status}
+        backupRecoveryArchive={backupRecoveryArchive}
+        refreshBalance={refreshBalance}
+        onBack={() => setView('receive')}
+      />
+    )
 
   if (view === 'setup' && status)
     return <ConnectorSetup status={status} onBack={() => setView('receive')} onDeposit={() => setView('deposit')} />
@@ -138,6 +159,9 @@ export default function VaultReceive() {
           </section>
         ) : null}
       </div>
+      {spending && vaultLightningReceiveEnabled(status?.network) ? (
+        <QgSecondary label='Receive Lightning' onClick={() => setView('lightning')} />
+      ) : null}
       {!spending && isConnectorTemplate(status?.templateVersion) ? (
         <QgSecondary label='Set up Savings signer' onClick={() => setView('setup')} />
       ) : null}

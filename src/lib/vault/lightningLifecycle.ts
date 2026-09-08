@@ -201,7 +201,21 @@ export function createVaultLightningObserver({
   repository,
   managerConfig,
 }: VaultLightningObserverDeps): RfqSwapManager {
-  const manager = new RfqSwapManager({ indexer, repository, contracts }, { ...managerConfig, enableAutoActions: true })
+  // Incoming claims use verified payout receipts and retain their recovery
+  // records. The package's send observer must not resolve or prune them.
+  const manager = new RfqSwapManager(
+    {
+      indexer,
+      contracts,
+      repository: {
+        getAllRfqSwaps: async () => (await repository.getAllRfqSwaps()).filter((r) => r.kind !== 'lightning_receive'),
+        getRfqSwap: (id) => repository.getRfqSwap(id),
+        saveRfqSwap: (record) => repository.saveRfqSwap(record),
+        removeRfqSwap: (id) => repository.removeRfqSwap(id),
+      },
+    },
+    { ...managerConfig, enableAutoActions: true },
+  )
   setVaultLightningObserverCallbacks(manager, managerConfig?.now)
   return manager
 }

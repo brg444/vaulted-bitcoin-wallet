@@ -272,7 +272,7 @@ function review() {
   for (const entry of journal?.entries || [])
     options.push({
       value: `lightning:${entry.record.rfqId}`,
-      label: `Lightning refund — ${entry.record.rfqId.slice(0, 12)}`,
+      label: `Lightning ${entry.record.kind === 'lightning_receive' ? 'receive claim' : 'refund'}: ${entry.record.rfqId.slice(0, 12)}`,
     })
   if (source.full?.name === 'vaulted-recovery' && source.full.connectorJournal?.pending)
     options.push({ value: 'connector', label: 'Saved connector payment — resume exact approval' })

@@ -54,7 +54,8 @@
     "format": "prettier --write src",
     "format:check": "prettier --check src",
     "build:mutinynet": "VITE_VAULT_RELEASE_NETWORK=mutinynet pnpm build",
-    "test:recovery-browser": "node tools/program-emergency/build.mjs && node tools/program-emergency/browser.test.cjs"
+    "test:recovery-browser": "node tools/program-emergency/build.mjs && node tools/program-emergency/browser.test.cjs",
+    "test:lightning-quote": "VAULT_LN_RECEIVE_PROBE=true vitest run --config vitest.lightning-probe.config.ts"
   },
   "eslintConfig": {
     "extends": [

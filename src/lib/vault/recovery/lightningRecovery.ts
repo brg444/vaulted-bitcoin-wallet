@@ -1,3 +1,4 @@
+import { TaprootControlBlock } from '@scure/btc-signer'
 import { prepareExitArchivePrevouts, type RecoveryCommitmentReader } from './archivePrevouts'
 import { hex } from '@scure/base'
 import {
@@ -62,14 +63,15 @@ function sweepFacts(
     Number(output.amount) < bitcoinDustSats(destination, binding.network)
   )
     throw new Error('Lightning refund fee is outside the wallet limits')
-  const sequence = Number(entry.contract.params.refundNoReceiverDelay)
+  const receive = entry.record.kind === 'lightning_receive'
+  const sequence = Number(receive ? entry.contract.params.claimDelay : entry.contract.params.refundNoReceiverDelay)
   const timelock = sequenceToTimelock(sequence)
   const expected = new Transaction({ version: 2 })
   expected.addInput({
     txid: coin.txid,
     index: coin.vout,
     sequence,
-    tapLeafScript: [script.unilateralRefundWithoutReceiver()],
+    tapLeafScript: [receive ? script.unilateralClaim() : script.unilateralRefundWithoutReceiver()],
     witnessUtxo: { amount: BigInt(coin.value), script: script.pkScript },
     sighashType: 0,
   })
@@ -106,6 +108,7 @@ export async function prepareLightningRecovery(
   const denied = (): never => {
     throw new Error('Only the saved Lightning refunds may be signed')
   }
+  let signingFailure: unknown
   const sweeps: string[] = []
   const identity: Identity = {
     compressedPublicKey: () => readonly.compressedPublicKey(),
@@ -113,18 +116,23 @@ export async function prepareLightningRecovery(
     signMessage: denied,
     signerSession: denied,
     sign: async (tx) => {
-      const psbt = hex.encode(tx.toPSBT()),
-        facts = sweepFacts(saved, enrolled, destination, psbt, limits, false)
-      const result = await sign({ psbt, publicKey: enrolled.phonePub })
-      const accepted = sweepFacts(saved, enrolled, destination, result, limits, true)
-      if (
-        accepted.fee !== facts.fee ||
-        accepted.coin.txid !== facts.coin.txid ||
-        accepted.coin.vout !== facts.coin.vout
-      )
-        throw new Error('Lightning signer changed the requested transaction')
-      sweeps.push(hex.encode(accepted.tx.toPSBT()))
-      return accepted.tx
+      try {
+        const psbt = hex.encode(tx.toPSBT()),
+          facts = sweepFacts(saved, enrolled, destination, psbt, limits, false)
+        const result = await sign({ psbt, publicKey: enrolled.phonePub })
+        const accepted = sweepFacts(saved, enrolled, destination, result, limits, true)
+        if (
+          accepted.fee !== facts.fee ||
+          accepted.coin.txid !== facts.coin.txid ||
+          accepted.coin.vout !== facts.coin.vout
+        )
+          throw new Error('Lightning signer changed the requested transaction')
+        sweeps.push(hex.encode(accepted.tx.toPSBT()))
+        return accepted.tx
+      } catch (error) {
+        signingFailure = error
+        throw error
+      }
     },
   }
   const readOnlyChain = new Proxy(onchain, {
@@ -153,7 +161,18 @@ export async function prepareLightningRecovery(
     settlementConfig: { autoRenewVtxos: false, boardingUtxoSweep: false, deprecatedSignerMigration: false },
   })
   try {
-    await (await wallet.getContractManager()).createContract({ ...local.contract, state: 'active' })
+    await (
+      await wallet.getContractManager()
+    ).createContract({
+      ...local.contract,
+      state: 'active',
+      params: {
+        ...local.contract.params,
+        ...(saved.record.kind === 'lightning_receive'
+          ? { preimage: (saved.record.profile.hashlock as { preimageHex: string }).preimageHex }
+          : {}),
+      },
+    })
     const prepared = await UnilateralExit.prepare({
       wallet,
       onchainWallet,
@@ -161,6 +180,8 @@ export async function prepareLightningRecovery(
       vtxos: local.coins.map(({ txid, vout }) => ({ txid, vout })),
       mode: 'graph',
       networkName: pins.sdkNetwork,
+    }).catch((error) => {
+      throw signingFailure ?? error
     })
     const exitPackage = canonicalLightningPackage(saved, enrolled, prepared, sweeps, limits)
     return validateLightningRecoveryPackage(
@@ -184,7 +205,18 @@ function canonicalLightningPackage(
     throw new Error('Lightning refund package is incomplete')
   const signed = sweeps.map((psbt) => {
     const result = sweepFacts(entry, binding, pkg.sweepAddress, psbt, limits, true)
-    result.tx.finalize()
+    if (entry.record.kind === 'lightning_receive') {
+      const input = result.tx.getInput(0)
+      const [control, leaf] = input.tapLeafScript![0]
+      result.tx.updateInput(0, {
+        finalScriptWitness: [
+          input.tapScriptSig![0][1],
+          hex.decode((entry.record.profile.hashlock as { preimageHex: string }).preimageHex),
+          leaf.slice(0, -1),
+          TaprootControlBlock.encode(control),
+        ],
+      })
+    } else result.tx.finalize()
     return result
   })
   return canonicalRecoveryGraph({

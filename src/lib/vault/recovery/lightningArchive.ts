@@ -1,3 +1,4 @@
+import { receiveProfile, validateReceiveRecord } from '../lightningReceive'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { ripemd160 } from '@noble/hashes/legacy.js'
 import { hex } from '@scure/base'
@@ -82,7 +83,7 @@ function contractIdentity(contract: Contract) {
   return canonical({ type: contract.type, params: contract.params, script: contract.script, address: contract.address })
 }
 function recordIdentity(record: RfqSwapRecord) {
-  const profile = storedLightningProfile(record)
+  const profile = record.kind === 'lightning_receive' ? receiveProfile(record) : storedLightningProfile(record)
   return canonical({
     rfqId: record.rfqId,
     kind: record.kind,
@@ -111,6 +112,7 @@ function validateRecord(record: RfqSwapRecord, contract: Contract, binding: Ligh
     throw new Error('Invalid Lightning recovery record')
   for (const txid of [record.fundingArkTxid, record.refundArkTxid, ...(record.lockupSpendArkTxids ?? [])])
     if (txid !== undefined && !isHex32(txid)) throw new Error('Invalid Lightning transaction reference')
+  if (record.kind === 'lightning_receive') return validateReceiveRecord(record, contract, binding)
   const profile = storedLightningProfile(record)
   const invoice = decodeVaultLightningInvoice(profile.invoice, profile.network, 0)
   if (
@@ -225,6 +227,15 @@ function fundingEvidence(record: RfqSwapRecord) {
 /** Never downgrade known funding, nor overwrite a locally resolved/newer record. */
 function retainedRecord(local: RfqSwapRecord, incoming: RfqSwapRecord): RfqSwapRecord {
   if (recordIdentity(local) !== recordIdentity(incoming)) throw new Error('Conflicting Lightning recovery record')
+  if (local.kind === 'lightning_receive') {
+    const a = receiveProfile(local),
+      b = receiveProfile(incoming)
+    if (a.claim && b.claim && a.claim.txid !== b.claim.txid) throw new Error('Conflicting Lightning receive claim')
+    if (isRfqSwapTerminal(local.state) || (a.claim && !b.claim)) return local
+    if (a.approvedPaySats && !b.approvedPaySats) return local
+    if (b.approvedPaySats && !a.approvedPaySats) return incoming
+    return local.updatedAt >= incoming.updatedAt ? local : incoming
+  }
   const a = storedLightningProfile(local).fundingProof,
     b = storedLightningProfile(incoming).fundingProof
   if (
@@ -336,7 +347,7 @@ export async function restoreLightningRecoveryJournal(
       if (local) validateRecord(local, contracts[0] ?? entry.contract, binding)
       const record = local ? retainedRecord(local, entry.record) : entry.record
       const observed = validateExitArchive(entry.exit, lightningExitBinding(entry, binding)).coins.length > 0
-      if (observed && !fundingEvidence(record) && !isRfqSwapTerminal(record.state))
+      if (record.kind === 'lightning_send' && observed && !fundingEvidence(record) && !isRfqSwapTerminal(record.state))
         throw new Error('Funded Lightning output has no funding journal; use its saved onchain recovery data')
       writes.push({ entry, contractMissing: !contracts.length, ...(record !== local ? { record } : {}) })
     }
@@ -352,7 +363,7 @@ export async function restoreLightningRecoveryJournal(
   })
 }
 
-/** Exact vhtlc-v2 config and local graph providers for SDK sender-only exits. */
+/** Exact vhtlc-v2 config and local graph providers for SDK Lightning exits. */
 export function lightningArchiveProviders(entry: LightningRecoveryEntry, binding: LightningArchiveBinding) {
   const exitBinding = lightningExitBinding(entry, binding)
   return {

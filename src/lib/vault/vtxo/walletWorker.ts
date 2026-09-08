@@ -1,3 +1,4 @@
+import { reconcileVaultLightningReceives } from '../lightningReceiveClaim'
 import { LIGHT_PROFILE } from '../light/contract'
 import { requireLightStatus } from '../light/status'
 import { registerLightContractHandler } from '../light/contractHandler'
@@ -316,13 +317,19 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
       repository: swapRepository,
     })
     swapManager = activeSwapManager
-    const maintainLightning = () =>
-      maintainVaultLightningObserver({
+    const maintainLightning = async () => {
+      try {
+        await reconcileVaultLightningReceives({ status, repository: swapRepository, contracts: manager })
+      } catch (error) {
+        consoleError(error, 'Lightning receive reconciliation')
+      }
+      return maintainVaultLightningObserver({
         manager: activeSwapManager,
         contracts: manager,
         indexer: activityIndexer,
         repository: swapRepository,
       })
+    }
     const logMaintenanceFailures = (result: Awaited<ReturnType<typeof maintainLightning>>) => {
       for (const failure of result.restoreFailures) {
         consoleError(failure.error, `Lightning swap ${failure.rfqId} restore failed`)
