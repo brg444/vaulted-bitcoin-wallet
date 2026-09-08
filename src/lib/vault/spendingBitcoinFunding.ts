@@ -177,7 +177,7 @@ class SpendingBitcoinProvider extends RestArkProvider {
     saveBitcoinPayment(this.journal)
     return result.intentId
   }
-  override getEventStream(signal?: AbortSignal, topics?: string[]) {
+  override getEventStream(signal?: AbortSignal, topics: string[] = []) {
     return super.getEventStream(signal ? AbortSignal.any([signal, this.signal]) : this.signal, topics)
   }
   override async deleteIntent(): Promise<void> {
