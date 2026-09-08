@@ -397,6 +397,9 @@ html.palette-dark .qg-mark-imprint {
 }
 .qg-payment-notice p {
   margin: 6px 0 0;
+  color: inherit;
+  text-align: inherit;
+  font-size: inherit;
 }
 .qg-payment-notice strong {
   font-weight: var(--qg-weight-strong);

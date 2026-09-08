@@ -22,6 +22,7 @@ export default function BitcoinPaymentUi() {
     window.addEventListener('bitcoin-payment-view', change)
     return () => window.removeEventListener('bitcoin-payment-view', change)
   }, [])
+  const reviewError = mode === 9 ? bitcoinPaymentRejected('INTERNAL_ERROR: example rejection') : undefined
   const status = context.status
   if (!status) return null
   const script = '0014' + '43'.repeat(20)
@@ -109,6 +110,9 @@ export default function BitcoinPaymentUi() {
       value={{
         ...context,
         account: 'spend',
+        error: reviewError?.message || '',
+        paymentError: reviewError,
+        dismissError: () => setMode(1),
         busy: false,
         spend: { address, amount, fee: 400 },
         bitcoinOutputs: outputs,
