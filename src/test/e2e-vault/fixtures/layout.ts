@@ -6,6 +6,18 @@ export async function expectWalletLayout(page: Page, contained = false) {
   const app = page.getByTestId('vault-app')
   await expect(app).toBeVisible()
   expect(await app.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  for (const header of await page.locator('.qg-header:visible').all()) {
+    const title = header.locator(':scope > h2')
+    if (!(await title.count())) continue
+    const frame = await header.boundingBox()
+    const heading = await title.boundingBox()
+    expect(Math.abs(heading!.x + heading!.width / 2 - (frame!.x + frame!.width / 2))).toBeLessThan(1)
+    for (const control of await header.locator(':scope > button:visible').all()) {
+      const bounds = await control.boundingBox()
+      expect(bounds!.height).toBeGreaterThanOrEqual(44)
+      expect(bounds!.x + bounds!.width <= heading!.x + 1 || bounds!.x >= heading!.x + heading!.width - 1).toBe(true)
+    }
+  }
   const main = page.locator('.qg-main:visible').first()
   if (await main.count()) {
     expect(await main.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
