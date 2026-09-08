@@ -111,6 +111,9 @@ it('keeps confirmed signer setup until the exact replacement recovery output has
   })
   await captureVaultRecoveryFile(f.status, f.enrollment)
   expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
+  mocks.snapshot.mockRejectedValue(new Error('History is still syncing'))
+  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).resolves.toBeDefined()
+  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
   mocks.snapshot.mockResolvedValue({
     history: [{ account: 'spend', type: 'sent', txid: setup.receipt.commitmentTxid, amount: 1700 }],
   })

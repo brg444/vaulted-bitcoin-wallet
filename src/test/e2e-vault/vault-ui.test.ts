@@ -1834,7 +1834,7 @@ test('@polish Bitcoin payment review and pending status show exact outputs', asy
   await expect(page.getByRole('heading', { name: 'Recent' })).toBeVisible()
   await expect(page.getByText('Bitcoin payment from Spending')).toHaveCount(0)
   await expect(page.getByText(/available ·.*pending/)).toHaveCount(0)
-  const payment = page.getByRole('button', { name: /Sent ₿1,400.*Pending/ })
+  const payment = page.getByRole('button', { name: /Bitcoin payment ₿1,400.*Pending/ })
   await expect(payment).toBeVisible()
   await expect(page.getByTestId('vault-balance')).toContainText('25,859')
   await expectWalletLayout(page)
