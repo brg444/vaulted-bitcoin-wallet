@@ -32,7 +32,7 @@ describe('payment review continuity', () => {
     const { value, rerender } = review({ busy: true })
     expect(screen.queryByRole('button', { name: 'Go back' })).toBeNull()
     for (const name of ['Edit amount', 'Edit', 'Completing payment…']) {
-      const button = screen.getByRole('button', { name, exact: true })
+      const button = screen.getByRole('button', { name })
       expect(button).toBeDisabled()
       fireEvent.click(button)
     }
