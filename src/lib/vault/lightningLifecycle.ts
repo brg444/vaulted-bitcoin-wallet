@@ -21,6 +21,7 @@ import {
 } from '@arkade-os/swap'
 import { hex } from '@scure/base'
 import { consoleError } from '../logs'
+import { receiveProfile } from './lightningReceive'
 import { decodeVaultLightningInvoice } from './lightningInvoice'
 import type { VaultLightningActivityRecord } from './history'
 import type { LightningRequestResult } from './lightningValidation'
@@ -768,8 +769,24 @@ export async function listVaultLightningActivityRecords(
 ): Promise<VaultLightningActivityRecord[]> {
   const records: VaultLightningActivityRecord[] = []
   for (const record of await repository.getAllRfqSwaps()) {
-    if (record.kind !== 'lightning_send' || !record.fundingArkTxid) continue
     try {
+      if (record.kind === 'lightning_receive') {
+        const receive = receiveProfile(record)
+        if (!receive.claim) continue
+        records.push({
+          rfqId: record.rfqId,
+          fundingTxid: receive.claim.txid,
+          type: 'received',
+          state: record.state,
+          amount: record.amount!,
+          displayAmount: record.amount!,
+          fee: receive.quote.from_amount - record.amount!,
+          createdAt: record.createdAt,
+          terminal: record.state === 'settled',
+        })
+        continue
+      }
+      if (record.kind !== 'lightning_send' || !record.fundingArkTxid) continue
       const quote = quoteFromRecord(record)
       const stored = storedLightningProfile(record)
       records.push({

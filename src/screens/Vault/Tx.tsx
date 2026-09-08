@@ -38,7 +38,9 @@ export default function VaultTx() {
   const status = selectedTx
     ? lightning
       ? ['claimed', 'settled'].includes(selectedTx.lightningState || '')
-        ? 'Paid'
+        ? sent
+          ? 'Paid'
+          : 'Received'
         : selectedTx.lightningState === 'refunded'
           ? 'Refunded'
           : selectedTx.lightningState === 'needs_counterparty'
@@ -50,20 +52,22 @@ export default function VaultTx() {
         ? 'Confirmed'
         : 'Pending'
     : 'Unknown'
-  const complete = lightning ? ['Paid', 'Refunded'].includes(status) : Boolean(selectedTx?.confirmed)
+  const complete = lightning ? ['Paid', 'Received', 'Refunded'].includes(status) : Boolean(selectedTx?.confirmed)
   const needsAction = ['Ready to return', 'Needs recovery'].includes(status)
   const state = !selectedTx ? 'unknown' : complete ? 'complete' : needsAction ? 'attention' : 'pending'
   const StatusIcon = !selectedTx ? CircleHelp : complete ? CircleCheck : needsAction ? CircleAlert : Clock3
   const copy = lightning
-    ? status === 'Paid'
-      ? 'This Lightning payment is complete.'
-      : status === 'Refunded'
-        ? 'This Lightning payment was refunded.'
-        : status === 'Ready to return'
-          ? 'Return the remaining payment funds to Spending.'
-          : status === 'Needs recovery'
-            ? 'This Lightning payment needs recovery.'
-            : 'This Lightning payment is still processing.'
+    ? status === 'Received'
+      ? 'This Lightning payment reached Spending.'
+      : status === 'Paid'
+        ? 'This Lightning payment is complete.'
+        : status === 'Refunded'
+          ? 'This Lightning payment was refunded.'
+          : status === 'Ready to return'
+            ? 'Return the remaining payment funds to Spending.'
+            : status === 'Needs recovery'
+              ? 'This Lightning payment needs recovery.'
+              : 'This Lightning payment is still processing.'
     : !selectedTx
       ? 'Transaction details are not available.'
       : selectedTx.confirmed
@@ -80,7 +84,7 @@ export default function VaultTx() {
       footer={
         <>
           <ErrorMessage error={Boolean(error)} text={error} />
-          {selectedTx?.lightningState === 'needs_counterparty' && selectedTx.lightningRfqId ? (
+          {sent && selectedTx?.lightningState === 'needs_counterparty' && selectedTx.lightningRfqId ? (
             <QgPrimary
               onClick={() => retryLightningRefund(selectedTx.lightningRfqId!)}
               disabled={busy}
@@ -117,7 +121,7 @@ export default function VaultTx() {
       <section className='qg-details'>
         {(lightning || bitcoin) && selectedTx?.fee !== undefined ? (
           <div>
-            <span>Fee</span>
+            <span>{lightning && !sent ? 'Fee paid by sender' : 'Fee'}</span>
             <strong>
               <QgAmount value={prettyAmount(selectedTx.fee)} />
             </strong>

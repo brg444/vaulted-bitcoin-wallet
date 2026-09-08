@@ -6,12 +6,20 @@ import { VaultContext, type VaultContextProps } from '../../vault/context'
 import LightningReceive from './LightningReceive'
 import { networkPins } from '../../lib/vault/networkPins'
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), approve: vi.fn(), list: vi.fn(), read: vi.fn(), backup: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  approve: vi.fn(),
+  list: vi.fn(),
+  read: vi.fn(),
+  backup: vi.fn(),
+  reconcile: vi.fn(),
+}))
 vi.mock('../../lib/vault/lightningReceive', async (original) => ({
   ...(await original<typeof import('../../lib/vault/lightningReceive')>()),
   requestVaultLightningReceive: mocks.request,
   approveVaultLightningReceive: mocks.approve,
 }))
+vi.mock('../../lib/vault/lightningReceiveClaim', () => ({ reconcileVaultLightningReceives: mocks.reconcile }))
 vi.mock('../../lib/vault/lightning', () => ({
   discoverVaultLightningSolver: async () => ({ network: 'bitcoin' }),
   withVaultLightningTransport: async (_profile: unknown, run: (t: object) => unknown) => run({}),
@@ -169,6 +177,29 @@ describe('Lightning receive screen', () => {
     await screen.findByRole('button', { name: 'Confirm fee and show invoice' })
     expect(screen.getByText(/payer sends 1,006 sats. Total fee: 6 sats/)).toBeTruthy()
     expect(screen.getByText(/2 sats above/)).toBeTruthy()
+    expect(screen.queryByTestId('invoice-qr')).toBeNull()
+  })
+  it('checks the receipt during polling and restores completion after reopening', async () => {
+    const timer = vi.spyOn(globalThis, 'setInterval')
+    const pending = await mocks.approve()
+    mocks.list.mockResolvedValue([pending])
+    mocks.read.mockResolvedValue(pending)
+    const first = show()
+    await screen.findByTestId('invoice-qr')
+    const settled = { ...pending, state: 'settled' }
+    mocks.reconcile.mockImplementationOnce(async () => {
+      mocks.read.mockResolvedValue(settled)
+    })
+    const poll = timer.mock.calls.find((call) => call[1] === 5000)![0] as () => void
+    await act(async () => {
+      poll()
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent('1,000 sats received in Spending.')
+    expect(screen.queryByTestId('invoice-qr')).toBeNull()
+    first.unmount()
+    mocks.list.mockResolvedValue([settled])
+    show()
+    expect(await screen.findByRole('status')).toHaveTextContent('1,000 sats received in Spending.')
     expect(screen.queryByTestId('invoice-qr')).toBeNull()
   })
   it('restores an expired invoice without showing a payable QR or claiming success', async () => {

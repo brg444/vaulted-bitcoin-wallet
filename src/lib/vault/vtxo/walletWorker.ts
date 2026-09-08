@@ -627,7 +627,9 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
     })
   }
   const lightningRfqIds = new Set(
-    swapRecords.filter((record) => record.kind === 'lightning_send').map((record) => record.rfqId),
+    swapRecords
+      .filter((record) => record.kind === 'lightning_send' || record.kind === 'lightning_receive')
+      .map((record) => record.rfqId),
   )
   const activityHistory = historyFromSdkActivities(
     activities,

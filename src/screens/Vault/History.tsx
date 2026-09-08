@@ -92,7 +92,9 @@ export function VaultHistoryList({
                         ? 'Complete or cancel'
                         : lightning
                           ? ['claimed', 'settled'].includes(tx.lightningState || '')
-                            ? 'Paid'
+                            ? sent
+                              ? 'Paid'
+                              : 'Received'
                             : tx.lightningState === 'refunded'
                               ? 'Refunded'
                               : tx.lightningState === 'needs_counterparty'

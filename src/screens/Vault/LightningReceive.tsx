@@ -10,6 +10,7 @@ import {
   approveVaultLightningReceive,
   receiveProfile,
 } from '../../lib/vault/lightningReceive'
+import { reconcileVaultLightningReceives } from '../../lib/vault/lightningReceiveClaim'
 import { withVaultLightningLifecycleLock } from '../../lib/vault/lightningLock'
 import { withVaultWalletState } from '../../lib/vault/vtxo/walletWorker'
 import { networkPins } from '../../lib/vault/networkPins'
@@ -103,11 +104,17 @@ export default function LightningReceive({
       if (running) return
       running = true
       try {
-        await actions.current.refreshBalance()
         const saved = await withVaultLightningLifecycleLock(status.vaultId, () =>
-          withVaultWalletState(status, ({ swapRepository }) => swapRepository.getRfqSwap(rfqId)),
+          withVaultWalletState(status, async ({ swapRepository, contracts }) => {
+            await reconcileVaultLightningReceives({ status, repository: swapRepository, contracts })
+            return swapRepository.getRfqSwap(rfqId)
+          }),
         )
-        if (!stopped && saved) setRecord(saved)
+        if (!stopped && saved) {
+          setRecord(saved)
+          if (saved.state === 'settled') setError('')
+        }
+        await actions.current.refreshBalance()
       } catch (e) {
         if (!stopped) setError(e instanceof Error ? e.message : 'Waiting for payment status. Keep this wallet open.')
       } finally {

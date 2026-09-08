@@ -25,7 +25,11 @@ import {
   receiveProfile,
   validateReceiveRecord,
 } from './lightningReceive'
-import { createVaultLightningObserver, refreshVaultLightningObserver } from './lightningLifecycle'
+import {
+  createVaultLightningObserver,
+  refreshVaultLightningObserver,
+  listVaultLightningActivityRecords,
+} from './lightningLifecycle'
 import { reconcileVaultLightningReceives } from './lightningReceiveClaim'
 import { networkPins } from './networkPins'
 import type { VaultStatus } from './types'
@@ -336,6 +340,16 @@ describe('Lightning receive', () => {
     await run()
     expect((await h.repository.getRfqSwap(r.rfqId))!.state).toBe('settled')
     expect(emulator.submitTx).toHaveBeenCalledOnce()
+    await expect(listVaultLightningActivityRecords(h.repository)).resolves.toEqual([
+      expect.objectContaining({
+        rfqId: r.rfqId,
+        fundingTxid: claim.txid,
+        type: 'received',
+        state: 'settled',
+        amount: 1000,
+        terminal: true,
+      }),
+    ])
   })
 })
 
