@@ -87,7 +87,7 @@ describe('onboarding guidance', () => {
         <VaultReady />
       </VaultContext.Provider>,
     )
-    expect(screen.getByTestId('backup-status')).toHaveTextContent('Backup reminder')
+    expect(screen.getByTestId('backup-status')).toHaveTextContent('Save a recovery package outside this device')
     expect(screen.queryByText('Loss recovery is ready')).toBeNull()
   })
 

@@ -1,19 +1,17 @@
 import { useContext } from 'react'
 import { VaultContext } from '../../../vault/context'
-import { useBackupConfirmation } from '../qg/useBackupConfirmation'
 import QgScreen, { QgCheck, QgPrimary, QgTextButton } from '../qg/QgScreen'
 import '../qg/guidance.css'
 
 export default function VaultReady() {
-  const { navigate, networkLabel } = useContext(VaultContext)
-  const { confirmed } = useBackupConfirmation()
+  const { navigate, networkLabel, openRecover } = useContext(VaultContext)
   return (
     <QgScreen
       variant='success'
       footer={
         <>
           <QgPrimary onClick={() => navigate('home')} label='Open your Vault' />
-          {!confirmed ? <QgTextButton onClick={() => navigate('kit')} label='Save a separate kit copy' /> : null}
+          <QgTextButton onClick={() => openRecover('kit', 'home')} label='Save recovery package' />
         </>
       }
     >
@@ -38,9 +36,7 @@ export default function VaultReady() {
           </span>
         </section>
         <p className='qg-backup-status' data-testid='backup-status'>
-          {confirmed
-            ? 'You confirmed a Recovery Kit copy outside this device.'
-            : 'Backup reminder: save a Recovery Kit copy outside this device.'}
+          Save a recovery package outside this device, and update it after transaction activity.
         </p>
       </div>
     </QgScreen>

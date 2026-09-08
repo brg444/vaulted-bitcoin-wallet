@@ -23,6 +23,7 @@ import {
   type VaultRecoveryFile,
 } from '../../src/lib/vault/recovery/backupCodec'
 import { openLocalLightBackup, parseLightEncryptedBackup } from '../../src/lib/vault/light/backupCodec'
+import { parseLightRecoveryPackage, unwrapLightRecoveryPackage } from '../../src/lib/vault/light/portable'
 import { lightRecoveryStatus } from '../../src/lib/vault/light/status'
 import {
   prepareLightRecoveryWithOwner,
@@ -730,6 +731,17 @@ async function load(data: unknown) {
   const x = data as { name?: string; version?: number; source?: Source; prepared?: Prepared }
   clearSource()
   raw = data
+  if (x.name === 'vaulted-light-recovery-package') {
+    const pkg = parseLightRecoveryPackage(data)
+    requireReleaseNetwork(pkg.backup.header.descriptor.network)
+    el('origin').textContent =
+      `Spending paths saved ${pkg.archive.capturedAt}. Use your original passkey at ${pkg.backup.header.origin} to unlock the owner key.`
+    el('open').hidden = false
+    el('unlock').hidden = false
+    el<HTMLDetailsElement>('unlock').open = true
+    el('review').hidden = true
+    return
+  }
   if (x.name === 'vaulted-recovery-package') {
     const pkg = parsePortableRecoveryPackage(data)
     source = { full: portableRecoverySource(pkg) }
@@ -834,7 +846,7 @@ el('open').onclick = () =>
       source = { full: await openLocalRecoveryBackup(parsePortableRecoveryPackage(raw).backup) }
     else if (name === 'vaulted-recovery-backup') source = { full: await openLocalRecoveryBackup(raw) }
     else {
-      const parsed = parseLightEncryptedBackup(raw)
+      const parsed = parseLightEncryptedBackup(unwrapLightRecoveryPackage(raw))
       source = { light: (await openLocalLightBackup(parsed)).file }
     }
     el('open').hidden = true

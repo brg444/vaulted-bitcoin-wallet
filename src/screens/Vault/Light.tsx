@@ -1,9 +1,19 @@
 import TransactionReference from './qg/TransactionReference'
 import { WalletHelpContext } from './qg/Help'
-import { syncCompleteLightBackup as syncLightCloudBackup } from '../../lib/vault/recovery/capture'
+import {
+  captureLightRecoveryFile,
+  syncCompleteLightBackup as syncLightCloudBackup,
+} from '../../lib/vault/recovery/capture'
 import { lightBackupScheduler } from '../../lib/vault/light/backupScheduler'
 import { openLightCloudBackup, type LightBackupSession } from '../../lib/vault/light/cloudBackup'
-import { encryptLightBackup, openLocalLightBackup, lightBackupKey } from '../../lib/vault/light/backupCodec'
+import { openLocalLightBackup, lightBackupKey } from '../../lib/vault/light/backupCodec'
+import {
+  createLightRecoveryPackage,
+  parseLightRecoveryPackage,
+  unwrapLightRecoveryPackage,
+} from '../../lib/vault/light/portable'
+import { recordRecoveryCopy } from '../../lib/vault/recovery/copyStatus'
+import RecoveryCopies from './RecoveryCopies'
 import { unlockLightWithPasskey } from '../../lib/vault/light/passkey'
 import type { ExecutorEvent } from '@arkade-os/sdk'
 import { networkPins } from '../../lib/vault/networkPins'
@@ -205,6 +215,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     if (record && (view === 'unlock' || view === 'emergency')) clearGuardianDelegationReads(record.descriptor.vaultId)
   }, [record?.descriptor.vaultId, view === 'unlock', view === 'emergency'])
   const [recoveryDataError, setRecoveryDataError] = useState('')
+  const [packageCheck, setPackageCheck] = useState('')
   const recoveryController = useRef<AbortController | null>(null)
   useEffect(() => () => recoveryController.current?.abort(), [])
   useEffect(() => {
@@ -218,6 +229,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const current = await fetchVaultWalletVtxoSnapshot(status)
         if (!current.recoveryVtxos) throw new Error('Wallet output snapshot is unavailable')
         const archive = await captureLightRecoveryArchive(record.descriptor, current.recoveryVtxos)
+        await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'local', archive)
         const coins = validateLightRecoveryArchive(archive, record.descriptor).coins
         if (!active) return
         setRecoveryDataDate(archive.capturedAt)
@@ -226,6 +238,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const session = cloudSession.current
         if (session) {
           const saved = await syncLightCloudBackup(session, archive)
+          await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'service', archive)
           if (active) {
             setCloudSavedAt(saved.createdAt)
             setCloudError('')
@@ -415,12 +428,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         const key = await lightBackupKey(owner, record)
         if (!status) throw new Error('Open the wallet before saving a backup')
         const archive = await captureCurrent(record, status)
-        const saved = await encryptLightBackup(
-          { ...record, name: 'vaulted-light-recovery', version: 1, createdAt: archive.capturedAt, archive },
-          key,
-        )
+        const saved = await createLightRecoveryPackage(await captureLightRecoveryFile(record, archive), key)
         downloadJSON(saved, `vaulted-light-${record.descriptor.vaultId.slice(0, 8)}.json`)
-        setNotice('Encrypted backup saved with current Bitcoin exit paths')
+        await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'local', archive)
+        await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'downloaded', archive)
+        setNotice('Recovery package downloaded with current Bitcoin exit paths')
       } finally {
         owner.fill(0)
       }
@@ -733,7 +745,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               disabled={!restoreRaw}
               onClick={() =>
                 void run(async () => {
-                  const parsed = JSON.parse(restoreRaw)
+                  const parsed = unwrapLightRecoveryPackage(JSON.parse(restoreRaw)) as { name?: string }
                   const opened =
                     parsed.name === 'vaulted-light-backup'
                       ? await openLocalLightBackup(parsed, authorizeRenewals)
@@ -817,7 +829,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               disabled={!restoreRaw}
               onClick={() =>
                 void run(async () => {
-                  const parsed = JSON.parse(restoreRaw)
+                  const parsed = unwrapLightRecoveryPackage(JSON.parse(restoreRaw)) as { name?: string }
                   const encrypted = parsed.name === 'vaulted-light-backup'
                   const saved = encrypted
                     ? (await openLocalLightBackup(parsed)).file
@@ -1571,16 +1583,56 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                   if (!status) throw new Error('Open the wallet before saving a backup')
                   const archive = await captureCurrent(record, status)
                   const saved = await syncLightCloudBackup(session, archive)
+                  await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'local', archive)
+                  await recordRecoveryCopy(record.descriptor.vaultId, record.descriptor.network, 'service', archive)
                   setCloudSavedAt(saved.createdAt)
                   setCloudError('')
                 })
               }
             />
-            <QgSecondary label='Save a local backup' disabled={busy} onClick={() => void saveLocalBackup()} />
+            <QgSecondary label='Save recovery package' disabled={busy} onClick={() => void saveLocalBackup()} />
             <p className='qg-copy'>
-              Your backup includes the saved transaction paths for a unilateral Bitcoin exit. Your passkey unlocks it;
-              Vaulted cannot decrypt it. Keep access to your passkey provider.
+              Keep this package private: Spending paths and Bitcoin addresses are readable. Your owner key and payment
+              journals remain encrypted and require your original passkey.
             </p>
+            <label className='qg-field'>
+              <span>Check a recovery package</span>
+              <input
+                type='file'
+                accept='.json,application/json'
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0]
+                  event.currentTarget.value = ''
+                  setPackageCheck('')
+                  if (!file) return
+                  void run(async () => {
+                    if (file.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
+                    const pkg = parseLightRecoveryPackage(JSON.parse(await file.text()))
+                    if (
+                      pkg.backup.header.descriptor.vaultId !== record.descriptor.vaultId ||
+                      pkg.backup.header.descriptor.network !== record.descriptor.network
+                    )
+                      throw new Error('This package belongs to another wallet')
+                    const { coins } = validateLightRecoveryArchive(pkg.archive, record.descriptor)
+                    await recordRecoveryCopy(
+                      record.descriptor.vaultId,
+                      record.descriptor.network,
+                      'checked',
+                      pkg.archive,
+                    )
+                    setPackageCheck(
+                      `${sats(coins.reduce((sum, coin) => sum + coin.value, 0))} found in this backup. This checks saved paths without unlocking keys or broadcasting.`,
+                    )
+                  })
+                }}
+              />
+            </label>
+            {packageCheck ? (
+              <p className='qg-copy' role='status'>
+                {packageCheck}
+              </p>
+            ) : null}
+            <RecoveryCopies vaultId={record.descriptor.vaultId} network={record.descriptor.network} />
             <p className='qg-copy'>
               A local file covers activity up to the time it was saved. Bitcoin recovery requires network fees and the
               exit waiting period.

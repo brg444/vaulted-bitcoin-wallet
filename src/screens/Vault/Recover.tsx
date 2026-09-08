@@ -23,7 +23,8 @@ import { findMatureBoardingInputs } from '../../lib/vault/vtxo/boardingRecovery'
 import { VaultContext } from '../../vault/context'
 import RecoveryHelp from './RecoveryHelp'
 import { HubGroup, HubRow } from './ui'
-import { useBackupConfirmation } from './qg/useBackupConfirmation'
+import RecoveryCopies from './RecoveryCopies'
+import { recordRecoveryCopy } from '../../lib/vault/recovery/copyStatus'
 import QgScreen, { QgCheck, QgPrimary, QgSecondary } from './qg/QgScreen'
 import { portableRecoverySource } from '../../lib/vault/recovery/portable'
 import { spendingRecoveryCoverage } from '../../lib/vault/recovery/coverage'
@@ -97,7 +98,6 @@ export default function VaultRecover() {
     status,
   } = useContext(VaultContext)
   const { toast } = useToast()
-  const { confirmed, confirm } = useBackupConfirmation()
   const [backupView, setBackupView] = useState<'overview' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding' | 'exit'>(
     'overview',
   )
@@ -191,6 +191,20 @@ export default function VaultRecover() {
       return { error: err instanceof Error ? err.message : 'That file is not a Recovery Kit' }
     }
   }, [kitJson, pasted])
+
+  useEffect(() => {
+    if (!pasted.trim() || !status) return
+    let source
+    try {
+      source = portableRecoverySource(JSON.parse(pasted))
+    } catch {
+      return
+    }
+    if (source.header.binding.vaultId !== status.vaultId || source.header.binding.network !== status.network) return
+    void recordRecoveryCopy(status.vaultId, status.network, 'checked', source.archive.spending).catch(() =>
+      setLocalError('The file was checked, but its check date could not be saved.'),
+    )
+  }, [pasted, status?.vaultId, status?.network])
 
   const saveKit = () => {
     setLocalError('')
@@ -662,9 +676,17 @@ export default function VaultRecover() {
               label='Download recovery package'
               disabled={busy}
               onClick={() =>
-                runBackup(async () =>
-                  downloadJson('Vaulted recovery package.json', await downloadRecoveryArchive('portable')),
-                )
+                runBackup(async () => {
+                  const body = await downloadRecoveryArchive('portable')
+                  downloadJson('Vaulted recovery package.json', body)
+                  const source = portableRecoverySource(JSON.parse(body))
+                  await recordRecoveryCopy(
+                    source.header.binding.vaultId,
+                    source.header.binding.network,
+                    'downloaded',
+                    source.archive.spending,
+                  )
+                })
               }
             />
           ) : backupView === 'kit' ? (
@@ -711,8 +733,8 @@ export default function VaultRecover() {
             />
             <HubRow title='Save recovery package' onClick={() => setBackupView('file')} />
             <HubRow
-              title='Recovery Kit'
-              status={confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'On this device' : 'Needed'}
+              title='Wallet details'
+              detail='Public addresses and recovery rules'
               onClick={() => setBackupView('kit')}
             />
             <HubRow title='Check a recovery package' onClick={() => setBackupView('inspect')} />
@@ -739,6 +761,7 @@ export default function VaultRecover() {
               />
             ) : null}
           </HubGroup>
+          {status ? <RecoveryCopies vaultId={status.vaultId} network={status.network} /> : null}
         </>
       ) : backupView === 'kit' ? (
         <>
@@ -748,18 +771,8 @@ export default function VaultRecover() {
             bitcoin by itself. Save a private copy outside this device.
           </p>
           <p className='qg-copy'>
-            {confirmed
-              ? 'You confirmed a separate copy. The app cannot verify where it is saved.'
-              : 'After saving a separate copy, record your confirmation below.'}
+            Save a recovery package to include Spending paths. This public map alone cannot recover Spending.
           </p>
-          {!confirmed && hasRecoveryKit ? (
-            <QgSecondary
-              label='I have a copy outside this device'
-              onClick={() => {
-                if (!confirm()) toast('Could not save your confirmation. Try again.')
-              }}
-            />
-          ) : null}
           {hasRecoveryKit ? (
             <details className='qg-guidance'>
               <summary>Save a public kit copy with the service</summary>

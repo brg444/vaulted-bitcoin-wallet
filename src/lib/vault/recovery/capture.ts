@@ -5,12 +5,13 @@ import { exportConnectorRecoveryJournal } from '../program/connectorStore'
 import { isConnectorTemplate } from '../program/connector'
 import { captureVaultRecoveryArchive, vaultRecoveryBinding } from '../vtxo/recoveryArchive'
 import { buildRecoveryHeader, validateVaultRecoveryFile, type VaultRecoveryFile } from './backupCodec'
-import { captureRecoveryJournals } from './journals'
+import { captureRecoveryJournals, type RecoveryJournals } from './journals'
 import { recoveryFileStore } from './fileStore'
 import { lightRecoveryStatus } from '../light/status'
 import { lightDescriptorDigest } from '../light/contract'
 import { syncLightCloudBackup, type LightBackupSession } from '../light/cloudBackup'
 import type { LightRecoveryArchive } from '../light/recoveryArchive'
+import type { LightEnrollment } from '../light/enrollment'
 import { validateLightRecoveryFile, type LightRecoveryFile } from '../light/recovery'
 import { IndexedDBWalletRepository } from '@arkade-os/sdk'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
@@ -85,22 +86,43 @@ export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: 
 
 /** Both automatic and manual Light uploads carry all independently funded contracts. */
 export async function syncCompleteLightBackup(session: LightBackupSession, archive: LightRecoveryArchive) {
-  const status = lightRecoveryStatus(session.record.descriptor)
-  const key = lightDescriptorDigest(session.record.descriptor)
+  return captureLightRecoveryFile(session.record, archive, session.file, (journals) =>
+    syncLightCloudBackup(session, archive, journals),
+  )
+}
+
+export async function captureLightRecoveryFile(
+  record: LightEnrollment,
+  archive: LightRecoveryArchive,
+  fallback?: LightRecoveryFile,
+  publish?: (journals: RecoveryJournals) => Promise<LightRecoveryFile>,
+) {
+  const status = lightRecoveryStatus(record.descriptor)
+  const key = lightDescriptorDigest(record.descriptor)
   if (!navigator.locks) throw new Error('Web Locks required for complete recovery capture')
   return navigator.locks.request(`vaulted:complete-recovery:${key}`, async () => {
-    const previous = await recoveryFileStore<LightRecoveryFile>(key)
-    if (previous) validateLightRecoveryFile(previous)
-    const journals = await captureRecoveryJournals(status, previous || session.file)
-    const file = validateLightRecoveryFile({
-      ...session.record,
-      name: 'vaulted-light-recovery',
-      version: 1,
-      createdAt: archive.capturedAt,
-      archive,
-      ...journals,
-    })
-    await recoveryFileStore(key, file)
-    return syncLightCloudBackup(session, archive, journals)
+    const wallet = new IndexedDBWalletRepository(vaultWalletDatabase(record.descriptor.vaultId))
+    const binding = { ...record.descriptor, descriptorHash: key }
+    const known = async () =>
+      (await wallet.getVtxosForScript(binding.scriptPubKey)).filter((v) => !v.isSpent && !v.spentBy)
+    try {
+      requireSpendingRecoveryCoverage(archive, binding, await known())
+      const previous = await recoveryFileStore<LightRecoveryFile>(key)
+      if (previous) validateLightRecoveryFile(previous)
+      const journals = await captureRecoveryJournals(status, previous || fallback)
+      const file = validateLightRecoveryFile({
+        ...record,
+        name: 'vaulted-light-recovery',
+        version: 1,
+        createdAt: archive.capturedAt,
+        archive,
+        ...journals,
+      })
+      requireSpendingRecoveryCoverage(archive, binding, await known())
+      await recoveryFileStore(key, file)
+      return publish ? await publish(journals) : file
+    } finally {
+      await wallet[Symbol.asyncDispose]()
+    }
   })
 }

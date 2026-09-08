@@ -10,6 +10,7 @@ import { unlockLightWithPasskey } from './passkey'
 vi.mock('./passkey', () => ({ unlockLightWithPasskey: vi.fn() }))
 import { lightArchiveProviders, assertLightArchiveMatchesVtxos } from './recoveryArchive'
 import type { LightRecoveryFile } from './recovery'
+import { createLightRecoveryPackage, parseLightRecoveryPackage, unwrapLightRecoveryPackage } from './portable'
 
 async function fixture(): Promise<LightRecoveryFile> {
   const record = await lightTestEnrollment()
@@ -53,6 +54,22 @@ async function fixture(): Promise<LightRecoveryFile> {
   }
 }
 describe('automatic Light backup and unilateral exit data', () => {
+  it('exports inspectable paths with an encrypted owner section and accepts legacy encrypted files', async () => {
+    const file = await fixture()
+    const key = await lightBackupKey(testOwner, file)
+    const portable = await createLightRecoveryPackage(file, key)
+    const parsed = parseLightRecoveryPackage(JSON.parse(JSON.stringify(portable)))
+    expect(Object.keys(parsed.archive.transactions)).toEqual(Object.keys(file.archive!.transactions))
+    expect(JSON.stringify(parsed)).not.toContain(hex.encode(testOwner))
+    expect((await decryptLightBackup(unwrapLightRecoveryPackage(parsed), key)).archive).toEqual(file.archive)
+    expect(unwrapLightRecoveryPackage(parsed.backup)).toBe(parsed.backup)
+    const tampered = structuredClone(parsed)
+    const coins = JSON.parse(tampered.archive.coins)
+    coins[0].value++
+    tampered.archive.coins = JSON.stringify(coins)
+    expect(() => parseLightRecoveryPackage(tampered)).toThrow()
+    expect(() => parseLightRecoveryPackage({ ...parsed, ownerSecret: 'forbidden' })).toThrow()
+  })
   it('round trips the complete VTXO paths without a manual recovery secret', async () => {
     const file = await fixture()
     const key = await lightBackupKey(testOwner, file)

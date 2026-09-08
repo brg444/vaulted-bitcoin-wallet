@@ -9,6 +9,10 @@ import {
 } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { describe, expect, it, vi } from 'vitest'
+// Recovery graph persistence has its own corruption/storage tests. These cases
+// exercise exact payment orchestration with a successful durable boundary.
+vi.mock('../recovery/finalization', () => ({ retainFinalizationRecovery: vi.fn().mockResolvedValue(undefined) }))
+import { retainFinalizationRecovery } from '../recovery/finalization'
 import { POLICY_VERSION } from '../constants'
 import { networkPins } from '../networkPins'
 import { SAVINGS_TEMPLATE } from '../program/constants'
@@ -665,70 +669,82 @@ describe('regular VTXO spend coordinator', () => {
     },
   )
 
-  it('runs one fresh reserved v1 operation through the SDK adapter and clears it only after finalization', async () => {
-    sdkOperationAdapterMocks.submit.mockReset()
-    clearPersistedVtxoSpend('vault-a')
-    const pending = freshPolicyPending()
-    persistVtxoSpend(pending)
-    const restoreLock = installImmediateNavigatorLock()
-    const finalizeTx = vi.spyOn(RestArkProvider.prototype, 'finalizeTx').mockResolvedValue(undefined)
-    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(currentOperatorInfo(pending))
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = String(input)
-      if (url.includes('/v1/vtxo/operation')) {
-        return new Response(JSON.stringify(reviewedOperation(pending)), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }
-      if (url.includes('/v1/vtxo/finalize')) {
-        return new Response(
-          JSON.stringify({
-            operationId: pending.operationId,
-            bundleDigest: pending.bundleDigest,
-            state: 'finalized',
-            arkTxid: pending.arkTxid,
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        )
-      }
-      throw new Error(`unexpected request: ${url}`)
-    })
-    sdkOperationAdapterMocks.submit.mockImplementation(async (params: SubmitExactVaultSdkOperationParams) => {
-      expect(params.inputs.map(({ txid, vout, value }) => ({ txid, vout, value }))).toEqual(
-        pending.reservedInputs!.map(({ txid, vout, valueSats }) => ({ txid, vout, value: valueSats })),
-      )
-      expect(params.outputs.map(({ script, amount }) => ({ script: hex.encode(script!), amount }))).toEqual(
-        pending.reservedOutputs!.map(({ scriptHex, amountSats }) => ({
-          script: scriptHex,
-          amount: BigInt(amountSats),
-        })),
-      )
-      await params.callbacks.finalize({
-        arkTxid: pending.arkTxid,
-        authorizedCheckpointPsbts: pending.unsignedCheckpointPsbts!,
-        signal: new AbortController().signal,
-      })
-      return pending.arkTxid
-    })
-
-    try {
-      await expect(
-        sendVaultVtxo({} as never, status(), reviewedQuote(pending), stubPasskeyUnlocker()),
-      ).resolves.toEqual({
-        txid: pending.arkTxid,
-        operationId: pending.operationId,
-        feeSats: pending.feeSats,
-      })
-      expect(sdkOperationAdapterMocks.submit).toHaveBeenCalledTimes(1)
-      expect(finalizeTx).toHaveBeenCalledTimes(1)
-      expect(fetch).toHaveBeenCalledTimes(2)
-      expect(loadPersistedVtxoSpend('vault-a')).toBeUndefined()
-    } finally {
+  it.each([false, true])(
+    'gates fresh SDK finalization on durable recovery evidence, storage failure=%s',
+    async (storageFailure) => {
+      sdkOperationAdapterMocks.submit.mockReset()
       clearPersistedVtxoSpend('vault-a')
-      restoreLock()
-    }
-  })
+      const pending = freshPolicyPending()
+      persistVtxoSpend(pending)
+      const restoreLock = installImmediateNavigatorLock()
+      const finalizeTx = vi.spyOn(RestArkProvider.prototype, 'finalizeTx').mockResolvedValue(undefined)
+      vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(currentOperatorInfo(pending))
+      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = String(input)
+        if (url.includes('/v1/vtxo/operation')) {
+          return new Response(JSON.stringify(reviewedOperation(pending)), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        if (url.includes('/v1/vtxo/finalize')) {
+          return new Response(
+            JSON.stringify({
+              operationId: pending.operationId,
+              bundleDigest: pending.bundleDigest,
+              state: 'finalized',
+              arkTxid: pending.arkTxid,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        throw new Error(`unexpected request: ${url}`)
+      })
+      sdkOperationAdapterMocks.submit.mockImplementation(async (params: SubmitExactVaultSdkOperationParams) => {
+        expect(params.inputs.map(({ txid, vout, value }) => ({ txid, vout, value }))).toEqual(
+          pending.reservedInputs!.map(({ txid, vout, valueSats }) => ({ txid, vout, value: valueSats })),
+        )
+        expect(params.outputs.map(({ script, amount }) => ({ script: hex.encode(script!), amount }))).toEqual(
+          pending.reservedOutputs!.map(({ scriptHex, amountSats }) => ({
+            script: scriptHex,
+            amount: BigInt(amountSats),
+          })),
+        )
+        await params.callbacks.finalize({
+          arkTxid: pending.arkTxid,
+          authorizedCheckpointPsbts: pending.unsignedCheckpointPsbts!,
+          signal: new AbortController().signal,
+        })
+        return pending.arkTxid
+      })
+
+      try {
+        if (storageFailure) {
+          vi.mocked(retainFinalizationRecovery).mockRejectedValueOnce(new Error('Recovery storage unavailable'))
+          await expect(
+            sendVaultVtxo({} as never, status(), reviewedQuote(pending), stubPasskeyUnlocker()),
+          ).rejects.toThrow('Recovery storage unavailable')
+          expect(finalizeTx).not.toHaveBeenCalled()
+          expect(loadPersistedVtxoSpend('vault-a')).toBeDefined()
+          return
+        }
+        await expect(
+          sendVaultVtxo({} as never, status(), reviewedQuote(pending), stubPasskeyUnlocker()),
+        ).resolves.toEqual({
+          txid: pending.arkTxid,
+          operationId: pending.operationId,
+          feeSats: pending.feeSats,
+        })
+        expect(sdkOperationAdapterMocks.submit).toHaveBeenCalledTimes(1)
+        expect(finalizeTx).toHaveBeenCalledTimes(1)
+        expect(fetch).toHaveBeenCalledTimes(2)
+        expect(loadPersistedVtxoSpend('vault-a')).toBeUndefined()
+      } finally {
+        clearPersistedVtxoSpend('vault-a')
+        restoreLock()
+      }
+    },
+  )
 
   it('unlocks the passkey once and reuses it for Ark authorization and checkpoint signing', async () => {
     const phoneSecret = new Uint8Array(32).fill(7)

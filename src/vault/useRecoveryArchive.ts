@@ -13,6 +13,7 @@ import { kitFromFacts } from '../lib/vault/program/kitBackup'
 import { lightBackupScheduler } from '../lib/vault/light/backupScheduler'
 import { subscribeVaultWalletEvents } from '../lib/vault/vtxo/walletWorker'
 import { createPortableRecoveryPackage } from '../lib/vault/recovery/portable'
+import { recordRecoveryCopy } from '../lib/vault/recovery/copyStatus'
 
 export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status: VaultStatus | null, locked: boolean) {
   const session = useRef<RecoveryBackupSession | null>(null)
@@ -39,9 +40,11 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     const unchanged = () => context === contextEpoch.current && activity === activityEpoch.current
     const file = await captureVaultRecoveryFile(status, enrollment)
     if (!unchanged()) return file
+    await recordRecoveryCopy(status.vaultId, status.network, 'local', file.archive.spending)
     const active = session.current
     if (active && active.header.binding.vaultId === status.vaultId) {
       await syncRecoveryCloudBackup(active, file)
+      await recordRecoveryCopy(status.vaultId, status.network, 'service', file.archive.spending)
       if (!unchanged()) return file
       setRecoveryArchiveStatus(`Encrypted cloud backup verified ${new Date().toLocaleString()}`)
     } else setRecoveryArchiveStatus(`Transaction recovery data saved on this device ${new Date().toLocaleString()}`)
@@ -105,6 +108,7 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault first')
     const file = await captureVaultRecoveryFile(status, enrollment)
+    await recordRecoveryCopy(status.vaultId, status.network, 'local', file.archive.spending)
     const encode = async (key: CryptoKey) =>
       JSON.stringify(
         format === 'portable' ? await createPortableRecoveryPackage(file, key) : await encryptRecoveryBackup(file, key),

@@ -247,6 +247,27 @@ export async function captureExitArchive(
   requireExitArchiveInfo(info, d)
   const getCoins = async () => (await indexer.getVtxos({ scripts: [d.scriptPubKey] })).vtxos.filter((v) => !v.isSpent)
   const coins = await getCoins()
+  const archive = await captureExitArchiveForCoins(d, repository, previous, coins, info, indexer)
+  const fingerprint = (values: VirtualCoin[]) =>
+    values
+      .map((v) => `${outpoint(v)}:${v.value}:${v.script}`)
+      .sort()
+      .join('|')
+  if (fingerprint(coins) !== fingerprint(await getCoins()))
+    throw new Error('Your balance changed while saving recovery data')
+  return archive
+}
+
+/** Capture the exact repository update while the caller holds its lifecycle lock. */
+export async function captureExitArchiveForCoins(
+  d: ExitArchiveBinding,
+  repository: VirtualTxRepository,
+  previous: ExitArchive | null,
+  coins: VirtualCoin[],
+  info: ArkInfo,
+  indexer: IndexerProvider,
+) {
+  requireExitArchiveInfo(info, d)
   if (coins.length > 512) throw new Error('Recovery output limit exceeded')
   const previousCoins = previous ? validateExitArchive(previous, d).coins : []
   const removed = previousCoins.filter((old) => !coins.some((coin) => outpoint(coin) === outpoint(old)))
@@ -255,7 +276,11 @@ export async function captureExitArchive(
     if (removed.some((old) => !resolved.some((coin) => outpoint(coin) === outpoint(old) && coin.isSpent)))
       throw new Error('An earlier output is missing. Previous recovery data has been retained.')
   }
-  const resolver = createExitChainResolver({ indexer, repository })
+  const resolver = createExitChainResolver({
+    indexer,
+    repository,
+    extraSources: previous ? [exitArchiveProviders(previous, d).source] : [],
+  })
   const branches: ExitArchive['branches'] = {}
   const wanted = new Set<string>()
   for (const coin of coins) {
@@ -275,13 +300,6 @@ export async function captureExitArchive(
       transactions[Transaction.fromPSBT(base64.decode(psbt)).id] = psbt
     }
   }
-  const fingerprint = (values: VirtualCoin[]) =>
-    values
-      .map((v) => `${outpoint(v)}:${v.value}:${v.script}`)
-      .sort()
-      .join('|')
-  if (fingerprint(coins) !== fingerprint(await getCoins()))
-    throw new Error('Your balance changed while saving recovery data')
   const archive: ExitArchive = {
     version: 1,
     descriptorHash: d.descriptorHash,

@@ -77,6 +77,13 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await launcher(page, 'Security')
   for (const name of ['Keys and access', 'Spending limits', 'Renewal', 'Backups']) {
     await page.getByRole('button', { name: new RegExp(`^${name}`) }).click()
+    if (name === 'Backups') {
+      await expect(page.getByRole('button', { name: 'Save recovery package', exact: true })).toBeVisible()
+      await expect(page.getByLabel('Check a recovery package')).toBeVisible()
+      await page.getByText('Saved copies', { exact: true }).click()
+      await expect(page.getByText('Last file check', { exact: true })).toBeVisible()
+      await page.screenshot({ path: testInfo.outputPath('light-recovery-copies.png'), fullPage: true })
+    }
     await expect(page.getByRole('button', { name: 'Lock wallet' })).toBeInViewport({ ratio: 1 })
     await page.getByRole('button', { name: 'Go back', exact: true }).click()
   }

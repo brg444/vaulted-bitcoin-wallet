@@ -6,7 +6,6 @@ import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import RecoveryExplanation from './qg/RecoveryExplanation'
-import { useBackupConfirmation } from './qg/useBackupConfirmation'
 import QgScreen from './qg/QgScreen'
 import SecurityOverview from './SecurityOverview'
 import ConnectorSetup from './ConnectorSetup'
@@ -59,7 +58,6 @@ export default function VaultKeys() {
     spendingRenewals,
     enablePasskeyLogin,
     hasLocalEnrollment,
-    hasRecoveryKit,
     navigate,
     openRecover,
     savingsAddress,
@@ -68,7 +66,6 @@ export default function VaultKeys() {
     status,
   } = useContext(VaultContext)
   const [view, setView] = useState<'overview' | 'keys' | 'limits' | 'renewal' | 'signer' | 'deposit'>('overview')
-  const { confirmed } = useBackupConfirmation()
   const phoneCovered = Boolean(status?.enrolled)
   const devicesCovered = Boolean(status?.passkeyLoginAvailable)
   const canEnableOther = hasLocalEnrollment && status?.enrolled && !status.passkeyLoginAvailable
@@ -112,22 +109,16 @@ export default function VaultKeys() {
         <SecurityOverview
           title={protectionTier === 'advanced' ? 'Advanced vault' : 'Standard vault'}
           description={hasRecovery ? 'Passkey, hardware and recovery key' : 'Passkey + hardware wallet'}
-          notice={
-            !vaultReady
-              ? 'Check keys and service access'
-              : !confirmed
-                ? 'Save a separate backup'
-                : 'Vault service available'
-          }
-          attention={!vaultReady || !confirmed}
+          notice={!vaultReady ? 'Check keys and service access' : 'Vault service available'}
+          attention={!vaultReady}
           access={{
             value: !phoneCovered ? 'Passkey needed' : devicesCovered ? 'Passkey available' : 'This device only',
             attention: !phoneCovered,
             onClick: () => setView('keys'),
           }}
           backup={{
-            value: confirmed ? 'Copy confirmed' : hasRecoveryKit ? 'Save a copy' : 'Needed',
-            attention: !confirmed,
+            value: 'Review saved copies',
+            attention: false,
             onClick: () => openRecover('kit', 'keys'),
             testId: 'security-kit',
           }}

@@ -90,12 +90,15 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   expect(persistent).not.toContain('"token"')
   await expect(page.getByText(/Encrypted cloud backup saved/)).toBeVisible()
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Save a local backup', exact: true }).click()
+  await page.getByRole('button', { name: 'Save recovery package', exact: true }).click()
   const path = await (await download).path()
   const saved = JSON.parse(await readFile(path!, 'utf8'))
   expect(backupChallenges).toBeGreaterThan(0)
-  expect(saved.name).toBe('vaulted-light-backup')
-  expect(saved.header.recoveryBackup).toBeUndefined()
+  expect(saved.name).toBe('vaulted-light-recovery-package')
+  expect(saved.backup.name).toBe('vaulted-light-backup')
+  expect(saved.backup.header.recoveryBackup).toBeUndefined()
+  await page.getByLabel('Check a recovery package').setInputFiles(path!)
+  await expect(page.getByText(/found in this backup/)).toBeVisible()
   // Keep the original authenticator but remove this device's app record.
   // Both cloud and local-file restoration retain the same script and policy.
   await page.evaluate(() => {

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   unlock: vi.fn(),
 }))
 vi.mock('../lib/vault/recovery/capture', () => ({ captureVaultRecoveryFile: mocks.capture }))
+vi.mock('../lib/vault/recovery/copyStatus', () => ({ recordRecoveryCopy: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../lib/vault/recovery/cloudBackup', () => ({
   openRecoveryCloudBackup: mocks.open,
   syncRecoveryCloudBackup: mocks.sync,
@@ -28,7 +29,7 @@ vi.mock('../lib/vault/vtxo/walletWorker', () => ({ subscribeVaultWalletEvents: m
 vi.mock('../lib/vault/savingsSpend', () => ({ unlockPhoneBip340: mocks.unlock }))
 const status = { vaultId: 'test', enrolled: true } as VaultStatus
 const enrollment = { vaultId: 'test' } as EnrollmentSecrets
-const file = { header: { binding: { vaultId: 'test' } } }
+const file = { header: { binding: { vaultId: 'test' } }, archive: { spending: {} } }
 let event: () => void
 beforeEach(() => {
   vi.clearAllMocks()

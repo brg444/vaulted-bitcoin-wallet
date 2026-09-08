@@ -201,7 +201,7 @@ describe('recovery archive failure feedback', () => {
     expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible()
     expect(screen.getByText('Transaction recovery data saved on this device earlier')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Save recovery package' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /Recovery Kit.*On this device/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Wallet details/ })).toBeEnabled()
   })
 
   it('reports a failed explicit export without claiming a new saved copy', async () => {
