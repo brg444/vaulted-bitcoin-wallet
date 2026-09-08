@@ -27,19 +27,21 @@ conflicting writer from silently overwriting another device's backup. Backup wri
 
 ## VTXO paths and synchronization
 
-The reviewed wallet SDK is the vendored `f0fd58d5` lineage, with the existing
-selective Lightning patches recorded in `vendor/arkade-os-sdk-ORIGIN.md`.
+The reviewed wallet SDK and its patches are recorded in
+`vendor/arkade-os-sdk-ORIGIN.md`.
 In that source, `wallet/wallet.ts` installs ContractManager hooks only when a
 `virtualTxRepository` is supplied. Capture defaults to `lite`, which omits
 transaction PSBTs, and skips outputs below 1,000 sats. Capture errors are
 best-effort; payment completion is independent of capture success.
 
-The Light worker now supplies a dedicated `IndexedDBVirtualTxRepository` with
+The Light worker supplies a retained `IndexedDBVirtualTxRepository` with
 `exitDataCapture: { mode: 'full', minExitWorthSats: 0 }`. The ContractManager
-remains the owner of wallet VTXO state. Its receive, spend and reconciliation
-flows capture new branches and prune spent branches in the SDK repository.
-The separate last-complete recovery archive survives a failed or interrupted
-SDK capture.
+remains the owner of wallet VTXO state. Its repository saves a recovery transition
+before publishing an update and retains complete paths when available. A failed
+or slow capture leaves the observed balance visible with recovery pending.
+Background repair updates recovery evidence without rewriting financial state.
+Spent branches remain available until explicit wallet-data removal, and the
+previous complete archive survives an interrupted capture.
 
 Cloud sync subscribes to the persistent wallet's contract and worker events.
 An event arriving during capture or upload queues another pass. Opening the
@@ -62,6 +64,14 @@ A device remembers its highest acknowledged cloud revision. This detects a
 rollback relative to that device's history. A fresh device cannot establish
 freshness against a malicious or rolled-back storage service solely from an
 old, correctly encrypted file. It must reconcile current VTXOs when online.
+
+**Save recovery package** downloads readable Spending paths alongside the existing
+encrypted owner and payment-journal backup. **Check a recovery package** validates
+the saved paths without unlocking keys or broadcasting. The Saved copies panel
+compares local, verified service, downloaded and checked Spending paths; key access,
+other account requirements and later activity need separate verification. The
+original passkey remains required for Light owner access. Older encrypted files
+are accepted by the wallet and both companion entry points.
 
 ## Unilateral exit
 

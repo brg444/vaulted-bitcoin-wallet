@@ -30,8 +30,15 @@ recovery application separately; the JSON package contains data, not a runtime.
 **Check a recovery package** opens a file without signing or broadcasting.
 It reports the Spending paths and amount found in that file. It cannot prove
 coverage of later activity, access to signing keys or current Bitcoin eligibility.
-The separate public Recovery Kit records Savings scripts and rules; it cannot
+The public Recovery Kit under **Wallet details** records Savings scripts and rules; it cannot
 replace a missing Spending transaction graph.
+
+**Saved copies** records the local Spending paths, verified service copy,
+requested download and most recently checked file separately. Matching paths
+establish agreement between those saved copies. Key availability, Savings and
+pending-operation requirements, later activity and the location of a downloaded
+file still need their own checks. Light uses the same package and file-check
+actions while retaining its original passkey requirement.
 
 Automatic capture runs while the wallet is available. Encrypted cloud updates
 require an active backup session and a working connection. Local storage and
