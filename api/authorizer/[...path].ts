@@ -211,12 +211,12 @@ export function publicAuthorizerPath(url = ''): string {
     if (route === 'enroll-session') return '/v1/enroll/session'
     const phase = params.get('phase') || ''
     if (
-      route === 'savings-setup' &&
+      (route === 'savings-setup' || route === 'bitcoin') &&
       new Set(['info', 'prepare', 'register', 'final', 'status', 'release']).has(phase)
     ) {
       const vaultId = params.get('vaultId')
       return (
-        `/v1/vtxo/savings-setup/${phase}` +
+        `/v1/vtxo/${route}/${phase}` +
         (phase === 'info' && vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : '')
       )
     }

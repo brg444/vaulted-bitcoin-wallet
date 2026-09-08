@@ -1,4 +1,6 @@
-import { useSavingsSetup } from '../vault/useSavingsSetup'
+import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
+import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
+import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
 import { clearSpendingRenewalReads } from '../lib/vault/vtxo/guardianRenewal'
 import { useRecoveryArchive } from '../vault/useRecoveryArchive'
@@ -45,7 +47,7 @@ import {
 import { consoleError } from '../lib/logs'
 import { requireSdkNetworkName } from '../lib/vault/networkPins'
 import { humanizeVaultError } from '../lib/vault/humanize'
-import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress } from '../lib/vault/bitcoin'
+import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress, scriptHexFromAddress } from '../lib/vault/bitcoin'
 import {
   discoverVaultLightningSolver,
   isVaultLightningInput,
@@ -169,6 +171,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [reviewedVtxoQuote, setReviewedVtxoQuote] = useState<VaultVtxoSpendQuote | null>(null)
   const [lightningQuote, setLightningQuote] = useState<VaultLightningQuote | null>(null)
   const [canReplaceInFlightSend, setCanReplaceInFlightSend] = useState(false)
+  const bitcoinApproval = useRef<{
+    resolve: (approved: boolean) => void
+    address: string
+    amount: number
+    fee: number
+  } | null>(null)
   const replaceExistingVtxoRef = useRef(false)
   const [lastSend, setLastSend] = useState<VaultSpend | null>(null)
   const [lastTxid, setLastTxid] = useState('')
@@ -182,6 +190,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [handoffPsbt, setHandoffPsbt] = useState('')
   const [pendingSavingsHandoff, setPendingSavingsHandoff] = useState<PendingSavingsHandoff | null>(null)
   const [locked, setLocked] = useState(bootLocked)
+  useEffect(() => {
+    if (bitcoinApproval.current && screen !== 'review') {
+      bitcoinApproval.current.resolve(false)
+      bitcoinApproval.current = null
+    }
+  }, [screen])
+  useEffect(
+    () => () => {
+      bitcoinApproval.current?.resolve(false)
+    },
+    [],
+  )
+
   const [addressPin, setAddressPin] = useState<AddressPin | null>(null)
   const [fiatDisplayRate, setFiatDisplayRate] = useState<VaultFiatDisplayRate | null>(null)
   const [fiatDisplayEnabled, setFiatDisplayEnabled] = useState(false)
@@ -826,6 +847,82 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
   }, [account, enrollment, setup.txCapSats, spend.address, spendingAvailableSats, status])
 
+  const [bitcoinOutputs, setBitcoinOutputs] = useState<BitcoinPaymentOutput[] | undefined>()
+  const reviewBitcoinPayment = useCallback(
+    async (outputs: BitcoinPaymentOutput[], draft: VaultSpend) => {
+      if (!status?.enrolled || !enrollment) {
+        setError('Sign in with the passkey that created this vault.')
+        return
+      }
+      setBitcoinOutputs(outputs)
+      setBusy(true)
+      setLightningQuote(null)
+      let approvedFee = 0
+      let approvalAccepted = false
+      try {
+        const result = await sendSpendingToBitcoin(
+          enrollment,
+          status,
+          outputs,
+          (plan) =>
+            new Promise<boolean>((resolve) => {
+              if (spendRef.current.address !== draft.address || spendRef.current.amount !== draft.amount) {
+                resolve(false)
+                return
+              }
+              approvedFee = plan.feeSats
+              bitcoinApproval.current = { resolve, address: draft.address, amount: draft.amount, fee: plan.feeSats }
+              setSpend({ ...draft, fee: plan.feeSats })
+              setScreen('review')
+              setBusy(false)
+            }).then((accepted) => {
+              approvalAccepted = accepted
+              return accepted
+            }),
+          () => {},
+        )
+        if (['submitted', 'confirmed'].includes(result.state) && result.commitmentTxid) {
+          setLastTxid(result.commitmentTxid)
+          setLastTxKind('onchain')
+          setLastSend({ ...draft, fee: approvedFee })
+          setSpend({ address: '', amount: 0, fee: 0 })
+          setScreen('success')
+        } else if (approvalAccepted) {
+          setScreen('home')
+        }
+        try {
+          await refreshBalance(status.vaultId)
+        } catch {
+          /* Payment outcome is independent of balance refresh. */
+        }
+      } catch (err) {
+        setError(humanizeVaultError(err))
+        if (approvalAccepted) setScreen('home')
+      } finally {
+        bitcoinApproval.current = null
+        setBusy(false)
+      }
+    },
+    [enrollment, status, refreshBalance],
+  )
+  const fundSavingsSigner = useCallback(async () => {
+    if (!status?.enrolled) return
+    setBusy(true)
+    setError('')
+    try {
+      const funding = await signerFundingOutputs(status)
+      const draft = { address: funding.address, amount: funding.outputs.reduce((n, o) => n + o.amountSats, 0), fee: 0 }
+      setAccount('spend')
+      setSpend(draft)
+      spendRef.current = draft
+      await reviewBitcoinPayment(funding.outputs, draft)
+    } catch (err) {
+      setError(humanizeVaultError(err))
+    } finally {
+      setBusy(false)
+    }
+  }, [status, reviewBitcoinPayment])
+
   const reviewSpend = useCallback(async () => {
     setError('')
     setReviewedVtxoQuote(null)
@@ -847,8 +944,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setError('Savings sends require a Bitcoin address.')
       return
     }
-    if (!arkDestination && account === 'spend' && status?.enrolled) {
-      setError('Spending currently sends VTXOs to Arkade addresses. Bitcoin withdrawal is not in this rollout yet.')
+    if (!arkDestination && account === 'spend') {
+      if (!Number.isSafeInteger(spend.amount) || spend.amount < bitcoinDustSats(spend.address, destNetwork)) {
+        setError(`At least ₿${bitcoinDustSats(spend.address, destNetwork)}.`)
+        return
+      }
+      await reviewBitcoinPayment(
+        [{ script: scriptHexFromAddress(spend.address, destNetwork), amountSats: spend.amount }],
+        spend,
+      )
       return
     }
     const minimumAmount = account === 'savings' ? bitcoinDustSats(spend.address, destNetwork) : DUST_SATS
@@ -933,6 +1037,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     account,
     enrollment,
     reviewLightningSpend,
+    reviewBitcoinPayment,
     savingsAvailableSats,
     setup.txCapSats,
     spend,
@@ -1141,6 +1246,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   )
 
   const approveSend = useCallback(async () => {
+    if (bitcoinApproval.current) {
+      const approval = bitcoinApproval.current
+      bitcoinApproval.current = null
+      const matches =
+        account === 'spend' &&
+        spend.address === approval.address &&
+        spend.amount === approval.amount &&
+        spend.fee === approval.fee
+      setBusy(matches)
+      if (!matches) setError('Payment details changed. Review the payment again.')
+      approval.resolve(matches)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -1410,14 +1528,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [enrollment, refreshBalance, status])
 
   const spendingRenewals = useSpendingRenewals(status, enrollment, locked)
-  const savingsSetup = useSavingsSetup(status, locked)
+  const spendingBitcoin = useSpendingBitcoin(status, locked)
 
   const value = useMemo<VaultContextProps>(
     () => ({
       acceptDesign,
       account,
       spendingRenewals,
-      savingsSetup,
+      spendingBitcoin,
       applyHardware,
       applyConnectorDescriptor,
       applyRecovery,
@@ -1527,6 +1645,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       refreshingBalance,
       reset,
       reviewSpend,
+      fundSavingsSigner,
+      bitcoinOutputs,
       resumingPayment,
       rebroadcastingConnector,
       pendingPayments,
@@ -1557,7 +1677,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       acceptDesign,
       account,
       spendingRenewals,
-      savingsSetup,
+      spendingBitcoin,
       applyHardware,
       applyConnectorDescriptor,
       applyRecovery,
@@ -1622,6 +1742,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       refreshingBalance,
       reset,
       reviewSpend,
+      fundSavingsSigner,
+      bitcoinOutputs,
       resumingPayment,
       rebroadcastingConnector,
       pendingPayments,

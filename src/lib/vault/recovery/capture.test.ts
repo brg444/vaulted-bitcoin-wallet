@@ -6,8 +6,11 @@ import { buildRecoveryHeader, type VaultRecoveryFile } from './backupCodec'
 import { recoveryFileStore } from './fileStore'
 import { captureVaultRecoveryFile } from './capture'
 
-const mocks = vi.hoisted(() => ({ capture: vi.fn(), journals: vi.fn(), setup: vi.fn(), clearSetup: vi.fn() }))
-vi.mock('../savingsSetupStore', () => ({ readSavingsSetup: mocks.setup, clearSetup: mocks.clearSetup }))
+const mocks = vi.hoisted(() => ({ capture: vi.fn(), journals: vi.fn(), setup: vi.fn(), clearBitcoinPayment: vi.fn() }))
+vi.mock('../spendingBitcoinStore', () => ({
+  readSpendingBitcoin: mocks.setup,
+  clearBitcoinPayment: mocks.clearBitcoinPayment,
+}))
 vi.mock('../vtxo/recoveryArchive', async (original) => ({
   ...(await original<typeof import('../vtxo/recoveryArchive')>()),
   captureVaultRecoveryArchive: mocks.capture,
@@ -23,7 +26,7 @@ afterEach(() => {
 
 async function fixture() {
   mocks.setup.mockReset().mockReturnValue(null)
-  mocks.clearSetup.mockReset()
+  mocks.clearBitcoinPayment.mockReset()
   const f = recoveryFixture()
   const coin = {
     ...f.coin,
@@ -90,15 +93,15 @@ it('keeps confirmed signer setup until the exact replacement recovery output has
     plan: { plan: { changeSats: f.coin.value } },
   }
   mocks.setup.mockReturnValue(setup)
-  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('Signer setup recovery data')
+  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('Bitcoin payment recovery data')
   expect(await recoveryFileStore(f.key)).toEqual(f.previous)
-  expect(mocks.clearSetup).not.toHaveBeenCalled()
+  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
   setup.receipt.receiverTxid = f.coin.txid
-  mocks.clearSetup.mockImplementation(async () => {
+  mocks.clearBitcoinPayment.mockImplementation(async () => {
     expect(await recoveryFileStore(f.key)).not.toBeNull()
   })
   const saved = await captureVaultRecoveryFile(f.status, f.enrollment)
-  expect(mocks.clearSetup).toHaveBeenCalledWith(setup)
+  expect(mocks.clearBitcoinPayment).toHaveBeenCalledWith(setup)
   expect(await recoveryFileStore(f.key)).toEqual(saved)
 })
 
@@ -111,7 +114,7 @@ it('retains the complete file when a setup final appears during capture before i
   })
   await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous recovery file is retained')
   expect(await recoveryFileStore(f.key)).toEqual(f.previous)
-  expect(mocks.clearSetup).not.toHaveBeenCalled()
+  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
   setup.stage = 'submitted'
   await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous recovery file is retained')
   expect(await recoveryFileStore(f.key)).toEqual(f.previous)

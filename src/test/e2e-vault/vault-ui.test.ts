@@ -61,6 +61,7 @@ type OperatorFixtureState = {
 }
 
 type OpenVaultOptions = {
+  readySelector?: string
   operatorAvailable?: boolean
   operatorVtxos?: Record<string, unknown>[]
   waitForBalance?: boolean
@@ -229,7 +230,9 @@ async function openVault(page: Page, initial: Partial<VaultUiState> = {}, option
   await setAuthorizerStatus(currentStatus)
   await setEsploraState(currentStatus, state)
   await page.reload()
-  await expect(page.getByTestId('account-switcher')).toBeVisible()
+  await expect(
+    options.readySelector ? page.locator(options.readySelector) : page.getByTestId('account-switcher'),
+  ).toBeVisible()
   if (options.waitForBalance !== false) {
     try {
       await expect(page.getByTestId('vault-balance')).not.toHaveText('—', { timeout: 15_000 })
@@ -1740,3 +1743,36 @@ for (const mode of ['standard', 'light'] as const) {
     }
   })
 }
+
+test('@polish Bitcoin payment review and pending status show exact outputs', async ({ page }, testInfo) => {
+  await page.route('**/src/screens/Vault/Home.tsx*', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: "export { default } from '/src/test/e2e-vault/fixtures/bitcoin-payment-ui.tsx'",
+    }),
+  )
+  test.setTimeout(180000)
+  page.setDefaultNavigationTimeout(90000)
+  await openVault(page, {}, { readySelector: '.qg-review-amount', waitForBalance: false })
+  await expect(page.getByRole('heading', { name: 'Review payment' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Confirm Bitcoin payment' })).toBeVisible()
+  await expect(page.locator('.qg-review-amount')).toContainText('1,500')
+  await expect(page.getByRole('button', { name: 'Edit amount' })).toHaveCount(0)
+  await expectWalletLayout(page)
+  await page.screenshot({ path: testInfo.outputPath('bitcoin-review.png'), fullPage: true })
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('bitcoin-payment-view', { detail: 2 })))
+  await expect(page.locator('.qg-review-amount')).toContainText('1,000')
+  await expect(page.getByText('2 separate Bitcoin outputs: 500 sats + 500 sats.')).toBeVisible()
+  await expectWalletLayout(page)
+  await page.screenshot({ path: testInfo.outputPath('signer-review.png'), fullPage: true })
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('bitcoin-payment-view', { detail: 3 })))
+  await expect(page.getByRole('region', { name: 'Pending Bitcoin payment' })).toBeVisible()
+  await expect(page.getByText('Payment pending. Its funds remain reserved.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Check payment status' })).toBeVisible()
+  const card = page.getByRole('region', { name: 'Pending Bitcoin payment' })
+  expect((await card.locator(':scope > div').boundingBox())!.width).toBeGreaterThan(
+    (await card.boundingBox())!.width * 0.5,
+  )
+  await expectWalletLayout(page)
+  await page.screenshot({ path: testInfo.outputPath('bitcoin-pending.png'), fullPage: true })
+})
