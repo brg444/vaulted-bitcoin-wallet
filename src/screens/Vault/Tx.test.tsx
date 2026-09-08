@@ -63,6 +63,29 @@ describe('Vault transaction details', () => {
     )
   })
 
+  it('links a Spending Bitcoin payment to its actual onchain transaction and shows its fee', () => {
+    renderTx(
+      {
+        txid: 'bitcoin-commitment',
+        type: 'sent',
+        account: 'spend',
+        activity: 'bitcoin',
+        amount: 1400,
+        fee: 400,
+        confirmed: false,
+      },
+      'mainnet',
+    )
+    expect(screen.getByRole('heading', { name: 'Bitcoin payment' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'View on Bitcoin explorer' })).toHaveAttribute(
+      'href',
+      'https://mempool.space/tx/bitcoin-commitment',
+    )
+    expect(screen.getByText('Fee')).toBeTruthy()
+    expect(screen.getByText('Fee').parentElement).toHaveTextContent('₿400')
+    expect(screen.getByText('This will update automatically after Bitcoin confirmation.')).toBeTruthy()
+  })
+
   it('keeps boarding activity pending and links it to the Bitcoin transaction', () => {
     renderTx({
       txid: 'boarding-transaction',

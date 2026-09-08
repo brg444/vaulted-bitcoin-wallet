@@ -4,7 +4,10 @@ import { hex } from '@scure/base'
 import { VaultContext } from '../../../vault/context'
 import { vaultAddressNetwork } from '../../../lib/vault/bitcoin'
 import VaultReview from '../../../screens/Vault/Review'
-import BitcoinPaymentStatus from '../../../screens/Vault/BitcoinPaymentStatus'
+import AccountHome from '../../../screens/Vault/AccountHome'
+import { VaultHistoryList } from '../../../screens/Vault/History'
+import VaultTx from '../../../screens/Vault/Tx'
+import { withBitcoinPaymentHistory } from '../../../lib/vault/bitcoinPaymentHistory'
 import type { BitcoinPaymentJournal } from '../../../lib/vault/spendingBitcoinStore'
 
 // Presentation-only fixture; provider tests cover approval/cancellation and SDK
@@ -23,9 +26,44 @@ export default function BitcoinPaymentUi() {
   const address = Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(script)))
   const outputs = Array.from({ length: mode === 1 ? 1 : 2 }, () => ({ script, amountSats: mode === 1 ? 1500 : 500 }))
   const amount = outputs.reduce((n, o) => n + o.amountSats, 0)
-  return mode === 3 ? (
-    <BitcoinPaymentStatus status={status} operation={{ stage: 'registered', outputs } as BitcoinPaymentJournal} />
-  ) : (
+  const operation = {
+    operationId: 'ui-payment',
+    stage: 'submitted',
+    outputs,
+    plan: { plan: { outputs, feeSats: 400, changeSats: 25859 } },
+    receipt: { state: 'submitted', commitmentTxid: 'ab'.repeat(32) },
+  } as BitcoinPaymentJournal
+  const history = withBitcoinPaymentHistory(
+    [{ txid: 'receive', amount: 27259, type: 'received', confirmed: true, account: 'spend' }],
+    operation,
+  )
+  if (mode === 3)
+    return (
+      <AccountHome
+        account='Spending'
+        totalSats={25859}
+        balancesLoaded
+        security={{ label: 'Recovery', onClick: () => {} }}
+        primaryAction={{ label: 'Send', disabled: true, onClick: () => {} }}
+        secondaryAction={{ label: 'Receive', onClick: () => {} }}
+      >
+        <VaultHistoryList account='spend' balancesLoaded history={history} openTx={() => setMode(4)} />
+      </AccountHome>
+    )
+  if (mode === 4)
+    return (
+      <VaultContext.Provider
+        value={{
+          ...context,
+          selectedTx: history[0],
+          spendingBitcoin: { operation, error: '' },
+          navigate: () => setMode(3),
+        }}
+      >
+        <VaultTx />
+      </VaultContext.Provider>
+    )
+  return (
     <VaultContext.Provider
       value={{
         ...context,

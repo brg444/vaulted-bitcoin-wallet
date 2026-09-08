@@ -11,7 +11,8 @@ export interface VaultHistoryItem {
   confirmed: boolean
   blockTime?: number
   account: 'spend' | 'savings'
-  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector'
+  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector' | 'bitcoin'
+  bitcoinOperationId?: string
   connectorStage?: 'approval' | 'signer' | 'broadcast'
   displayAmount?: number
   fee?: number
@@ -63,6 +64,7 @@ export function historyFromSdkActivities(
   const lightningByRfqId = new Map(lightningRecords.map((record) => [record.rfqId, record]))
   for (const activity of activities) {
     const boarding = activity.intent?.kind === 'boarding'
+    const bitcoin = activity.intent?.kind === 'exit'
     if (boarding && !options.includeBoarding) continue
     const rfqId = typeof activity.intent?.metadata?.rfqId === 'string' ? activity.intent.metadata.rfqId : undefined
     const lightning =
@@ -75,7 +77,7 @@ export function historyFromSdkActivities(
     const anchor =
       candidates.find((transaction) => transaction.type === (sent ? TxType.TxSent : TxType.TxReceived)) || candidates[0]
     if (!anchor) continue
-    const txid = sdkTransactionId(anchor)
+    const txid = bitcoin ? anchor.key.commitmentTxid : sdkTransactionId(anchor)
     if (!txid) continue
     const amount = Math.abs(activity.amount)
     if (!lightning && amount === 0) continue
@@ -94,19 +96,21 @@ export function historyFromSdkActivities(
       // already spendable, so they skip the Pending group. Boarding still
       // waits for settlement. Lightning stays Pending until the RFQ is
       // terminal because the funding tx can settle before pay/refund.
-      confirmed: lightningRecord ? lightningRecord.terminal : boarding ? activity.settled : true,
+      confirmed: lightningRecord ? lightningRecord.terminal : boarding || bitcoin ? activity.settled : true,
       blockTime: unixSeconds(activity.createdAt),
       account: 'spend',
-      ...(boarding
-        ? { activity: 'boarding' as const }
-        : lightning
-          ? {
-              activity: 'lightning' as const,
-              ...(lightningRecord ? { displayAmount: lightningRecord.displayAmount, fee: lightningFee } : {}),
-              lightningState: lightningOutcome,
-              lightningRfqId: rfqId,
-            }
-          : {}),
+      ...(bitcoin
+        ? { activity: 'bitcoin' as const }
+        : boarding
+          ? { activity: 'boarding' as const }
+          : lightning
+            ? {
+                activity: 'lightning' as const,
+                ...(lightningRecord ? { displayAmount: lightningRecord.displayAmount, fee: lightningFee } : {}),
+                lightningState: lightningOutcome,
+                lightningRfqId: rfqId,
+              }
+            : {}),
     })
     if (lightning && rfqId) groupedLightning.add(rfqId)
   }

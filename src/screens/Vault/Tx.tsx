@@ -1,3 +1,4 @@
+import BitcoinPaymentStatus from './BitcoinPaymentStatus'
 import { useContext } from 'react'
 import { CircleAlert, CircleCheck, CircleHelp, Clock3 } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
@@ -9,17 +10,31 @@ import TransactionReference from './qg/TransactionReference'
 import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 export default function VaultTx() {
-  const { busy, error, navigate, retryLightningRefund, selectedTx, status: vaultStatus } = useContext(VaultContext)
+  const {
+    busy,
+    error,
+    navigate,
+    retryLightningRefund,
+    selectedTx,
+    spendingBitcoin,
+    status: vaultStatus,
+  } = useContext(VaultContext)
+  const bitcoin = selectedTx?.activity === 'bitcoin'
+  const operation =
+    bitcoin && spendingBitcoin?.operation && spendingBitcoin.operation.operationId === selectedTx?.bitcoinOperationId
+      ? spendingBitcoin.operation
+      : null
   const sent = selectedTx?.type === 'sent'
   const boarding = selectedTx?.activity === 'boarding'
   const lightning = selectedTx?.activity === 'lightning'
-  const explorer = selectedTx
-    ? vaultTransactionExplorer(
-        selectedTx.txid,
-        boarding || selectedTx.account === 'savings' ? 'onchain' : 'arkade',
-        vaultStatus?.network,
-      )
-    : null
+  const explorer =
+    selectedTx && !selectedTx.txid.startsWith('bitcoin:')
+      ? vaultTransactionExplorer(
+          selectedTx.txid,
+          boarding || bitcoin || selectedTx.account === 'savings' ? 'onchain' : 'arkade',
+          vaultStatus?.network,
+        )
+      : null
   const status = selectedTx
     ? lightning
       ? ['claimed', 'settled'].includes(selectedTx.lightningState || '')
@@ -53,14 +68,14 @@ export default function VaultTx() {
       ? 'Transaction details are not available.'
       : selectedTx.confirmed
         ? 'This payment is confirmed.'
-        : boarding || selectedTx.account === 'savings'
+        : boarding || bitcoin || selectedTx.account === 'savings'
           ? 'This will update automatically after Bitcoin confirmation.'
           : 'This transfer is still processing.'
   const amount = selectedTx?.displayAmount ?? selectedTx?.amount ?? 0
 
   return (
     <QgScreen
-      title={lightning ? 'Lightning payment' : 'Transaction'}
+      title={lightning ? 'Lightning payment' : bitcoin ? 'Bitcoin payment' : 'Transaction'}
       dismiss={() => navigate('home')}
       footer={
         <>
@@ -100,7 +115,7 @@ export default function VaultTx() {
         </h1>
       </div>
       <section className='qg-details'>
-        {lightning && selectedTx?.fee !== undefined ? (
+        {(lightning || bitcoin) && selectedTx?.fee !== undefined ? (
           <div>
             <span>Fee</span>
             <strong>
@@ -121,8 +136,16 @@ export default function VaultTx() {
           <strong>{vaultStatus?.network === 'mainnet' ? 'Bitcoin' : 'Mutinynet'}</strong>
         </div>
       </section>
-      <TransactionReference txid={selectedTx?.txid || ''} explorer={explorer} funding={lightning} />
-      <p className='qg-copy'>{copy}</p>
+      <TransactionReference
+        txid={selectedTx?.txid.startsWith('bitcoin:') ? '' : selectedTx?.txid || ''}
+        explorer={explorer}
+        funding={lightning}
+      />
+      {operation && vaultStatus ? (
+        <BitcoinPaymentStatus status={vaultStatus} operation={operation} />
+      ) : (
+        <p className='qg-copy'>{copy}</p>
+      )}
     </QgScreen>
   )
 }

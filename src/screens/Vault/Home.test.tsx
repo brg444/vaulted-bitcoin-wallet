@@ -69,6 +69,37 @@ describe('Vault home account boundaries', () => {
     expect(openPendingPayment).toHaveBeenCalledWith('original')
   })
 
+  it('puts a pending Bitcoin send in Recent without labelling the remaining balance pending', async () => {
+    const openTx = vi.fn()
+    const tx = {
+      txid: 'commitment',
+      type: 'sent' as const,
+      amount: 1400,
+      fee: 400,
+      confirmed: false,
+      account: 'spend' as const,
+      activity: 'bitcoin' as const,
+      bitcoinOperationId: 'payment',
+    }
+    renderHome({
+      canSend: false,
+      openTx,
+      spendingBitcoin: { operation: { operationId: 'payment' } as never, error: '' },
+      history: [tx],
+      positions: {
+        spending: { availableSats: 0, pendingSats: 25859, totalSats: 25859 },
+        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+      },
+    })
+    expect(screen.getByTestId('vault-balance')).toHaveTextContent('₿25,859')
+    expect(screen.queryByText(/available ·/)).toBeNull()
+    expect(screen.queryByText('Bitcoin payment from Spending')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Check payment status' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: /Sent ₿1,400.*Pending/ }))
+    expect(openTx).toHaveBeenCalledWith(tx)
+  })
+
   it('keeps receive details behind the explicit Home utilities', () => {
     renderHome({ account: 'spend' })
     expect(screen.queryByTestId('account-address')).toBeNull()
