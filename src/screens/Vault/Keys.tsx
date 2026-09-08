@@ -153,14 +153,14 @@ export default function VaultKeys() {
               icon={<ShieldCheck />}
               title='Hardware wallet'
               detail='Independent approval for Savings'
-              status={shortKey(hardwarePub)}
+              status='Savings approval'
             />
             {hasRecovery ? (
               <HubRow
                 icon={<FileKey />}
                 title='Recovery key'
                 detail='Spending recovery if you lose your phone'
-                status={shortKey(recoveryPub)}
+                status='Separate key'
               />
             ) : null}
           </HubGroup>
@@ -169,6 +169,11 @@ export default function VaultKeys() {
               {busy ? 'Waiting for passkey…' : 'Use on another device'}
             </button>
           ) : null}
+          <details className='qg-guidance'>
+            <summary>Key details</summary>
+            <p>Hardware wallet: {shortKey(hardwarePub)}</p>
+            {hasRecovery ? <p>Recovery key: {shortKey(recoveryPub)}</p> : null}
+          </details>
           <RecoveryExplanation
             advanced={protectionTier === 'advanced'}
             mainnet={status?.network === 'mainnet'}

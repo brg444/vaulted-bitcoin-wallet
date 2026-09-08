@@ -163,6 +163,7 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   await page.getByRole('button', { name: 'Save recovery package', exact: true }).click()
   const packagePath = await (await packageDownload).path()
   await save('browser-portable-package.json', JSON.parse(await readFile(packagePath!, 'utf8')))
+  await page.getByText('Check a saved file', { exact: true }).click()
   await page.getByLabel('Check a recovery package').setInputFiles(packagePath!)
   await expect(page.getByText(/found in this backup/)).toBeVisible()
   await page.getByRole('button', { name: 'Check protected contents with passkey' }).click()

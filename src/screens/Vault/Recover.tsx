@@ -99,9 +99,9 @@ export default function VaultRecover() {
     status,
   } = useContext(VaultContext)
   const { toast } = useToast()
-  const [backupView, setBackupView] = useState<'overview' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding' | 'exit'>(
-    'overview',
-  )
+  const [backupView, setBackupView] = useState<
+    'overview' | 'more' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding' | 'exit'
+  >('overview')
   const [recoveryTask, setRecoveryTask] = useState<'cancel' | 'claim' | null>(null)
   const [view, setView] = useState<'kit' | 'lost'>(recoverEntry)
   const [reviewingRecovery, setReviewingRecovery] = useState(false)
@@ -650,17 +650,19 @@ export default function VaultRecover() {
       title={
         backupView === 'overview'
           ? 'Backups'
-          : backupView === 'kit'
-            ? 'Recovery Kit'
-            : backupView === 'cloud'
-              ? 'Automatic backup'
-              : backupView === 'file'
-                ? 'Save recovery package'
-                : backupView === 'boarding'
-                  ? 'Recover received Bitcoin'
-                  : backupView === 'exit'
-                    ? 'Recover to Bitcoin'
-                    : 'Check recovery package'
+          : backupView === 'more'
+            ? 'More backup options'
+            : backupView === 'kit'
+              ? 'Wallet details'
+              : backupView === 'cloud'
+                ? 'Automatic backup'
+                : backupView === 'file'
+                  ? 'Save recovery package'
+                  : backupView === 'boarding'
+                    ? 'Recover received Bitcoin'
+                    : backupView === 'exit'
+                      ? 'Recover to Bitcoin'
+                      : 'Check recovery package'
       }
       dismiss={backupView === 'overview' && fromHome ? () => navigate('home') : undefined}
       back={
@@ -728,34 +730,16 @@ export default function VaultRecover() {
     >
       {backupView === 'overview' ? (
         <>
-          <p className='qg-copy'>Keep your keys and recovery data available if this device is lost.</p>
+          <h1>Keep a copy outside this device</h1>
+          {recoveryArchiveError && recoveryArchiveStatus ? <p className='qg-copy'>{recoveryArchiveStatus}</p> : null}
           <HubGroup>
-            <HubRow
-              title='Automatic encrypted backup'
-              detail={recoveryArchiveStatus || 'Stored with Vaulted while this wallet is open'}
-              onClick={() => setBackupView('cloud')}
-            />
             <HubRow title='Save recovery package' onClick={() => setBackupView('file')} />
             <HubRow
-              title='Wallet details'
-              detail='Public addresses and recovery rules'
-              onClick={() => setBackupView('kit')}
+              title='Automatic encrypted backup'
+              detail='Manage your backup with Vaulted'
+              onClick={() => setBackupView('cloud')}
             />
             <HubRow title='Check a recovery package' onClick={() => setBackupView('inspect')} />
-            <HubRow
-              title='Recover to Bitcoin'
-              detail='Use your saved Spending paths'
-              onClick={() => setBackupView('exit')}
-            />
-            <HubRow
-              title='I lost a key'
-              onClick={() => {
-                setLocalError('')
-                setFromKit(true)
-                setReviewingRecovery(false)
-                setView('lost')
-              }}
-            />
             {matureBoardingSats > 0 ? (
               <HubRow
                 title='Recover received Bitcoin'
@@ -765,17 +749,39 @@ export default function VaultRecover() {
               />
             ) : null}
           </HubGroup>
+          <QgSecondary label='More options' onClick={() => setBackupView('more')} />
+        </>
+      ) : backupView === 'more' ? (
+        <>
+          <HubGroup>
+            <HubRow
+              title='Wallet details'
+              detail='Public addresses and recovery rules'
+              onClick={() => setBackupView('kit')}
+            />
+            <HubRow title='Recover to Bitcoin' onClick={() => setBackupView('exit')} />
+            <HubRow
+              title='I lost a key'
+              onClick={() => {
+                setLocalError('')
+                setFromKit(true)
+                setReviewingRecovery(false)
+                setView('lost')
+              }}
+            />
+          </HubGroup>
           {status ? <RecoveryCopies vaultId={status.vaultId} network={status.network} /> : null}
         </>
       ) : backupView === 'kit' ? (
         <>
-          <h1>Save your Recovery Kit</h1>
+          <h1>Your wallet details</h1>
           <p className='qg-copy'>
             This public map records Savings addresses and recovery rules. It contains no private keys and cannot move
             bitcoin by itself. Save a private copy outside this device.
           </p>
           <p className='qg-copy'>
-            Save a recovery package to include Spending paths. This public map alone cannot recover Spending.
+            Save a recovery package to include Spending transaction data. This public file alone cannot recover
+            Spending.
           </p>
           {hasRecoveryKit ? (
             <details className='qg-guidance'>
@@ -797,27 +803,40 @@ export default function VaultRecover() {
         </>
       ) : backupView === 'cloud' || backupView === 'file' ? (
         <>
-          <h1>{backupView === 'cloud' ? 'Back up automatically' : 'Keep a local backup'}</h1>
+          <h1>{backupView === 'cloud' ? 'Back up with Vaulted' : 'Save your recovery file'}</h1>
           <p className='qg-copy'>
             {backupView === 'file'
-              ? 'Keep this file private: its Spending paths and Bitcoin addresses are readable without your passkey. Private keys and payment journals remain encrypted. Advanced Spending can use its hardware and recovery keys without unlocking the phone.'
-              : 'Store an encrypted copy with Vaulted while this wallet is open and unlocked. You need the original passkey to restore it.'}
+              ? 'Keep this file private. It includes your Bitcoin addresses; private keys remain encrypted.'
+              : 'Your encrypted backup is saved with Vaulted while the wallet is open and unlocked. Your original passkey is required to restore it.'}
           </p>
           {backupView === 'cloud' ? (
-            <p className='qg-copy'>
-              Keep a separate recovery package outside Vaulted so you have your saved transaction paths if the service
-              is unavailable.
-            </p>
-          ) : null}
-          {backupView === 'file' ? (
-            <p className='qg-copy'>
-              Keep a copy of the{' '}
-              <a href='https://github.com/brg444/vaulted-emergency-recovery' target='_blank' rel='noreferrer'>
-                recovery application
-              </a>{' '}
-              with this data. Bitcoin access, the required signing keys, fees and waiting periods still apply.
-            </p>
-          ) : null}
+            <details className='qg-guidance'>
+              <summary>Keep an independent copy</summary>
+              <p>
+                Save a recovery package outside Vaulted so your saved transaction data remains available if the service
+                is down.
+              </p>
+            </details>
+          ) : (
+            <details className='qg-guidance'>
+              <summary>What you need for recovery</summary>
+              <p>
+                Your original passkey unlocks private keys and payment journals. Advanced Spending can use its hardware
+                and recovery keys without unlocking the phone.
+              </p>
+              <p>
+                Keep the{' '}
+                <a href='https://github.com/brg444/vaulted-emergency-recovery' target='_blank' rel='noreferrer'>
+                  recovery application
+                </a>{' '}
+                with this file. Recovery also requires Bitcoin access, the relevant signing keys, fees and waiting
+                periods.
+              </p>
+              <p>
+                Save an updated package after payments or renewals. A file covers the data available when it was saved.
+              </p>
+            </details>
+          )}
           {backupView === 'file' ? (
             <details className='qg-guidance'>
               <summary>Encrypted archive only</summary>

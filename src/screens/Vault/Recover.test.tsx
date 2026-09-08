@@ -120,7 +120,7 @@ describe('Vaulted recovery chrome', () => {
     })
     expect(document.querySelector('.qg-handle')).toBeTruthy()
     expect(screen.getByTestId('screen-title')).toHaveTextContent('Access and recovery')
-    expect(screen.getByRole('heading', { name: 'What do you still have access to?' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'How can we help?' })).toBeTruthy()
     expect(screen.getByRole('radio', { name: 'I can’t use my passkey' })).toBeTruthy()
     fireEvent.click(screen.getByTestId('header-back'))
     expect(navigate).toHaveBeenCalledWith('home')
@@ -201,6 +201,7 @@ describe('recovery archive failure feedback', () => {
     expect(screen.getByText('Spending operation is missing its exact transaction bundle')).toBeVisible()
     expect(screen.getByText('Transaction recovery data saved on this device earlier')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Save recovery package' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }))
     expect(screen.getByRole('button', { name: /Wallet details/ })).toBeEnabled()
   })
 
@@ -223,6 +224,8 @@ describe('recovery package navigation', () => {
   it('explains Bitcoin exit without starting an action or claiming that the saved amount is current', () => {
     const downloadRecoveryArchive = vi.fn()
     renderKit({ downloadRecoveryArchive })
+    expect(screen.queryByRole('button', { name: /Recover to Bitcoin/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }))
     fireEvent.click(screen.getByRole('button', { name: /Recover to Bitcoin/ }))
     expect(screen.getByTestId('screen-title')).toHaveTextContent('Recover to Bitcoin')
     expect(screen.getByText(/later payments and renewals need updated data/)).toBeVisible()

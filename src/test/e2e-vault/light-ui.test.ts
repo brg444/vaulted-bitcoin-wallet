@@ -79,7 +79,9 @@ test('@polish Light balance, history, settings and payment navigation stay acces
     await page.getByRole('button', { name: new RegExp(`^${name}`) }).click()
     if (name === 'Backups') {
       await expect(page.getByRole('button', { name: 'Save recovery package', exact: true })).toBeVisible()
+      await page.getByText('Check a saved file', { exact: true }).click()
       await expect(page.getByLabel('Check a recovery package')).toBeVisible()
+      await page.getByText('Check a saved file', { exact: true }).click()
       await page.getByText('Saved copies', { exact: true }).click()
       await expect(page.getByText('Last file check', { exact: true })).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath('light-recovery-copies.png'), fullPage: true })

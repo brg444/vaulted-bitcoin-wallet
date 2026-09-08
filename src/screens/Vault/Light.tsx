@@ -144,7 +144,9 @@ function downloadJSON(value: unknown, name: string) {
 
 export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [record, setRecord] = useState<LightEnrollment | null>(null)
-  const [securitySection, setSecuritySection] = useState<'overview' | 'access' | 'renewal' | 'backup'>('overview')
+  const [securitySection, setSecuritySection] = useState<'overview' | 'access' | 'limits' | 'renewal' | 'backup'>(
+    'overview',
+  )
   const [restoreMethod, setRestoreMethod] = useState<'choose' | 'file'>('choose')
   const [backupStep, setBackupStep] = useState<'file' | 'secret'>('file')
   const [exitStep, setExitStep] = useState<'review' | 'fund'>('review')
@@ -1381,10 +1383,12 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           securitySection === 'overview'
             ? 'Security'
             : securitySection === 'access'
-              ? 'Access and limits'
-              : securitySection === 'renewal'
-                ? 'Renewal'
-                : 'Backups'
+              ? 'Keys and access'
+              : securitySection === 'limits'
+                ? 'Spending limits'
+                : securitySection === 'renewal'
+                  ? 'Renewal'
+                  : 'Backups'
         }
         back={() => (securitySection === 'overview' ? navigate('home') : setSecuritySection('overview'))}
         footer={<QgSecondary label='Lock wallet' onClick={() => void lock()} />}
@@ -1410,7 +1414,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             }}
             limits={{
               value: `${prettyAmount(record.descriptor.spendingPolicy.txRecipientCapSats)} each`,
-              onClick: () => setSecuritySection('access'),
+              onClick: () => setSecuritySection('limits'),
             }}
             renewal={{
               value: coverage?.error
@@ -1451,6 +1455,22 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         ) : null}
         {securitySection === 'access' ? (
           <>
+            <h1>Your passkey opens this wallet</h1>
+            <p className='qg-copy'>
+              Keep access to the device or passkey provider you used during setup. You need the same passkey to unlock
+              your backup.
+            </p>
+            <details className='qg-guidance'>
+              <summary>How your passkey is used</summary>
+              <p>
+                Your passkey unlocks the wallet key. Vaulted approves normal payments within your Spending limits; a
+                delayed Bitcoin exit uses the wallet key directly.
+              </p>
+            </details>
+          </>
+        ) : null}
+        {securitySection === 'limits' ? (
+          <>
             <div className='light-panel'>
               <ShieldCheck />
               <div>
@@ -1462,10 +1482,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 </p>
               </div>
             </div>
-            <p className='qg-copy'>
-              Your passkey unlocks the owner key on this device. Vaulted checks normal payments before cosigning. The
-              delayed Bitcoin exit belongs to the owner key and does not enforce these payment limits.
-            </p>
+            <p className='qg-copy'>These limits apply to everyday payments and were fixed during setup.</p>
           </>
         ) : null}
         {securitySection === 'renewal' ? (
@@ -1570,7 +1587,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         ) : null}
         {securitySection === 'backup' ? (
           <>
-            <h2>Wallet backup</h2>
+            <h1>Keep a copy outside this device</h1>
             <p className='qg-copy'>
               {cloudError ||
                 (cloudSavedAt
@@ -1596,77 +1613,87 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             />
             <QgSecondary label='Save recovery package' disabled={busy} onClick={() => void saveLocalBackup()} />
             <p className='qg-copy'>
-              Keep this package private: Spending paths and Bitcoin addresses are readable. Your owner key and payment
-              journals remain encrypted and require your original passkey.
+              Keep this file private. Bitcoin addresses are readable; your original passkey unlocks its protected
+              contents.
             </p>
-            <label className='qg-field'>
-              <span>Check a recovery package</span>
-              <input
-                type='file'
-                accept='.json,application/json'
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0]
-                  event.currentTarget.value = ''
-                  const revision = ++packageRead.current
-                  setPackageCheck('')
-                  setPackageToCheck(null)
-                  if (!file) return
-                  void run(async () => {
-                    if (file.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
-                    const pkg = parseLightRecoveryPackage(JSON.parse(await file.text()))
-                    if (
-                      pkg.backup.header.descriptor.vaultId !== record.descriptor.vaultId ||
-                      pkg.backup.header.descriptor.network !== record.descriptor.network
-                    )
-                      throw new Error('This package belongs to another wallet')
-                    if (revision !== packageRead.current) return
-                    const { coins } = validateLightRecoveryArchive(pkg.archive, record.descriptor)
-                    setPackageToCheck(pkg)
-                    await recordRecoveryCopy(
-                      record.descriptor.vaultId,
-                      record.descriptor.network,
-                      'checked',
-                      pkg.archive,
-                    )
-                    setPackageCheck(
-                      `${sats(coins.reduce((sum, coin) => sum + coin.value, 0))} found in this backup. This checks saved paths without unlocking keys or broadcasting.`,
-                    )
-                  })
-                }}
-              />
-            </label>
-            {packageToCheck ? (
-              <QgSecondary
-                label='Check protected contents with passkey'
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    const revision = packageRead.current
-                    const { contents } = await checkProtectedRecoveryPackage(packageToCheck, record.descriptor)
-                    if (revision !== packageRead.current) return
-                    setPackageCheck(
-                      `Original passkey opened this file. It contains ${contents.pendingPayments} unresolved payment records and ${contents.lightningContracts} Lightning contract records. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals. '}No funds moved; Bitcoin eligibility remains unchecked.`,
-                    )
-                  })
-                }
-              />
-            ) : null}
-            {packageCheck ? (
-              <p className='qg-copy' role='status'>
-                {packageCheck}
+            <details className='qg-guidance'>
+              <summary>Check a saved file</summary>
+              <label className='qg-field'>
+                <span>Check a recovery package</span>
+                <input
+                  type='file'
+                  accept='.json,application/json'
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0]
+                    event.currentTarget.value = ''
+                    const revision = ++packageRead.current
+                    setPackageCheck('')
+                    setPackageToCheck(null)
+                    if (!file) return
+                    void run(async () => {
+                      if (file.size > 32_000_000) throw new Error('Choose a recovery file smaller than 32 MB')
+                      const pkg = parseLightRecoveryPackage(JSON.parse(await file.text()))
+                      if (
+                        pkg.backup.header.descriptor.vaultId !== record.descriptor.vaultId ||
+                        pkg.backup.header.descriptor.network !== record.descriptor.network
+                      )
+                        throw new Error('This package belongs to another wallet')
+                      if (revision !== packageRead.current) return
+                      const { coins } = validateLightRecoveryArchive(pkg.archive, record.descriptor)
+                      setPackageToCheck(pkg)
+                      await recordRecoveryCopy(
+                        record.descriptor.vaultId,
+                        record.descriptor.network,
+                        'checked',
+                        pkg.archive,
+                      )
+                      setPackageCheck(
+                        `${sats(coins.reduce((sum, coin) => sum + coin.value, 0))} found in this backup. This checks saved paths without unlocking keys or broadcasting.`,
+                      )
+                    })
+                  }}
+                />
+              </label>
+              {packageToCheck ? (
+                <QgSecondary
+                  label='Check protected contents with passkey'
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const revision = packageRead.current
+                      const { contents } = await checkProtectedRecoveryPackage(packageToCheck, record.descriptor)
+                      if (revision !== packageRead.current) return
+                      setPackageCheck(
+                        `Original passkey opened this file. It contains ${contents.pendingPayments} unresolved payment records and ${contents.lightningContracts} Lightning contract records. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals. '}No funds moved; Bitcoin eligibility remains unchecked.`,
+                      )
+                    })
+                  }
+                />
+              ) : null}
+              {packageCheck ? (
+                <p className='qg-copy' role='status'>
+                  {packageCheck}
+                </p>
+              ) : null}
+            </details>
+            <RecoveryCopies vaultId={record.descriptor.vaultId} network={record.descriptor.network} />
+            {recoveryDataError ? (
+              <p className='qg-copy' role='alert'>
+                {recoveryDataError}
               </p>
             ) : null}
-            <RecoveryCopies vaultId={record.descriptor.vaultId} network={record.descriptor.network} />
-            <p className='qg-copy'>
-              A local file covers activity up to the time it was saved. Bitcoin recovery requires network fees and the
-              exit waiting period.
-            </p>
-            <p className='qg-copy'>
-              {recoveryDataError ||
-                (recoveryDataDate
-                  ? `Transaction paths saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
-                  : 'Saving transaction paths…')}
-            </p>
+            <details className='qg-guidance'>
+              <summary>Backup details</summary>
+              <p>
+                Your backup includes saved transaction data for recovery to Bitcoin. Network fees and the exit waiting
+                period apply. Save an updated file after payments or renewals.
+              </p>
+              <p>
+                {recoveryDataDate
+                  ? `Transaction data saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
+                  : 'Saving transaction data…'}
+              </p>
+            </details>
           </>
         ) : null}
       </QgScreen>
