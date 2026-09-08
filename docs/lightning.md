@@ -127,13 +127,30 @@ quote of 1,006 sats paid for 1,000 sats received. The probe checked the invoice,
 payment hash, and locally reconstructed contract. It neither paid nor exposed
 the invoice. Run `pnpm test:lightning-quote` to request another unfunded quote.
 
-Automated fixtures exercise both contract layouts across all three wallet
-tiers, fee approval, backup failures, underfunding, lost submission responses,
-payout evidence, and preparation of a funded unilateral recovery graph with
-Guardian and Operator access unavailable. Funded Lightning qualification remains
-outstanding. Before enabling receive in production, verify a paid
-invoice through claim and Spending credit, restart during payment, and recovery
-from the resulting funded backup using the rebuilt standalone recovery tool.
+A mainnet invoice paid 504 sats for a 500-sat Spending receipt. The indexed
+claim and enrolled payout script were verified, and the recipient confirmed the
+balance and corrected receive display. The payer's final status and a restart
+during an unresolved payment have not been confirmed.
+
+Incoming recovery fixtures now cover both layouts across Light, Standard, and
+Advanced. They reopen the SDK's IndexedDB swap repository, restore the saved
+journal into fresh storage, and prepare signed unilateral claims with external
+services unavailable. These are controlled fixtures, not the recipient's
+funded encrypted backup.
+
+The actual 500-sat Spending output's saved graph contains 19 virtual
+transactions rooted in three confirmed Bitcoin commitments. Its graph reloads
+and validates offline. At the observed 2 sat/vB estimate, putting the ancestry
+onchain requires 13,318 sats across 19 parents and 19 fee-paying children. The
+SDK excludes the final sweep as uneconomic: its current minimum is 546 sats
+after the sweep fee. This estimate is a failed exit qualification, not a
+payable recovery quote, and changes with chain state and fees.
+
+Receive remains restricted to the qualification wallet. General activation
+requires a successful funded encrypted-backup restore, a signed recovery
+package with an economically viable output, and restart reconciliation during
+a pending payment. The existing 500-sat receipt establishes normal receive
+behavior but cannot establish a usable standalone onchain exit at that amount.
 
 Validation of this implementation passed with Node 24:
 

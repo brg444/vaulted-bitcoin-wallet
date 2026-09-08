@@ -12,7 +12,7 @@ describe('Vercel worker caching', () => {
     })
   })
 
-  it('allows only the release-pinned Lightning relay beyond same-origin connections', () => {
+  it('restricts connections to the configured services and pinned Lightning endpoints', () => {
     const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
       headers: { source: string; headers: { key: string; value: string }[] }[]
     }
@@ -27,6 +27,7 @@ describe('Vercel worker caching', () => {
     expect(connectSrc).toEqual([
       'connect-src',
       "'self'",
+      'https://emulator.mutinynet.arkade.sh',
       'https://mutinynet.arkade.sh',
       'https://blockchain.info',
       'wss://nostr.arkade.sh',
@@ -141,6 +142,7 @@ describe('Vercel worker caching', () => {
     expect(connectSrc).toEqual([
       'connect-src',
       "'self'",
+      'https://emulator.arkade.computer',
       'https://arkade.computer',
       'https://mempool.arkade.sh',
       'wss://mempool.arkade.sh',

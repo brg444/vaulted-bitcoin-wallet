@@ -1,9 +1,18 @@
+import 'fake-indexeddb/auto'
 import { p2tr } from '@scure/btc-signer'
 import { scalarSecret, compressedFromScalar } from './program/fixtures'
 import { prepareLightningRecovery, validateLightningRecoveryPackage } from './recovery/lightningRecovery'
-import { ArkAddress, Transaction, VHTLC, getNetwork, type OnchainProvider } from '@arkade-os/sdk'
+import {
+  ArkAddress,
+  Transaction,
+  VHTLC,
+  getNetwork,
+  InMemoryContractRepository,
+  type OnchainProvider,
+} from '@arkade-os/sdk'
 import {
   InMemoryAssetSwapRepository,
+  IndexedDbAssetSwapRepository,
   receiveVtxoScript,
   unilateralClaimDelay,
   type RfqQuote,
@@ -33,7 +42,11 @@ import {
 import { reconcileVaultLightningReceives } from './lightningReceiveClaim'
 import { networkPins } from './networkPins'
 import type { VaultStatus } from './types'
-import { lightningExitBinding, validateLightningRecoveryJournal } from './recovery/lightningArchive'
+import {
+  lightningExitBinding,
+  validateLightningRecoveryJournal,
+  restoreLightningRecoveryJournal,
+} from './recovery/lightningArchive'
 import { packExitArchive } from './recovery/exitArchive'
 import { lightningRecoveryFixture } from './recovery/testdata/lightningFixtures'
 
@@ -128,6 +141,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('Lightning receive', () => {
@@ -353,71 +367,107 @@ describe('Lightning receive', () => {
   })
 })
 
-it('prepares a funded receive unilateral claim from saved data with Guardian and Operator offline', async () => {
-  const h = await harness()
-  const record = await h.request()
-  const contract = [...h.rows.values()][0]
-  const base = lightningRecoveryFixture()
-  const binding = {
-    ...base.binding,
-    vaultId: h.status.vaultId,
-    phonePub: h.status.phoneBip340Pub!,
-    spendingScript: h.status.spendingArkScript!,
-  }
-  const tx = new Transaction({ version: 3 })
-  tx.addInput({ ...base.tx.getInput(0), tapKeySig: undefined })
-  tx.addOutput({ amount: 1000n, script: hex.decode(contract.script) })
-  tx.addOutput({ amount: 0n, script: hex.decode('51024e73') })
-  tx.sign(scalarSecret(21))
-  const exitBinding = lightningExitBinding({ record, contract }, binding)
-  const entry = {
-    record,
-    contract,
-    exit: {
-      ...base.entry.exit,
-      descriptorHash: exitBinding.descriptorHash,
-      coins: packExitArchive([{ ...base.coin, txid: tx.id, script: contract.script, value: 1000 }]),
-      branches: {
-        [tx.id + ':0']: base.entry.exit.branches[base.tx.id + ':0'].map((node) => ({
-          ...node,
-          txid: node.txid === base.tx.id ? tx.id : node.txid,
-        })),
-      },
-      transactions: { [tx.id]: base64.encode(tx.toPSBT()) },
-    },
-  }
-  const chain = {
-    getCoins: async () => [],
-    getFeeRate: async () => 1,
-    getTxStatus: async () => ({ confirmed: true, blockTime: 1, blockHeight: 1 }),
-    getChainTip: async () => ({ height: 10000, time: 2_000_000_000, hash: '01'.repeat(32) }),
-    getTxOutspends: async () => [{ spent: false }],
-    getTransactions: async () => [],
-    watchAddresses: async () => () => {},
-    broadcastTransaction: vi.fn(async () => {
-      throw new Error('no broadcasting')
-    }),
-  } satisfies OnchainProvider
-  const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
-  const limits = { absoluteFeeCapSats: 5000, feerateCapSatVb: 10 }
-  const destination = p2tr(hex.decode(compressedFromScalar(23)).slice(1), undefined, getNetwork('bitcoin')).address!
-  const file = await prepareLightningRecovery(
-    entry,
-    binding,
-    destination,
-    async ({ psbt }) => {
-      const tx = Transaction.fromPSBT(hex.decode(psbt))
-      tx.sign(scalarSecret(1))
-      return hex.encode(tx.toPSBT())
-    },
-    limits,
-    chain,
-  )
-  expect(validateLightningRecoveryPackage(file, binding, limits)).toEqual(file)
-  expect(file.exitPackage.steps.map((step) => step.kind)).toEqual(['bump', 'sweep'])
-  expect(fetch).not.toHaveBeenCalled()
-  expect(chain.broadcastTransaction).not.toHaveBeenCalled()
-})
+it.each(['light', 'standard', 'advanced'] as const)(
+  'restores both funded incoming layouts for %s and prepares offline recovery',
+  async (tier) => {
+    for (const nine of [false, true]) {
+      const h = await harness(nine, () => {}, tier)
+      const record = await h.request()
+      const contract = [...h.rows.values()][0]
+      const base = lightningRecoveryFixture({ light: tier === 'light', advanced: tier === 'advanced' })
+      const binding = {
+        ...base.binding,
+        vaultId: h.status.vaultId,
+        phonePub: h.status.phoneBip340Pub!,
+        spendingScript: h.status.spendingArkScript!,
+      }
+      const tx = new Transaction({ version: 3 })
+      tx.addInput({ ...base.tx.getInput(0), tapKeySig: undefined })
+      tx.addOutput({ amount: 1000n, script: hex.decode(contract.script) })
+      tx.addOutput({ amount: 0n, script: hex.decode('51024e73') })
+      tx.sign(scalarSecret(21))
+      const exitBinding = lightningExitBinding({ record, contract }, binding)
+      const entry = {
+        record,
+        contract,
+        exit: {
+          ...base.entry.exit,
+          descriptorHash: exitBinding.descriptorHash,
+          coins: packExitArchive([{ ...base.coin, txid: tx.id, script: contract.script, value: 1000 }]),
+          branches: {
+            [tx.id + ':0']: base.entry.exit.branches[base.tx.id + ':0'].map((node) => ({
+              ...node,
+              txid: node.txid === base.tx.id ? tx.id : node.txid,
+            })),
+          },
+          transactions: { [tx.id]: base64.encode(tx.toPSBT()) },
+        },
+      }
+      const journal = validateLightningRecoveryJournal(
+        { name: 'vaulted-lightning-recovery', version: 1, binding, entries: [entry] },
+        binding,
+      )
+      vi.stubGlobal('navigator', {
+        locks: { request: async (_name: unknown, _options: unknown, run: (lock: object) => unknown) => run({}) },
+      })
+      vi.useRealTimers()
+      // Reopen a new SDK repository handle, then restore into a second empty database.
+      const dbName = `receive-restore-${tier}-${nine}-${crypto.randomUUID()}`
+      let swaps = new IndexedDbAssetSwapRepository(dbName)
+      const contracts = new InMemoryContractRepository()
+      await restoreLightningRecoveryJournal(JSON.parse(JSON.stringify(journal)), binding, { swaps, contracts })
+      await swaps[Symbol.asyncDispose]()
+      swaps = new IndexedDbAssetSwapRepository(dbName)
+      expect(await swaps.getRfqSwap(record.rfqId)).toEqual(record)
+      expect(await contracts.getContracts({ script: contract.script })).toHaveLength(1)
+      expect(await restoreLightningRecoveryJournal(journal, binding, { swaps, contracts })).toEqual({
+        restored: 0,
+        retained: 1,
+      })
+      const restored = JSON.parse(JSON.stringify(journal))
+      const fresh = new IndexedDbAssetSwapRepository(dbName + '-fresh')
+      await restoreLightningRecoveryJournal(restored, binding, {
+        swaps: fresh,
+        contracts: new InMemoryContractRepository(),
+      })
+      expect(await fresh.getRfqSwap(record.rfqId)).toEqual(record)
+      await Promise.all([swaps[Symbol.asyncDispose](), fresh[Symbol.asyncDispose]()])
+      const chain = {
+        getCoins: async () => [],
+        getFeeRate: async () => 1,
+        getTxStatus: async () => ({ confirmed: true, blockTime: 1, blockHeight: 1 }),
+        getChainTip: async () => ({ height: 10000, time: 2_000_000_000, hash: '01'.repeat(32) }),
+        getTxOutspends: async () => [{ spent: false }],
+        getTransactions: async () => [],
+        watchAddresses: async () => () => {},
+        broadcastTransaction: vi.fn(async () => {
+          throw new Error('no broadcasting')
+        }),
+      } satisfies OnchainProvider
+      const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+      const limits = { absoluteFeeCapSats: 5000, feerateCapSatVb: 10 }
+      const destination = p2tr(hex.decode(compressedFromScalar(23)).slice(1), undefined, getNetwork('bitcoin')).address!
+      const file = await prepareLightningRecovery(
+        restored.entries[0],
+        binding,
+        destination,
+        async ({ psbt }) => {
+          const tx = Transaction.fromPSBT(hex.decode(psbt))
+          tx.sign(scalarSecret(tier === 'light' ? 1 : 3))
+          return hex.encode(tx.toPSBT())
+        },
+        limits,
+        chain,
+      )
+      expect(validateLightningRecoveryPackage(file, binding, limits)).toEqual(file)
+      expect(file.exitPackage.steps.map((step) => step.kind)).toEqual(['bump', 'sweep'])
+      expect(fetch).not.toHaveBeenCalled()
+      expect(chain.broadcastTransaction).not.toHaveBeenCalled()
+      fetch.mockRestore()
+    }
+  },
+  60000,
+)
 
 it('requires an exact, durable fee approval for a quote above the card estimate', async () => {
   const h = await harness(true, (q) => {
