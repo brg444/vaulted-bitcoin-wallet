@@ -2,7 +2,6 @@ import { useContext, useState } from 'react'
 import { Download, LockKeyhole } from 'lucide-react'
 import { useToast } from '../../../components/Toast'
 import { VaultContext } from '../../../vault/context'
-import { useBackupConfirmation } from '../qg/useBackupConfirmation'
 import QgScreen, { QgMark, QgPrimary, QgTextButton } from '../qg/QgScreen'
 import '../qg/guidance.css'
 
@@ -19,8 +18,6 @@ function downloadJson(name: string, body: string) {
 
 export default function VaultKit() {
   const { downloadRecoveryKit, navigate } = useContext(VaultContext)
-  const { confirmed, confirm } = useBackupConfirmation()
-  const [hasSeparateCopy, setHasSeparateCopy] = useState(confirmed)
   const [downloadRequested, setDownloadRequested] = useState(false)
   const { toast } = useToast()
 
@@ -41,7 +38,7 @@ export default function VaultKit() {
       back={() => navigate('home')}
       footer={
         <>
-          {!downloadRequested && !confirmed ? (
+          {!downloadRequested ? (
             <QgPrimary
               onClick={save}
               icon={<Download />}
@@ -49,19 +46,7 @@ export default function VaultKit() {
               testId='download-recovery-kit'
             />
           ) : null}
-          {downloadRequested || confirmed ? (
-            <QgPrimary
-              onClick={() => {
-                if (!confirm()) {
-                  toast('Could not save your backup confirmation on this device. Try again.')
-                  return
-                }
-                navigate('home')
-              }}
-              disabled={!hasSeparateCopy}
-              label='Open your Vault'
-            />
-          ) : null}
+          {downloadRequested ? <QgPrimary onClick={() => navigate('home')} label='Open your Vault' /> : null}
           <QgTextButton onClick={() => navigate('home')} label='I’ll save a separate copy later' />
         </>
       }
@@ -71,7 +56,7 @@ export default function VaultKit() {
         Your Recovery Kit records Savings addresses and recovery rules. It contains no private keys. Recovery also needs
         the keys and transaction data for the selected path.
       </p>
-      {!downloadRequested && !confirmed ? (
+      {!downloadRequested ? (
         <>
           <section className='qg-document'>
             <QgMark />
@@ -91,20 +76,11 @@ export default function VaultKit() {
           Check that Recovery Kit.json appears in your saved files, then copy it outside this device.
         </p>
       ) : null}
-      {downloadRequested || confirmed ? <QgTextButton onClick={save} label='Download Recovery Kit again' /> : null}
-      {downloadRequested || confirmed ? (
-        <>
-          <label className='qg-consent'>
-            <input
-              type='checkbox'
-              checked={hasSeparateCopy}
-              onChange={(event) => setHasSeparateCopy(event.target.checked)}
-            />
-            <span>I have a copy of this vault’s Recovery Kit outside this device.</span>
-          </label>
-          <p className='qg-copy'>This records your confirmation; the app cannot check where you saved the file.</p>
-        </>
-      ) : null}
+      {downloadRequested ? <QgTextButton onClick={save} label='Download Recovery Kit again' /> : null}
+      <p className='qg-copy'>
+        Open Security → Recovery to save and check a package with your Spending paths and protected payment records.
+        This public map download leaves those backup checks outstanding.
+      </p>
     </QgScreen>
   )
 }

@@ -68,7 +68,7 @@ describe('local encrypted recovery backup import', () => {
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
       fireEvent.click(screen.getByRole('button', { name: 'Help' }))
       fireEvent.click(screen.getByRole('button', { name: 'Access and recovery help' }))
-      expect(screen.getByRole('heading', { name: 'What do you still have access to?' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'How can we help?' })).toBeInTheDocument()
       expect(context.signIn).not.toHaveBeenCalled()
     },
   )

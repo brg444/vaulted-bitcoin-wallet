@@ -45,7 +45,7 @@ describe('access and recovery guidance', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Help' }))
     fireEvent.click(screen.getByRole('button', { name: 'Access and recovery help' }))
-    expect(screen.getByRole('heading', { name: 'What do you still have access to?' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'How can we help?' })).toBeTruthy()
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Go back' }))
     expect(screen.getByRole('button', { name: 'Access and recovery help' })).toBeTruthy()
     expect(value.signIn).not.toHaveBeenCalled()

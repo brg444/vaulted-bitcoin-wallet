@@ -6,3 +6,9 @@ mockup
 docs
 *.md
 .env.regtest
+
+.env*
+.vault-browser-tests
+test-results
+playwright-report
+tools/offline-recovery/dist

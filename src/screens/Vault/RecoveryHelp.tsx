@@ -54,12 +54,7 @@ export default function RecoveryHelp({
     >
       {!scenario ? (
         <>
-          <p className='qg-eyebrow'>Find your next step</p>
-          <h1>What do you still have access to?</h1>
-          <p className='qg-copy'>
-            Keep any working device, key backups, and your Recovery Kit. Avoid clearing app data while you work out how
-            to regain access.
-          </p>
+          <h1>How can we help?</h1>
           <div className='qg-choice-list is-keys qg-help-choices' role='radiogroup' aria-label='Access problem'>
             {SCENARIOS.map(({ id, label }) => (
               <button
@@ -81,15 +76,18 @@ export default function RecoveryHelp({
         <section className='qg-guidance-body qg-backup-status' aria-label='Recovery guidance' aria-live='polite'>
           {scenario === 'passkey' ? (
             <>
-              <h2>Check passkey access first</h2>
+              <h2>Try your original passkey</h2>
               <p>
                 Try the original device and the passkey provider you used during setup. Your browser may offer another
                 device or a saved passkey; availability depends on that provider and the required unlock support.
               </p>
-              <p>
-                If passkey access cannot be restored, your hardware key can start delayed Savings recovery with approval
-                from both recovery services. You also need the Recovery Kit and compatible signing software.
-              </p>
+              <details className='qg-guidance'>
+                <summary>If you can’t restore your passkey</summary>
+                <p>
+                  If passkey access cannot be restored, your hardware key can start delayed Savings recovery with
+                  approval from both recovery services. You also need the Recovery Kit and compatible signing software.
+                </p>
+              </details>
             </>
           ) : scenario === 'hardware' ? (
             <>
@@ -98,10 +96,13 @@ export default function RecoveryHelp({
                 If you have a hardware wallet backup, follow its maker’s instructions to restore the same key on a
                 compatible device. Keep seed words and private keys out of this app.
               </p>
-              <p>
-                If that key cannot be restored, working passkey access can unlock the wallet key for delayed Savings
-                recovery. Starting it also needs both recovery services and your Recovery Kit.
-              </p>
+              <details className='qg-guidance'>
+                <summary>If you can’t restore your hardware wallet</summary>
+                <p>
+                  If that key cannot be restored, working passkey access can unlock the wallet key for delayed Savings
+                  recovery. Starting it also needs both recovery services and your Recovery Kit.
+                </p>
+              </details>
             </>
           ) : scenario === 'both' ? (
             <>
@@ -187,38 +188,42 @@ export default function RecoveryHelp({
           </div>
         </details>
       ) : null}
-      {tier ? (
+      {scenario && tier ? (
         <RecoveryExplanation
           advanced={tier === 'advanced'}
           mainnet={isMainnet}
           templateVersion={kit?.descriptor.templateVersion || templateVersion}
         />
       ) : null}
-      <details className='qg-guidance'>
-        <summary>What happens during Savings recovery?</summary>
-        <div className='qg-guidance-body'>
-          <ol>
-            <li>Prepare the recovery transaction using your vault’s kit and the key you still control.</li>
-            <li>Sign with that key, obtain both recovery service approvals, and submit the transaction to Bitcoin.</li>
-            <li>
-              After Bitcoin confirms it, wait for the required number of blocks. Eligible remaining keys can cancel
-              during this period.
-            </li>
-            <li>
-              Once the wait is complete, use the initiating key to sign and send a separate transfer to your chosen
-              Bitcoin address.
-            </li>
-          </ol>
-          <p>
-            The app can prepare these transactions, but preparation alone does not sign or send them. You need
-            compatible signing software to finish the external steps.
-          </p>
-          <p>
-            There is no continuous recovery monitoring. Check this app while open, and review any recovery you did not
-            start.
-          </p>
-        </div>
-      </details>
+      {scenario ? (
+        <details className='qg-guidance'>
+          <summary>What happens during Savings recovery?</summary>
+          <div className='qg-guidance-body'>
+            <ol>
+              <li>Prepare the recovery transaction using your vault’s kit and the key you still control.</li>
+              <li>
+                Sign with that key, obtain both recovery service approvals, and submit the transaction to Bitcoin.
+              </li>
+              <li>
+                After Bitcoin confirms it, wait for the required number of blocks. Eligible remaining keys can cancel
+                during this period.
+              </li>
+              <li>
+                Once the wait is complete, use the initiating key to sign and send a separate transfer to your chosen
+                Bitcoin address.
+              </li>
+            </ol>
+            <p>
+              The app can prepare these transactions, but preparation alone does not sign or send them. You need
+              compatible signing software to finish the external steps.
+            </p>
+            <p>
+              There is no continuous recovery monitoring. Check this app while open, and review any recovery you did not
+              start.
+            </p>
+          </div>
+        </details>
+      ) : null}
     </QgScreen>
   )
 }

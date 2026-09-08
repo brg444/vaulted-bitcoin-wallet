@@ -1041,12 +1041,14 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   // Archive capture is asynchronous and independent of this navigation tour.
   // Its failure/retained-copy states are tested in Recover and useRecoveryArchive.
   await expect(page.getByRole('button', { name: 'Save recovery package', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Recovery Kit/ })).toBeVisible()
+  await page.getByRole('button', { name: 'More options', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^Wallet details/ })).toBeVisible()
   await page.getByRole('button', { name: /I lost a key/ }).click()
   await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('recovery-lost-key.png', { animations: 'disabled', fullPage: true })
+  await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByRole('button', { name: 'Go back' }).click()
@@ -1718,8 +1720,8 @@ for (const mode of ['standard', 'light'] as const) {
           ['Renewal', 'Automatic renewal'],
         ]
       : [
-          ['Keys and access', 'Access and limits'],
-          ['Spending limits', 'Access and limits'],
+          ['Keys and access', 'Keys and access'],
+          ['Spending limits', 'Spending limits'],
           ['Renewal', 'Renewal'],
         ]) {
       await tiles.filter({ hasText: label }).click()

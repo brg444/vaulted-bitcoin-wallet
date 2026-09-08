@@ -81,7 +81,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible({ timeout: 45000 })
   await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
   await page.getByRole('button', { name: 'Security', exact: true }).click()
-  await page.getByRole('button', { name: /^Access and limits/ }).click()
+  await page.getByRole('button', { name: /^Spending limits/ }).click()
   await expect(page.getByText('Spending limits', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await page.getByRole('button', { name: /^Backups/ }).click()
