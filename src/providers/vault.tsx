@@ -1,3 +1,4 @@
+import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
@@ -417,12 +418,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const clearError = useCallback(() => reportError(''), [reportError])
 
   useEffect(() => {
-    setSelectedTx((current) => {
-      if (!current) return current
-      return history.find((item) => item.account === current.account && item.txid === current.txid) || current
-    })
-  }, [history])
-  useEffect(() => {
     if (!status?.enrolled || !isConnectorTemplate(status.templateVersion) || locked) {
       setPendingConnector(null)
       return
@@ -445,6 +440,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval)
     }
   }, [status, locked])
+  const spendingBitcoin = useSpendingBitcoin(status, locked)
+  const historyWithBitcoin = useMemo(
+    () => withBitcoinPaymentHistory(history, spendingBitcoin.operation),
+    [history, spendingBitcoin.operation],
+  )
   const visibleHistory = useMemo<VaultHistoryItem[]>(
     () =>
       pendingConnector
@@ -467,7 +467,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
                   ? 'signer'
                   : 'approval',
             },
-            ...history.filter((row) => row.txid !== pendingConnector.candidateTxid),
+            ...historyWithBitcoin.filter((row) => row.txid !== pendingConnector.candidateTxid),
           ]
         : pendingSavingsHandoff
           ? [
@@ -480,11 +480,25 @@ export function VaultProvider({ children }: { children: ReactNode }) {
                 account: 'savings',
                 activity: 'savings-handoff',
               },
-              ...history,
+              ...historyWithBitcoin,
             ]
-          : history,
-    [history, pendingSavingsHandoff, pendingConnector],
+          : historyWithBitcoin,
+    [historyWithBitcoin, pendingSavingsHandoff, pendingConnector],
   )
+  useEffect(() => {
+    setSelectedTx((current) => {
+      if (!current) return current
+      return (
+        visibleHistory.find(
+          (item) =>
+            item.account === current.account &&
+            (item.txid === current.txid ||
+              (current.bitcoinOperationId && item.bitcoinOperationId === current.bitcoinOperationId)),
+        ) || current
+      )
+    })
+  }, [visibleHistory])
+
   const {
     backupRecoveryKit,
     downloadRecoveryKit,
@@ -1528,7 +1542,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [enrollment, refreshBalance, status])
 
   const spendingRenewals = useSpendingRenewals(status, enrollment, locked)
-  const spendingBitcoin = useSpendingBitcoin(status, locked)
 
   const value = useMemo<VaultContextProps>(
     () => ({

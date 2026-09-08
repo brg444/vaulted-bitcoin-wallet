@@ -1,12 +1,14 @@
-import { Clock3 } from 'lucide-react'
 import { useState } from 'react'
 import { Address, OutScript } from '@scure/btc-signer'
 import { hex } from '@scure/base'
+import { prettyAmount } from '../../lib/format'
 import { vaultAddressNetwork } from '../../lib/vault/bitcoin'
 import { bitcoinPlanOutputs, type BitcoinPaymentJournal } from '../../lib/vault/spendingBitcoinStore'
 import { checkSpendingBitcoin } from '../../lib/vault/spendingBitcoinFunding'
 import type { VaultStatus } from '../../lib/vault/types'
 import { QgSecondary } from './qg/QgScreen'
+
+/** Details for the selected history row; reconciliation continues automatically. */
 export default function BitcoinPaymentStatus({
   status,
   operation,
@@ -18,46 +20,52 @@ export default function BitcoinPaymentStatus({
 }) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const outputs = operation?.plan ? bitcoinPlanOutputs(operation.plan.plan) : operation?.outputs
+  if (!operation) return error ? <p role='alert'>{error}</p> : null
+  const outputs = operation.plan ? bitcoinPlanOutputs(operation.plan.plan) : operation.outputs || []
   return (
-    <section className='qg-arrival' aria-label='Pending Bitcoin payment'>
-      <span className='qg-status-icon' aria-hidden>
-        <Clock3 />
-      </span>
-      <div style={{ minWidth: 0 }}>
-        <strong>Bitcoin payment from Spending</strong>
-        {outputs?.map((output, i) => (
-          // Output position distinguishes immutable duplicate approval outputs.
+    <>
+      {error ? <p role='alert'>{error}</p> : null}
+      <section className='qg-details' aria-label='Bitcoin payment outputs'>
+        {outputs.map((output, i) => (
+          // Output position identifies immutable duplicate approval outputs.
           // eslint-disable-next-line react/no-array-index-key
-          <p key={i} className='qg-copy' style={{ overflowWrap: 'anywhere' }}>
-            {output.amountSats.toLocaleString()} sats to{' '}
-            {Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(output.script)))}
-          </p>
+          <div key={`${i}:${output.script}`}>
+            <span>
+              Output {i + 1} · {prettyAmount(output.amountSats)}
+            </span>
+            <strong style={{ overflowWrap: 'anywhere', minWidth: 0 }}>
+              {Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(output.script)))}
+            </strong>
+          </div>
         ))}
-        <p>
-          {error ||
-            message ||
-            (operation?.stage === 'confirmed'
-              ? 'Payment confirmed. Saving updated Spending recovery data.'
-              : operation?.receipt?.state === 'submitted'
-                ? 'Submitted. Waiting for Bitcoin confirmation.'
-                : operation?.final
-                  ? 'The payment outcome is still being checked. Its funds remain reserved.'
-                  : 'Payment pending. Its funds remain reserved.')}
+      </section>
+      <p className='qg-copy'>
+        {operation.stage === 'confirmed'
+          ? 'Payment confirmed. Saving updated Spending recovery data.'
+          : operation.receipt?.state === 'submitted'
+            ? 'Waiting for Bitcoin confirmation. Your remaining change may be unavailable until the replacement Spending output appears.'
+            : 'The payment outcome is still being checked. Its funds remain reserved.'}
+      </p>
+      {message ? (
+        <p role='status' className='qg-copy'>
+          {message}
         </p>
-        {operation?.plan ? <p>Fee: {operation.plan.plan.feeSats} sats</p> : null}
-        <QgSecondary
-          label={busy ? 'Checking…' : 'Check payment status'}
-          disabled={busy}
-          onClick={() => {
-            setBusy(true)
-            setMessage('')
-            void checkSpendingBitcoin(status)
-              .catch((e) => setMessage((e as Error).message))
-              .finally(() => setBusy(false))
-          }}
-        />
-      </div>
-    </section>
+      ) : null}
+      <QgSecondary
+        label={busy ? 'Checking…' : 'Check payment status'}
+        disabled={busy}
+        onClick={() => {
+          setBusy(true)
+          setMessage('')
+          void checkSpendingBitcoin(status)
+            .then((result) => {
+              if (result && ['released', 'cancelled', 'rejected'].includes(result.state))
+                setMessage('This payment was not completed. Its reservation has been released.')
+            })
+            .catch((error) => setMessage((error as Error).message))
+            .finally(() => setBusy(false))
+        }}
+      />
+    </>
   )
 }

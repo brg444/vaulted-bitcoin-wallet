@@ -1,4 +1,3 @@
-import BitcoinPaymentStatus from './BitcoinPaymentStatus'
 import { useContext, useEffect, useState } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
@@ -57,7 +56,7 @@ export default function VaultHome() {
       account={spending ? 'Spending' : 'Savings'}
       totalSats={position.totalSats}
       availableSats={position.availableSats}
-      pendingSats={position.pendingSats}
+      pendingSats={spending && spendingBitcoin?.operation ? 0 : position.pendingSats}
       balancesLoaded={balancesLoaded}
       refreshingBalance={refreshingBalance}
       security={{ label: 'Open Recovery', attention: !!initiateAlert, onClick: () => openRecover('lost', 'home') }}
@@ -95,8 +94,10 @@ export default function VaultHome() {
         ) : null
       }
     >
-      {spending && status && (spendingBitcoin?.operation || spendingBitcoin?.error) ? (
-        <BitcoinPaymentStatus status={status} operation={spendingBitcoin.operation} error={spendingBitcoin.error} />
+      {spending && spendingBitcoin?.error ? (
+        <p className='qg-footer-error' role='alert'>
+          {spendingBitcoin.error}
+        </p>
       ) : null}
       {spending
         ? pendingPayments.map((payment) => (
