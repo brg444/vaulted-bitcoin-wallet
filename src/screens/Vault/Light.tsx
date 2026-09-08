@@ -136,7 +136,9 @@ function downloadJSON(value: unknown, name: string) {
 
 export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [record, setRecord] = useState<LightEnrollment | null>(null)
-  const [securitySection, setSecuritySection] = useState<'overview' | 'access' | 'renewal' | 'backup'>('overview')
+  const [securitySection, setSecuritySection] = useState<'overview' | 'access' | 'limits' | 'renewal' | 'backup'>(
+    'overview',
+  )
   const [restoreMethod, setRestoreMethod] = useState<'choose' | 'file'>('choose')
   const [backupStep, setBackupStep] = useState<'file' | 'secret'>('file')
   const [exitStep, setExitStep] = useState<'review' | 'fund'>('review')
@@ -1385,10 +1387,12 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           securitySection === 'overview'
             ? 'Security'
             : securitySection === 'access'
-              ? 'Access and limits'
-              : securitySection === 'renewal'
-                ? 'Renewal'
-                : 'Backups'
+              ? 'Keys and access'
+              : securitySection === 'limits'
+                ? 'Spending limits'
+                : securitySection === 'renewal'
+                  ? 'Renewal'
+                  : 'Backups'
         }
         back={() => (securitySection === 'overview' ? navigate('home') : setSecuritySection('overview'))}
         footer={<QgSecondary label='Lock wallet' onClick={() => void lock()} />}
@@ -1414,7 +1418,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
             }}
             limits={{
               value: `${prettyAmount(record.descriptor.spendingPolicy.txRecipientCapSats)} each`,
-              onClick: () => setSecuritySection('access'),
+              onClick: () => setSecuritySection('limits'),
             }}
             renewal={{
               value: coverage?.error
@@ -1455,6 +1459,22 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         ) : null}
         {securitySection === 'access' ? (
           <>
+            <h1>Your passkey opens this wallet</h1>
+            <p className='qg-copy'>
+              Keep access to the device or passkey provider you used during setup. You need the same passkey to unlock
+              your backup.
+            </p>
+            <details className='qg-guidance'>
+              <summary>How your passkey is used</summary>
+              <p>
+                Your passkey unlocks the wallet key. Vaulted approves normal payments within your Spending limits; a
+                delayed Bitcoin exit uses the wallet key directly.
+              </p>
+            </details>
+          </>
+        ) : null}
+        {securitySection === 'limits' ? (
+          <>
             <div className='light-panel'>
               <ShieldCheck />
               <div>
@@ -1466,10 +1486,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 </p>
               </div>
             </div>
-            <p className='qg-copy'>
-              Your passkey unlocks the owner key on this device. Vaulted checks normal payments before cosigning. The
-              delayed Bitcoin exit belongs to the owner key and does not enforce these payment limits.
-            </p>
+            <p className='qg-copy'>These limits apply to everyday payments and were fixed during setup.</p>
           </>
         ) : null}
         {securitySection === 'renewal' ? (
@@ -1574,7 +1591,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         ) : null}
         {securitySection === 'backup' ? (
           <>
-            <h2>Wallet backup</h2>
+            <h1>Keep a copy outside this device</h1>
             <p className='qg-copy'>
               {cloudError ||
                 (cloudSavedAt
@@ -1597,20 +1614,24 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               }
             />
             <QgSecondary label='Save a local backup' disabled={busy} onClick={() => void saveLocalBackup()} />
-            <p className='qg-copy'>
-              Your backup includes the saved transaction paths for a unilateral Bitcoin exit. Your passkey unlocks it;
-              Vaulted cannot decrypt it. Keep access to your passkey provider.
-            </p>
-            <p className='qg-copy'>
-              A local file covers activity up to the time it was saved. Bitcoin recovery requires network fees and the
-              exit waiting period.
-            </p>
-            <p className='qg-copy'>
-              {recoveryDataError ||
-                (recoveryDataDate
-                  ? `Transaction paths saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
-                  : 'Saving transaction paths…')}
-            </p>
+            <p className='qg-copy'>Your original passkey unlocks this encrypted file.</p>
+            {recoveryDataError ? (
+              <p className='qg-copy' role='alert'>
+                {recoveryDataError}
+              </p>
+            ) : null}
+            <details className='qg-guidance'>
+              <summary>Backup details</summary>
+              <p>
+                Your backup includes saved transaction data for recovery to Bitcoin. Network fees and the exit waiting
+                period apply. Save an updated file after payments or renewals.
+              </p>
+              <p>
+                {recoveryDataDate
+                  ? `Transaction data saved on this device ${new Date(recoveryDataDate).toLocaleString()}.`
+                  : 'Saving transaction data…'}
+              </p>
+            </details>
           </>
         ) : null}
       </QgScreen>
