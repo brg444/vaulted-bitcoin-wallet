@@ -1,4 +1,11 @@
-import type { IndexerProvider, PageResponse } from '@arkade-os/sdk'
+import {
+  createExitChainResolver,
+  ChainedTxType,
+  type VirtualTxRepository,
+  type ExitDataSource,
+  type IndexerProvider,
+  type PageResponse,
+} from '@arkade-os/sdk'
 
 // Request a single public DAG snapshot where supported: separately requested
 // pages can order shared ancestors differently. If a provider returns pagination,
@@ -62,4 +69,24 @@ export function pagedRecoveryIndexer(indexer: IndexerProvider): IndexerProvider 
       return typeof value === 'function' ? value.bind(target) : value
     },
   })
+}
+
+/** Reuse the SDK resolver with complete public snapshots and eligible cached branches. */
+export function recoveryChainResolver(
+  indexer: IndexerProvider,
+  repository: VirtualTxRepository,
+  extraSources: ExitDataSource[] = [],
+) {
+  const completeBranches = new Proxy(repository, {
+    get(target, key) {
+      if (key === 'getBranch')
+        return async (outpoint: Parameters<VirtualTxRepository['getBranch']>[0]) => {
+          const branch = await target.getBranch(outpoint)
+          return branch.some((node) => node.type === ChainedTxType.Commitment) ? branch : []
+        }
+      const value = Reflect.get(target, key)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+  return createExitChainResolver({ indexer: pagedRecoveryIndexer(indexer), repository: completeBranches, extraSources })
 }

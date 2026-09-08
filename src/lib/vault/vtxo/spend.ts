@@ -2033,6 +2033,7 @@ async function reconcileOnePersistedVtxoSpend(
         status,
         xOnly(info.signerPubkey, 'Operator signer pubkey'),
       )
+      await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
       await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
       persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
       await finalizeVaultOperation(pending.vaultId, pending.operationId, pending.bundleDigest, pending.arkTxid)

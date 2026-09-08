@@ -1,8 +1,7 @@
-import { pagedRecoveryIndexer } from './pagedIndexer'
+import { recoveryChainResolver } from './pagedIndexer'
 import {
   Transaction,
   ChainTxType,
-  ChainedTxType,
   type ArkInfo,
   type ChainTx,
   type VirtualCoin,
@@ -11,7 +10,6 @@ import {
   type ExitDataSource,
   RestArkProvider,
   RestIndexerProvider,
-  createExitChainResolver,
   type VirtualTxRepository,
 } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
@@ -278,25 +276,11 @@ export async function captureExitArchiveForCoins(
     if (removed.some((old) => !resolved.some((coin) => outpoint(coin) === outpoint(old) && coin.isSpent)))
       throw new Error('An earlier output is missing. Previous recovery data has been retained.')
   }
-  // Older SDK captures may have cached only the first indexer page. A branch
-  // without a commitment cannot supply a complete exit; allow the resolver to
-  // fetch its remaining ancestry instead of repeatedly choosing that cache.
-  const completeBranches = new Proxy(repository, {
-    get(target, key) {
-      if (key === 'getBranch')
-        return async (outpoint: Parameters<VirtualTxRepository['getBranch']>[0]) => {
-          const branch = await target.getBranch(outpoint)
-          return branch.some((node) => node.type === ChainedTxType.Commitment) ? branch : []
-        }
-      const value = Reflect.get(target, key)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
-  const resolver = createExitChainResolver({
-    indexer: pagedRecoveryIndexer(indexer),
-    repository: completeBranches,
-    extraSources: previous ? [exitArchiveProviders(previous, d).source] : [],
-  })
+  const resolver = recoveryChainResolver(
+    indexer,
+    repository,
+    previous ? [exitArchiveProviders(previous, d).source] : [],
+  )
   const branches: ExitArchive['branches'] = {}
   const wanted = new Set<string>()
   for (const coin of coins) {

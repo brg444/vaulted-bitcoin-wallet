@@ -933,12 +933,22 @@ describe('regular VTXO spend coordinator', () => {
         checkpointPsbts,
       }
       persistVtxoSpend(checkpointsAuthorized)
-      fetch.mockResolvedValue(
-        new Response(JSON.stringify(reviewedOperation(checkpointsAuthorized, { state: 'submitted' })), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      fetch.mockImplementation(
+        async () =>
+          new Response(JSON.stringify(reviewedOperation(checkpointsAuthorized, { state: 'submitted' })), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
       )
+
+      vi.mocked(retainFinalizationRecovery).mockRejectedValueOnce(new Error('Recovery storage unavailable'))
+      await expect(reconcilePersistedVtxoSpend(fixture.current)).resolves.toMatchObject({
+        kind: 'pending',
+        operationId: checkpointsAuthorized.operationId,
+        stage: 'checkpoints-authorized',
+      })
+      expect(finalize).not.toHaveBeenCalled()
+      expect(loadPersistedVtxoSpend('vault-a')?.stage).toBe('checkpoints-authorized')
 
       await expect(sendVaultVtxo({} as never, fixture.current, reviewedQuote(checkpointsAuthorized))).rejects.toThrow(
         /offline/,

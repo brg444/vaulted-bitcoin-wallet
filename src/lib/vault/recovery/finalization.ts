@@ -1,10 +1,10 @@
+import { recoveryChainResolver } from './pagedIndexer'
 import {
   ChainTxType,
   ChainedTxType,
   RestArkProvider,
   RestIndexerProvider,
   Transaction,
-  createExitChainResolver,
   type ChainTx,
 } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
@@ -32,7 +32,7 @@ export async function retainFinalizationRecovery(status: VaultStatus, pending: P
   }
   try {
     const indexer = new RestIndexerProvider(vaultArkServer(status.network))
-    const resolver = createExitChainResolver({ indexer, repository })
+    const resolver = recoveryChainResolver(indexer, repository)
     const info = await new RestArkProvider(vaultArkServer(status.network)).getInfo()
     const nodes = new Map<string, ChainTx>()
     const inputBranches: Record<string, ChainTx[]> = {}

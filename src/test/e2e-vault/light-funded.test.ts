@@ -158,6 +158,17 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
     await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
     await page.getByRole('button', { name: 'Security', exact: true }).click()
   }
+  await page.getByRole('button', { name: /^Backups/ }).click()
+  const packageDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save recovery package', exact: true }).click()
+  const packagePath = await (await packageDownload).path()
+  await save('browser-portable-package.json', JSON.parse(await readFile(packagePath!, 'utf8')))
+  await page.getByLabel('Check a recovery package').setInputFiles(packagePath!)
+  await expect(page.getByText(/found in this backup/)).toBeVisible()
+  await page.getByRole('button', { name: 'Check protected contents with passkey' }).click()
+  await expect(page.getByText(/Original passkey opened this file/)).toBeVisible()
+  await save('browser-package-check.json', { text: await page.locator('.light-app').innerText() })
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await page.getByRole('button', { name: 'Lock wallet', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Unlock with passkey', exact: true })).toBeVisible()
   await page.route('**/__light-offline-test', (route) =>
