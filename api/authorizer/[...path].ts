@@ -210,6 +210,16 @@ export function publicAuthorizerPath(url = ''): string {
     if (route === 'ready') return '/ready'
     if (route === 'enroll-session') return '/v1/enroll/session'
     const phase = params.get('phase') || ''
+    if (
+      route === 'savings-setup' &&
+      new Set(['info', 'prepare', 'register', 'final', 'status', 'release']).has(phase)
+    ) {
+      const vaultId = params.get('vaultId')
+      return (
+        `/v1/vtxo/savings-setup/${phase}` +
+        (phase === 'info' && vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : '')
+      )
+    }
     if (route === 'vtxo-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
       return `/v1/vtxo/delegate/${phase}`
     if (route === 'light-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))

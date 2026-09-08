@@ -7,5 +7,10 @@ export default defineConfig({
   ...config,
   // mergeConfig ignores null overrides; assign after merging to disable the
   // watcher during funded drills and preserve active passkey/batch sessions.
-  server: { ...config.server, ...(process.env.VAULT_LIGHT_LIVE === 'mutinynet' ? { watch: null, hmr: false } : {}) },
+  server: {
+    ...config.server,
+    ...(process.env.VAULT_LIGHT_LIVE === 'mutinynet' || process.env.VAULT_SAVINGS_SETUP_LIVE === 'mutinynet'
+      ? { watch: null, hmr: false }
+      : {}),
+  },
 })

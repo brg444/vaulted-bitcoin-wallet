@@ -1,4 +1,5 @@
 import ConnectorDeposit from './ConnectorDeposit'
+import ConnectorSetup from './ConnectorSetup'
 import { isConnectorTemplate } from '../../lib/vault/program/connector'
 import { useContext, useMemo, useState } from 'react'
 import { KeyRound, Share2, ShieldCheck } from 'lucide-react'
@@ -39,7 +40,7 @@ export default function VaultReceive() {
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
-  const [deposit, setDeposit] = useState(account === 'savings' && isConnectorTemplate(status?.templateVersion))
+  const [view, setView] = useState<'receive' | 'setup' | 'deposit'>('receive')
   const unified = useMemo(
     () =>
       boardingAddress && spendingArkAddress
@@ -73,8 +74,10 @@ export default function VaultReceive() {
     await copy(request, spending ? 'Payment request' : 'Savings address')
   }
 
-  if (deposit && status)
-    return <ConnectorDeposit status={status} onBack={() => navigate('home')} onAddress={() => setDeposit(false)} />
+  if (view === 'setup' && status)
+    return <ConnectorSetup status={status} onBack={() => setView('receive')} onDeposit={() => setView('deposit')} />
+  if (view === 'deposit' && status)
+    return <ConnectorDeposit status={status} onBack={() => setView('setup')} onAddress={() => setView('receive')} />
 
   return (
     <QgScreen
@@ -136,7 +139,7 @@ export default function VaultReceive() {
         ) : null}
       </div>
       {!spending && isConnectorTemplate(status?.templateVersion) ? (
-        <QgSecondary label='Prepare a Savings deposit' onClick={() => setDeposit(true)} />
+        <QgSecondary label='Set up Savings signer' onClick={() => setView('setup')} />
       ) : null}
     </QgScreen>
   )

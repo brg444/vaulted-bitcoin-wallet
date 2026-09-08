@@ -6,7 +6,8 @@ import { buildRecoveryHeader, type VaultRecoveryFile } from './backupCodec'
 import { recoveryFileStore } from './fileStore'
 import { captureVaultRecoveryFile } from './capture'
 
-const mocks = vi.hoisted(() => ({ capture: vi.fn(), journals: vi.fn() }))
+const mocks = vi.hoisted(() => ({ capture: vi.fn(), journals: vi.fn(), setup: vi.fn(), clearSetup: vi.fn() }))
+vi.mock('../savingsSetupStore', () => ({ readSavingsSetup: mocks.setup, clearSetup: mocks.clearSetup }))
 vi.mock('../vtxo/recoveryArchive', async (original) => ({
   ...(await original<typeof import('../vtxo/recoveryArchive')>()),
   captureVaultRecoveryArchive: mocks.capture,
@@ -21,6 +22,8 @@ afterEach(() => {
 })
 
 async function fixture() {
+  mocks.setup.mockReset().mockReturnValue(null)
+  mocks.clearSetup.mockReset()
   const f = recoveryFixture()
   const coin = {
     ...f.coin,
@@ -77,4 +80,39 @@ describe('complete recovery snapshot replacement', () => {
     expect(saved.archive).toEqual(next)
     expect(await recoveryFileStore(f.key)).toEqual(saved)
   })
+})
+
+it('keeps confirmed signer setup until the exact replacement recovery output has been saved', async () => {
+  const f = await fixture()
+  const setup = {
+    stage: 'confirmed',
+    receipt: { receiverTxid: 'ee'.repeat(32), receiverVout: 0 },
+    plan: { plan: { changeSats: f.coin.value } },
+  }
+  mocks.setup.mockReturnValue(setup)
+  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('Signer setup recovery data')
+  expect(await recoveryFileStore(f.key)).toEqual(f.previous)
+  expect(mocks.clearSetup).not.toHaveBeenCalled()
+  setup.receipt.receiverTxid = f.coin.txid
+  mocks.clearSetup.mockImplementation(async () => {
+    expect(await recoveryFileStore(f.key)).not.toBeNull()
+  })
+  const saved = await captureVaultRecoveryFile(f.status, f.enrollment)
+  expect(mocks.clearSetup).toHaveBeenCalledWith(setup)
+  expect(await recoveryFileStore(f.key)).toEqual(saved)
+})
+
+it('retains the complete file when a setup final appears during capture before its replacement is indexed', async () => {
+  const f = await fixture()
+  const setup = { stage: 'finalizing', final: { commitmentPsbt: 'retained-final' } }
+  mocks.journals.mockImplementation(async () => {
+    mocks.setup.mockReturnValue(setup)
+    return {}
+  })
+  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous recovery file is retained')
+  expect(await recoveryFileStore(f.key)).toEqual(f.previous)
+  expect(mocks.clearSetup).not.toHaveBeenCalled()
+  setup.stage = 'submitted'
+  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous recovery file is retained')
+  expect(await recoveryFileStore(f.key)).toEqual(f.previous)
 })

@@ -44,9 +44,33 @@ qualified device and signing workflow before depositing.
 
 ## Deposit and approve
 
-Use Vaulted's prepared first Savings deposit. It funds Savings and creates two
-500-sat reserves for the signer together. A new two-reserve wallet needs both
-outputs created by that prepared deposit.
+Receive ordinary Bitcoin payments using the address or QR code under
+**Savings → Deposit**.
+
+Before the first transfer, open **Security → Savings signer setup** and choose
+**Fund from Spending**. Review the enrolled signer address, approval-output
+amount and Operator fee, then confirm. Vaulted creates the missing approval
+outputs in a Bitcoin batch and returns change to the enrolled Spending script.
+The setup stays pending until Bitcoin confirmation and the updated Spending
+recovery data has been saved on this device.
+
+This path requires one settled Spending output large enough to cover setup,
+its quoted fee and at least 330 sats of protected change. It does not combine
+several smaller Spending outputs. Setup and its fee count against your Spending
+limits. A failed or interrupted attempt remains available through **Check
+signer setup** on the wallet home screen.
+
+Alternatively, expand **Use an external Bitcoin wallet**. Send two separate
+payments of exactly 500 sats to the displayed signer address, with network fees
+in addition, and wait for both to confirm. Compare the address with the
+receiving address selected during enrollment. The signer needs two distinct
+outputs; one 1,000-sat payment cannot replace them.
+
+Under **Advanced: fund with a Savings deposit**, wallets that export unsigned
+PSBTs can create both reserves with a Savings deposit in one transaction.
+Previously prepared deposits remain available there through **Continue prepared
+deposit**. A pending deposit or transfer must be resolved before funding the
+signer again.
 
 For a transfer, export the hardware approval PSBT from Vaulted and open it in
 Sparrow. Sparrow shows a **Non-Default Sighash** warning; review the transaction
