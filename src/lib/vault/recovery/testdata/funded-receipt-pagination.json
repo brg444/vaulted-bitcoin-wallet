@@ -11,177 +11,133 @@
           "txid": "d6798a97ab6c8e06b992c5b4b732414f13b983ebc676c651166ca82d112f7a56",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "218bff94742a6a28407dd0485a2cf1e1f836facad71e94689d929f780edfecf1"
-          ]
+          "spends": ["218bff94742a6a28407dd0485a2cf1e1f836facad71e94689d929f780edfecf1"]
         },
         {
           "txid": "218bff94742a6a28407dd0485a2cf1e1f836facad71e94689d929f780edfecf1",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "dce2a622d097bba55cc8d7227b925f84fa5f4caeb754142070828d9162eb2b71"
-          ]
+          "spends": ["dce2a622d097bba55cc8d7227b925f84fa5f4caeb754142070828d9162eb2b71"]
         },
         {
           "txid": "dce2a622d097bba55cc8d7227b925f84fa5f4caeb754142070828d9162eb2b71",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "f2539899c4518509c4b36025b5d770d7e5af417c499768ca619ee7375e8af650"
-          ]
+          "spends": ["f2539899c4518509c4b36025b5d770d7e5af417c499768ca619ee7375e8af650"]
         },
         {
           "txid": "f2539899c4518509c4b36025b5d770d7e5af417c499768ca619ee7375e8af650",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "5145ed5503ca2bf85ae1908b1da720218a2f653aab087afbeba1bd6a2b96713e"
-          ]
+          "spends": ["5145ed5503ca2bf85ae1908b1da720218a2f653aab087afbeba1bd6a2b96713e"]
         },
         {
           "txid": "5145ed5503ca2bf85ae1908b1da720218a2f653aab087afbeba1bd6a2b96713e",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "3acecd8c2a4fd602a2a0a5f0f4cb640cf7ecbddcf52234467a849139c37ae6a9"
-          ]
+          "spends": ["3acecd8c2a4fd602a2a0a5f0f4cb640cf7ecbddcf52234467a849139c37ae6a9"]
         },
         {
           "txid": "3acecd8c2a4fd602a2a0a5f0f4cb640cf7ecbddcf52234467a849139c37ae6a9",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "8404c934130bd2afa363dc81c6f7085502aee9233ddf798cc815527fce640aad"
-          ]
+          "spends": ["8404c934130bd2afa363dc81c6f7085502aee9233ddf798cc815527fce640aad"]
         },
         {
           "txid": "8404c934130bd2afa363dc81c6f7085502aee9233ddf798cc815527fce640aad",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "40f4598095de3727d4359c527860afac707131f341960d55ca9f7c7fb68bda85"
-          ]
+          "spends": ["40f4598095de3727d4359c527860afac707131f341960d55ca9f7c7fb68bda85"]
         },
         {
           "txid": "40f4598095de3727d4359c527860afac707131f341960d55ca9f7c7fb68bda85",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "eb1d03a82d8a265ed435bc506ac1035ef44548b711d3dade63b31b4b6754facc"
-          ]
+          "spends": ["eb1d03a82d8a265ed435bc506ac1035ef44548b711d3dade63b31b4b6754facc"]
         },
         {
           "txid": "eb1d03a82d8a265ed435bc506ac1035ef44548b711d3dade63b31b4b6754facc",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "9a88a7d81c2fbb780c5842ecddbda5aaf8bd749004c2d56611f9c7fa41ab97fd"
-          ]
+          "spends": ["9a88a7d81c2fbb780c5842ecddbda5aaf8bd749004c2d56611f9c7fa41ab97fd"]
         },
         {
           "txid": "9a88a7d81c2fbb780c5842ecddbda5aaf8bd749004c2d56611f9c7fa41ab97fd",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "cdf8eecc8d656691b6a75b7f0128146343c6fe7db4e7be96a5352ca82b89cbd9"
-          ]
+          "spends": ["cdf8eecc8d656691b6a75b7f0128146343c6fe7db4e7be96a5352ca82b89cbd9"]
         },
         {
           "txid": "cdf8eecc8d656691b6a75b7f0128146343c6fe7db4e7be96a5352ca82b89cbd9",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "e1c2dcdfd7d5340e10057f5c8d85c6fa8c7e0e6fd1da748f4330c5049f5ab144"
-          ]
+          "spends": ["e1c2dcdfd7d5340e10057f5c8d85c6fa8c7e0e6fd1da748f4330c5049f5ab144"]
         },
         {
           "txid": "e1c2dcdfd7d5340e10057f5c8d85c6fa8c7e0e6fd1da748f4330c5049f5ab144",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "9e550ead6962a5974a146be5d72cfa60f62b6e05f3323d47bb2b04412091ecef"
-          ]
+          "spends": ["9e550ead6962a5974a146be5d72cfa60f62b6e05f3323d47bb2b04412091ecef"]
         },
         {
           "txid": "9e550ead6962a5974a146be5d72cfa60f62b6e05f3323d47bb2b04412091ecef",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "488d256716a9b3d72f9e3635ace8086a0d9a77bf59e2888b8df935175bf3b201"
-          ]
+          "spends": ["488d256716a9b3d72f9e3635ace8086a0d9a77bf59e2888b8df935175bf3b201"]
         },
         {
           "txid": "488d256716a9b3d72f9e3635ace8086a0d9a77bf59e2888b8df935175bf3b201",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "b9ef5be5d60a1657295539bf8a34a17ed65f0f41369a4ad2f3b1a32610818cb9"
-          ]
+          "spends": ["b9ef5be5d60a1657295539bf8a34a17ed65f0f41369a4ad2f3b1a32610818cb9"]
         },
         {
           "txid": "b9ef5be5d60a1657295539bf8a34a17ed65f0f41369a4ad2f3b1a32610818cb9",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "8989a4a1e7f78553ff24a770010a25830a8f8e82ac4ddd321a90315540346a65"
-          ]
+          "spends": ["8989a4a1e7f78553ff24a770010a25830a8f8e82ac4ddd321a90315540346a65"]
         },
         {
           "txid": "8989a4a1e7f78553ff24a770010a25830a8f8e82ac4ddd321a90315540346a65",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "43e3b9420d69b743c729526b4e63492b2047630e75eecc7b07eaac496f09b535"
-          ]
+          "spends": ["43e3b9420d69b743c729526b4e63492b2047630e75eecc7b07eaac496f09b535"]
         },
         {
           "txid": "43e3b9420d69b743c729526b4e63492b2047630e75eecc7b07eaac496f09b535",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "4fa7a1cbaf097233f2a56e7b0a0fdd10845a40963731093f2f940a3aaad8a61b"
-          ]
+          "spends": ["4fa7a1cbaf097233f2a56e7b0a0fdd10845a40963731093f2f940a3aaad8a61b"]
         },
         {
           "txid": "4fa7a1cbaf097233f2a56e7b0a0fdd10845a40963731093f2f940a3aaad8a61b",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "fe8e12060ffde15dc2d8b59e9446d4f6bbe4800bea539b29495e6aaface1df9c"
-          ]
+          "spends": ["fe8e12060ffde15dc2d8b59e9446d4f6bbe4800bea539b29495e6aaface1df9c"]
         },
         {
           "txid": "fe8e12060ffde15dc2d8b59e9446d4f6bbe4800bea539b29495e6aaface1df9c",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "306898a5aefdc17a8556d100f65d2ccc87abe1b41b1bb154842a83c53a65a59d"
-          ]
+          "spends": ["306898a5aefdc17a8556d100f65d2ccc87abe1b41b1bb154842a83c53a65a59d"]
         },
         {
           "txid": "306898a5aefdc17a8556d100f65d2ccc87abe1b41b1bb154842a83c53a65a59d",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "a85103012f9e4f9cb5e631284cfac1d4a50fa162e3e4c6220ae908ca8f3c41bf"
-          ]
+          "spends": ["a85103012f9e4f9cb5e631284cfac1d4a50fa162e3e4c6220ae908ca8f3c41bf"]
         },
         {
           "txid": "a85103012f9e4f9cb5e631284cfac1d4a50fa162e3e4c6220ae908ca8f3c41bf",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "4347cc6ab31349f251b868ad51c7f17911244a42daad9c3bd7d5caf5e254228f"
-          ]
+          "spends": ["4347cc6ab31349f251b868ad51c7f17911244a42daad9c3bd7d5caf5e254228f"]
         },
         {
           "txid": "4347cc6ab31349f251b868ad51c7f17911244a42daad9c3bd7d5caf5e254228f",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "6a983b787a732a3efcbcc9e22916b31d48225826eafbcf2d36139b52bad46815"
-          ]
+          "spends": ["6a983b787a732a3efcbcc9e22916b31d48225826eafbcf2d36139b52bad46815"]
         },
         {
           "txid": "6a983b787a732a3efcbcc9e22916b31d48225826eafbcf2d36139b52bad46815",
@@ -196,97 +152,73 @@
           "txid": "80d5a248df9c0366d1ba105957f668da21cab0477ce74cf55a7f231bdb298128",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf"
-          ]
+          "spends": ["f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf"]
         },
         {
           "txid": "6ebc039188357fccfc65003f8470a89c620385ae849da0067b28afc57902cf5e",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "7965c2314827a3007bd8adf08ca42fc859bca3ed59e61474d5fa7faae2a2747a"
-          ]
+          "spends": ["7965c2314827a3007bd8adf08ca42fc859bca3ed59e61474d5fa7faae2a2747a"]
         },
         {
           "txid": "f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4"
-          ]
+          "spends": ["e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4"]
         },
         {
           "txid": "e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5"
-          ]
+          "spends": ["2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5"]
         },
         {
           "txid": "7965c2314827a3007bd8adf08ca42fc859bca3ed59e61474d5fa7faae2a2747a",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "e699e073a63564e32b7eb838fec42fd2d280dad1a68c3914bf82a39fe815a2c5"
-          ]
+          "spends": ["e699e073a63564e32b7eb838fec42fd2d280dad1a68c3914bf82a39fe815a2c5"]
         },
         {
           "txid": "e699e073a63564e32b7eb838fec42fd2d280dad1a68c3914bf82a39fe815a2c5",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf"
-          ]
+          "spends": ["f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf"]
         },
         {
           "txid": "2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "bbcc0efa6deebbf04a63db8b016ba5ed84b834211d6ba9ca43f337946f929c40"
-          ]
+          "spends": ["bbcc0efa6deebbf04a63db8b016ba5ed84b834211d6ba9ca43f337946f929c40"]
         },
         {
           "txid": "bbcc0efa6deebbf04a63db8b016ba5ed84b834211d6ba9ca43f337946f929c40",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "2c08080e060d1603b846098e19ed046c53ed50f47c0cbc6e97f4c7c4aeb0d449"
-          ]
+          "spends": ["2c08080e060d1603b846098e19ed046c53ed50f47c0cbc6e97f4c7c4aeb0d449"]
         },
         {
           "txid": "2c08080e060d1603b846098e19ed046c53ed50f47c0cbc6e97f4c7c4aeb0d449",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "c8b298c980bbd11bea963bf869b94dd3452959b6a79c1e3a5fa83d3de487ff62"
-          ]
+          "spends": ["c8b298c980bbd11bea963bf869b94dd3452959b6a79c1e3a5fa83d3de487ff62"]
         },
         {
           "txid": "c8b298c980bbd11bea963bf869b94dd3452959b6a79c1e3a5fa83d3de487ff62",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "5fe7166f7a84436d5a4e3b4f7a8c97f76e977ea4ad38c80a63135405ec9b772e"
-          ]
+          "spends": ["5fe7166f7a84436d5a4e3b4f7a8c97f76e977ea4ad38c80a63135405ec9b772e"]
         },
         {
           "txid": "5fe7166f7a84436d5a4e3b4f7a8c97f76e977ea4ad38c80a63135405ec9b772e",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "d131f096a6e4b3f9098e968b7bf2996cdee808ae8cfa3b8b995da0ac196e87d9"
-          ]
+          "spends": ["d131f096a6e4b3f9098e968b7bf2996cdee808ae8cfa3b8b995da0ac196e87d9"]
         },
         {
           "txid": "d131f096a6e4b3f9098e968b7bf2996cdee808ae8cfa3b8b995da0ac196e87d9",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "4e3fde6d1b36bf832c9844fc32e30ec56ae6364a1a520e95e204035456257b8b"
-          ]
+          "spends": ["4e3fde6d1b36bf832c9844fc32e30ec56ae6364a1a520e95e204035456257b8b"]
         },
         {
           "txid": "4e3fde6d1b36bf832c9844fc32e30ec56ae6364a1a520e95e204035456257b8b",
@@ -301,33 +233,25 @@
           "txid": "d174480363a98acf282bbdfcd74fbf9ca4a14ad9a4da396c4e658409c782d764",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "0d2b0a07dc997e69b020d13e8347eaee7e1ece7145a216ffd5f526cacb3ccf28"
-          ]
+          "spends": ["0d2b0a07dc997e69b020d13e8347eaee7e1ece7145a216ffd5f526cacb3ccf28"]
         },
         {
           "txid": "028a17cbee467a3f2dcc1afe8078843ac383bb3f6c7f9386a1004c88cc620f77",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0"
-          ]
+          "spends": ["ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0"]
         },
         {
           "txid": "0d2b0a07dc997e69b020d13e8347eaee7e1ece7145a216ffd5f526cacb3ccf28",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "fb3d509ea42288bd8c0d8fd78a40acf5c88306267b1e3d96e916fac7e4917825"
-          ]
+          "spends": ["fb3d509ea42288bd8c0d8fd78a40acf5c88306267b1e3d96e916fac7e4917825"]
         },
         {
           "txid": "fb3d509ea42288bd8c0d8fd78a40acf5c88306267b1e3d96e916fac7e4917825",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0"
-          ]
+          "spends": ["ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0"]
         },
         {
           "txid": "ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0",
@@ -342,17 +266,13 @@
           "txid": "d87e3c080cd199dd9b696d52dc9c2831895d18d7c9842610b19d86d34bfaf64c",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f"
-          ]
+          "spends": ["3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f"]
         },
         {
           "txid": "e98de444078fac0fd1516984a31041c89da4ceb2ab3f22020b91455feaf5406a",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570"
-          ]
+          "spends": ["46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570"]
         },
         {
           "txid": "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f",
@@ -367,49 +287,37 @@
           "txid": "d9b27b47b9d612084cfad37df46de03d25a745fa37e17525615cecaaa7d5e6f9",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff"
-          ]
+          "spends": ["7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff"]
         },
         {
           "txid": "5fa39e0b3e594c1b3b921fefc112093593d75b49dfacca712d634bc9aea14614",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9"
-          ]
+          "spends": ["898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9"]
         },
         {
           "txid": "46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "cf85011f0c23d2d8d5d201e594dbc0dc8b79e03b6c00d5b56bc9f184c5279f83"
-          ]
+          "spends": ["cf85011f0c23d2d8d5d201e594dbc0dc8b79e03b6c00d5b56bc9f184c5279f83"]
         },
         {
           "txid": "cf85011f0c23d2d8d5d201e594dbc0dc8b79e03b6c00d5b56bc9f184c5279f83",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f"
-          ]
+          "spends": ["3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f"]
         },
         {
           "txid": "7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "fd7ef0669a1abfc87afa1a0b0c0dcf2f37e31dbf8ec8225ef92a4c06bdfb094d"
-          ]
+          "spends": ["fd7ef0669a1abfc87afa1a0b0c0dcf2f37e31dbf8ec8225ef92a4c06bdfb094d"]
         },
         {
           "txid": "fd7ef0669a1abfc87afa1a0b0c0dcf2f37e31dbf8ec8225ef92a4c06bdfb094d",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9"
-          ]
+          "spends": ["898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9"]
         },
         {
           "txid": "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9",
@@ -424,33 +332,25 @@
           "txid": "29ddebc1eac9a0cac8160ceeffa6ce845d89d15bbc03e0f195f49d19d0a12f94",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55"
-          ]
+          "spends": ["6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55"]
         },
         {
           "txid": "c52e0258d18f463d2be4cf1f4a377e73085d2dcf835d840213306b94e7f214c4",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841"
-          ]
+          "spends": ["efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841"]
         },
         {
           "txid": "6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "aa1ebb091ca2ddcbcf6d12937aa93efa35b7f640afcabe669a31db0355e4d93a"
-          ]
+          "spends": ["aa1ebb091ca2ddcbcf6d12937aa93efa35b7f640afcabe669a31db0355e4d93a"]
         },
         {
           "txid": "aa1ebb091ca2ddcbcf6d12937aa93efa35b7f640afcabe669a31db0355e4d93a",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841"
-          ]
+          "spends": ["efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841"]
         },
         {
           "txid": "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841",
@@ -465,17 +365,13 @@
           "txid": "708e6ca1cd4797b360c91a32e2d972dd7bf89372927c66c776ba1088ca4c9649",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8"
-          ]
+          "spends": ["d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8"]
         },
         {
           "txid": "f2450a73dff5d1f5c7998653205a541ceb92e981a8b2ec7c1b2f54937410a4e0",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec"
-          ]
+          "spends": ["3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec"]
         },
         {
           "txid": "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8",
@@ -490,49 +386,37 @@
           "txid": "896c0ed9aeff664d88f0cf38631f68669e80eed03c3dd400ad86b55bd869aee9",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5"
-          ]
+          "spends": ["cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5"]
         },
         {
           "txid": "80adeb8a44188dcd114906361dab68c91ad25ac3c6ae10b5a1275745efcb7d97",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6"
-          ]
+          "spends": ["063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6"]
         },
         {
           "txid": "3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "abf3e9565e86f1464e1e55adc346ad1e5af4e30cea46f61c4115fd1b13959feb"
-          ]
+          "spends": ["abf3e9565e86f1464e1e55adc346ad1e5af4e30cea46f61c4115fd1b13959feb"]
         },
         {
           "txid": "abf3e9565e86f1464e1e55adc346ad1e5af4e30cea46f61c4115fd1b13959feb",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8"
-          ]
+          "spends": ["d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8"]
         },
         {
           "txid": "cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "fcd7495c50819ebdc96749e9fc3067da1fe847370952c9f298c5b98816581518"
-          ]
+          "spends": ["fcd7495c50819ebdc96749e9fc3067da1fe847370952c9f298c5b98816581518"]
         },
         {
           "txid": "fcd7495c50819ebdc96749e9fc3067da1fe847370952c9f298c5b98816581518",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6"
-          ]
+          "spends": ["063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6"]
         },
         {
           "txid": "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6",
@@ -547,33 +431,25 @@
           "txid": "655d15761fe93d0552fbaf93b358f14ea9ce89f0fa18aa790892712443a81324",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335"
-          ]
+          "spends": ["37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335"]
         },
         {
           "txid": "3eec119d429b8a0525678aebf6a900fd97e172e6d5b5c011a9b26861f086a154",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641"
-          ]
+          "spends": ["5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641"]
         },
         {
           "txid": "37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "e42c2a878af90150730cf55f7fa5de2305c42a4f4133a94153cc4d94c663c638"
-          ]
+          "spends": ["e42c2a878af90150730cf55f7fa5de2305c42a4f4133a94153cc4d94c663c638"]
         },
         {
           "txid": "e42c2a878af90150730cf55f7fa5de2305c42a4f4133a94153cc4d94c663c638",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641"
-          ]
+          "spends": ["5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641"]
         },
         {
           "txid": "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641",
@@ -588,33 +464,25 @@
           "txid": "ce1fd67cf86093eb226945f6edd61b7ef5ad183d1f6287424787ee4040e971fa",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e"
-          ]
+          "spends": ["33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e"]
         },
         {
           "txid": "8cbf8f4499a05dcfde7a17c54b5630c2b44ecb0ca89256f534135565d474b522",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078"
-          ]
+          "spends": ["538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078"]
         },
         {
           "txid": "33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "841b6f9389bd0f3c7870d1954f6aa4fc31a0ff156f7978b65741a6c91d924ab8"
-          ]
+          "spends": ["841b6f9389bd0f3c7870d1954f6aa4fc31a0ff156f7978b65741a6c91d924ab8"]
         },
         {
           "txid": "841b6f9389bd0f3c7870d1954f6aa4fc31a0ff156f7978b65741a6c91d924ab8",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078"
-          ]
+          "spends": ["538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078"]
         },
         {
           "txid": "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078",
@@ -629,33 +497,25 @@
           "txid": "b60bd05995d609f339fa33bf0e2250e7ece2ca776d9fde7b24c3f7c063800089",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c"
-          ]
+          "spends": ["97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c"]
         },
         {
           "txid": "55178c0de1237bd014522c5d3f31eb9551049437528f21960e098972ec4182df",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0"
-          ]
+          "spends": ["8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0"]
         },
         {
           "txid": "97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "ad828f26023d93726754d47500d732cd138dd667321cbe11067f635e388cfd8d"
-          ]
+          "spends": ["ad828f26023d93726754d47500d732cd138dd667321cbe11067f635e388cfd8d"]
         },
         {
           "txid": "ad828f26023d93726754d47500d732cd138dd667321cbe11067f635e388cfd8d",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0"
-          ]
+          "spends": ["8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0"]
         },
         {
           "txid": "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0",
@@ -670,89 +530,67 @@
           "txid": "d62a97500f8dcc9aaac44ceb741bd4cd0f3f6ca1eac6a2e7d96e593bcf245340",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d"
-          ]
+          "spends": ["ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d"]
         },
         {
           "txid": "72dc006177186a78006a11d7719fecd2ca8c6471dfbb48a759579cbc8ddafc73",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f"
-          ]
+          "spends": ["793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f"]
         },
         {
           "txid": "ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "6f63450a29920a1f92e6bb64cc13816ba6973b61f3ff8d1fcbc9b8c38ccb4d3b"
-          ]
+          "spends": ["6f63450a29920a1f92e6bb64cc13816ba6973b61f3ff8d1fcbc9b8c38ccb4d3b"]
         },
         {
           "txid": "6f63450a29920a1f92e6bb64cc13816ba6973b61f3ff8d1fcbc9b8c38ccb4d3b",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f"
-          ]
+          "spends": ["793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f"]
         },
         {
           "txid": "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f"
-          ]
+          "spends": ["bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f"]
         },
         {
           "txid": "bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9"
-          ]
+          "spends": ["1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9"]
         },
         {
           "txid": "1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "b9aad480c91ce1faa4aaf2515fc6f3d72c86a6c9448540cbf86bd979e9999ed6"
-          ]
+          "spends": ["b9aad480c91ce1faa4aaf2515fc6f3d72c86a6c9448540cbf86bd979e9999ed6"]
         },
         {
           "txid": "b9aad480c91ce1faa4aaf2515fc6f3d72c86a6c9448540cbf86bd979e9999ed6",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "0ac5fef4d7d5a2128086ebbc3c6a73d9dba16994048ed073d05bbec5d1951a60"
-          ]
+          "spends": ["0ac5fef4d7d5a2128086ebbc3c6a73d9dba16994048ed073d05bbec5d1951a60"]
         },
         {
           "txid": "0ac5fef4d7d5a2128086ebbc3c6a73d9dba16994048ed073d05bbec5d1951a60",
           "type": "INDEXER_CHAINED_TX_TYPE_ARK",
           "expiresAt": "1789209125",
-          "spends": [
-            "30ae09b58d10b5462bafccc185ff54a3f520ec28c777a3cf379822349af4509c"
-          ]
+          "spends": ["30ae09b58d10b5462bafccc185ff54a3f520ec28c777a3cf379822349af4509c"]
         },
         {
           "txid": "30ae09b58d10b5462bafccc185ff54a3f520ec28c777a3cf379822349af4509c",
           "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
           "expiresAt": "1789209125",
-          "spends": [
-            "46088ed0b3db740da23952b3cfe45626758e5e6180f24a09a4f45e099c6e31e7"
-          ]
+          "spends": ["46088ed0b3db740da23952b3cfe45626758e5e6180f24a09a4f45e099c6e31e7"]
         },
         {
           "txid": "46088ed0b3db740da23952b3cfe45626758e5e6180f24a09a4f45e099c6e31e7",
           "type": "INDEXER_CHAINED_TX_TYPE_TREE",
           "expiresAt": "1789209125",
-          "spends": [
-            "a1cb7b9834be6f68abfafab1c8ce0daf84521a5f891012432475552d9200b1a0"
-          ]
+          "spends": ["a1cb7b9834be6f68abfafab1c8ce0daf84521a5f891012432475552d9200b1a0"]
         },
         {
           "txid": "a1cb7b9834be6f68abfafab1c8ce0daf84521a5f891012432475552d9200b1a0",
@@ -862,177 +700,133 @@
       "txid": "d6798a97ab6c8e06b992c5b4b732414f13b983ebc676c651166ca82d112f7a56",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "218bff94742a6a28407dd0485a2cf1e1f836facad71e94689d929f780edfecf1"
-      ]
+      "spends": ["218bff94742a6a28407dd0485a2cf1e1f836facad71e94689d929f780edfecf1"]
     },
     {
       "txid": "218bff94742a6a28407dd0485a2cf1e1f836facad71e94689d929f780edfecf1",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "dce2a622d097bba55cc8d7227b925f84fa5f4caeb754142070828d9162eb2b71:1"
-      ]
+      "spends": ["dce2a622d097bba55cc8d7227b925f84fa5f4caeb754142070828d9162eb2b71:1"]
     },
     {
       "txid": "dce2a622d097bba55cc8d7227b925f84fa5f4caeb754142070828d9162eb2b71",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "f2539899c4518509c4b36025b5d770d7e5af417c499768ca619ee7375e8af650"
-      ]
+      "spends": ["f2539899c4518509c4b36025b5d770d7e5af417c499768ca619ee7375e8af650"]
     },
     {
       "txid": "f2539899c4518509c4b36025b5d770d7e5af417c499768ca619ee7375e8af650",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "5145ed5503ca2bf85ae1908b1da720218a2f653aab087afbeba1bd6a2b96713e:1"
-      ]
+      "spends": ["5145ed5503ca2bf85ae1908b1da720218a2f653aab087afbeba1bd6a2b96713e:1"]
     },
     {
       "txid": "5145ed5503ca2bf85ae1908b1da720218a2f653aab087afbeba1bd6a2b96713e",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "3acecd8c2a4fd602a2a0a5f0f4cb640cf7ecbddcf52234467a849139c37ae6a9"
-      ]
+      "spends": ["3acecd8c2a4fd602a2a0a5f0f4cb640cf7ecbddcf52234467a849139c37ae6a9"]
     },
     {
       "txid": "3acecd8c2a4fd602a2a0a5f0f4cb640cf7ecbddcf52234467a849139c37ae6a9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "8404c934130bd2afa363dc81c6f7085502aee9233ddf798cc815527fce640aad:1"
-      ]
+      "spends": ["8404c934130bd2afa363dc81c6f7085502aee9233ddf798cc815527fce640aad:1"]
     },
     {
       "txid": "8404c934130bd2afa363dc81c6f7085502aee9233ddf798cc815527fce640aad",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "40f4598095de3727d4359c527860afac707131f341960d55ca9f7c7fb68bda85"
-      ]
+      "spends": ["40f4598095de3727d4359c527860afac707131f341960d55ca9f7c7fb68bda85"]
     },
     {
       "txid": "40f4598095de3727d4359c527860afac707131f341960d55ca9f7c7fb68bda85",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "eb1d03a82d8a265ed435bc506ac1035ef44548b711d3dade63b31b4b6754facc:1"
-      ]
+      "spends": ["eb1d03a82d8a265ed435bc506ac1035ef44548b711d3dade63b31b4b6754facc:1"]
     },
     {
       "txid": "eb1d03a82d8a265ed435bc506ac1035ef44548b711d3dade63b31b4b6754facc",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "9a88a7d81c2fbb780c5842ecddbda5aaf8bd749004c2d56611f9c7fa41ab97fd"
-      ]
+      "spends": ["9a88a7d81c2fbb780c5842ecddbda5aaf8bd749004c2d56611f9c7fa41ab97fd"]
     },
     {
       "txid": "9a88a7d81c2fbb780c5842ecddbda5aaf8bd749004c2d56611f9c7fa41ab97fd",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "cdf8eecc8d656691b6a75b7f0128146343c6fe7db4e7be96a5352ca82b89cbd9:1"
-      ]
+      "spends": ["cdf8eecc8d656691b6a75b7f0128146343c6fe7db4e7be96a5352ca82b89cbd9:1"]
     },
     {
       "txid": "cdf8eecc8d656691b6a75b7f0128146343c6fe7db4e7be96a5352ca82b89cbd9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "e1c2dcdfd7d5340e10057f5c8d85c6fa8c7e0e6fd1da748f4330c5049f5ab144"
-      ]
+      "spends": ["e1c2dcdfd7d5340e10057f5c8d85c6fa8c7e0e6fd1da748f4330c5049f5ab144"]
     },
     {
       "txid": "e1c2dcdfd7d5340e10057f5c8d85c6fa8c7e0e6fd1da748f4330c5049f5ab144",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "9e550ead6962a5974a146be5d72cfa60f62b6e05f3323d47bb2b04412091ecef:1"
-      ]
+      "spends": ["9e550ead6962a5974a146be5d72cfa60f62b6e05f3323d47bb2b04412091ecef:1"]
     },
     {
       "txid": "9e550ead6962a5974a146be5d72cfa60f62b6e05f3323d47bb2b04412091ecef",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "488d256716a9b3d72f9e3635ace8086a0d9a77bf59e2888b8df935175bf3b201"
-      ]
+      "spends": ["488d256716a9b3d72f9e3635ace8086a0d9a77bf59e2888b8df935175bf3b201"]
     },
     {
       "txid": "488d256716a9b3d72f9e3635ace8086a0d9a77bf59e2888b8df935175bf3b201",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "b9ef5be5d60a1657295539bf8a34a17ed65f0f41369a4ad2f3b1a32610818cb9:1"
-      ]
+      "spends": ["b9ef5be5d60a1657295539bf8a34a17ed65f0f41369a4ad2f3b1a32610818cb9:1"]
     },
     {
       "txid": "b9ef5be5d60a1657295539bf8a34a17ed65f0f41369a4ad2f3b1a32610818cb9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "8989a4a1e7f78553ff24a770010a25830a8f8e82ac4ddd321a90315540346a65"
-      ]
+      "spends": ["8989a4a1e7f78553ff24a770010a25830a8f8e82ac4ddd321a90315540346a65"]
     },
     {
       "txid": "8989a4a1e7f78553ff24a770010a25830a8f8e82ac4ddd321a90315540346a65",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "43e3b9420d69b743c729526b4e63492b2047630e75eecc7b07eaac496f09b535:1"
-      ]
+      "spends": ["43e3b9420d69b743c729526b4e63492b2047630e75eecc7b07eaac496f09b535:1"]
     },
     {
       "txid": "43e3b9420d69b743c729526b4e63492b2047630e75eecc7b07eaac496f09b535",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "4fa7a1cbaf097233f2a56e7b0a0fdd10845a40963731093f2f940a3aaad8a61b"
-      ]
+      "spends": ["4fa7a1cbaf097233f2a56e7b0a0fdd10845a40963731093f2f940a3aaad8a61b"]
     },
     {
       "txid": "4fa7a1cbaf097233f2a56e7b0a0fdd10845a40963731093f2f940a3aaad8a61b",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "fe8e12060ffde15dc2d8b59e9446d4f6bbe4800bea539b29495e6aaface1df9c:1"
-      ]
+      "spends": ["fe8e12060ffde15dc2d8b59e9446d4f6bbe4800bea539b29495e6aaface1df9c:1"]
     },
     {
       "txid": "fe8e12060ffde15dc2d8b59e9446d4f6bbe4800bea539b29495e6aaface1df9c",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "306898a5aefdc17a8556d100f65d2ccc87abe1b41b1bb154842a83c53a65a59d"
-      ]
+      "spends": ["306898a5aefdc17a8556d100f65d2ccc87abe1b41b1bb154842a83c53a65a59d"]
     },
     {
       "txid": "306898a5aefdc17a8556d100f65d2ccc87abe1b41b1bb154842a83c53a65a59d",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "a85103012f9e4f9cb5e631284cfac1d4a50fa162e3e4c6220ae908ca8f3c41bf:1"
-      ]
+      "spends": ["a85103012f9e4f9cb5e631284cfac1d4a50fa162e3e4c6220ae908ca8f3c41bf:1"]
     },
     {
       "txid": "a85103012f9e4f9cb5e631284cfac1d4a50fa162e3e4c6220ae908ca8f3c41bf",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "4347cc6ab31349f251b868ad51c7f17911244a42daad9c3bd7d5caf5e254228f"
-      ]
+      "spends": ["4347cc6ab31349f251b868ad51c7f17911244a42daad9c3bd7d5caf5e254228f"]
     },
     {
       "txid": "4347cc6ab31349f251b868ad51c7f17911244a42daad9c3bd7d5caf5e254228f",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "6a983b787a732a3efcbcc9e22916b31d48225826eafbcf2d36139b52bad46815:1"
-      ]
+      "spends": ["6a983b787a732a3efcbcc9e22916b31d48225826eafbcf2d36139b52bad46815:1"]
     },
     {
       "txid": "6a983b787a732a3efcbcc9e22916b31d48225826eafbcf2d36139b52bad46815",
@@ -1047,113 +841,85 @@
       "txid": "80d5a248df9c0366d1ba105957f668da21cab0477ce74cf55a7f231bdb298128",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf:1"
-      ]
+      "spends": ["f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf:1"]
     },
     {
       "txid": "6ebc039188357fccfc65003f8470a89c620385ae849da0067b28afc57902cf5e",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "7965c2314827a3007bd8adf08ca42fc859bca3ed59e61474d5fa7faae2a2747a:0"
-      ]
+      "spends": ["7965c2314827a3007bd8adf08ca42fc859bca3ed59e61474d5fa7faae2a2747a:0"]
     },
     {
       "txid": "f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4"
-      ]
+      "spends": ["e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4"]
     },
     {
       "txid": "e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5:1"
-      ]
+      "spends": ["2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5:1"]
     },
     {
       "txid": "7965c2314827a3007bd8adf08ca42fc859bca3ed59e61474d5fa7faae2a2747a",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "e699e073a63564e32b7eb838fec42fd2d280dad1a68c3914bf82a39fe815a2c5"
-      ]
+      "spends": ["e699e073a63564e32b7eb838fec42fd2d280dad1a68c3914bf82a39fe815a2c5"]
     },
     {
       "txid": "e699e073a63564e32b7eb838fec42fd2d280dad1a68c3914bf82a39fe815a2c5",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf:0"
-      ]
+      "spends": ["f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf:0"]
     },
     {
       "txid": "2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "bbcc0efa6deebbf04a63db8b016ba5ed84b834211d6ba9ca43f337946f929c40"
-      ]
+      "spends": ["bbcc0efa6deebbf04a63db8b016ba5ed84b834211d6ba9ca43f337946f929c40"]
     },
     {
       "txid": "bbcc0efa6deebbf04a63db8b016ba5ed84b834211d6ba9ca43f337946f929c40",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "2c08080e060d1603b846098e19ed046c53ed50f47c0cbc6e97f4c7c4aeb0d449:1"
-      ]
+      "spends": ["2c08080e060d1603b846098e19ed046c53ed50f47c0cbc6e97f4c7c4aeb0d449:1"]
     },
     {
       "txid": "f4698f74e7705eb0f72c496cde8145e9d6b45f421ef5f847cd5c6fb8f55661cf",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4"
-      ]
+      "spends": ["e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4"]
     },
     {
       "txid": "e5b2946513f2cf821c4126f0316d5cbd8196aa830c6ffed1fdad4ce7c46f9bc4",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5:1"
-      ]
+      "spends": ["2dbd9fc8fb53a5adc10c896b78bdcba12e3ce0064024d239fee70de20c63d4f5:1"]
     },
     {
       "txid": "2c08080e060d1603b846098e19ed046c53ed50f47c0cbc6e97f4c7c4aeb0d449",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "c8b298c980bbd11bea963bf869b94dd3452959b6a79c1e3a5fa83d3de487ff62"
-      ]
+      "spends": ["c8b298c980bbd11bea963bf869b94dd3452959b6a79c1e3a5fa83d3de487ff62"]
     },
     {
       "txid": "c8b298c980bbd11bea963bf869b94dd3452959b6a79c1e3a5fa83d3de487ff62",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "5fe7166f7a84436d5a4e3b4f7a8c97f76e977ea4ad38c80a63135405ec9b772e:1"
-      ]
+      "spends": ["5fe7166f7a84436d5a4e3b4f7a8c97f76e977ea4ad38c80a63135405ec9b772e:1"]
     },
     {
       "txid": "5fe7166f7a84436d5a4e3b4f7a8c97f76e977ea4ad38c80a63135405ec9b772e",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "d131f096a6e4b3f9098e968b7bf2996cdee808ae8cfa3b8b995da0ac196e87d9"
-      ]
+      "spends": ["d131f096a6e4b3f9098e968b7bf2996cdee808ae8cfa3b8b995da0ac196e87d9"]
     },
     {
       "txid": "d131f096a6e4b3f9098e968b7bf2996cdee808ae8cfa3b8b995da0ac196e87d9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "4e3fde6d1b36bf832c9844fc32e30ec56ae6364a1a520e95e204035456257b8b:1"
-      ]
+      "spends": ["4e3fde6d1b36bf832c9844fc32e30ec56ae6364a1a520e95e204035456257b8b:1"]
     },
     {
       "txid": "4e3fde6d1b36bf832c9844fc32e30ec56ae6364a1a520e95e204035456257b8b",
@@ -1168,33 +934,25 @@
       "txid": "d174480363a98acf282bbdfcd74fbf9ca4a14ad9a4da396c4e658409c782d764",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "0d2b0a07dc997e69b020d13e8347eaee7e1ece7145a216ffd5f526cacb3ccf28:0"
-      ]
+      "spends": ["0d2b0a07dc997e69b020d13e8347eaee7e1ece7145a216ffd5f526cacb3ccf28:0"]
     },
     {
       "txid": "028a17cbee467a3f2dcc1afe8078843ac383bb3f6c7f9386a1004c88cc620f77",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0:1"
-      ]
+      "spends": ["ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0:1"]
     },
     {
       "txid": "0d2b0a07dc997e69b020d13e8347eaee7e1ece7145a216ffd5f526cacb3ccf28",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "fb3d509ea42288bd8c0d8fd78a40acf5c88306267b1e3d96e916fac7e4917825"
-      ]
+      "spends": ["fb3d509ea42288bd8c0d8fd78a40acf5c88306267b1e3d96e916fac7e4917825"]
     },
     {
       "txid": "fb3d509ea42288bd8c0d8fd78a40acf5c88306267b1e3d96e916fac7e4917825",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0:0"
-      ]
+      "spends": ["ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0:0"]
     },
     {
       "txid": "ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0",
@@ -1209,17 +967,13 @@
       "txid": "d87e3c080cd199dd9b696d52dc9c2831895d18d7c9842610b19d86d34bfaf64c",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f:1"
-      ]
+      "spends": ["3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f:1"]
     },
     {
       "txid": "e98de444078fac0fd1516984a31041c89da4ceb2ab3f22020b91455feaf5406a",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570:0"
-      ]
+      "spends": ["46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570:0"]
     },
     {
       "txid": "ab2d30b9f17eafa73f3884134236a603807495638a205970f05399bd7a18c2a0",
@@ -1234,17 +988,13 @@
       "txid": "d87e3c080cd199dd9b696d52dc9c2831895d18d7c9842610b19d86d34bfaf64c",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f:1"
-      ]
+      "spends": ["3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f:1"]
     },
     {
       "txid": "e98de444078fac0fd1516984a31041c89da4ceb2ab3f22020b91455feaf5406a",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570:0"
-      ]
+      "spends": ["46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570:0"]
     },
     {
       "txid": "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f",
@@ -1259,49 +1009,37 @@
       "txid": "d9b27b47b9d612084cfad37df46de03d25a745fa37e17525615cecaaa7d5e6f9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff:0"
-      ]
+      "spends": ["7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff:0"]
     },
     {
       "txid": "5fa39e0b3e594c1b3b921fefc112093593d75b49dfacca712d634bc9aea14614",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9:1"
-      ]
+      "spends": ["898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9:1"]
     },
     {
       "txid": "46a52c68f3b4f242fa8ab5f48308693126743d17c678208e14cfcfcbdeabf570",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "cf85011f0c23d2d8d5d201e594dbc0dc8b79e03b6c00d5b56bc9f184c5279f83"
-      ]
+      "spends": ["cf85011f0c23d2d8d5d201e594dbc0dc8b79e03b6c00d5b56bc9f184c5279f83"]
     },
     {
       "txid": "cf85011f0c23d2d8d5d201e594dbc0dc8b79e03b6c00d5b56bc9f184c5279f83",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f:0"
-      ]
+      "spends": ["3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f:0"]
     },
     {
       "txid": "7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "fd7ef0669a1abfc87afa1a0b0c0dcf2f37e31dbf8ec8225ef92a4c06bdfb094d"
-      ]
+      "spends": ["fd7ef0669a1abfc87afa1a0b0c0dcf2f37e31dbf8ec8225ef92a4c06bdfb094d"]
     },
     {
       "txid": "fd7ef0669a1abfc87afa1a0b0c0dcf2f37e31dbf8ec8225ef92a4c06bdfb094d",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9:0"
-      ]
+      "spends": ["898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9:0"]
     },
     {
       "txid": "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9",
@@ -1316,17 +1054,13 @@
       "txid": "29ddebc1eac9a0cac8160ceeffa6ce845d89d15bbc03e0f195f49d19d0a12f94",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55:0"
-      ]
+      "spends": ["6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55:0"]
     },
     {
       "txid": "c52e0258d18f463d2be4cf1f4a377e73085d2dcf835d840213306b94e7f214c4",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841:1"
-      ]
+      "spends": ["efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841:1"]
     },
     {
       "txid": "3a8e218773c8e27387530bf6cb78b00fe8fbbba0c396a93f3fd2e572b948167f",
@@ -1341,17 +1075,13 @@
       "txid": "d9b27b47b9d612084cfad37df46de03d25a745fa37e17525615cecaaa7d5e6f9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff:0"
-      ]
+      "spends": ["7998af65a28004a537238aacf31734c91bba2fe0d83a950e4cf239137de4e5ff:0"]
     },
     {
       "txid": "5fa39e0b3e594c1b3b921fefc112093593d75b49dfacca712d634bc9aea14614",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9:1"
-      ]
+      "spends": ["898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9:1"]
     },
     {
       "txid": "898321263bc2e0888dba7dd84ae0109f2734c30708a3858dd15c8aeb0a3272f9",
@@ -1366,33 +1096,25 @@
       "txid": "c52e0258d18f463d2be4cf1f4a377e73085d2dcf835d840213306b94e7f214c4",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841:1"
-      ]
+      "spends": ["efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841:1"]
     },
     {
       "txid": "29ddebc1eac9a0cac8160ceeffa6ce845d89d15bbc03e0f195f49d19d0a12f94",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55:0"
-      ]
+      "spends": ["6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55:0"]
     },
     {
       "txid": "6d1d449e0e8fc7e95acba21096d3d03dc642a8445b3d1701e344d75a21fb4e55",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "aa1ebb091ca2ddcbcf6d12937aa93efa35b7f640afcabe669a31db0355e4d93a"
-      ]
+      "spends": ["aa1ebb091ca2ddcbcf6d12937aa93efa35b7f640afcabe669a31db0355e4d93a"]
     },
     {
       "txid": "aa1ebb091ca2ddcbcf6d12937aa93efa35b7f640afcabe669a31db0355e4d93a",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841:0"
-      ]
+      "spends": ["efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841:0"]
     },
     {
       "txid": "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841",
@@ -1407,17 +1129,13 @@
       "txid": "708e6ca1cd4797b360c91a32e2d972dd7bf89372927c66c776ba1088ca4c9649",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8:1"
-      ]
+      "spends": ["d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8:1"]
     },
     {
       "txid": "f2450a73dff5d1f5c7998653205a541ceb92e981a8b2ec7c1b2f54937410a4e0",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec:0"
-      ]
+      "spends": ["3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec:0"]
     },
     {
       "txid": "efe403d71c2f6efd32db417c0931defb32d928c92f15a637723da4385507d841",
@@ -1432,17 +1150,13 @@
       "txid": "f2450a73dff5d1f5c7998653205a541ceb92e981a8b2ec7c1b2f54937410a4e0",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec:0"
-      ]
+      "spends": ["3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec:0"]
     },
     {
       "txid": "708e6ca1cd4797b360c91a32e2d972dd7bf89372927c66c776ba1088ca4c9649",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8:1"
-      ]
+      "spends": ["d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8:1"]
     },
     {
       "txid": "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8",
@@ -1457,49 +1171,37 @@
       "txid": "896c0ed9aeff664d88f0cf38631f68669e80eed03c3dd400ad86b55bd869aee9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5:0"
-      ]
+      "spends": ["cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5:0"]
     },
     {
       "txid": "80adeb8a44188dcd114906361dab68c91ad25ac3c6ae10b5a1275745efcb7d97",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6:1"
-      ]
+      "spends": ["063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6:1"]
     },
     {
       "txid": "3025bb4ccf803430d8199d1de9c5956f4326a118806ec04c3ee70f1a0a34eeec",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "abf3e9565e86f1464e1e55adc346ad1e5af4e30cea46f61c4115fd1b13959feb"
-      ]
+      "spends": ["abf3e9565e86f1464e1e55adc346ad1e5af4e30cea46f61c4115fd1b13959feb"]
     },
     {
       "txid": "abf3e9565e86f1464e1e55adc346ad1e5af4e30cea46f61c4115fd1b13959feb",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8:0"
-      ]
+      "spends": ["d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8:0"]
     },
     {
       "txid": "cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "fcd7495c50819ebdc96749e9fc3067da1fe847370952c9f298c5b98816581518"
-      ]
+      "spends": ["fcd7495c50819ebdc96749e9fc3067da1fe847370952c9f298c5b98816581518"]
     },
     {
       "txid": "fcd7495c50819ebdc96749e9fc3067da1fe847370952c9f298c5b98816581518",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6:0"
-      ]
+      "spends": ["063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6:0"]
     },
     {
       "txid": "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6",
@@ -1514,17 +1216,13 @@
       "txid": "655d15761fe93d0552fbaf93b358f14ea9ce89f0fa18aa790892712443a81324",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335:0"
-      ]
+      "spends": ["37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335:0"]
     },
     {
       "txid": "3eec119d429b8a0525678aebf6a900fd97e172e6d5b5c011a9b26861f086a154",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641:1"
-      ]
+      "spends": ["5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641:1"]
     },
     {
       "txid": "d144fb1366b4bc0b87253b369cef32d964b27d06ba35d98a31b8493dd0c2e7c8",
@@ -1539,17 +1237,13 @@
       "txid": "896c0ed9aeff664d88f0cf38631f68669e80eed03c3dd400ad86b55bd869aee9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5:0"
-      ]
+      "spends": ["cbd7c0cf2b54ff84f14c644581ad15475bfca4e10800b647e675db9b3ebe71a5:0"]
     },
     {
       "txid": "80adeb8a44188dcd114906361dab68c91ad25ac3c6ae10b5a1275745efcb7d97",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6:1"
-      ]
+      "spends": ["063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6:1"]
     },
     {
       "txid": "063faada551d0e348fc0d165a7ff93d270d96eae0bdfb06ecf4c3614b6f0aaa6",
@@ -1564,33 +1258,25 @@
       "txid": "655d15761fe93d0552fbaf93b358f14ea9ce89f0fa18aa790892712443a81324",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335:0"
-      ]
+      "spends": ["37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335:0"]
     },
     {
       "txid": "3eec119d429b8a0525678aebf6a900fd97e172e6d5b5c011a9b26861f086a154",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641:1"
-      ]
+      "spends": ["5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641:1"]
     },
     {
       "txid": "37ce614c679ea3d113d4b423e5f04e6ffdcf502756180e71131678e90983d335",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "e42c2a878af90150730cf55f7fa5de2305c42a4f4133a94153cc4d94c663c638"
-      ]
+      "spends": ["e42c2a878af90150730cf55f7fa5de2305c42a4f4133a94153cc4d94c663c638"]
     },
     {
       "txid": "e42c2a878af90150730cf55f7fa5de2305c42a4f4133a94153cc4d94c663c638",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641:0"
-      ]
+      "spends": ["5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641:0"]
     },
     {
       "txid": "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641",
@@ -1605,17 +1291,13 @@
       "txid": "ce1fd67cf86093eb226945f6edd61b7ef5ad183d1f6287424787ee4040e971fa",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e:0"
-      ]
+      "spends": ["33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e:0"]
     },
     {
       "txid": "8cbf8f4499a05dcfde7a17c54b5630c2b44ecb0ca89256f534135565d474b522",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078:1"
-      ]
+      "spends": ["538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078:1"]
     },
     {
       "txid": "5f4c837c97fc69bc491f7710868903b3b0b690ad0a1373ada567af8d23e0b641",
@@ -1630,33 +1312,25 @@
       "txid": "8cbf8f4499a05dcfde7a17c54b5630c2b44ecb0ca89256f534135565d474b522",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078:1"
-      ]
+      "spends": ["538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078:1"]
     },
     {
       "txid": "ce1fd67cf86093eb226945f6edd61b7ef5ad183d1f6287424787ee4040e971fa",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e:0"
-      ]
+      "spends": ["33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e:0"]
     },
     {
       "txid": "33b88a3083d3b40196cfa42d6e69b73d38c9e5ed8e064bab2c1b936c4e68dd9e",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "841b6f9389bd0f3c7870d1954f6aa4fc31a0ff156f7978b65741a6c91d924ab8"
-      ]
+      "spends": ["841b6f9389bd0f3c7870d1954f6aa4fc31a0ff156f7978b65741a6c91d924ab8"]
     },
     {
       "txid": "841b6f9389bd0f3c7870d1954f6aa4fc31a0ff156f7978b65741a6c91d924ab8",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078:0"
-      ]
+      "spends": ["538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078:0"]
     },
     {
       "txid": "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078",
@@ -1671,17 +1345,13 @@
       "txid": "b60bd05995d609f339fa33bf0e2250e7ece2ca776d9fde7b24c3f7c063800089",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c:0"
-      ]
+      "spends": ["97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c:0"]
     },
     {
       "txid": "55178c0de1237bd014522c5d3f31eb9551049437528f21960e098972ec4182df",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0:1"
-      ]
+      "spends": ["8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0:1"]
     },
     {
       "txid": "538a260b25da14792604dd2a1ab2ed8e73f7b870ae6dbd62fa155d4a75056078",
@@ -1696,33 +1366,25 @@
       "txid": "b60bd05995d609f339fa33bf0e2250e7ece2ca776d9fde7b24c3f7c063800089",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c:0"
-      ]
+      "spends": ["97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c:0"]
     },
     {
       "txid": "55178c0de1237bd014522c5d3f31eb9551049437528f21960e098972ec4182df",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0:1"
-      ]
+      "spends": ["8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0:1"]
     },
     {
       "txid": "97279f44e42eb2b3389f80397cc6679135d1c351f4a49a91a0fec41ea0793d4c",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "ad828f26023d93726754d47500d732cd138dd667321cbe11067f635e388cfd8d"
-      ]
+      "spends": ["ad828f26023d93726754d47500d732cd138dd667321cbe11067f635e388cfd8d"]
     },
     {
       "txid": "ad828f26023d93726754d47500d732cd138dd667321cbe11067f635e388cfd8d",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0:0"
-      ]
+      "spends": ["8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0:0"]
     },
     {
       "txid": "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0",
@@ -1737,17 +1399,13 @@
       "txid": "d62a97500f8dcc9aaac44ceb741bd4cd0f3f6ca1eac6a2e7d96e593bcf245340",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d:0"
-      ]
+      "spends": ["ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d:0"]
     },
     {
       "txid": "72dc006177186a78006a11d7719fecd2ca8c6471dfbb48a759579cbc8ddafc73",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f:1"
-      ]
+      "spends": ["793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f:1"]
     },
     {
       "txid": "8fdc1237b8f99cd36b428fa45aba6d7bfab55d95d3daeed269b1c3f4d242c7c0",
@@ -1762,105 +1420,79 @@
       "txid": "d62a97500f8dcc9aaac44ceb741bd4cd0f3f6ca1eac6a2e7d96e593bcf245340",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d:0"
-      ]
+      "spends": ["ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d:0"]
     },
     {
       "txid": "72dc006177186a78006a11d7719fecd2ca8c6471dfbb48a759579cbc8ddafc73",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f:1"
-      ]
+      "spends": ["793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f:1"]
     },
     {
       "txid": "ff9da7c269c6dd119e325e9f7be1b9cb3376670b929c3cc63f222a9c3d6bb55d",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "6f63450a29920a1f92e6bb64cc13816ba6973b61f3ff8d1fcbc9b8c38ccb4d3b"
-      ]
+      "spends": ["6f63450a29920a1f92e6bb64cc13816ba6973b61f3ff8d1fcbc9b8c38ccb4d3b"]
     },
     {
       "txid": "6f63450a29920a1f92e6bb64cc13816ba6973b61f3ff8d1fcbc9b8c38ccb4d3b",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f:0"
-      ]
+      "spends": ["793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f:0"]
     },
     {
       "txid": "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f"
-      ]
+      "spends": ["bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f"]
     },
     {
       "txid": "bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9:1"
-      ]
+      "spends": ["1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9:1"]
     },
     {
       "txid": "793a10af99e3892578ba8c25fd237c2a8472196d26df0e8170200c921b27694f",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f"
-      ]
+      "spends": ["bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f"]
     },
     {
       "txid": "bd4fc992477a3a67e4e338a3cf8411a9455a6650ce50c77c647f9eb02748473f",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9:1"
-      ]
+      "spends": ["1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9:1"]
     },
     {
       "txid": "1edddd2004b779e41a155ff71220963f62cb1daf58c3393f0ffdf90769e55bd9",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "b9aad480c91ce1faa4aaf2515fc6f3d72c86a6c9448540cbf86bd979e9999ed6"
-      ]
+      "spends": ["b9aad480c91ce1faa4aaf2515fc6f3d72c86a6c9448540cbf86bd979e9999ed6"]
     },
     {
       "txid": "b9aad480c91ce1faa4aaf2515fc6f3d72c86a6c9448540cbf86bd979e9999ed6",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "0ac5fef4d7d5a2128086ebbc3c6a73d9dba16994048ed073d05bbec5d1951a60:1"
-      ]
+      "spends": ["0ac5fef4d7d5a2128086ebbc3c6a73d9dba16994048ed073d05bbec5d1951a60:1"]
     },
     {
       "txid": "0ac5fef4d7d5a2128086ebbc3c6a73d9dba16994048ed073d05bbec5d1951a60",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_ARK",
-      "spends": [
-        "30ae09b58d10b5462bafccc185ff54a3f520ec28c777a3cf379822349af4509c"
-      ]
+      "spends": ["30ae09b58d10b5462bafccc185ff54a3f520ec28c777a3cf379822349af4509c"]
     },
     {
       "txid": "30ae09b58d10b5462bafccc185ff54a3f520ec28c777a3cf379822349af4509c",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_CHECKPOINT",
-      "spends": [
-        "46088ed0b3db740da23952b3cfe45626758e5e6180f24a09a4f45e099c6e31e7:0"
-      ]
+      "spends": ["46088ed0b3db740da23952b3cfe45626758e5e6180f24a09a4f45e099c6e31e7:0"]
     },
     {
       "txid": "46088ed0b3db740da23952b3cfe45626758e5e6180f24a09a4f45e099c6e31e7",
       "expiresAt": "1789209125",
       "type": "INDEXER_CHAINED_TX_TYPE_TREE",
-      "spends": [
-        "a1cb7b9834be6f68abfafab1c8ce0daf84521a5f891012432475552d9200b1a0"
-      ]
+      "spends": ["a1cb7b9834be6f68abfafab1c8ce0daf84521a5f891012432475552d9200b1a0"]
     },
     {
       "txid": "a1cb7b9834be6f68abfafab1c8ce0daf84521a5f891012432475552d9200b1a0",
