@@ -1,3 +1,4 @@
+import QgGuidance from './qg/QgGuidance'
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { hex } from '@scure/base'
 import { Fingerprint, FileKey, ShieldCheck } from 'lucide-react'
@@ -753,8 +754,7 @@ export default function VaultRecover() {
             Spending.
           </p>
           {hasRecoveryKit ? (
-            <details className='qg-guidance'>
-              <summary>Save a public kit copy with the service</summary>
+            <QgGuidance title='Save a public kit copy with the service'>
               <p>This stores the public vault map separately from the encrypted transaction backup.</p>
               <QgSecondary
                 label='Save copy with Vault service'
@@ -767,7 +767,7 @@ export default function VaultRecover() {
                   })
                 }
               />
-            </details>
+            </QgGuidance>
           ) : null}
         </>
       ) : backupView === 'cloud' || backupView === 'file' ? (
@@ -779,16 +779,14 @@ export default function VaultRecover() {
               : 'Your encrypted backup is saved with Vaulted while the wallet is open and unlocked. Your original passkey is required to restore it.'}
           </p>
           {backupView === 'cloud' ? (
-            <details className='qg-guidance'>
-              <summary>Keep an independent copy</summary>
+            <QgGuidance title='Keep an independent copy'>
               <p>
                 Save a recovery package outside Vaulted so your saved transaction data remains available if the service
                 is down.
               </p>
-            </details>
+            </QgGuidance>
           ) : (
-            <details className='qg-guidance'>
-              <summary>What you need for recovery</summary>
+            <QgGuidance title='What you need for recovery'>
               <p>
                 Your original passkey unlocks private keys and payment journals. Advanced Spending can use its hardware
                 and recovery keys without unlocking the phone.
@@ -804,11 +802,10 @@ export default function VaultRecover() {
               <p>
                 Save an updated package after payments or renewals. A file covers the data available when it was saved.
               </p>
-            </details>
+            </QgGuidance>
           )}
           {backupView === 'file' ? (
-            <details className='qg-guidance'>
-              <summary>Encrypted archive only</summary>
+            <QgGuidance title='Encrypted archive only'>
               <p>This older format requires your original passkey to access its Spending paths.</p>
               <QgSecondary
                 label='Download encrypted recovery archive'
@@ -819,7 +816,7 @@ export default function VaultRecover() {
                   )
                 }
               />
-            </details>
+            </QgGuidance>
           ) : null}
           <p className='qg-copy'>
             {recoveryArchiveStatus ||
@@ -893,8 +890,7 @@ export default function VaultRecover() {
               }}
             />
           </label>
-          <details className='qg-guidance'>
-            <summary>Paste recovery JSON</summary>
+          <QgGuidance title='Paste recovery JSON'>
             <label className='qg-field'>
               <span>Recovery Kit JSON</span>
               <textarea
@@ -906,7 +902,7 @@ export default function VaultRecover() {
                 }}
               />
             </label>
-          </details>
+          </QgGuidance>
           {report && 'coverage' in report && pasted.trim() ? (
             <p className='qg-copy'>
               This file contains Spending paths for {prettyAmount(report.coverage.archivedSats)}, saved{' '}

@@ -15,6 +15,10 @@ Security uses `SecurityOverview` and `SecurityOverview.module.css` for its statu
 - Use the shared field, surface, and dialog radii. Main actions retain pill shapes and an accessible label.
 - Keep interactive targets at least 44px high. Keyboard focus uses text or surface cues while preserving control geometry.
 
+Inner Access and Recovery pages use `qg-stack` between sections and `qg-prose` for related headings, paragraphs, and fields. These classes own child spacing and clear default margins: section gaps follow `--qg-section-gap`, while related content uses 12px. The shared screen supplies the top inset; the first section needs no additional margin.
+
+Use `QgGuidance` for expandable explanations. It supplies the summary and a prose body with 16px of space above the lower divider. Place paragraphs, lists, fields, and actions inside the component. Primary and secondary buttons share 12px vertical and 24px horizontal padding, a 56px minimum height, and wrapping labels. Buttons inside guidance fill the available width.
+
 Financial amounts retain responsive fitting and tabular numerals. Icons, animation distances, safe areas, and QR codes use dimensions appropriate to their function. Full addresses and transaction references wrap where verification requires the complete value.
 
 ## Flow hierarchy

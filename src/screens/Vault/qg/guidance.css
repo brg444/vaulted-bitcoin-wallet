@@ -1,13 +1,13 @@
 .qg-guidance {
   border-block: 1px solid var(--qg-line);
-  margin-block: var(--qg-space-24);
+  margin-block: var(--qg-section-gap);
   font-size: var(--qg-body);
   line-height: 1.55;
 }
 .qg-guidance > summary {
   cursor: pointer;
   padding-block: var(--qg-space-16);
-  min-height: 44px;
+  min-height: var(--qg-touch-target);
   font-weight: var(--qg-weight-medium);
 }
 .qg-guidance > summary:focus-visible {
@@ -18,9 +18,10 @@
 .qg-guidance-body {
   padding-bottom: var(--qg-space-16);
 }
-.qg-guidance-body p + p,
-.qg-guidance-body dl,
-.qg-guidance-body ol {
+/* Keep existing onboarding disclosures spaced until they use QgGuidance. */
+.qg-guidance-body:not(.qg-prose) p + p,
+.qg-guidance-body:not(.qg-prose) dl,
+.qg-guidance-body:not(.qg-prose) ol {
   margin-top: var(--qg-space-12);
 }
 .qg-guidance-body dt {
@@ -28,7 +29,7 @@
   margin-top: var(--qg-space-12);
 }
 .qg-guidance-body dd {
-  margin: 3px 0 0;
+  margin: var(--qg-space-4) 0 0;
   color: var(--qg-muted);
 }
 .qg-guidance-body ol {
@@ -51,9 +52,21 @@
   min-height: 56px;
 }
 
+.qg-prose h2,
 .qg-guidance-body h2 {
   font-size: var(--qg-section);
   line-height: 1.35;
   font-weight: var(--qg-weight-strong);
+}
+
+.qg-guidance-body:not(.qg-prose) h2 {
   margin-bottom: var(--qg-space-12);
+}
+
+.qg-guidance-body dt:first-child {
+  margin-top: 0;
+}
+
+.qg-guidance-body > :is(.qg-primary, .qg-secondary) {
+  width: 100%;
 }

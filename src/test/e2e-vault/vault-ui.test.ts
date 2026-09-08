@@ -1742,3 +1742,66 @@ for (const mode of ['standard', 'light'] as const) {
     }
   })
 }
+
+// Expanded guidance needs separate coverage from the collapsed Security overview.
+test('@polish recovery inner pages keep text and actions clear of their borders', async ({ page }, testInfo) => {
+  await openVault(page)
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.getByTestId('tab-vault').click()
+  await page.getByTestId('security-lost').click()
+
+  for (const theme of ['light', 'dark']) {
+    await page.setViewportSize({ width: theme === 'light' ? 320 : 390, height: 844 })
+    await page.evaluate((value) => {
+      document.documentElement.classList.toggle('palette-dark', value === 'dark')
+    }, theme)
+    for (const scenario of [
+      'I can’t use my passkey',
+      'I can’t use my hardware wallet',
+      'Both keys are unavailable',
+      'The service is unavailable',
+    ]) {
+      await page.getByRole('radio', { name: scenario, exact: true }).click()
+      for (const summary of await page.locator('.qg-guidance > summary').all()) await summary.click()
+      await expectWalletLayout(page)
+      const clearances = await page.locator('.qg-guidance-body').evaluateAll((bodies) =>
+        bodies.map((body) => {
+          const last = body.lastElementChild!
+          return body.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom
+        }),
+      )
+      for (const clearance of clearances) expect(clearance).toBeGreaterThanOrEqual(15)
+      const action = page.getByRole('button', { name: 'Review recovery preparation' })
+      if (await action.count()) {
+        for (const fontSize of ['16px', '32px']) {
+          await page.evaluate((size) => {
+            document.documentElement.style.fontSize = size
+          }, fontSize)
+          await action.scrollIntoViewIfNeeded()
+          await expect(action).toBeInViewport({ ratio: 1 })
+          const inset = await action.evaluate((button) => {
+            const range = document.createRange()
+            range.selectNodeContents(button)
+            const text = range.getBoundingClientRect()
+            const bounds = button.getBoundingClientRect()
+            return { left: text.left - bounds.left, right: bounds.right - text.right, height: bounds.height }
+          })
+          expect(inset.left).toBeGreaterThanOrEqual(23)
+          expect(inset.right).toBeGreaterThanOrEqual(23)
+          expect(inset.height).toBeGreaterThanOrEqual(56)
+          await expectWalletLayout(page)
+        }
+        await page.evaluate(() => {
+          document.documentElement.style.fontSize = ''
+        })
+      }
+      if (scenario === 'I can’t use my passkey') {
+        await page.locator('.qg-main').evaluate((main) => {
+          main.scrollTop = 0
+        })
+        await page.screenshot({ path: testInfo.outputPath(`passkey-help-${theme}.png`) })
+      }
+      await page.getByTestId('header-back').click()
+    }
+  }
+})
