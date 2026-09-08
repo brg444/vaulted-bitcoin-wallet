@@ -4,6 +4,10 @@ Standard, Advanced, and Light share the same layout rules. New wallet screens us
 
 Security uses `SecurityOverview` and `SecurityOverview.module.css` for its status panel, four interactive tiles, and recovery actions. Standard, Advanced, and Light supply their own key access, backup, limit, and renewal state. Renewal coverage comes from renewal data; service availability alone does not establish that renewals are scheduled.
 
+Payment outcomes share `PaymentResult`, using the existing Qg screen, mark, detail rows, and transaction reference. Callers supply the evidenced status and available facts. Submitted and started operations retain neutral progress cues; sent payments retain their completion cue. Paper and a shallow impression of the existing mark provide selective material detail on outcomes and welcome, with everyday controls retaining their flat treatment. Decorative engraving and additional illustration assets are excluded.
+
+Screen entrances use the shared motion helper for both route changes and local title changes. One entrance owns each region, with pointer or keyboard input settling it immediately. Reduced motion renders directly, and transitions have no authority over payment state.
+
 ## Layout and typography
 
 `src/screens/Vault/qg/layout.css` owns geometry and text tokens. The active screen stylesheet consumes these tokens, as do guidance, installation, transaction references, and Light-specific surfaces.

@@ -12,17 +12,17 @@ export default function TransactionReference({
   explorer: VaultTransactionExplorer | null
   funding?: boolean
 }) {
-  const [copied, setCopied] = useState('')
-  const [copyFailed, setCopyFailed] = useState(false)
+  const [copyResult, setCopyResult] = useState<{ id: string; success: boolean } | null>(null)
   const id = txid.trim()
+  const copied = copyResult?.id === id && copyResult.success
+  const copyFailed = copyResult?.id === id && !copyResult.success
   if (!id) return null
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(id)
-      setCopied(id)
-      setCopyFailed(false)
+      setCopyResult({ id, success: true })
     } catch {
-      setCopyFailed(true)
+      setCopyResult({ id, success: false })
     }
   }
   return (
@@ -35,8 +35,8 @@ export default function TransactionReference({
       <code>{id}</code>
       <div className='qg-transaction-reference-actions'>
         <button type='button' onClick={() => void copy()} aria-label='Copy transaction ID'>
-          {copied === id ? <Check aria-hidden='true' /> : <Copy aria-hidden='true' />}
-          {copied === id ? 'Copied' : 'Copy ID'}
+          {copied ? <Check aria-hidden='true' /> : <Copy aria-hidden='true' />}
+          {copied ? 'Copied' : 'Copy ID'}
         </button>
         {explorer ? (
           <a href={explorer.url} target='_blank' rel='noopener noreferrer'>
@@ -45,7 +45,9 @@ export default function TransactionReference({
           </a>
         ) : null}
       </div>
-      {copyFailed ? <p role='status'>Select the transaction ID above to copy it.</p> : null}
+      <p role='status' className={copyFailed ? undefined : 'qg-visually-hidden'}>
+        {copyFailed ? 'Select the transaction ID above to copy it.' : copied ? 'Transaction ID copied.' : ''}
+      </p>
     </details>
   )
 }

@@ -100,6 +100,7 @@ import type { VaultStatus } from '../../lib/vault/types'
 import type { VaultHistoryItem } from '../../lib/vault/history'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { useScreenMotion } from './qg/useScreenMotion'
+import PaymentResult from './qg/PaymentResult'
 import { useIntentPress } from './qg/useIntentPress'
 import './light.css'
 
@@ -1247,18 +1248,13 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'success')
     content = (
-      <QgScreen
-        title='Payment sent'
-        footer={<QgPrimary label='Done' disabled={busy} onClick={() => navigate('home')} />}
-      >
-        <span className='light-success'>
-          <Check />
-        </span>
-        <h1>Payment sent</h1>
-        <TransactionReference
-          txid={lastTx}
-          explorer={status ? vaultTransactionExplorer(lastTx, 'arkade', status.network) : null}
-        />
+      <QgScreen variant='success' footer={<QgPrimary label='Done' disabled={busy} onClick={() => navigate('home')} />}>
+        <PaymentResult state='sent' title='Payment sent'>
+          <TransactionReference
+            txid={lastTx}
+            explorer={status ? vaultTransactionExplorer(lastTx, 'arkade', status.network) : null}
+          />
+        </PaymentResult>
       </QgScreen>
     )
   else if (view === 'savings' && record)

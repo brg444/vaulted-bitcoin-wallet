@@ -10,6 +10,15 @@
   margin-top: 0;
   border-top: 0;
 }
+.qg-transaction-reference.qg-guidance > summary {
+  cursor: pointer;
+  min-height: var(--qg-touch-target);
+  padding-block: var(--qg-space-12);
+}
+.qg-transaction-reference:not([open]) {
+  display: block;
+  padding-block: 0;
+}
 .qg-transaction-reference > span,
 .qg-transaction-reference > p {
   color: var(--qg-muted);
