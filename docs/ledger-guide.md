@@ -52,14 +52,25 @@ establishes which key is selected; signing compatibility requires its own test.
 
 ## Fund Savings through Vaulted
 
-Vaulted's prepared first deposit funds Savings and creates two 500-sat reserve
-outputs for the Ledger key. The reserves total 1,000 sats and return to the
-same enrolled address after each transfer. They remain your funds, available
-for the next approval.
+Receive Bitcoin using **Savings → Deposit**. The receiving address and QR code
+accept ordinary Bitcoin payments without a PSBT.
 
-A separate payment of 1,000 sats to the reserve address creates the wrong
-output arrangement for this flow. Use Vaulted's prepared deposit and wait for
-its required confirmation before transferring from Savings.
+Before transferring Savings, open **Security → Savings signer setup**. Send two
+separate payments of exactly 500 sats to the displayed signer address, with
+network fees paid in addition. Compare it with the Ledger receiving address
+selected during enrollment. Wait for both outputs to confirm. The reserves total
+1,000 sats and return to the enrolled signer address after a Savings transfer.
+
+A single payment of 1,000 sats creates the wrong output arrangement. If your
+wallet exports unsigned PSBTs, **Advanced: fund with a Savings deposit** can
+create both 500-sat outputs with a Savings deposit in one transaction. Existing
+prepared deposits remain resumable.
+
+You can also choose **Fund from Spending** in signer setup. Review the signer
+address, reserve amount and quoted Operator fee, then confirm. This requires
+one settled Spending output covering the reserves, fee and protected change;
+setup completes after Bitcoin confirmation and local recovery-data sync.
+Pending funding remains visible on the wallet home screen.
 
 A desktop wallet watching the Ledger descriptor may show the two reserves
 without showing the Savings balance. Savings belongs to its separate enrolled

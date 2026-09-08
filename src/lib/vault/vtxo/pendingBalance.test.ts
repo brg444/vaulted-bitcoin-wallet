@@ -89,3 +89,38 @@ describe('pending Spending balance', () => {
     ).toEqual({ availableSats: 1000, pendingSats: 33458 })
   })
 })
+
+describe('signer setup balance', () => {
+  const setup = {
+    txid: input.txid,
+    vout: input.vout,
+    valueSats: input.value,
+    changeSats: input.value - 1400,
+    receiverTxid: 'change',
+    receiverVout: 0,
+    submitted: false,
+  }
+  it('keeps reserved principal visible until submission and then shows only protected change', () => {
+    expect(vtxoBalanceWithPending([input], [], setup)).toEqual({ availableSats: 0, pendingSats: input.value })
+    expect(vtxoBalanceWithPending([input], [], { ...setup, submitted: true })).toEqual({
+      availableSats: 0,
+      pendingSats: setup.changeSats,
+    })
+    expect(vtxoBalanceWithPending([{ ...input, isSpent: true }], [], setup)).toEqual({
+      availableSats: 0,
+      pendingSats: setup.changeSats,
+    })
+  })
+  it('does not count stale input or replacement change twice as SDK observations arrive', () => {
+    const change = { ...input, txid: 'change', value: setup.changeSats }
+    expect(vtxoBalanceWithPending([input, change], [], setup)).toEqual({
+      availableSats: setup.changeSats,
+      pendingSats: 0,
+    })
+    expect(vtxoBalanceWithPending([input, { ...change, isSpent: true }], [], setup)).toEqual({
+      availableSats: 0,
+      pendingSats: 0,
+    })
+    expect(vtxoBalanceWithPending([input], [pending], setup)).toEqual({ availableSats: 0, pendingSats: input.value })
+  })
+})

@@ -15,6 +15,8 @@ import { validateLightRecoveryFile, type LightRecoveryFile } from '../light/reco
 import { IndexedDBWalletRepository } from '@arkade-os/sdk'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 import { requireSpendingRecoveryCoverage } from './coverage'
+import { readSavingsSetup, clearSetup } from '../savingsSetupStore'
+import { validateExitArchive } from './exitArchive'
 
 export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: EnrollmentSecrets) {
   const kit = kitFromFacts({ status, enrollment })
@@ -51,7 +53,25 @@ export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: 
       // Capturing onchain data and payment journals can race a receive or renewal.
       // Compare identities again before replacing the complete offline copy.
       requireSpendingRecoveryCoverage(archive.spending, binding, await knownOutputs())
+      // A confirmed setup creates a replacement Spending output. Keep its
+      // journal and the previous backup until that exact exit path is durable.
+      const setup = readSavingsSetup(status)
+      if (setup?.stage === 'confirmed') {
+        const receipt = setup.receipt!
+        const coins = validateExitArchive(archive.spending, binding).coins
+        if (
+          !coins.some(
+            (c) =>
+              c.txid === receipt.receiverTxid &&
+              c.vout === receipt.receiverVout &&
+              c.value === setup.plan!.plan.changeSats &&
+              c.script === binding.scriptPubKey,
+          )
+        )
+          throw new Error('Signer setup recovery data is still syncing. The previous backup is retained.')
+      }
       await recoveryFileStore(key, file)
+      if (setup?.stage === 'confirmed') clearSetup(setup)
       return file
     } finally {
       await wallet[Symbol.asyncDispose]()

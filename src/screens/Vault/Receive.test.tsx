@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import { VaultContext, type VaultAccount, type VaultContextProps } from '../../vault/context'
 import VaultReceive from './Receive'
+import { DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
+
+vi.mock('./ConnectorSetup', () => ({ default: () => <h1>Savings signer setup</h1> }))
 
 vi.mock('../../components/QrCode', () => ({
   default: ({ large, value }: { large?: boolean; value: string }) => (
@@ -13,9 +16,10 @@ vi.mock('../../components/QrCode', () => ({
   ),
 }))
 
-function renderReceive(account: VaultAccount) {
+function renderReceive(account: VaultAccount, connector = false) {
   const value = {
     account,
+    ...(connector ? { status: { templateVersion: DUAL_CONNECTOR_TEMPLATE } } : {}),
     boardingAddress: 'tb1qboarding',
     liveNetwork: true,
     navigate: () => {},
@@ -108,6 +112,15 @@ describe('Vault receive', () => {
       title: 'Vaulted Savings address',
       text: 'tb1qsavings',
     })
+  })
+
+  it('opens connector Savings on its address and QR, with signer setup separate', async () => {
+    const user = userEvent.setup()
+    renderReceive('savings', true)
+    expect(screen.getByTestId('receive-qr').textContent).toBe('tb1qsavings')
+    expect(screen.queryByRole('heading', { name: 'Fund Savings in one transaction' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Set up Savings signer' }))
+    expect(screen.getByRole('heading', { name: 'Savings signer setup' })).toBeTruthy()
   })
 
   it('explains a missing Savings pin instead of suggesting setup is still processing', () => {

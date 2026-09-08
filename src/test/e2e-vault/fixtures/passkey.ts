@@ -73,6 +73,7 @@ type AuthenticatorOptions = {
 export type VirtualPasskey = {
   abortNextRequest(): Promise<void>
   credentials(): Promise<CDPCredential[]>
+  restore(credentials: CDPCredential[]): Promise<void>
   setPresence(enabled: boolean): Promise<void>
 }
 
@@ -884,6 +885,9 @@ export const test = base.extend<Fixtures>({
             },
           })
         }),
+      restore: async (credentials) => {
+        for (const credential of credentials) await cdp.send('WebAuthn.addCredential', { authenticatorId, credential })
+      },
       credentials: async () => {
         const result = await cdp.send('WebAuthn.getCredentials', { authenticatorId })
         return result.credentials as CDPCredential[]

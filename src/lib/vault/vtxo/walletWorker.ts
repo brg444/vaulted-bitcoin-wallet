@@ -42,6 +42,7 @@ import {
   vaultWalletWorkerScope,
 } from './walletWorkerNames'
 import { listPersistedVtxoSpends, vaultArkServer } from './spend'
+import { readSavingsSetup } from '../savingsSetupStore'
 import { vtxoBalanceWithPending } from './pendingBalance'
 import { requireBoardingStatus } from './board'
 
@@ -630,7 +631,22 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
   const detectedBoardingHistory = historyFromBoardingUtxos(boardingUtxos).filter(
     (item) => !knownTransactions.has(item.txid),
   )
-  const position = vtxoBalanceWithPending(vtxos, listPersistedVtxoSpends(status.vaultId))
+  const setup = readSavingsSetup(status)
+  const position = vtxoBalanceWithPending(
+    vtxos,
+    listPersistedVtxoSpends(status.vaultId),
+    setup
+      ? {
+          txid: setup.txid,
+          vout: setup.vout,
+          valueSats: setup.valueSats,
+          changeSats: setup.plan?.plan.changeSats,
+          receiverTxid: setup.receipt?.receiverTxid,
+          receiverVout: setup.receipt?.receiverVout,
+          submitted: ['submitted', 'confirmed'].includes(setup.stage),
+        }
+      : null,
+  )
   return {
     balance: position.availableSats,
     pendingBalance: position.pendingSats,

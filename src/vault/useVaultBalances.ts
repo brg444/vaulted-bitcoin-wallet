@@ -357,13 +357,16 @@ export function useVaultBalances({
   useEffect(() => {
     if (locked || !status?.enrolled || !status.spendingArkAddress) return
     let timer = 0
-    const unsubscribe = subscribeVaultWalletEvents(status, () => {
+    const refresh = () => {
       window.clearTimeout(timer)
       timer = window.setTimeout(() => void refreshBalance(status.vaultId), 200)
-    })
+    }
+    const unsubscribe = subscribeVaultWalletEvents(status, refresh)
+    window.addEventListener('vaulted-savings-setup', refresh)
     return () => {
       window.clearTimeout(timer)
       unsubscribe()
+      window.removeEventListener('vaulted-savings-setup', refresh)
     }
   }, [locked, refreshBalance, status])
 
