@@ -556,6 +556,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const acceptDesign = useCallback(
     (tier?: 'standard' | 'advanced') => {
+      if (import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true') return
       const draft = setup.complete ? emptySetupPlan() : setup
       const protectionTier = tier || draft.protectionTier
       persist({

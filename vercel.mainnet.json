@@ -5,6 +5,8 @@
   "framework": null,
   "env": {
     "VAULT_RELEASE_NETWORK": "mainnet",
+    "VAULT_LIGHT_ONLY_ENROLLMENT": "true",
+    "VITE_VAULT_LIGHT_ONLY_ENROLLMENT": "true",
     "VITE_VAULT_RELEASE_NETWORK": "mainnet",
     "VITE_VAULT_LIGHTNING_SEND": "true"
   },
