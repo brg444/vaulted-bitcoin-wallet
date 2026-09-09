@@ -21,6 +21,9 @@ import {
 } from '../lib/vault/vtxo/walletWorker'
 import { reconcilePersistedVtxoSpend } from '../lib/vault/vtxo/spend'
 import { vaultAccountPositions } from './balances'
+import { fetchLedgerSavingsSnapshot } from '../lib/vault/ledgerSavingsWallet'
+import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
+import { ledgerEnrollmentFromStatus } from '../lib/vault/program/ledgerRecoveryDescriptor'
 
 interface VaultBalancesOptions {
   addressPin: AddressPin | null
@@ -242,18 +245,23 @@ export function useVaultBalances({
         let spending = emptySpending
         let boarding = emptyBoarding
         let spendingError: unknown
-        const savingsTask = savingsAddress
-          ? Promise.all([fetchAddressUtxos(savingsAddress), fetchAddressTxs(savingsAddress)]).then(
-              ([utxos, transactions]) => {
-                const balance = savingsUtxoBalance(utxos, transactions, savingsAddress)
-                savings = {
-                  balance: balance.total,
-                  spendable: balance.spendable,
-                  history: historyFromTxs(transactions, savingsAddress, 'savings'),
-                }
-              },
-            )
-          : Promise.resolve()
+        const savingsTask =
+          liveStatus.templateVersion === LEDGER_NATIVE_TEMPLATE
+            ? fetchLedgerSavingsSnapshot(ledgerEnrollmentFromStatus(liveStatus).savings).then((snapshot) => {
+                savings = { balance: snapshot.totalSats, spendable: snapshot.availableSats, history: snapshot.history }
+              })
+            : savingsAddress
+              ? Promise.all([fetchAddressUtxos(savingsAddress), fetchAddressTxs(savingsAddress)]).then(
+                  ([utxos, transactions]) => {
+                    const balance = savingsUtxoBalance(utxos, transactions, savingsAddress)
+                    savings = {
+                      balance: balance.total,
+                      spendable: balance.spendable,
+                      history: historyFromTxs(transactions, savingsAddress, 'savings'),
+                    }
+                  },
+                )
+              : Promise.resolve()
         const spendingTask =
           spendingAddress && liveStatus.enrolled
             ? fetchVaultWalletVtxoSnapshot(liveStatus)

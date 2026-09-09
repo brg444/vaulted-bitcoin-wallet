@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 const require = createRequire(import.meta.url)
 const { build } = createRequire(require.resolve('vite/package.json'))('esbuild')
 const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
-export async function buildRecoveryArtifacts({ entry, html, output, buildScript }) {
+export async function buildRecoveryArtifacts({ entry, html, output, buildScript, extraEntries = [] }) {
   for (const network of ['mainnet', 'mutinynet']) {
     const dir = resolve(output, network)
     await mkdir(dir, { recursive: true })
@@ -27,6 +27,33 @@ export async function buildRecoveryArtifacts({ entry, html, output, buildScript 
       define: Object.fromEntries(Object.entries(defines).map(([key, value]) => [key, JSON.stringify(value)])),
     })
     await copyFile(html, resolve(dir, 'index.html'))
+    const extra = {}
+    for (const asset of extraEntries) {
+      const extraBuilt = await build({
+        metafile: true,
+        entryPoints: [asset.entry],
+        outfile: resolve(dir, `${asset.name}.js`),
+        bundle: true,
+        platform: 'browser',
+        format: 'esm',
+        target: ['safari18', 'chrome132'],
+        sourcemap: true,
+        define: Object.fromEntries(Object.entries(defines).map(([key, value]) => [key, JSON.stringify(value)])),
+      })
+      await copyFile(asset.html, resolve(dir, `${asset.name}.html`))
+      extra[asset.name] = {
+        entry: asset.entry,
+        sha256: digest(resolve(dir, `${asset.name}.js`)),
+        htmlSha256: digest(resolve(dir, `${asset.name}.html`)),
+        sourceMapSha256: digest(resolve(dir, `${asset.name}.js.map`)),
+        inputs: Object.fromEntries(
+          Object.keys(extraBuilt.metafile.inputs)
+            .filter((path) => !path.startsWith('<'))
+            .sort()
+            .map((path) => [path, digest(path)]),
+        ),
+      }
+    }
     await writeFile(
       resolve(dir, 'manifest.json'),
       JSON.stringify(
@@ -48,6 +75,7 @@ export async function buildRecoveryArtifacts({ entry, html, output, buildScript 
           buildHelperSha256: digest('tools/emergency-build.mjs'),
           htmlSha256: digest(resolve(dir, 'index.html')),
           sourceMapSha256: digest(resolve(dir, 'recovery.js.map')),
+          ...(extraEntries.length ? { extra } : {}),
         },
         null,
         2,

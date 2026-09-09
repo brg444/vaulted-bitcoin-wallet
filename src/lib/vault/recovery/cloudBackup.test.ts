@@ -6,6 +6,7 @@ import { deriveDirectP256 } from '../ceremony/directauth'
 import { recoveryFixture } from './testdata/helpers'
 import { buildRecoveryHeader, recoveryBackupKey, encryptRecoveryBackup, type VaultRecoveryFile } from './backupCodec'
 import { openRecoveryCloudBackup, syncRecoveryCloudBackup, type RecoveryBackupSession } from './cloudBackup'
+import { ledgerRecoveryFixture, ledgerFixturePRF, ledgerFixtureSeed } from './testdata/ledger'
 
 async function fixture() {
   const prf = scalarSecret(9)
@@ -38,6 +39,56 @@ beforeEach(() => localStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
 
 describe('authenticated program archive transport', () => {
+  it.each([false, true])(
+    'restores and wipes both Ledger phone identities with one passkey (advanced=%s)',
+    async (advanced) => {
+      const fixture = await ledgerRecoveryFixture(advanced)
+      fixture.status.clientOrigin = location.origin
+      fixture.status.rpId = location.hostname
+      const header = buildRecoveryHeader(fixture.kit, fixture.status, fixture.enrollment)
+      const file = { ...fixture.file, header }
+      const encrypted = await encryptRecoveryBackup(file, await recoveryBackupKey(scalarSecret(3), header))
+      const get = vi.fn(async () => ({
+        rawId: hex.decode(header.enrollment.credId).buffer,
+        response: {
+          userHandle: new TextEncoder().encode(header.binding.vaultId).buffer,
+          clientDataJSON: new Uint8Array([1]).buffer,
+          authenticatorData: new Uint8Array([2]).buffer,
+          signature: new Uint8Array([3]).buffer,
+        },
+        getClientExtensionResults: () => ({ prf: { results: { first: ledgerFixturePRF.slice().buffer } } }),
+      }))
+      vi.stubGlobal('navigator', { credentials: { get } })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) =>
+          url.endsWith('/challenge')
+            ? Response.json({ challengeId: '12'.repeat(16), challenge: 'cd'.repeat(32) })
+            : Response.json({
+                token: 'aa'.repeat(32),
+                expiresAt: new Date(Date.now() + 3600000).toISOString(),
+                vaultId: header.binding.vaultId,
+                binding: header.binding,
+                backup: { revision: 1, payload: JSON.stringify(encrypted) },
+              }),
+        ),
+      )
+      let phoneRef: Uint8Array | undefined, savingsRef: Uint8Array | undefined
+      const restore = vi.fn(async (decoded, phone, savings) => {
+        expect(decoded).toEqual(file)
+        expect(phone).toEqual(scalarSecret(3))
+        expect(savings).toEqual(ledgerFixtureSeed)
+        phoneRef = phone
+        savingsRef = savings
+      })
+      await openRecoveryCloudBackup(undefined, restore)
+      expect(get).toHaveBeenCalledOnce()
+      expect(restore).toHaveBeenCalledOnce()
+      expect(phoneRef!.every((byte) => byte === 0)).toBe(true)
+      expect(savingsRef!.every((byte) => byte === 0)).toBe(true)
+    },
+    60000,
+  )
   it('reads back and decrypts before acknowledging and retries the exact ciphertext after a lost response', async () => {
     const { file, session } = await fixture()
     let stored: { revision: number; payload: string } | undefined

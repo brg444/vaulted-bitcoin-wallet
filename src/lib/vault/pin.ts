@@ -1,3 +1,4 @@
+import { requireSupportedVaultNetwork } from './constants'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, encodeUtf8 } from './hex'
 import type { VaultStatus } from './types'
@@ -102,13 +103,17 @@ function requireAddressPinFields(value: unknown): AddressPinFields {
   }
   const policyCanonical = requiredText(fields.spendingPolicyCanonical, 'spendingPolicyCanonical')
   const policyDigest = requiredText(fields.spendingPolicyDigest, 'spendingPolicyDigest')
-  const selected = validateSpendingPolicy(JSON.parse(policyCanonical) as unknown)
-  if (canonicalSpendingPolicy(selected) !== policyCanonical || spendingPolicyDigest(selected) !== policyDigest) {
+  const network = requireSupportedVaultNetwork(fields.network)
+  const selected = validateSpendingPolicy(JSON.parse(policyCanonical) as unknown, network)
+  if (
+    canonicalSpendingPolicy(selected, network) !== policyCanonical ||
+    spendingPolicyDigest(selected, network) !== policyDigest
+  ) {
     throw new Error('program pin spending policy does not match its digest')
   }
   return {
     vaultId: requiredText(fields.vaultId, 'vaultId'),
-    network: requiredText(fields.network, 'network'),
+    network,
     protectionTier: requireProtectionTier(fields.protectionTier),
     spendingPolicyCanonical: policyCanonical,
     spendingPolicyDigest: policyDigest,
@@ -144,8 +149,9 @@ export function addressPinHash(input: AddressPinFields): string {
 
 export function pinFieldsFromStatus(status: VaultStatus): AddressPinFields {
   if (!status?.enrolled) throw new Error('authorizer is not enrolled')
-  const selected = validateSpendingPolicy(status.spendingPolicy)
-  const digest = spendingPolicyDigest(selected)
+  const network = requireSupportedVaultNetwork(status.network)
+  const selected = validateSpendingPolicy(status.spendingPolicy, network)
+  const digest = spendingPolicyDigest(selected, network)
   if (digest !== status.spendingPolicyDigest) throw new Error('status spending policy digest does not match')
   const protectionTier = requireProtectionTierMatchesRecovery(
     status.protectionTier,
@@ -155,7 +161,7 @@ export function pinFieldsFromStatus(status: VaultStatus): AddressPinFields {
     vaultId: status.vaultId,
     network: status.network,
     protectionTier,
-    spendingPolicyCanonical: canonicalSpendingPolicy(selected),
+    spendingPolicyCanonical: canonicalSpendingPolicy(selected, network),
     spendingPolicyDigest: digest,
     savingsAddress: status.savingsAddress,
     savingsScript: status.savingsScript,

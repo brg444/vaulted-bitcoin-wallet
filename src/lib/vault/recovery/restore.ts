@@ -21,24 +21,40 @@ import {
 } from '../program/connectorEnroll'
 import { loadEnrollment, saveEnrollment, saveSelectedVaultId } from '../enrollmentStore'
 import { saveAddressPin, pinFromEnrolledStatus, loadAddressPin } from '../pin'
-import { saveLocalKit } from '../program/kitStore'
+import { loadLocalKit, saveLocalKit } from '../program/kitStore'
+import { isLedgerRecoveryKit } from '../program/kit'
+import { canonicalLedgerValue } from '../program/ledgerEnrollment'
+import { restoreLedgerSavingsPaymentJournal } from '../ledgerSavingsWallet'
+import { restoreLedgerRecoveryJournal } from '../ledgerRecoveryWallet'
+import { deriveLedgerPhoneAccount } from '../ledgerPhoneBackup'
 import { provisionBoardingKey } from '../vtxo/board'
 import { storeRecoveryImport } from './fileStore'
 
 /** Idempotent, conservative import; no archived status is treated as current chain state. */
-export async function restoreVaultRecoveryFile(value: VaultRecoveryFile, phone: Uint8Array) {
+export async function restoreVaultRecoveryFile(value: VaultRecoveryFile, phone: Uint8Array, ledgerSavingsSeed?: Uint8Array) {
   const file = validateVaultRecoveryFile(JSON.parse(JSON.stringify(value)))
   if (!navigator.locks) throw new Error('Web Locks required to restore complete recovery data')
-  return navigator.locks.request(`vaulted:complete-recovery:${file.header.binding.descriptorHash}`, () =>
-    restoreLocked(file, phone),
-  )
+  const spending = Uint8Array.from(phone), savings = ledgerSavingsSeed ? Uint8Array.from(ledgerSavingsSeed) : undefined
+  try {
+    return await navigator.locks.request(`vaulted:complete-recovery:${file.header.binding.descriptorHash}`, () =>
+      restoreLocked(file, spending, savings),
+    )
+  } finally { spending.fill(0); savings?.fill(0) }
 }
 
-async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array) {
+async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerSavingsSeed?: Uint8Array) {
   const { status, enrollment } = file.header
   validateRecoveryJournals(status, file as VaultRecoveryFile & RecoveryJournals)
   if (hex.encode(schnorr.getPublicKey(phone)) !== file.header.kit.descriptor.keys.phoneBip340.slice(2))
     throw new Error('Recovery phone key changed')
+  if (isLedgerRecoveryKit(file.header.kit)) {
+    const context = file.header.kit.descriptor.ledgerSavings.context
+    if (!ledgerSavingsSeed || canonicalLedgerValue(deriveLedgerPhoneAccount(ledgerSavingsSeed, context.network, context.phone.path[2] - 0x80000000)) !== canonicalLedgerValue(context.phone))
+      throw new Error('Recovery Savings HD seed does not match the enrolled origin')
+  } else if (ledgerSavingsSeed) throw new Error('Savings HD seed supplied for a legacy recovery file')
+  const existingKit = loadLocalKit(status.vaultId)
+  if (existingKit && existingKit.descriptorHash !== file.header.kit.descriptorHash)
+    throw new Error('A different local Recovery Kit must not be overwritten')
   const existing = loadEnrollment(localStorage, status.vaultId)
   if (
     existing &&
@@ -64,6 +80,11 @@ async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array) {
       contracts,
     })
     await restoreSpendingRecoveryJournal(status, file.spendingJournal)
+    if (isLedgerRecoveryKit(file.header.kit)) {
+      const contract = file.header.kit.descriptor.ledgerSavings
+      if (file.ledgerSavingsJournal) await restoreLedgerSavingsPaymentJournal(contract, file.ledgerSavingsJournal)
+      if (file.ledgerRecoveryJournal) await restoreLedgerRecoveryJournal(contract, file.ledgerRecoveryJournal)
+    }
     if (connector)
       await restoreConnectorRecoveryJournal(
         { vaultId: status.vaultId, enrollmentDigest: status.connectorEnrollment!.enrollmentDigest },

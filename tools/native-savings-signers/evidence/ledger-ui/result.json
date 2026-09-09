@@ -1,0 +1,55 @@
+{
+  "scope": "Rendered public fixtures; no hardware approval",
+  "results": [
+    {
+      "width": 390,
+      "flow": "receive",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "flow": "setup",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "flow": "plan",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "flow": "payment",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "flow": "recovery",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1280,
+      "flow": "receive",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1280,
+      "flow": "setup",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1280,
+      "flow": "plan",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1280,
+      "flow": "payment",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1280,
+      "flow": "recovery",
+      "horizontalOverflow": false
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import type { LightKeyBackup } from './light/keyBackup'
 import { clearOpenEnrollmentSession, openEnrollmentToken } from './openEnrollmentSession'
 import { p256 } from '@noble/curves/nist.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
-import { vaultCosignerClient } from './cosignerClient'
+import { vaultCosignerClient, type VaultEnrollmentRequest } from './cosignerClient'
 import { bytesToHex, hexToBytes } from './hex'
 import { xOnly } from './setupPlan'
 import {
@@ -34,12 +34,26 @@ import { allowPasskey, passkeyCreateOptions, passkeyGetOptions, prfExtension, pr
 import { activateBoardingKey, requireBoardingStatus, stageBoardingKey, BOARDING_PROGRAM } from './vtxo/board'
 import { sameSpendingPolicy, spendingPolicyDigest, validateSpendingPolicy, type SpendingPolicy } from './spendingPolicy'
 import { requireProtectionTierMatchesRecovery, type ProtectionTier } from './protectionTier'
+import { LEDGER_NATIVE_TEMPLATE, ledgerAccountKey, type LedgerAccountOrigin } from './program/ledgerNativeKeys'
+import { deriveLedgerPhoneAccount, generateLedgerPhoneSeed, wrapLedgerPhoneSeed } from './ledgerPhoneBackup'
+import { canonicalLedgerValue, validateLedgerSavingsEnrollmentSecrets, type LedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollment'
+import {
+  validateLedgerSavingsEnrollmentDescriptor,
+  hashLedgerSavingsEnrollment,
+  buildLedgerRecoveryDescriptor,
+  ledgerEnrollmentFromStatus,
+  type LedgerSavingsEnrollmentDescriptor,
+} from './program/ledgerRecoveryDescriptor'
+import { validateLedgerSavingsRegistration, type LedgerSavingsRegistration } from './ledgerClient'
+import { buildLedgerNativeFamily } from './program/ledgerNativeFamily'
+import { hex } from '@scure/base'
 
 const PRF_SALT = new TextEncoder().encode('arkade-2fa-vault/prf/v1')
 const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
 const DIRECT_INFO = new TextEncoder().encode('arkade-2fa-vault/direct-p256/v1')
 
 export interface EnrollmentSecrets {
+  ledgerSavings?: LedgerSavingsEnrollmentSecrets
   lightKeyBackup?: LightKeyBackup
   vaultId: string
   credId: string
@@ -84,7 +98,9 @@ async function deriveDirectP256(prf: Uint8Array<ArrayBuffer>): Promise<{ pub: Ui
       await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info }, key, 256),
     )
     if (p256.utils.isValidSecretKey(scalar)) {
-      return { pub: p256.getPublicKey(scalar, true) }
+      const pub = p256.getPublicKey(scalar, true)
+      scalar.fill(0)
+      return { pub }
     }
     scalar.fill(0)
   }
@@ -92,6 +108,7 @@ async function deriveDirectP256(prf: Uint8Array<ArrayBuffer>): Promise<{ pub: Ui
 }
 
 export interface EnrollmentRoles {
+  ledger?: { hardware: LedgerAccountOrigin; recovery?: LedgerAccountOrigin }
   protectionTier: ProtectionTier
   hardwarePub: string
   recoveryPub?: string
@@ -166,7 +183,13 @@ export async function enrollWithPasskey(
 export async function beginTenantEnrollment(
   enrollmentToken: string,
   roles: EnrollmentRoles,
-): Promise<{ enrollment: EnrollmentSecrets; descriptor?: VaultProgramDescriptor; enrollmentToken: string }> {
+): Promise<{
+  enrollment: EnrollmentSecrets
+  descriptor?: VaultProgramDescriptor
+  ledgerDescriptor?: LedgerSavingsEnrollmentDescriptor
+  enrollmentToken: string
+}> {
+  roles = structuredClone(roles)
   if (typeof location !== 'undefined' && location.hostname === '127.0.0.1') {
     throw new Error('Open this page as http://localhost:3003 so the passkey can bind to localhost.')
   }
@@ -180,6 +203,8 @@ export async function beginTenantEnrollment(
     throw new Error('vault service does not advertise the required boarding program')
   }
   const connector = roles.connector
+  const ledger = roles.ledger
+  if (ledger && connector) throw new Error('Choose one Savings signing method')
   const hardwareXOnly = xOnly(roles.hardwarePub)
   const recoveryXOnly = wantRecovery ? xOnly(roles.recoveryPub || '') : ''
   if (wantRecovery && hardwareXOnly === recoveryXOnly) throw new Error('Recovery must be a different key')
@@ -190,6 +215,28 @@ export async function beginTenantEnrollment(
   }
   const enrollmentNetwork =
     publicStatus.network === 'mainnet' || publicStatus.network === 'mutinynet' ? publicStatus.network : null
+  if (ledger) {
+    if (
+      !enrollmentNetwork ||
+      publicStatus.ledgerSavingsCapability?.version !== 1 ||
+      publicStatus.ledgerSavingsCapability.templateVersion !== LEDGER_NATIVE_TEMPLATE
+    )
+      throw new Error('Ledger Savings enrollment is not available on this deployment yet.')
+    if (Boolean(ledger.recovery) !== wantRecovery)
+      throw new Error('Ledger recovery account does not match the selected protection')
+    for (const role of ['hardware', ...(wantRecovery ? ['recovery'] : [])]) {
+      const origin = role === 'hardware' ? ledger.hardware : ledger.recovery!
+      const account = ledgerAccountKey(origin, enrollmentNetwork)
+      const branch = account.deriveChild(12),
+        child = branch.deriveChild(0)
+      if (
+        branch.index !== 12 ||
+        child.index !== 0 ||
+        hex.encode(child.publicKey!).slice(2) !== (role === 'hardware' ? hardwareXOnly : recoveryXOnly)
+      )
+        throw new Error('Spending recovery key does not match the selected Ledger account')
+    }
+  }
   let arkadeOrigin = ''
   let arkadeVersion = ''
   if (connector) {
@@ -267,6 +314,9 @@ export async function beginTenantEnrollment(
   let composite!: { savings: VaultProgramDescriptor; boarding: unknown }
   let connectorVerified: VerifiedConnectorProposal | null = null
   let descriptor!: VaultProgramDescriptor
+  let ledgerVerified: LedgerSavingsEnrollmentDescriptor | undefined
+  let ledgerSavingsDraft: StagedEnrollment['ledgerSavingsDraft']
+  const ledgerSeed = ledger ? generateLedgerPhoneSeed() : undefined
   try {
     stagedBoard = await stageBoardingKey({ vaultId: start.vaultId, phoneSecret, network: publicStatus.network })
     const kek = await crypto.subtle.deriveKey(
@@ -287,7 +337,7 @@ export async function beginTenantEnrollment(
       nonce: bytesToHex(nonce),
       ciphertext: bytesToHex(ciphertext),
     }
-    const enrollmentRequest = {
+    const enrollmentRequest: VaultEnrollmentRequest = {
       handle: start.handle,
       userHandle: start.userId,
       clientDataJSON: bytesToHex(new Uint8Array(att.clientDataJSON)),
@@ -308,6 +358,16 @@ export async function beginTenantEnrollment(
             connectorPath: [...connector.connectorPath],
           }
         : {}),
+      ...(ledger && ledgerSeed && enrollmentNetwork
+        ? {
+            ledgerSavings: {
+              templateVersion: LEDGER_NATIVE_TEMPLATE,
+              phone: deriveLedgerPhoneAccount(ledgerSeed, enrollmentNetwork),
+              hardware: ledger.hardware,
+              ...(ledger.recovery ? { recovery: ledger.recovery } : {}),
+            },
+          }
+        : {}),
       vtxoBoardingProgram: BOARDING_PROGRAM,
       vaultBoardingBip340Pub: xOnly(stagedBoard.boardingPub),
       protectionTier,
@@ -316,10 +376,34 @@ export async function beginTenantEnrollment(
     }
     // The network and descriptor-validation phases need only public facts.
     // Restore the original short secret lifetime before yielding to either.
-    prf.fill(0)
+    if (!ledger) prf.fill(0)
     phoneSecret.fill(0)
     proposed = await vaultCosignerClient.enrollment.propose(token, enrollmentRequest)
-    if (connector && enrollmentNetwork) {
+    if (ledger && ledgerSeed && enrollmentNetwork && enrollmentRequest.ledgerSavings) {
+      ledgerVerified = validateLedgerSavingsEnrollmentDescriptor(proposed.descriptor)
+      const context = ledgerVerified.savings.context
+      const authority = ledgerVerified.spendingAuthorities
+      if (
+        hashLedgerSavingsEnrollment(ledgerVerified) !== proposed.descriptorHash ||
+        context.vaultId !== start.vaultId ||
+        context.network !== enrollmentNetwork ||
+        context.policyDigest !== selectedPolicyDigest ||
+        context.phoneDirectP256 !== enrollment.phoneDirectP256 ||
+        canonicalLedgerValue(context.phone) !== canonicalLedgerValue(enrollmentRequest.ledgerSavings.phone) ||
+        canonicalLedgerValue(context.hardware) !== canonicalLedgerValue(ledger.hardware) ||
+        canonicalLedgerValue(context.recovery) !== canonicalLedgerValue(ledger.recovery) ||
+        authority.phoneBip340Pub !== enrollment.phoneBip340Pub ||
+        xOnly(authority.externalOwnerWalletPub) !== hardwareXOnly ||
+        (authority.recoveryKeyPub ? xOnly(authority.recoveryKeyPub) : '') !== recoveryXOnly ||
+        ledgerVerified.boarding.boardingPub !== stagedBoard.boardingPub
+      )
+        throw new Error('Guardian changed the selected Ledger Savings enrollment')
+      ledgerSavingsDraft = {
+        version: 1,
+        contract: ledgerVerified.savings,
+        phoneSeedBackup: await wrapLedgerPhoneSeed(ledgerSeed, prf, 'passkey-prf', context),
+      }
+    } else if (connector && enrollmentNetwork) {
       try {
         connectorVerified = requireProposedConnectorDescriptor(proposed.descriptor, proposed.descriptorHash, {
           templateVersion: DUAL_CONNECTOR_TEMPLATE,
@@ -361,6 +445,35 @@ export async function beginTenantEnrollment(
   } finally {
     prf.fill(0)
     phoneSecret.fill(0)
+    ledgerSeed?.fill(0)
+  }
+  if (ledgerVerified && ledgerSavingsDraft) {
+    const family = buildLedgerNativeFamily(ledgerVerified.savings.context, ledgerVerified.savings.spendingPolicy)
+    const staged: StagedEnrollment = {
+      ...enrollment,
+      handle: start.handle,
+      userHandle: start.userId,
+      clientDataJSON: bytesToHex(new Uint8Array(att.clientDataJSON)),
+      authenticatorData: bytesToHex(authData),
+      attestationObject: bytesToHex(new Uint8Array(att.attestationObject)),
+      hardwareXOnly,
+      ...(recoveryXOnly ? { recoveryXOnly } : {}),
+      inviteToken: token,
+      descriptorHash: proposed.descriptorHash,
+      boardingPub: stagedBoard.boardingPub,
+      boardingDescriptor: ledgerVerified.boarding,
+      boardingDescriptorHash: proposed.descriptorHash,
+      savingsAddress: family.receive.address,
+      savingsScript: hex.encode(family.receive.script),
+      protectionTier,
+      spendingPolicy: selectedPolicy,
+      spendingPolicyDigest: selectedPolicyDigest,
+      ledgerSavingsDraft,
+      ledgerSavingsDescriptor: ledgerVerified,
+    }
+    saveStagedEnrollment(staged)
+    saveLocalKit(buildRecoveryKit(buildLedgerRecoveryDescriptor(ledgerVerified)))
+    return { enrollment, ledgerDescriptor: ledgerVerified, enrollmentToken: token }
   }
   if (wantRecovery) {
     if (xOnly(descriptor.keys.recovery || '') !== recoveryXOnly) {
@@ -458,7 +571,11 @@ export async function finishTenantEnrollment(
   if (!staged?.vaultId || !staged.descriptorHash || !staged.boardingPub || !staged.boardingDescriptorHash) {
     throw new Error('finish setup first')
   }
-  const finishRequest = {
+  if (staged.ledgerSavingsDraft) {
+    if (!staged.ledgerSavingsDescriptor) throw new Error('Ledger enrollment descriptor is missing')
+    validateLedgerSavingsEnrollmentSecrets(staged.ledgerSavings, staged.ledgerSavingsDescriptor.savings)
+  }
+  const finishRequest: VaultEnrollmentRequest = {
     handle: staged.handle,
     userHandle: staged.userHandle,
     clientDataJSON: staged.clientDataJSON,
@@ -479,6 +596,18 @@ export async function finishTenantEnrollment(
           connectorPath: staged.connectorPath ? [...staged.connectorPath] : [],
         }
       : {}),
+    ...(staged.ledgerSavings
+      ? {
+          ledgerSavings: {
+            templateVersion: LEDGER_NATIVE_TEMPLATE,
+            phone: staged.ledgerSavings.contract.context.phone,
+            hardware: staged.ledgerSavings.contract.context.hardware,
+            ...(staged.ledgerSavings.contract.context.recovery
+              ? { recovery: staged.ledgerSavings.contract.context.recovery }
+              : {}),
+          },
+        }
+      : {}),
     descriptorHash: staged.descriptorHash,
     vtxoBoardingProgram: BOARDING_PROGRAM,
     vaultBoardingBip340Pub: xOnly(staged.boardingPub),
@@ -488,6 +617,12 @@ export async function finishTenantEnrollment(
   }
   await vaultCosignerClient.enrollment.finish(token, finishRequest)
   const live = await vaultCosignerClient.enrollment.status(staged.vaultId)
+  if (staged.ledgerSavings) {
+    const descriptor = ledgerEnrollmentFromStatus(live)
+    if (hashLedgerSavingsEnrollment(descriptor) !== staged.descriptorHash)
+      throw new Error('Ledger enrollment changed while completing setup')
+    validateLedgerSavingsEnrollmentSecrets(staged.ledgerSavings, descriptor.savings)
+  }
   requireBoardingStatus(live, String(staged.boardingPub || ''))
   if (staged.connectorPub) {
     verifyConnectorStatus(live, connectorPinFromStaged(staged), { boardingPub: String(staged.boardingPub || '') })
@@ -511,6 +646,26 @@ export async function finishTenantEnrollment(
   return { status: live, enrollment: staged }
 }
 
+/** Persist device-verified registration before activating the immutable enrollment. */
+export async function completeLedgerTenantEnrollment(
+  registration: LedgerSavingsRegistration,
+  storage: Storage = localStorage,
+): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets }> {
+  const staged = loadStagedEnrollment(storage)
+  if (!staged?.ledgerSavingsDraft || !staged.ledgerSavingsDescriptor || !staged.inviteToken)
+    throw new Error('Start Ledger Savings setup before registering its policy')
+  const descriptor = validateLedgerSavingsEnrollmentDescriptor(staged.ledgerSavingsDescriptor)
+  if (hashLedgerSavingsEnrollment(descriptor) !== staged.descriptorHash)
+    throw new Error('Staged Ledger enrollment changed')
+  const valid = await validateLedgerSavingsRegistration(descriptor.savings, registration)
+  const ledgerSavings = validateLedgerSavingsEnrollmentSecrets(
+    { ...staged.ledgerSavingsDraft, registration: valid },
+    descriptor.savings,
+  )
+  saveStagedEnrollment({ ...staged, ledgerSavings }, storage)
+  return finishTenantEnrollment(staged.inviteToken, storage)
+}
+
 export async function reconcileStagedEnrollment(
   storage: Storage = localStorage,
 ): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets } | null> {
@@ -519,6 +674,12 @@ export async function reconcileStagedEnrollment(
   if (!staged.boardingPub || !staged.boardingDescriptorHash) throw new Error('staged boarding setup is incomplete')
   const live = await vaultCosignerClient.enrollment.status(staged.vaultId)
   if (!live.enrolled) return null
+  if (staged.ledgerSavingsDraft) {
+    const descriptor = ledgerEnrollmentFromStatus(live)
+    if (hashLedgerSavingsEnrollment(descriptor) !== staged.descriptorHash)
+      throw new Error('Ledger enrollment changed while completing setup')
+    validateLedgerSavingsEnrollmentSecrets(staged.ledgerSavings, descriptor.savings)
+  }
   requireBoardingStatus(live, String(staged.boardingPub || ''))
   if (staged.connectorPub) {
     verifyConnectorStatus(live, connectorPinFromStaged(staged), { boardingPub: String(staged.boardingPub || '') })

@@ -53,14 +53,37 @@ delay. The remaining user authorities can cancel through their saved scripts.
 The shorter hardware delay applies to this pending stage; it is not a guaranteed
 intervention window when the initiation keys are compromised.
 
-Simulator tests for the new contract pass. Complete backup restoration, funded
-service lifecycle tests and physical Ledger review remain before release. New native
-enrollment stays disabled until these requirements pass. Existing funded
+Simulator, complete backup restoration and funded service lifecycle tests pass,
+allowing software deployment with native enrollment disabled. Physical Ledger
+review remains required before enabling new enrollment, while existing funded
 connector wallets require an explicit migration transaction.
 
-The current Spending recovery tree also needs separate signer qualification;
-it cannot use the tested Ledger policy format unchanged. New enrollment remains
-blocked on resolving that compatibility alongside the Savings release tests.
+The stock Ledger app cannot sign the existing Spending exit tree. Emergency
+Spending recovery therefore uses a separately bundled offline signing tool. In
+Standard, recovery needs the Ledger seed and the recovered phone key. Advanced
+needs the Ledger seed and the separate recovery wallet seed. The tool checks
+these keys against the saved enrollment before signing the reviewed exit.
+
+Entering a seed gives that offline computer access to every account derived from
+it. This is an emergency procedure: verify the recovery tool, disconnect the
+computer from networks, review the destination and fee, and transfer only the
+signed transaction back to the online recovery tool. Move remaining funds to new
+seeds afterward. Never enter a seed into the normal online wallet or send it in
+chat. Ordinary Savings payments continue to use the Ledger device.
+
+The recovery companion exports a public signing request. Open the bundled offline
+signer, disconnect its computer, review the recipient and fees, and enter the
+required seed there. Import the resulting PSBT into the companion. Repeat with
+the second authority when required; Standard keeps its phone approval and
+Advanced needs both independent external authorities.
+
+Bitcoin exit fees use the enrolled hardware account's ordinary Taproot receive
+key at account `/0/0`. Advanced may instead use its enrolled recovery account.
+Fund the displayed fee address with Bitcoin, then use the same offline handoff
+for each requested fee signature. The signer verifies the saved exit graph,
+funding parents, fee cap and change destination before signing. It cannot use
+these fee inputs to redirect the recovered Spending funds. Parent publication,
+fee funding and the final delayed sweep are separate Bitcoin transactions.
 
 Spending has separate recovery paths. Its unilateral exit needs saved transaction
 paths updated after activity; Savings policy registration does not replace that

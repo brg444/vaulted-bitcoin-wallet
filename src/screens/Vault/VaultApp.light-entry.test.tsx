@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultApp from '../../VaultApp'
+import { emptySetupPlan } from '../../lib/vault/setupPlan'
 import VaultLight from './Light'
 
 const mocks = vi.hoisted(() => ({ saved: vi.fn(), pending: vi.fn() }))
@@ -24,7 +25,15 @@ vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: vi.fn() }))
 function renderApp(entry: 'welcome' | 'unlock' | 'design' = 'welcome') {
   return render(
     <VaultContext.Provider
-      value={{ screen: entry, account: 'spending', busy: false, lightAvailable: true } as unknown as VaultContextProps}
+      value={
+        {
+          screen: entry,
+          account: 'spending',
+          busy: false,
+          lightAvailable: true,
+          setup: emptySetupPlan(),
+        } as unknown as VaultContextProps
+      }
     >
       <VaultApp />
     </VaultContext.Provider>,

@@ -18,9 +18,13 @@ import { sameBip340Key } from './setupPlan'
 import { deviceSigningOptions, prfExtension, prfFrom } from './webauthn'
 import { requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
 import { requireExactDefaultTapscriptSignatures, tapscriptSignatureRecords } from './taprootSignatures'
+import { validateLedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollment'
+import { unlockLedgerPhoneSeed } from './ledgerPhoneBackup'
+import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
+import { decryptPhoneSecret } from './signIn'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 
 const PRF_SALT = new TextEncoder().encode('arkade-2fa-vault/prf/v1')
-const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
 const TX_OPTS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true } as const
 
 export type SavingsLeaf = 'admin'
@@ -48,6 +52,7 @@ export function buildSavingsPsbt(input: {
   const stored = loadLocalKit(input.status.vaultId)
   if (!stored) throw new Error('Savings needs the Recovery Kit saved on this device')
   const kit = assertLiveKit(stored, input.status)
+  if (kit.version === 4) throw new Error('Use the Ledger Savings approval flow for this vault.')
   if (kit.descriptor.savings.address !== pin.savingsAddress) {
     throw new Error('Savings map does not match the pinned address')
   }
@@ -149,7 +154,7 @@ export function buildNativeSavingsPsbt<Coin extends SavingsCoin>(input: {
   return hex.encode(tx.toPSBT())
 }
 
-export async function unlockPhoneBip340(rec: EnrollmentSecrets, status: VaultStatus): Promise<Uint8Array> {
+async function unlockVaultPrf(rec: EnrollmentSecrets, status: VaultStatus): Promise<Uint8Array<ArrayBuffer>> {
   const rpId = String(status.rpId || '').toLowerCase()
   if (!rpId || rpId !== location.hostname.toLowerCase()) {
     throw new Error('deployment RP ID does not match this signing client host')
@@ -175,25 +180,95 @@ export async function unlockPhoneBip340(rec: EnrollmentSecrets, status: VaultSta
     ),
   })) as PublicKeyCredential | null
   if (!get) throw new Error('The operation was aborted.')
+  if (hex.encode(new Uint8Array(get.rawId)) !== hex.encode(credentialId))
+    throw new Error('passkey credential does not match this vault')
   const prf = prfFrom(get)
   if (!prf || prf.length !== 32) throw new Error('authenticator did not return PRF')
+  return prf
+}
+
+async function spendingPhoneFromPrf(rec: EnrollmentSecrets, status: VaultStatus, prf: Uint8Array<ArrayBuffer>) {
+  if (status.templateVersion === LIGHT_PROFILE) {
+    const valid = requireLightStatus(status)
+    if (rec.vaultId !== valid.vaultId || rec.phoneBip340Pub !== valid.phoneBip340Pub)
+      throw new Error('Light enrollment does not match this vault')
+    return unlockLightOwnerKey(rec.lightKeyBackup, prf, 'passkey-prf', valid.lightDescriptor!)
+  }
+  return decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
+}
+
+function ledgerEnrollmentForUnlock(rec: EnrollmentSecrets, status: VaultStatus) {
+  if (
+    status.templateVersion !== LEDGER_NATIVE_TEMPLATE ||
+    !status.ledgerSavings ||
+    !rec.vaultId ||
+    rec.vaultId !== status.vaultId ||
+    rec.vaultId !== status.ledgerSavings.context.vaultId ||
+    rec.phoneDirectP256 !== status.ledgerSavings.context.phoneDirectP256 ||
+    rec.phoneBip340Pub !== status.phoneBip340Pub ||
+    status.network !== status.ledgerSavings.context.network
+  )
+    throw new Error('Ledger Savings enrollment does not match this vault')
+  return validateLedgerSavingsEnrollmentSecrets(rec.ledgerSavings, {
+    context: status.ledgerSavings.context,
+    spendingPolicy: status.ledgerSavings.spendingPolicy,
+  })
+}
+
+export async function unlockPhoneBip340(rec: EnrollmentSecrets, status: VaultStatus): Promise<Uint8Array> {
+  rec = structuredClone(rec)
+  status = structuredClone(status)
+  const prf = await unlockVaultPrf(rec, status)
   try {
-    if (status.templateVersion === LIGHT_PROFILE) {
-      const valid = requireLightStatus(status)
-      if (rec.vaultId !== valid.vaultId || rec.phoneBip340Pub !== valid.phoneBip340Pub)
-        throw new Error('Light enrollment does not match this vault')
-      return await unlockLightOwnerKey(rec.lightKeyBackup, prf, 'passkey-prf', valid.lightDescriptor!)
-    }
-    const kek = await crypto.subtle.deriveKey(
-      { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: HKDF_INFO },
-      await crypto.subtle.importKey('raw', prf, 'HKDF', false, ['deriveKey']),
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['decrypt'],
+    return await spendingPhoneFromPrf(rec, status, prf)
+  } finally {
+    zeroBytes(prf)
+  }
+}
+
+/** The caller wipes the returned seed. This never reinterprets the Spending scalar. */
+export async function unlockLedgerSavingsSeed(rec: EnrollmentSecrets, status: VaultStatus): Promise<Uint8Array> {
+  rec = structuredClone(rec)
+  status = structuredClone(status)
+  const enrolled = ledgerEnrollmentForUnlock(rec, status)
+  const prf = await unlockVaultPrf(rec, status)
+  try {
+    return await unlockLedgerPhoneSeed(enrolled.phoneSeedBackup, prf, 'passkey-prf', enrolled.contract.context)
+  } finally {
+    zeroBytes(prf)
+  }
+}
+
+/** Unlock both distinct phone identities with one passkey prompt. Failure returns neither key. */
+export async function unlockVaultPhoneKeys(
+  rec: EnrollmentSecrets,
+  status: VaultStatus,
+): Promise<{
+  spendingPhone: Uint8Array
+  ledgerSavingsSeed?: Uint8Array
+}> {
+  rec = structuredClone(rec)
+  status = structuredClone(status)
+  const enrolled =
+    status.templateVersion === LEDGER_NATIVE_TEMPLATE ? ledgerEnrollmentForUnlock(rec, status) : undefined
+  if (!enrolled && rec.ledgerSavings) throw new Error('Ledger Savings backup does not match this vault')
+  const prf = await unlockVaultPrf(rec, status)
+  let spendingPhone: Uint8Array | undefined
+  try {
+    spendingPhone = await spendingPhoneFromPrf(rec, status, prf)
+    if (
+      enrolled &&
+      (hex.encode(secp256k1.getPublicKey(spendingPhone, true)) !== rec.phoneBip340Pub ||
+        rec.phoneBip340Pub !== status.phoneBip340Pub)
     )
-    return new Uint8Array(
-      await crypto.subtle.decrypt({ name: 'AES-GCM', iv: hexToBytes(rec.nonce) }, kek, hexToBytes(rec.ciphertext)),
-    )
+      throw new Error('Recovered Spending phone does not match its enrollment')
+    const ledgerSavingsSeed = enrolled
+      ? await unlockLedgerPhoneSeed(enrolled.phoneSeedBackup, prf, 'passkey-prf', enrolled.contract.context)
+      : undefined
+    return { spendingPhone, ...(ledgerSavingsSeed ? { ledgerSavingsSeed } : {}) }
+  } catch (error) {
+    spendingPhone?.fill(0)
+    throw error
   } finally {
     zeroBytes(prf)
   }

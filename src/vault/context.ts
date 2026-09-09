@@ -1,3 +1,4 @@
+import type { LedgerSavingsView } from './useLedgerSavings'
 import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
@@ -14,6 +15,7 @@ import {
 import type { ProtectionTier } from '../lib/vault/protectionTier'
 import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
 import { EMPTY_VAULT_POSITIONS, type VaultAccountPositions } from './balances'
+import type { LedgerSavingsRegistration } from '../lib/vault/ledgerClient'
 
 export type VaultAccount = 'spend' | 'savings'
 
@@ -22,6 +24,8 @@ export type VaultScreen =
   | 'unlock'
   | 'design'
   | 'hardware'
+  | 'ledger-register'
+  | 'ledger-sign'
   | 'conditions'
   | 'plan'
   | 'passkey'
@@ -50,6 +54,12 @@ export interface VaultSpend {
 }
 
 export interface VaultContextProps {
+  ledgerPayment: LedgerSavingsView | null
+  completeLedgerPayment: (candidateId: string, signedPsbt: string) => Promise<void>
+  ledgerAvailable: boolean
+  connectLedgerKey: (role: 'hardware' | 'recovery') => Promise<void>
+  applyLedgerRecovery: (raw: string) => void
+  completeLedgerEnrollment: (registration: LedgerSavingsRegistration) => Promise<void>
   acceptDesign: (tier?: 'standard' | 'advanced') => void
   account: VaultAccount
   spendingRenewals?: SpendingRenewalJournal | null
@@ -145,6 +155,12 @@ export interface VaultContextProps {
 export const DEFAULT_SPEND_FEE_SATS = 500
 
 export const VaultContext = createContext<VaultContextProps>({
+  ledgerPayment: null,
+  completeLedgerPayment: async () => {},
+  ledgerAvailable: false,
+  connectLedgerKey: async () => {},
+  applyLedgerRecovery: () => {},
+  completeLedgerEnrollment: async () => {},
   acceptDesign: () => {},
   account: 'spend',
   positions: EMPTY_VAULT_POSITIONS,

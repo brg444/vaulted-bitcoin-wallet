@@ -1,0 +1,29 @@
+.ledger-recovery-form > * + * {
+  margin-top: 20px;
+}
+.ledger-recovery-form label {
+  display: block;
+  margin-top: 20px;
+}
+.ledger-recovery-form input,
+.ledger-recovery-form select,
+.ledger-recovery-form textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border, #d7d1c8);
+  border-radius: 12px;
+  background: var(--surface, #fffdf8);
+  color: inherit;
+  font: inherit;
+}
+.ledger-recovery-form textarea {
+  min-height: 100px;
+  overflow-wrap: anywhere;
+}
+.ledger-recovery-form p {
+  overflow-wrap: anywhere;
+}

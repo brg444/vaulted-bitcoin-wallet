@@ -82,29 +82,37 @@ export function VaultHistoryList({
                 const amount = tx.displayAmount ?? tx.amount
                 const time = historyTime(tx.blockTime)
                 const state =
-                  bitcoinPending && ['preparing', 'prepared'].includes(tx.bitcoinStage || '')
-                    ? 'Awaiting approval'
-                    : connector
-                      ? tx.connectorStage === 'broadcast'
-                        ? 'Check or retry broadcast'
-                        : 'Continue payment'
-                      : savingsHandoff
-                        ? 'Complete or cancel'
-                        : lightning
-                          ? ['claimed', 'settled'].includes(tx.lightningState || '')
-                            ? 'Paid'
-                            : tx.lightningState === 'refunded'
-                              ? 'Refunded'
-                              : tx.lightningState === 'needs_counterparty'
-                                ? 'Ready to return'
-                                : tx.lightningState === 'failed'
-                                  ? 'Needs recovery'
-                                  : 'Processing'
-                          : tx.confirmed
-                            ? time
-                              ? `Confirmed · ${time}`
-                              : 'Confirmed'
-                            : 'Pending'
+                  tx.activity === 'savings-ledger' && !tx.confirmed
+                    ? tx.ledgerStage === 'broadcast'
+                      ? 'Pending Bitcoin confirmation'
+                      : tx.ledgerStage === 'unknown'
+                        ? 'Check payment status'
+                        : tx.ledgerStage === 'signer'
+                          ? 'Waiting for Ledger'
+                          : 'Awaiting approval'
+                    : bitcoinPending && ['preparing', 'prepared'].includes(tx.bitcoinStage || '')
+                      ? 'Awaiting approval'
+                      : connector
+                        ? tx.connectorStage === 'broadcast'
+                          ? 'Check or retry broadcast'
+                          : 'Continue payment'
+                        : savingsHandoff
+                          ? 'Complete or cancel'
+                          : lightning
+                            ? ['claimed', 'settled'].includes(tx.lightningState || '')
+                              ? 'Paid'
+                              : tx.lightningState === 'refunded'
+                                ? 'Refunded'
+                                : tx.lightningState === 'needs_counterparty'
+                                  ? 'Ready to return'
+                                  : tx.lightningState === 'failed'
+                                    ? 'Needs recovery'
+                                    : 'Processing'
+                            : tx.confirmed
+                              ? time
+                                ? `Confirmed · ${time}`
+                                : 'Confirmed'
+                              : 'Pending'
                 return (
                   <button
                     type='button'

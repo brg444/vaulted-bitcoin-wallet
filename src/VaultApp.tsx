@@ -1,3 +1,4 @@
+import VaultLedgerPayment from './screens/Vault/LedgerPayment'
 import VaultLight from './screens/Vault/Light'
 import { loadLightEnrollment } from './lib/vault/light/enrollment'
 import { useContext, useEffect, useRef, useState } from 'react'
@@ -22,6 +23,7 @@ import VaultCreated from './screens/Vault/onboard/Created'
 import VaultCreating from './screens/Vault/onboard/Creating'
 import VaultDesign from './screens/Vault/onboard/Design'
 import VaultHardware from './screens/Vault/onboard/Hardware'
+import { LedgerHardware, LedgerRecoveryKey, LedgerEnrollmentRegistration } from './screens/Vault/onboard/Ledger'
 import VaultKit from './screens/Vault/onboard/Kit'
 import VaultPasskey from './screens/Vault/onboard/Passkey'
 import VaultPlan from './screens/Vault/onboard/Plan'
@@ -48,7 +50,7 @@ export default function VaultApp() {
       return false
     }
   })
-  const { screen, account } = useContext(VaultContext)
+  const { screen, account, ledgerAvailable, setup } = useContext(VaultContext)
   const root = useRef<HTMLDivElement>(null)
   const scope = `${screen}:${account}`
   const intentPress = useIntentPress(scope)
@@ -64,6 +66,7 @@ export default function VaultApp() {
     welcome: <VaultWelcome />,
     unlock: <VaultUnlock />,
     handoff: <VaultHandoff />,
+    'ledger-sign': <VaultLedgerPayment />,
     design: (
       <VaultDesign
         onChooseLight={() => {
@@ -72,8 +75,9 @@ export default function VaultApp() {
         }}
       />
     ),
-    hardware: <VaultHardware />,
-    recovery: <VaultRecovery />,
+    hardware: ledgerAvailable ? <LedgerHardware /> : <VaultHardware />,
+    'ledger-register': <LedgerEnrollmentRegistration />,
+    recovery: setup.ledger ? <LedgerRecoveryKey /> : <VaultRecovery />,
     recover: <VaultRecover />,
     conditions: <VaultConditions />,
     plan: <VaultPlan />,

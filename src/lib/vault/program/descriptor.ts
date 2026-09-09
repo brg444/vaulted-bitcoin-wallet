@@ -27,6 +27,7 @@ import {
 } from '../spendingPolicy'
 import { requireProtectionTier, requireProtectionTierMatchesRecovery, type ProtectionTier } from '../protectionTier'
 import { type InitiateTweaks, buildVaultProgramFamily } from './trees'
+import type { LedgerRecoveryDescriptor } from './ledgerRecoveryDescriptor'
 
 const COMPRESSED = 33
 
@@ -270,7 +271,7 @@ export function buildVaultProgramDescriptor(input: VaultProgramDescriptorInput):
   })
 }
 
-export function validateVaultProgramDescriptor(d: VaultProgramDescriptor): VaultProgramDescriptor {
+export function validateVaultProgramDescriptor(d: VaultProgramDescriptor | LedgerRecoveryDescriptor): VaultProgramDescriptor {
   if (d.schema !== PROGRAM_SCHEMA) throw new Error('unsupported vault schema')
   if (!SUPPORTED_NETWORKS.includes(d.network)) throw new Error(`unsupported network ${d.network}`)
   if (!d.vaultId || String(d.vaultId).trim() === '') throw new Error('vault id required')
@@ -448,7 +449,7 @@ export function hashVaultProgramDescriptor(d: VaultProgramDescriptor): string {
   return bytesToHex(sha256(encodeVaultProgramDescriptor(d)))
 }
 
-export function familyFromDescriptor(d: VaultProgramDescriptor) {
+export function familyFromDescriptor(d: VaultProgramDescriptor | LedgerRecoveryDescriptor) {
   const valid = validateVaultProgramDescriptor(d)
   return buildDescriptorFamily({
     vaultId: valid.vaultId,

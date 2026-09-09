@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
 import { EsploraProvider, Transaction } from '@arkade-os/sdk'
-import { parseRecoveryKit, type RecoveryKit } from '../program/kit'
+import { isLedgerRecoveryKit, parseRecoveryKit, type RecoveryKit } from '../program/kit'
 import { kitFromFacts } from '../program/kitBackup'
 import {
   packExitArchive,
@@ -40,7 +40,10 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
     throw new Error('Recovery Operator does not match this release')
   const boarding = requireBoardingStatus(status, String(status.vtxoBoardingDescriptor?.boardingPub || ''))
   if (isConnectorTemplate(status.templateVersion)) connectorPinFromVerifiedStatus(status)
-  else if (
+  else if (isLedgerRecoveryKit(valid)) {
+    if (valid.descriptor.enrollmentDescriptorHash !== status.ledgerSavings?.descriptorHash)
+      throw new Error('Ledger recovery enrollment composite changed')
+  } else if (
     hashBoardingEnrollmentDescriptor({
       schema: 'arkade-vault/enrollment-with-board-v1',
       vaultId: status.vaultId,
@@ -103,6 +106,7 @@ export function validateVaultRecoveryArchive(value: VaultRecoveryArchive) {
 function archiveAddresses(kit: RecoveryKit, status: VaultStatus) {
   return [
     kit.descriptor.savings,
+    ...(isLedgerRecoveryKit(kit) ? [kit.descriptor.savingsChange] : []),
     ...Object.values(kit.descriptor.pending),
     ...Object.values(kit.descriptor.quarantine),
     requireBoardingStatus(status, status.vtxoBoardingDescriptor!.boardingPub),

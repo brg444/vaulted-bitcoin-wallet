@@ -11,9 +11,10 @@ export interface VaultHistoryItem {
   confirmed: boolean
   blockTime?: number
   account: 'spend' | 'savings'
-  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector' | 'bitcoin'
+  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector' | 'bitcoin' | 'savings-ledger'
   bitcoinOperationId?: string
   bitcoinStage?: string
+  ledgerStage?: 'approval' | 'signer' | 'unknown' | 'broadcast'
   connectorStage?: 'approval' | 'signer' | 'broadcast'
   displayAmount?: number
   fee?: number

@@ -16,6 +16,8 @@ import {
   type SpendingPolicyCapabilities,
 } from './spendingPolicy'
 import { requireProtectionTierMatchesRecovery } from './protectionTier'
+import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
+import { ledgerEnrollmentFromStatus } from './program/ledgerRecoveryDescriptor'
 
 export function authorizerBase(): string {
   // Production talks same-origin only. A VITE_ value is compiled into the
@@ -26,6 +28,7 @@ export function authorizerBase(): string {
 }
 
 export type PublicAuthorizerStatus = {
+  ledgerSavingsCapability?: { version: 1; templateVersion: typeof LEDGER_NATIVE_TEMPLATE }
   supportedSetups?: ('light' | 'standard' | 'advanced')[]
   network: string
   clientOrigin: string
@@ -228,7 +231,11 @@ export function requireStatusIdentity(
   if (status.vaultId !== expected) throw new Error('status vault id does not match')
   requireReleaseNetwork(status.network)
   if (status.templateVersion === LIGHT_PROFILE) return requireLightStatus(status)
-  if (status.templateVersion !== SAVINGS_TEMPLATE && !isConnectorTemplate(status.templateVersion))
+  if (
+    status.templateVersion !== SAVINGS_TEMPLATE &&
+    status.templateVersion !== LEDGER_NATIVE_TEMPLATE &&
+    !isConnectorTemplate(status.templateVersion)
+  )
     throw new Error('template version is not this release')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   const selected = validateSpendingPolicy(status.spendingPolicy)
@@ -253,5 +260,9 @@ export function requireStatusIdentity(
   }
   const recovery = recoveryKeyPub || recoveryPub
   requireProtectionTierMatchesRecovery(status.protectionTier, recovery)
+  if (status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
+    ledgerEnrollmentFromStatus(status as VaultStatus)
+    status = { ...status, vtxoBoardingDescriptorHash: status.ledgerSavings!.descriptorHash }
+  } else if (status.ledgerSavings) throw new Error('Ledger Savings metadata requires its enrolled template')
   return (recovery ? { ...status, recoveryPub: recovery, recoveryKeyPub: recovery } : status) as VaultStatus
 }

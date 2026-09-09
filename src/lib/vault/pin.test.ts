@@ -176,7 +176,9 @@ describe('local program pin', () => {
       [field]: mutatedValue(field, pin[field]),
       ...(field === 'protectionTier' ? { recoveryKeyPub: `02${'66'.repeat(32)}` } : {}),
     }
-    expect(() => requireStatusMatchesPin(changed, pin)).toThrow(/local pin/)
+    expect(() => requireStatusMatchesPin(changed, pin)).toThrow(
+      field === 'network' ? /unsupported Vault network/ : /local pin/,
+    )
   })
 
   it('rejects status drift in the immutable spending policy or its digest', () => {
@@ -221,7 +223,9 @@ describe('local program pin', () => {
     const pin = pinEnrolledStatus(sampleStatus(), storage)
     const key = addressPinStoreKey(VAULT_ID)
     storage.setItem(key, JSON.stringify({ ...pin, [field]: mutatedValue(field, pin[field]) }))
-    expect(() => loadAddressPin(storage, VAULT_ID)).toThrow(/program pin/)
+    expect(() => loadAddressPin(storage, VAULT_ID)).toThrow(
+      field === 'network' ? /unsupported Vault network/ : /program pin/,
+    )
   })
 
   it.each([...PROGRAM_FIELDS, 'pinHash'] as const)('rejects a stored pin missing %s', (field) => {
@@ -257,4 +261,18 @@ describe('local program pin', () => {
     clearAddressPin(storage, 'tenant-b')
     expect(loadAddressPin(storage, 'tenant-b')).toBeNull()
   })
+})
+
+it('pins a mainnet policy against mainnet caps even in a Mutinynet build', () => {
+  const storage = memoryStorage()
+  const spendingPolicy = { ...defaultSpendingPolicy('mainnet'), absoluteFeeCapSats: 20000 }
+  const status = {
+    ...sampleStatus(),
+    network: 'mainnet',
+    spendingPolicy,
+    spendingPolicyDigest: spendingPolicyDigest(spendingPolicy, 'mainnet'),
+  }
+  const pin = pinEnrolledStatus(status, storage)
+  expect(loadAddressPin(storage, VAULT_ID)).toEqual(pin)
+  expect(() => requireStatusMatchesPin(status, pin)).not.toThrow()
 })

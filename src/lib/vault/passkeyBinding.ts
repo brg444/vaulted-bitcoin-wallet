@@ -4,10 +4,14 @@ import { verifyDirectP256 } from './ceremony/directauth'
 import { bytesToHex, hexToBytes } from './hex'
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import type { VaultStatus } from './types'
+import type { LedgerSavingsAccessBackup } from './cosignerClient'
+import { LEDGER_NATIVE_TEMPLATE, ledgerSavingsContextDigest } from './program/ledgerNativeKeys'
+import { validateLedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollment'
 
 const encoder = new TextEncoder()
 const BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v4')
 const CONNECTOR_BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v5')
+const LEDGER_BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v6')
 const PROOF_DOMAIN = encoder.encode('arkade-2fa-vault/passkey-proof/v1')
 const ZERO = Uint8Array.of(0)
 
@@ -45,7 +49,16 @@ export function passkeyProofDigest(purpose: string, challenge: Uint8Array, crede
 export function recoveryBindingDigest(binding: string): Uint8Array {
   if (!binding || binding.length > 16 * 1024) throw new Error('recovery binding')
   const version = (JSON.parse(binding) as { version?: unknown }).version
-  return sha256(concat(version === 5 ? CONNECTOR_BINDING_DOMAIN : BINDING_DOMAIN, ZERO, encoder.encode(binding)))
+  const domain =
+    version === 4
+      ? BINDING_DOMAIN
+      : version === 5
+        ? CONNECTOR_BINDING_DOMAIN
+        : version === 6
+          ? LEDGER_BINDING_DOMAIN
+          : undefined
+  if (!domain) throw new Error('recovery binding version')
+  return sha256(concat(domain, ZERO, encoder.encode(binding)))
 }
 
 type RecoveryBinding = Record<string, string | number | boolean>
@@ -102,11 +115,13 @@ export function parseRecoveryBinding(binding: string): RecoveryBinding {
       'connectorEnrollmentDigest',
       'connectorDescriptorHash',
     )
+  if (value?.version === 6)
+    expected.push('ledgerSavingsContextDigest', 'ledgerSavingsDescriptorHash', 'ledgerSavingsBackup')
   const got = Object.keys(value || {})
   if (got.length !== expected.length || expected.some((field, i) => got[i] !== field)) {
     throw new Error('recovery binding fields or order')
   }
-  if (value.version !== 4 && value.version !== 5) throw new Error('recovery binding version')
+  if (value.version !== 4 && value.version !== 5 && value.version !== 6) throw new Error('recovery binding version')
   return value
 }
 
@@ -164,7 +179,70 @@ export function assertRecoveryBindingMatchesStatus(binding: string | RecoveryBin
     )
       throw new Error('connector recovery binding does not match vault status')
   } else if (status.connectorEnrollment) throw new Error('connector requires version 5 recovery binding')
+  if (value.version === 6) {
+    if (
+      status.templateVersion !== LEDGER_NATIVE_TEMPLATE ||
+      !status.ledgerSavings ||
+      value.ledgerSavingsContextDigest !== bytesToHex(ledgerSavingsContextDigest(status.ledgerSavings.context)) ||
+      value.ledgerSavingsDescriptorHash !== status.ledgerSavings.descriptorHash
+    )
+      throw new Error('Ledger recovery binding does not match vault status')
+    ledgerEnrollmentFromBinding(value, status)
+  } else if (status.ledgerSavings || status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
+    throw new Error('Ledger Savings requires version 6 recovery binding')
+  }
   return value
+}
+
+/** Public registration and a PRF-encrypted seed, using the Guardian's exact struct order. */
+export function ledgerAccessBackup(rec: EnrollmentSecrets): LedgerSavingsAccessBackup | undefined {
+  if (!rec.ledgerSavings) return undefined
+  const valid = validateLedgerSavingsEnrollmentSecrets(rec.ledgerSavings)
+  return { registration: valid.registration, phoneSeedBackup: valid.phoneSeedBackup }
+}
+
+export function canonicalLedgerAccessBackup(value: LedgerSavingsAccessBackup): string {
+  const r = value.registration,
+    p = value.phoneSeedBackup
+  return JSON.stringify({
+    registration: {
+      name: r.name,
+      version: r.version,
+      contextDigest: r.contextDigest,
+      walletId: r.walletId,
+      walletHmac: r.walletHmac,
+      walletPolicy: {
+        name: r.walletPolicy.name,
+        descriptorTemplate: r.walletPolicy.descriptorTemplate,
+        keysInfo: r.walletPolicy.keysInfo,
+      },
+      receiveAddress: r.receiveAddress,
+      changeAddress: r.changeAddress,
+    },
+    phoneSeedBackup: {
+      name: p.name,
+      version: p.version,
+      purpose: p.purpose,
+      contextDigest: p.contextDigest,
+      phoneOrigin: { xpub: p.phoneOrigin.xpub, fingerprint: p.phoneOrigin.fingerprint, path: p.phoneOrigin.path },
+      salt: p.salt,
+      nonce: p.nonce,
+      ciphertext: p.ciphertext,
+    },
+  })
+}
+
+function ledgerEnrollmentFromBinding(value: RecoveryBinding, status: VaultStatus) {
+  if (!status.ledgerSavings || typeof value.ledgerSavingsBackup !== 'string')
+    throw new Error('Ledger recovery backup required')
+  const contract = { context: status.ledgerSavings.context, spendingPolicy: status.ledgerSavings.spendingPolicy }
+  const backup = JSON.parse(value.ledgerSavingsBackup) as LedgerSavingsAccessBackup
+  if (!backup || Object.keys(backup).length !== 2 || !backup.registration || !backup.phoneSeedBackup)
+    throw new Error('Ledger recovery backup fields changed')
+  const enrolled = validateLedgerSavingsEnrollmentSecrets({ version: 1, contract, ...backup }, contract)
+  if (canonicalLedgerAccessBackup(enrolled) !== value.ledgerSavingsBackup)
+    throw new Error('Ledger recovery backup is not canonical')
+  return enrolled
 }
 
 export function verifyRecoveryBindingSignatures(input: {
@@ -194,10 +272,13 @@ export function verifyRecoveryBindingSignatures(input: {
   return value
 }
 
-export function recordFromRecoveryBinding(value: RecoveryBinding): EnrollmentSecrets {
+export function recordFromRecoveryBinding(value: RecoveryBinding, status?: VaultStatus): EnrollmentSecrets {
   const vaultId = String(value.vaultId || '').trim()
   if (!vaultId) throw new Error('vault id required')
+  if (value.version === 6 && !status) throw new Error('Ledger recovery requires verified vault status')
+  if (status) assertRecoveryBindingMatchesStatus(value, status)
   return {
+    ...(value.version === 6 ? { ledgerSavings: ledgerEnrollmentFromBinding(value, status!) } : {}),
     vaultId,
     credId: String(value.credentialId),
     webauthnP256: String(value.webauthnP256),

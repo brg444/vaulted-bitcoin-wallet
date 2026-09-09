@@ -51,6 +51,7 @@ export function recoveryFixture(
   phoneDirectP256 = PROGRAM_FIXTURE.phoneDirectP256,
   derivedBoardingPub?: string,
   connector?: { templateVersion: string; connectorType: 'p2tr' | 'p2wpkh' },
+  spendingKeys?: { hardwarePub: string; recoveryPub?: string },
 ) {
   const d = buildVaultProgramDescriptor({
     ...PROGRAM_FIXTURE,
@@ -59,6 +60,7 @@ export function recoveryFixture(
     phoneDirectP256,
     protectionTier: advanced ? 'advanced' : 'standard',
     recoveryPub: advanced ? PROGRAM_FIXTURE.recoveryPub : undefined,
+    ...spendingKeys,
   })
   const kit = buildRecoveryKit(d)
   const status = statusFromDescriptor(d)

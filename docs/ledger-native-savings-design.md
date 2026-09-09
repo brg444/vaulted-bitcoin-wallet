@@ -157,10 +157,12 @@ race suite passed. The integrated wallet suite passed 348 tests, with an additio
 then the serial rerun passed without unhandled errors.
 
 The JavaScript integration uses Ledger's official client and WebHID transport.
-Its approval component is prepared but remains outside live enrollment. A new
-Savings HD seed stays separate from the existing Spending scalar; its versioned,
-context-bound encrypted envelope must join the recovery package before activation.
-Legacy backup fields retain their current meaning.
+Enrollment now stages the proposed contract, verifies and saves the Ledger
+registration before activation, and preserves it across interrupted completion.
+A new Savings HD seed stays separate from the existing Spending scalar. The
+version-six passkey binding and version-four Recovery Kit retain both identities,
+the encrypted Savings seed and the registration. Legacy backup fields retain
+their current meaning. These integrated paths are undergoing release tests.
 
 ### Spending recovery compatibility
 
@@ -173,10 +175,20 @@ for its internal key, and cannot reproduce that exact exit prefix. Signing check
 the complete reconstructed output, so supplying just the exit leaf is insufficient.
 
 This is a source-level incompatibility with the tested stock policy path. Savings
-and connector simulator evidence concerns other outputs. New enrollment must
-resolve the Spending signer or contract explicitly before using Ledger as the
-wallet's hardware authority. The current Spending keys and protection model
-remain unchanged while that decision is open.
+and connector simulator evidence concerns other outputs. New enrollment uses the offline emergency path described below while the Spending keys and protection model
+remain unchanged. On September 9, the user accepted offline seed recovery for
+emergencies: Standard retains phone plus hardware; Advanced retains hardware plus
+recovery. Only new Ledger enrollments derive Spending H and R at account `/12/0`,
+with their x-only points canonically encoded as `02` plus the point. Existing
+funded enrollments retain their original authorities.
+
+The separate offline tool accepts a reviewed recovery request and a BIP39 seed
+backup, checks the full account origin and the exact transaction, and exports a
+partial PSBT. It has no network submission path. Seed entry exposes every account
+under that seed to the computer, so users must treat this as an emergency and
+replace the affected seeds afterward. The online wallet never receives them.
+Spending fee sponsorship belongs to the same complete exit qualification; proving
+only the final CSV signature is insufficient.
 
 Sources: [wallet Spending tree](../src/lib/vault/vtxo/script.ts),
 [Spending recovery PSBT](../src/lib/vault/vtxo/spendingRecovery.ts), and tested
@@ -188,19 +200,20 @@ The inspected vendored SDK is 0.4.66 with tar SHA256
 
 ### Activation requirements
 
-Remaining release requirements are authenticated enrollment and persistence,
-complete package export and clean-device restore, coordinator integration,
-Guardian-signed funded recovery with interruption and fee replacement, physical
-Ledger review with the production Bitcoin app, and mainnet configuration checks.
+Software qualification covers authenticated enrollment and interruption, complete
+package export and clean-device restore, the recovery coordinator, funded
+Guardian authorization and offline Spending exits with fee funding. Physical
+Ledger review with the production Bitcoin app remains required before enabling
+new enrollments. See the integration checkpoint for exact release evidence.
 The public Emulator upgrade is no longer a dependency of this Savings design.
 
 Funded legacy and connector wallets retain their original scripts, signers,
 backup schemas and unresolved journals. Migration is an explicit authorized
 transaction into a verified new contract; upgrading software cannot rewrite
-existing outputs. The recovery companion and Contract Pack remain on their current
-schemas until the new native lifecycle is implemented and qualified.
+existing outputs. The matched recovery companion and runtime manifest must be verified with the
+new native lifecycle before activation.
 
-The additive enrollment model needs a separate MAC-authenticated Ledger record,
+The additive schema-nine enrollment model uses a separate MAC-authenticated Ledger record,
 created atomically with the existing identity rows. Preserve the original
 Spending scalar envelope and raw Spending authorities; put Savings account
 origins, the separate Guardian base and policy/registration binding in the new
