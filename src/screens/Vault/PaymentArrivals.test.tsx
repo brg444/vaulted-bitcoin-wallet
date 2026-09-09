@@ -18,16 +18,26 @@ describe('arrival detection', () => {
     const first = detectPaymentArrivals(seen, [old], SCOPE)
     expect(first.arrivals.map((arrival) => arrival.item.txid)).toEqual(['old-deposit'])
 
-    const pending = row({ txid: 'incoming', confirmed: false, activity: 'boarding' })
+    const pending = row({ txid: 'incoming', confirmed: false })
     const second = detectPaymentArrivals(first.seen, [old, pending], SCOPE)
     expect(second.arrivals).toEqual([])
 
-    const settled = row({ txid: 'incoming', activity: 'boarding' })
+    const settled = row({ txid: 'incoming' })
     const third = detectPaymentArrivals(second.seen, [old, settled], SCOPE)
     expect(third.arrivals.map((arrival) => arrival.item.txid)).toEqual(['incoming'])
 
     const again = detectPaymentArrivals(third.seen, [old, settled], SCOPE)
     expect(again.arrivals).toEqual([])
+  })
+
+  it('banners a Savings deposit when its confirmation lands', () => {
+    const pending = row({ txid: 'savings-in', account: 'savings', confirmed: false, blockTime: 1_700_000_000 })
+    const first = detectPaymentArrivals(new Map(), [pending], SCOPE)
+    expect(first.arrivals).toEqual([])
+
+    const confirmed = row({ txid: 'savings-in', account: 'savings', blockTime: 1_700_000_100 })
+    const second = detectPaymentArrivals(first.seen, [confirmed], SCOPE)
+    expect(second.arrivals.map((arrival) => arrival.item.txid)).toEqual(['savings-in'])
   })
 
   it('banners a Lightning receive only when the verified payout completes', () => {
@@ -56,6 +66,31 @@ describe('arrival detection', () => {
     expect(second.arrivals).toHaveLength(1)
   })
 
+  it('suppresses a Savings receipt linked to the wallet’s own outflow', () => {
+    // One Bitcoin transaction moving funds from Spending to Savings shows a
+    // sent row and a received row with the same reference. The receipt is
+    // internal movement, never a new external arrival.
+    const internal = detectPaymentArrivals(
+      new Map(),
+      [
+        row({ txid: 'self-move', type: 'sent', account: 'spend' }),
+        row({ txid: 'self-move', account: 'savings', blockTime: 1_700_000_100 }),
+      ],
+      SCOPE,
+    )
+    expect(internal.arrivals).toEqual([])
+
+    const external = detectPaymentArrivals(
+      new Map(),
+      [
+        row({ txid: 'spend-out', type: 'sent', account: 'spend' }),
+        row({ txid: 'savings-in', account: 'savings', blockTime: 1_700_000_100 }),
+      ],
+      SCOPE,
+    )
+    expect(external.arrivals.map((arrival) => arrival.item.txid)).toEqual(['savings-in'])
+  })
+
   it('keeps two equal arrivals on a reusable address distinct', () => {
     const first = detectPaymentArrivals(
       new Map(),
@@ -65,7 +100,7 @@ describe('arrival detection', () => {
     expect(first.arrivals.map((arrival) => arrival.item.txid).sort()).toEqual(['deposit-a', 'deposit-b'])
   })
 
-  it('never banners outflows, internal movement, or incomplete rows', () => {
+  it('never banners outflows, internal movement, uncertain receipts, or incomplete rows', () => {
     const rows = [
       row({ txid: 'out', type: 'sent' }),
       row({
@@ -77,6 +112,11 @@ describe('arrival detection', () => {
       }),
       row({ txid: 'connector', type: 'sent', account: 'savings', activity: 'savings-connector', confirmed: false }),
       row({ txid: 'pending-arkade', confirmed: false }),
+      // Settled boarding mixes external deposits with internal
+      // Savings-to-Spending transfers, so it stays visible in activity
+      // without raising an arrival.
+      row({ txid: 'boarding-settled', activity: 'boarding' }),
+      row({ txid: 'spending-deposit', activity: 'bitcoin' }),
       row({
         txid: 'funding-send',
         type: 'sent',

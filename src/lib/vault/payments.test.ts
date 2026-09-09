@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { groupVaultHistory, type VaultHistoryItem } from './history'
+import { TxType, type Activity } from '@arkade-os/sdk'
+import { groupVaultHistory, historyFromSdkActivities, type VaultHistoryItem } from './history'
 import { describePayment, isSamePayment, paymentIdentityForItem } from './payments'
 
 const SCOPE = { network: 'mutinynet', vaultId: 'vault-1' }
@@ -147,14 +148,35 @@ describe('payment states', () => {
     expect(sent.complete).toBe(false)
   })
 
-  it('maps native Savings stages without offering retries', () => {
+  it('honors verified confirmation on indexed Bitcoin sends without a journal stage', () => {
+    const indexedConfirmed = describePayment(
+      item({ txid: 'commitment', type: 'sent', activity: 'bitcoin', confirmed: true }),
+    )
+    expect(indexedConfirmed).toMatchObject({ state: 'Sent', complete: true, attention: 'none', canRetry: false })
+    const indexedPending = describePayment(
+      item({ txid: 'mempool-send', type: 'sent', activity: 'bitcoin', confirmed: false }),
+    )
+    expect(indexedPending).toMatchObject({ state: 'Pending', complete: false, attention: 'none', canRetry: false })
+    const staleLocal = describePayment(
+      item({
+        txid: 'bitcoin:op-4',
+        type: 'sent',
+        activity: 'bitcoin',
+        bitcoinOperationId: 'op-4',
+        confirmed: false,
+      }),
+    )
+    expect(staleLocal).toMatchObject({ state: 'Checking status', attention: 'check', canRetry: false })
+  })
+
+  it('maps native Savings stages with broadcast awaiting confirmation', () => {
     const stages = [
-      ['approval', 'Savings approval pending', 'action'],
-      ['signer', 'Waiting for signer', 'action'],
-      ['broadcast', 'Check or retry broadcast', 'check'],
-      ['unknown', 'Checking status', 'check'],
+      ['approval', 'Savings approval pending', 'action', false],
+      ['signer', 'Waiting for signer', 'action', false],
+      ['broadcast', 'Sent · Awaiting confirmation', 'none', false],
+      ['unknown', 'Checking status', 'check', false],
     ] as const
-    for (const [ledgerStage, state, attention] of stages) {
+    for (const [ledgerStage, state, attention, complete] of stages) {
       const described = describePayment(
         item({
           txid: `ledger-${ledgerStage}`,
@@ -165,8 +187,52 @@ describe('payment states', () => {
           confirmed: false,
         }),
       )
-      expect(described).toMatchObject({ state, attention, canRetry: false, suppressArrival: true })
+      expect(described).toMatchObject({ state, attention, complete, canRetry: false, suppressArrival: true })
     }
+  })
+
+  it('completes a Savings transfer on verified confirmation at any stage', () => {
+    for (const ledgerStage of ['approval', 'signer', 'broadcast', 'unknown'] as const) {
+      const described = describePayment(
+        item({
+          txid: `ledger-confirmed-${ledgerStage}`,
+          type: 'sent',
+          account: 'savings',
+          activity: 'savings-ledger',
+          ledgerStage,
+          confirmed: true,
+        }),
+      )
+      expect(described).toMatchObject({ state: 'Sent', complete: true, attention: 'none', canRetry: false })
+    }
+  })
+
+  it('classifies arrival provenance explicitly', () => {
+    expect(
+      describePayment(item({ txid: 'ln', activity: 'lightning', lightningState: 'settled', lightningRfqId: 'r' }))
+        .origin,
+    ).toBe('verified-external')
+    expect(describePayment(item({ txid: 'direct', confirmed: true })).origin).toBe('verified-external')
+    expect(
+      describePayment(item({ txid: 'savings-in', account: 'savings', confirmed: true, blockTime: 1 })).origin,
+    ).toBe('verified-external')
+    expect(describePayment(item({ txid: 'boarding-settled', activity: 'boarding', confirmed: true })).origin).toBe(
+      'uncertain',
+    )
+    expect(
+      describePayment(item({ txid: 'boarding-settled', activity: 'boarding', confirmed: true })).suppressArrival,
+    ).toBe(true)
+    expect(
+      describePayment(
+        item({
+          txid: 'ln-processing',
+          type: 'sent',
+          activity: 'lightning',
+          lightningState: 'pending',
+          confirmed: false,
+        }),
+      ).origin,
+    ).toBe('uncertain')
   })
 
   it('suppresses arrivals for internal movement while preserving account wording', () => {
@@ -200,5 +266,45 @@ describe('attention grouping', () => {
     const groups = groupVaultHistory([ordinary, failed], 1_700_000_200)
     expect(groups[0]).toMatchObject({ key: 'attention', label: 'Needs attention' })
     expect(groups[0].items.map((row) => row.txid)).toEqual(['failed-terminal'])
+  })
+})
+
+describe('history to description', () => {
+  function exitActivity(txid: string, settled: boolean): Activity {
+    return {
+      id: `exit:${txid}`,
+      intent: { kind: 'exit' },
+      amount: -1400,
+      settled,
+      createdAt: 1_700_000_000_000,
+      txs: [
+        {
+          key: { arkTxid: '', commitmentTxid: txid, boardingTxid: '' },
+          type: TxType.TxSent,
+          amount: 1400,
+          settled,
+          createdAt: 1_700_000_000_000,
+        },
+      ],
+    }
+  }
+
+  it('completes an indexed Bitcoin send from verified confirmation alone', () => {
+    const rows = historyFromSdkActivities([exitActivity('commitment', true)], {
+      vaultTxids: new Set(['commitment']),
+      lightningRfqIds: new Set(),
+    })
+    expect(rows[0]).toMatchObject({ txid: 'commitment', activity: 'bitcoin', confirmed: true })
+    expect(rows[0].bitcoinStage).toBeUndefined()
+    expect(describePayment(rows[0])).toMatchObject({ state: 'Sent', complete: true })
+  })
+
+  it('keeps an unsettled indexed Bitcoin send pending without a journal', () => {
+    const rows = historyFromSdkActivities([exitActivity('mempool-send', false)], {
+      vaultTxids: new Set(['mempool-send']),
+      lightningRfqIds: new Set(),
+    })
+    expect(rows[0]).toMatchObject({ confirmed: false })
+    expect(describePayment(rows[0])).toMatchObject({ state: 'Pending', complete: false, canRetry: false })
   })
 })

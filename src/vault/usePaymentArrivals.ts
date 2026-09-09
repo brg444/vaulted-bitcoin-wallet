@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { describePayment, paymentIdentityForItem, type PaymentScope } from '../lib/vault/payments'
+import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
 import { hapticSubtle } from '../lib/haptics'
 
 export interface PaymentArrival {
@@ -11,15 +12,33 @@ export interface PaymentArrival {
 /**
  * Edge detection for incoming payments. A payment banners once: either it is
  * first observed with funds already available, or it transitions from an
- * incomplete row to a verified available one. Outflows, internal movement,
- * and incomplete rows never banner. History is display data; this hook reads
- * rows and queues notices without touching any lifecycle.
+ * incomplete row to a verified available one. Only rows with verified
+ * external provenance banner; internal movement, uncertain receipts,
+ * outflows, and incomplete rows never do. History is display data; this hook
+ * reads rows and queues notices without touching any lifecycle.
  *
- * The baseline seeds silently from the first observed history, so a fresh
- * load or vault switch never replays old payments as new arrivals. Durable
- * cross-session receipts, reconnect summaries, and preferences arrive with
- * the foreground delivery work; until then a reload reseeds quietly.
+ * Readiness: detection starts only after a successful baseline snapshot for
+ * the active scope (cached or refreshed). Earlier history is ignored, never
+ * queued, so a cold load cannot turn stored rows into new-payment alerts.
+ * Presented payments persist as device-local receipts, so a reload or a
+ * staged hydration replays nothing. Clearing local data reseeds quietly from
+ * whatever history loads first.
  */
+/** True when a row can banner: a complete receipt of verified external funds. */
+function isArrivalCandidate(row: VaultHistoryItem, outgoingTxids: ReadonlySet<string>): boolean {
+  if (row.type !== 'received' || outgoingTxids.has(row.txid)) return false
+  const described = describePayment(row)
+  return described.origin === 'verified-external' && described.complete
+}
+
+function outgoingReferences(rows: readonly VaultHistoryItem[]): Set<string> {
+  // A receive sharing its transaction id with an outflow in the same history
+  // is the wallet moving its own funds (for example Spending to Savings in
+  // one Bitcoin transaction), never a new external receipt. Retained
+  // `bitcoin:` placeholders carry no transaction id and never suppress.
+  return new Set(rows.filter((row) => row.type === 'sent' && !row.txid.startsWith('bitcoin:')).map((row) => row.txid))
+}
+
 export function detectPaymentArrivals(
   seen: ReadonlyMap<string, boolean>,
   rows: readonly VaultHistoryItem[],
@@ -27,10 +46,10 @@ export function detectPaymentArrivals(
 ): { arrivals: PaymentArrival[]; seen: Map<string, boolean> } {
   const next = new Map(seen)
   const arrivals: PaymentArrival[] = []
+  const outgoingTxids = outgoingReferences(rows)
   for (const row of rows) {
     const key = paymentIdentityForItem(row, scope).key
-    const described = describePayment(row)
-    const available = row.type === 'received' && !described.suppressArrival && described.complete
+    const available = isArrivalCandidate(row, outgoingTxids)
     const was = next.get(key)
     if (was === undefined) {
       next.set(key, available)
@@ -45,12 +64,24 @@ export function detectPaymentArrivals(
   return { arrivals, seen: next }
 }
 
+export function seedArrivalBaseline(rows: readonly VaultHistoryItem[], scope: PaymentScope): Map<string, boolean> {
+  const seeded = loadArrivalBaseline(scope)
+  const outgoingTxids = outgoingReferences(rows)
+  for (const row of rows) {
+    const key = paymentIdentityForItem(row, scope).key
+    if (seeded.has(key)) continue
+    seeded.set(key, isArrivalCandidate(row, outgoingTxids))
+  }
+  return seeded
+}
+
 const MAX_VISIBLE_ARRIVALS = 3
 
 export function usePaymentArrivals(
   history: readonly VaultHistoryItem[],
   scope: PaymentScope,
   paused: boolean,
+  ready: boolean,
 ): {
   arrivals: PaymentArrival[]
   dismissArrival: (key: string) => void
@@ -69,22 +100,23 @@ export function usePaymentArrivals(
   }
 
   useEffect(() => {
+    if (!ready) return
     if (!seenRef.current) {
-      // The first observed history is the quiet baseline: mark every row as
-      // seen without bannering, so a fresh load never replays old payments.
-      const seeded = new Map<string, boolean>()
-      for (const row of history) {
-        const described = describePayment(row)
-        seeded.set(
-          paymentIdentityForItem(row, scope).key,
-          row.type === 'received' && !described.suppressArrival && described.complete,
-        )
+      // The first post-readiness history merges into the stored baseline.
+      // With no stored baseline this seeds quietly, so a fresh load never
+      // replays old payments; with one, genuinely new available keys banner.
+      seenRef.current = seedArrivalBaseline(history, scope)
+    } else {
+      // Another tab may have presented arrivals since this tab's last run.
+      // Merge stored keys so a payment banners in at most one tab. A
+      // simultaneous detection race across tabs remains explicitly pending.
+      for (const [key, available] of loadArrivalBaseline(scope)) {
+        if (!seenRef.current.has(key)) seenRef.current.set(key, available)
       }
-      seenRef.current = seeded
-      return
     }
     const { arrivals: fresh, seen } = detectPaymentArrivals(seenRef.current, history, scope)
     seenRef.current = seen
+    saveArrivalBaseline(scope, seen, new Set(history.map((row) => paymentIdentityForItem(row, scope).key)))
     if (fresh.length === 0) return
     if (paused) {
       const queued = new Map(pendingRef.current.map((arrival) => [arrival.key, arrival]))
@@ -101,7 +133,7 @@ export function usePaymentArrivals(
     })
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history])
+  }, [history, ready])
 
   useEffect(() => {
     if (paused || pendingRef.current.length === 0) return

@@ -407,7 +407,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [liveNetwork],
   )
   const reportError = useCallback((message: string) => setError(message), [])
-  const { balanceError, balancesLoaded, history, positions, refreshBalance, refreshingBalance } = useVaultBalances({
+  const {
+    balanceError,
+    balancesLoaded,
+    snapshotFresh,
+    history,
+    positions,
+    refreshBalance,
+    refreshingBalance,
+  } = useVaultBalances({
     addressPin,
     enrollment,
     initialStatusChecked,
@@ -543,13 +551,21 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     })
   }, [visibleHistory])
   // Arrival banners read the unfiltered history so a Savings deposit still
-  // surfaces while Spending is selected. Presentation pauses while an
-  // approval is in flight and resumes after it finishes.
+  // surfaces while Spending is selected. Detection starts only after a
+  // fresh successful snapshot for the active scope; cached hydration alone
+  // never qualifies. Delivery pauses while locked, scopeless, or while an
+  // approval is in flight, resuming after unlock or completion.
   const arrivalScope = useMemo(
     () => ({ network: status?.network || '', vaultId: status?.vaultId || '' }),
     [status?.network, status?.vaultId],
   )
-  const { arrivals, dismissArrival, openArrivalKey } = usePaymentArrivals(visibleHistory, arrivalScope, busy)
+  const arrivalReady = snapshotFresh && Boolean(status?.vaultId) && Boolean(status?.network)
+  const { arrivals, dismissArrival, openArrivalKey } = usePaymentArrivals(
+    visibleHistory,
+    arrivalScope,
+    busy || locked,
+    arrivalReady,
+  )
 
   const {
     backupRecoveryKit,

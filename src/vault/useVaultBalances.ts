@@ -138,6 +138,10 @@ export function useVaultBalances({
   const [balanceError, setBalanceError] = useState('')
   const [balancesLoaded, setBalancesLoaded] = useState(() => Boolean(loadBalanceSnapshot(refreshVaultId)))
   const [refreshingBalance, setRefreshingBalance] = useState(false)
+  // True only after a refresh fetched every source for the active vault
+  // without error in this session. Cached snapshots set balancesLoaded but
+  // never this: arrival detection must wait for fresh evidence.
+  const [snapshotFresh, setSnapshotFresh] = useState(false)
   const hasSnapshotRef = useRef(balancesLoaded)
   const spendingReadyRef = useRef(balancesLoaded)
 
@@ -147,6 +151,7 @@ export function useVaultBalances({
     refreshVersion.current += 1
     setSnapshot(cachedSnapshot || EMPTY_BALANCES)
     setBalancesLoaded(Boolean(cachedSnapshot))
+    setSnapshotFresh(false)
     hasSnapshotRef.current = Boolean(cachedSnapshot)
     spendingReadyRef.current = Boolean(cachedSnapshot)
     setBalanceError('')
@@ -229,6 +234,7 @@ export function useVaultBalances({
           setSnapshot(EMPTY_BALANCES)
           saveBalanceSnapshot(id, EMPTY_BALANCES)
           setBalancesLoaded(true)
+          setSnapshotFresh(true)
           hasSnapshotRef.current = true
           setBalanceError('')
           clearSnapshotRetry()
@@ -322,6 +328,7 @@ export function useVaultBalances({
         setSnapshot(nextSnapshot)
         saveBalanceSnapshot(id, nextSnapshot)
         setBalancesLoaded(true)
+        setSnapshotFresh(true)
         hasSnapshotRef.current = true
         spendingReadyRef.current = true
         setBalanceError('')
@@ -413,6 +420,7 @@ export function useVaultBalances({
   return {
     balanceError,
     balancesLoaded,
+    snapshotFresh,
     history,
     positions,
     refreshBalance,

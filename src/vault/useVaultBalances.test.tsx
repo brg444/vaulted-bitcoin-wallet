@@ -201,6 +201,21 @@ describe('useVaultBalances', () => {
     expect(result.current.positions.savings.totalSats).toBe(9_000)
   })
 
+  it('reports fresh snapshot readiness only after a successful refresh', async () => {
+    saveBalanceSnapshot(STATUS.vaultId, {
+      boardingBalance: 0,
+      history: [],
+      savingsSats: 9_000,
+      savingsSpendableSats: 9_000,
+      vtxoSpendingSats: 42_000,
+    })
+    const { result } = setupHook(true)
+    expect(result.current.balancesLoaded).toBe(true)
+    expect(result.current.snapshotFresh).toBe(false)
+    await act(async () => result.current.refreshBalance())
+    expect(result.current.snapshotFresh).toBe(true)
+  })
+
   it('replaces the cached snapshot after a successful refresh', async () => {
     saveBalanceSnapshot(STATUS.vaultId, {
       boardingBalance: 0,

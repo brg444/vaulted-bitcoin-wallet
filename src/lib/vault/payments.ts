@@ -40,6 +40,16 @@ export type PaymentRoute =
 
 export type PaymentAttention = 'none' | 'action' | 'check'
 
+/**
+ * Provenance of an incoming payment, used to decide arrival feedback.
+ * `verified-external` means the row carries evidence its funds arrived from
+ * outside the wallet's own movement. `uncertain` means the row is honestly
+ * rendered in activity but must never raise an arrival alert until a
+ * classified source proves otherwise. Outflows never raise arrivals either
+ * way.
+ */
+export type PaymentOrigin = 'verified-external' | 'uncertain'
+
 export interface PaymentScope {
   network: string
   vaultId: string
@@ -65,6 +75,8 @@ export interface PaymentDescription {
   complete: boolean
   /** True only for the verified passkey-backed refund path. */
   canRetry: boolean
+  /** True only when the row proves funds arrived from outside the wallet. */
+  origin: PaymentOrigin
   /** Internal movement, change, renewal, and outflows never raise arrivals. */
   suppressArrival: boolean
 }
@@ -83,7 +95,10 @@ function lightningDescription(item: VaultHistoryItem, received: boolean): Paymen
       attention: 'none',
       complete: true,
       canRetry: false,
-      suppressArrival: false,
+      // The persisted RFQ record proves direction and completion, so a
+      // completed receive is verified external funds.
+      origin: received ? 'verified-external' : 'uncertain',
+      suppressArrival: !received,
     }
   }
   if (state === 'refunded') {
@@ -95,6 +110,7 @@ function lightningDescription(item: VaultHistoryItem, received: boolean): Paymen
       attention: 'none',
       complete: true,
       canRetry: false,
+      origin: 'uncertain',
       suppressArrival: true,
     }
   }
@@ -107,6 +123,7 @@ function lightningDescription(item: VaultHistoryItem, received: boolean): Paymen
       attention: 'action',
       complete: false,
       canRetry: !received && Boolean(item.lightningRfqId),
+      origin: 'uncertain',
       suppressArrival: true,
     }
   }
@@ -119,6 +136,7 @@ function lightningDescription(item: VaultHistoryItem, received: boolean): Paymen
       attention: 'check',
       complete: false,
       canRetry: false,
+      origin: 'uncertain',
       suppressArrival: true,
     }
   }
@@ -130,131 +148,171 @@ function lightningDescription(item: VaultHistoryItem, received: boolean): Paymen
     attention: 'none',
     complete: false,
     canRetry: false,
+    origin: 'uncertain',
     suppressArrival: true,
   }
 }
 
 function bitcoinSendDescription(item: VaultHistoryItem): PaymentDescription {
   const stage = item.bitcoinStage || ''
+  const uncertainSend = {
+    route: 'bitcoin-spending',
+    origin: 'uncertain',
+    suppressArrival: true,
+  } as const
   if (!stage) {
+    // Rows without a journal stage come from the indexed history, except a
+    // retained local submission whose journal lost its stage. The two cases
+    // need different wording: indexed evidence stands on its own.
+    if (item.bitcoinOperationId) {
+      return {
+        ...uncertainSend,
+        title: 'Bitcoin payment',
+        state: 'Checking status',
+        copy: 'The payment status needs checking. Refresh the wallet before trying anything else.',
+        attention: 'check',
+        complete: false,
+        canRetry: false,
+      }
+    }
+    if (item.confirmed) {
+      return {
+        ...uncertainSend,
+        title: 'Bitcoin payment',
+        state: 'Sent',
+        copy: 'This Bitcoin payment is confirmed.',
+        attention: 'none',
+        complete: true,
+        canRetry: false,
+      }
+    }
     return {
-      route: 'bitcoin-spending',
+      ...uncertainSend,
       title: 'Bitcoin payment',
-      state: 'Checking status',
-      copy: 'The payment status needs checking. Refresh the wallet before trying anything else.',
-      attention: 'check',
+      state: 'Pending',
+      copy: 'This Bitcoin payment is still processing.',
+      attention: 'none',
       complete: false,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   if (stage === 'confirmed') {
     return {
-      route: 'bitcoin-spending',
+      ...uncertainSend,
       title: 'Bitcoin payment',
       state: 'Sent',
       copy: 'This Bitcoin payment is confirmed.',
       attention: 'none',
       complete: true,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   if (stage === 'submitted') {
     return {
-      route: 'bitcoin-spending',
+      ...uncertainSend,
       title: 'Bitcoin payment',
       state: 'Sent · Awaiting confirmation',
       copy: 'This payment was broadcast and now waits for Bitcoin confirmation.',
       attention: 'none',
       complete: false,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   if (BITCOIN_STAGES_AWAITING_APPROVAL.has(stage)) {
     return {
-      route: 'bitcoin-spending',
+      ...uncertainSend,
       title: 'Bitcoin payment',
       state: 'Awaiting approval',
       copy: 'Review this Bitcoin payment to continue.',
       attention: 'action',
       complete: false,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   if (BITCOIN_STAGES_SENDING.has(stage)) {
     return {
-      route: 'bitcoin-spending',
+      ...uncertainSend,
       title: 'Bitcoin payment',
       state: 'Sending',
       copy: 'This Bitcoin payment is on its way.',
       attention: 'none',
       complete: false,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   return {
-    route: 'bitcoin-spending',
+    ...uncertainSend,
     title: 'Bitcoin payment',
     state: 'Checking status',
     copy: 'The payment status needs checking. Refresh the wallet before trying anything else.',
     attention: 'check',
     complete: false,
     canRetry: false,
-    suppressArrival: true,
   }
 }
 
 function ledgerDescription(item: VaultHistoryItem): PaymentDescription {
+  // The Savings integration supplies confirmation separately from the stage:
+  // a verified broadcast awaits confirmation, and verified confirmation
+  // completes. Unknown remains a reconciliation state with no retry.
   const stage = item.ledgerStage || 'unknown'
+  const uncertainSend = {
+    route: 'savings-ledger',
+    origin: 'uncertain',
+    suppressArrival: true,
+  } as const
+  if (item.confirmed) {
+    return {
+      ...uncertainSend,
+      title: 'Savings transfer',
+      state: 'Sent',
+      copy: 'This Savings transfer is confirmed.',
+      attention: 'none',
+      complete: true,
+      canRetry: false,
+    }
+  }
   if (stage === 'approval') {
     return {
-      route: 'savings-ledger',
+      ...uncertainSend,
       title: 'Savings transfer',
       state: 'Savings approval pending',
       copy: 'Approve this Savings transfer to continue.',
       attention: 'action',
       complete: false,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   if (stage === 'signer') {
     return {
-      route: 'savings-ledger',
+      ...uncertainSend,
       title: 'Savings transfer',
       state: 'Waiting for signer',
       copy: 'This Savings transfer waits for the hardware signer.',
       attention: 'action',
       complete: false,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   if (stage === 'broadcast') {
     return {
-      route: 'savings-ledger',
+      ...uncertainSend,
       title: 'Savings transfer',
-      state: 'Check or retry broadcast',
-      copy: 'This signed Savings transfer still needs to reach Bitcoin. Check its status before trying again.',
-      attention: 'check',
+      state: 'Sent · Awaiting confirmation',
+      copy: 'This transfer was broadcast and now waits for Bitcoin confirmation.',
+      attention: 'none',
       complete: false,
       canRetry: false,
-      suppressArrival: true,
     }
   }
   return {
-    route: 'savings-ledger',
+    ...uncertainSend,
     title: 'Savings transfer',
     state: 'Checking status',
     copy: 'The transfer status needs checking. Refresh the wallet before trying anything else.',
     attention: 'check',
     complete: false,
     canRetry: false,
-    suppressArrival: true,
   }
 }
 
@@ -272,6 +330,7 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
       attention: 'action',
       complete: false,
       canRetry: false,
+      origin: 'uncertain',
       suppressArrival: true,
     }
   }
@@ -285,6 +344,7 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
         attention: 'check',
         complete: false,
         canRetry: false,
+        origin: 'uncertain',
         suppressArrival: true,
       }
     }
@@ -299,11 +359,15 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
       attention: 'action',
       complete: false,
       canRetry: false,
+      origin: 'uncertain',
       suppressArrival: true,
     }
   }
   if (item.activity === 'savings-ledger') return ledgerDescription(item)
   if (item.activity === 'boarding') {
+    // Boarding carries the deposit into Spending, but the same address also
+    // receives internal Savings-to-Spending transfers, so activity rows stay
+    // visible while arrival alerts wait for a classified source.
     if (!item.confirmed) {
       return {
         route: 'boarding',
@@ -313,7 +377,8 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
         attention: 'none',
         complete: false,
         canRetry: false,
-        suppressArrival: false,
+        origin: 'uncertain',
+        suppressArrival: true,
       }
     }
     return {
@@ -324,7 +389,8 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
       attention: 'none',
       complete: true,
       canRetry: false,
-      suppressArrival: false,
+      origin: 'uncertain',
+      suppressArrival: true,
     }
   }
   if (item.account === 'savings') {
@@ -337,6 +403,7 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
         attention: 'none',
         complete: false,
         canRetry: false,
+        origin: sent ? 'uncertain' : 'verified-external',
         suppressArrival: sent,
       }
     }
@@ -348,6 +415,10 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
       attention: 'none',
       complete: true,
       canRetry: false,
+      // A confirmed credit to the watched Savings address is a deposit: no
+      // wallet flow self-credits that address, and send change nets inside
+      // the send row instead of producing a receipt.
+      origin: sent ? 'uncertain' : 'verified-external',
       suppressArrival: sent,
     }
   }
@@ -360,7 +431,8 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
       attention: 'none',
       complete: false,
       canRetry: false,
-      suppressArrival: false,
+      origin: 'uncertain',
+      suppressArrival: true,
     }
   }
   if (sent) {
@@ -372,6 +444,7 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
       attention: 'none',
       complete: item.confirmed,
       canRetry: false,
+      origin: 'uncertain',
       suppressArrival: true,
     }
   }
@@ -383,6 +456,11 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
     attention: 'none',
     complete: item.confirmed,
     canRetry: false,
+    // A spendable VTXO receipt under the Spending script with positive net
+    // value is external funds: renewals settle against existing value and
+    // boarding carries its own activity flag. Funded renewal observation
+    // remains an open qualification check on this classification.
+    origin: 'verified-external',
     suppressArrival: false,
   }
 }
