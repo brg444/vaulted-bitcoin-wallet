@@ -2,6 +2,7 @@ import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { hapticSubtle } from '../lib/haptics'
+import { saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { usePaymentArrivals } from './usePaymentArrivals'
 
@@ -222,7 +223,68 @@ describe('reconnect catch-up summary', () => {
     expect(mockedHaptic).toHaveBeenCalledTimes(1)
   })
 
-  it('catches up rows that arrived while not ready once trusted evidence exists', async () => {
+  it('stays quiet for an old row omitted from a capped legacy baseline after upgrade', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-15' }
+    // A deployed baseline capped below visible history never observed this
+    // old receipt. Its absence from the cache is not evidence it is new.
+    saveArrivalBaseline(scope, new Map([['tx:mutinynet:vault-catchup-15:spend:known:received', true]]))
+    const { result, unmount } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      {
+        initialProps: {
+          rows: [row({ txid: 'known' }), row({ txid: 'legacy-old', amount: 5_000, blockTime: 100 })],
+        },
+      },
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    expect(result.current.arrivals).toEqual([])
+    unmount()
+  })
+
+  it('stays quiet when hydration adds historical records to a partial snapshot', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-16' }
+    const stored = row({ txid: 'stored' })
+    const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
+      initialProps: { rows: [stored] },
+    })
+    await waitFor(() => expect(first.result.current.catchUp).toBeNull())
+    first.unmount()
+
+    // The reopened tab hydrates in stages before its first ready snapshot:
+    // every staged row belongs to the quiet seed, not to live detection.
+    const second = renderHook(({ rows, ready }) => usePaymentArrivals(rows, scope, false, ready, new Set(), ENABLED), {
+      initialProps: { rows: [stored], ready: false as boolean },
+    })
+    second.rerender({ rows: [stored, row({ txid: 'historical', amount: 5_000, blockTime: 100 })], ready: false })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(second.result.current.catchUp).toBeNull()
+    expect(second.result.current.arrivals).toEqual([])
+    second.rerender({ rows: [stored, row({ txid: 'historical', amount: 5_000, blockTime: 100 })], ready: true })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(second.result.current.catchUp).toBeNull()
+    expect(second.result.current.arrivals).toEqual([])
+    second.unmount()
+  })
+
+  it('grants no trust to a restored nonempty legacy baseline', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-17' }
+    saveArrivalBaseline(scope, new Map([['tx:mutinynet:vault-catchup-17:spend:legacy:received', true]]))
+    const { result, unmount } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      {
+        initialProps: {
+          rows: [row({ txid: 'legacy' }), row({ txid: 'legacy-old', amount: 5_000, blockTime: 100 })],
+        },
+      },
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    expect(result.current.arrivals).toEqual([])
+    unmount()
+  })
+
+  it('stays quiet for unseen rows without independent newness evidence', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-catchup-11' }
     const stored = row({ txid: 'stored' })
     const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
@@ -239,8 +301,12 @@ describe('reconnect catch-up summary', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(second.result.current.catchUp).toBeNull()
     expect(second.result.current.arrivals).toEqual([])
+    // Rows never observed before seed quietly even with a trusted baseline:
+    // absence from the cache never proves newness, so readiness flips stay
+    // quiet. Supported reopen transitions are covered separately.
     second.rerender({ rows, ready: true })
-    await waitFor(() => expect(second.result.current.catchUp).toMatchObject({ count: 2 }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(second.result.current.catchUp).toBeNull()
     expect(second.result.current.arrivals).toEqual([])
     second.unmount()
   })
