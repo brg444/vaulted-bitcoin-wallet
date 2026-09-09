@@ -51,7 +51,7 @@ describe('Vault history', () => {
     expect(screen.getByText(/Add bitcoin to your Savings address/i)).toBeTruthy()
   })
 
-  it('shows a preconfirmed Arkade receive as confirmed', () => {
+  it('shows a preconfirmed Arkade receive as available', () => {
     renderHistory({
       history: [
         {
@@ -65,9 +65,9 @@ describe('Vault history', () => {
       ],
     })
 
-    expect(screen.getByText(/^Confirmed/)).toBeTruthy()
+    expect(screen.getAllByText(/^Received/).length).toBeGreaterThan(0)
     expect(screen.queryByText('Pending')).toBeNull()
-    expect(screen.getByRole('button', { name: /Received ₿21,000.*Confirmed/i })).toHaveTextContent('+₿21,000')
+    expect(screen.getByRole('button', { name: /Received ₿21,000.*Received/i })).toHaveTextContent('+₿21,000')
   })
 
   it('shows pending state, amount units, and opens a transaction', async () => {
@@ -109,7 +109,7 @@ describe('Vault history', () => {
     expect(screen.getByRole('button', { name: /Received ₿50,000.*Pending/i })).toHaveTextContent('+₿50,000')
   })
 
-  it('shows settled boarding activity as confirmed', () => {
+  it('shows settled boarding activity as received', () => {
     renderHistory({
       history: [
         {
@@ -124,7 +124,7 @@ describe('Vault history', () => {
       ],
     })
 
-    expect(screen.getByText(/^Confirmed/)).toBeTruthy()
+    expect(screen.getAllByText(/^Received/).length).toBeGreaterThan(0)
     expect(screen.queryByText('Pending')).toBeNull()
   })
 
@@ -171,7 +171,7 @@ describe('Vault history', () => {
     }
     const value = renderHistory({ account: 'savings', history: [pending] })
 
-    expect(screen.getByRole('heading', { name: 'Pending' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeTruthy()
     expect(screen.getByText('Waiting for hardware')).toBeTruthy()
     expect(screen.getByText('Complete or cancel')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: /Waiting for hardware ₿51,500/i }))

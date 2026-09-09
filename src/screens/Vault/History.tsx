@@ -5,6 +5,7 @@ import { prettyAmount, prettyNumber } from '../../lib/format'
 import { hapticSubtle } from '../../lib/haptics'
 import { RECENT_HISTORY_LIMIT } from '../../lib/vault/constants'
 import { groupVaultHistory, type VaultHistoryItem } from '../../lib/vault/history'
+import { describePayment } from '../../lib/vault/payments'
 import { VaultContext } from '../../vault/context'
 import styles from './History.module.css'
 
@@ -69,57 +70,22 @@ export function VaultHistoryList({
               <h3 className='vault-history-group-label vault-visually-hidden'>{group.label}</h3>
               {group.items.map((tx) => {
                 const sent = tx.type === 'sent'
-                const lightning = tx.activity === 'lightning'
-                const bitcoinPending = tx.activity === 'bitcoin' && !tx.confirmed
-                const savingsHandoff = tx.activity === 'savings-handoff'
-                const connector = tx.activity === 'savings-connector'
-                const connectorLabel =
-                  tx.connectorStage === 'broadcast'
-                    ? 'Savings transfer pending'
-                    : tx.connectorStage === 'signer'
-                      ? 'Waiting for signer'
-                      : 'Savings approval pending'
+                const described = describePayment(tx)
                 const amount = tx.displayAmount ?? tx.amount
                 const time = historyTime(tx.blockTime)
+                // Confirmed availability keeps its time; pending and attention
+                // rows keep the shared state wording untouched.
                 const state =
-                  tx.activity === 'savings-ledger' && !tx.confirmed
-                    ? tx.ledgerStage === 'broadcast'
-                      ? 'Pending Bitcoin confirmation'
-                      : tx.ledgerStage === 'unknown'
-                        ? 'Check payment status'
-                        : tx.ledgerStage === 'signer'
-                          ? 'Waiting for Ledger'
-                          : 'Awaiting approval'
-                    : bitcoinPending && ['preparing', 'prepared'].includes(tx.bitcoinStage || '')
-                      ? 'Awaiting approval'
-                      : connector
-                        ? tx.connectorStage === 'broadcast'
-                          ? 'Check or retry broadcast'
-                          : 'Continue payment'
-                        : savingsHandoff
-                          ? 'Complete or cancel'
-                          : lightning
-                            ? ['claimed', 'settled'].includes(tx.lightningState || '')
-                              ? 'Paid'
-                              : tx.lightningState === 'refunded'
-                                ? 'Refunded'
-                                : tx.lightningState === 'needs_counterparty'
-                                  ? 'Ready to return'
-                                  : tx.lightningState === 'failed'
-                                    ? 'Needs recovery'
-                                    : 'Processing'
-                            : tx.confirmed
-                              ? time
-                                ? `Confirmed · ${time}`
-                                : 'Confirmed'
-                              : 'Pending'
+                  time && described.complete && ['arkade', 'boarding', 'bitcoin-savings'].includes(described.route)
+                    ? `${described.state} · ${time}`
+                    : described.state
                 return (
                   <button
                     type='button'
                     key={`${tx.account}:${tx.txid}:${tx.type}`}
                     className='vault-history-row'
                     data-testid={`vault-tx-${tx.txid}`}
-                    aria-label={`${connector ? connectorLabel : savingsHandoff ? 'Waiting for hardware' : lightning ? 'Lightning payment' : bitcoinPending ? 'Bitcoin payment' : sent ? 'Sent' : 'Received'} ${prettyAmount(amount)}. ${state}.`}
+                    aria-label={`${described.title} ${prettyAmount(amount)}. ${state}.`}
                     onClick={() => {
                       hapticSubtle()
                       openTx(tx)
@@ -130,17 +96,7 @@ export function VaultHistoryList({
                     </span>
                     <span className='vault-history-copy'>
                       <Text small bold>
-                        {connector
-                          ? connectorLabel
-                          : savingsHandoff
-                            ? 'Waiting for hardware'
-                            : lightning
-                              ? 'Lightning payment'
-                              : bitcoinPending
-                                ? 'Bitcoin payment'
-                                : sent
-                                  ? 'Sent'
-                                  : 'Received'}
+                        {described.title}
                       </Text>
                       <Text color='neutral-600' tiny>
                         {state}

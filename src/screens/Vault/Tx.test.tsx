@@ -45,7 +45,7 @@ describe('Vault transaction details', () => {
     )
   })
 
-  it('uses Bitcoin confirmation language and links Savings transactions', () => {
+  it('uses availability language and links Savings transactions', () => {
     renderTx({
       txid: 'bitcoin-transaction',
       type: 'sent',
@@ -55,8 +55,8 @@ describe('Vault transaction details', () => {
       account: 'savings',
     })
 
-    expect(screen.getByRole('img', { name: 'Confirmed status' })).toHaveClass('lucide-circle-check')
-    expect(screen.getAllByText('Confirmed').length).toBeGreaterThan(0)
+    expect(screen.getByRole('img', { name: 'Sent status' })).toHaveClass('lucide-circle-check')
+    expect(screen.getAllByText('Sent').length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: 'View on Bitcoin explorer' })).toHaveAttribute(
       'href',
       'https://mempool.mutinynet.arkade.sh/tx/bitcoin-transaction',
@@ -70,6 +70,8 @@ describe('Vault transaction details', () => {
         type: 'sent',
         account: 'spend',
         activity: 'bitcoin',
+        bitcoinOperationId: 'op-fee',
+        bitcoinStage: 'submitted',
         amount: 1400,
         fee: 400,
         confirmed: false,
@@ -83,7 +85,7 @@ describe('Vault transaction details', () => {
     )
     expect(screen.getByText('Fee')).toBeTruthy()
     expect(screen.getByText('Fee').parentElement).toHaveTextContent('₿400')
-    expect(screen.getByText('This will update automatically after Bitcoin confirmation.')).toBeTruthy()
+    expect(screen.getByText('Sent · Awaiting confirmation')).toBeTruthy()
   })
 
   it('keeps boarding activity pending and links it to the Bitcoin transaction', () => {
@@ -103,7 +105,7 @@ describe('Vault transaction details', () => {
     )
   })
 
-  it('shows settled boarding activity as confirmed', () => {
+  it('shows settled boarding activity as received', () => {
     renderTx({
       txid: 'settled-boarding-transaction',
       type: 'received',
@@ -113,7 +115,7 @@ describe('Vault transaction details', () => {
       activity: 'boarding',
     })
 
-    expect(screen.getAllByText('Confirmed').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Received').length).toBeGreaterThan(0)
     expect(screen.queryByText('Pending')).toBeNull()
   })
 

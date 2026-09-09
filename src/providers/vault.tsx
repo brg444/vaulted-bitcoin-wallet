@@ -529,7 +529,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           (item) =>
             item.account === current.account &&
             (item.txid === current.txid ||
-              (current.bitcoinOperationId && item.bitcoinOperationId === current.bitcoinOperationId)),
+              (current.bitcoinOperationId && item.bitcoinOperationId === current.bitcoinOperationId) ||
+              // A Lightning funding transaction can change across claim,
+              // refund, or replacement while the RFQ id stays the logical
+              // payment. Details follow the RFQ, not the displayed txid.
+              (current.activity === 'lightning' &&
+                current.lightningRfqId &&
+                item.activity === 'lightning' &&
+                item.lightningRfqId === current.lightningRfqId)),
         ) || current
       )
     })

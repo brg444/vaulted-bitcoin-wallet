@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck, CircleHelp, Clock3 } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
 import { prettyAmount, prettyDate } from '../../lib/format'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
+import { describePayment } from '../../lib/vault/payments'
 import { VaultContext } from '../../vault/context'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import TransactionReference from './qg/TransactionReference'
@@ -27,6 +28,7 @@ export default function VaultTx() {
   const sent = selectedTx?.type === 'sent'
   const boarding = selectedTx?.activity === 'boarding'
   const lightning = selectedTx?.activity === 'lightning'
+  const described = selectedTx ? describePayment(selectedTx) : null
   const explorer =
     selectedTx && !selectedTx.txid.startsWith('bitcoin:')
       ? vaultTransactionExplorer(
@@ -35,42 +37,14 @@ export default function VaultTx() {
           vaultStatus?.network,
         )
       : null
-  const status = selectedTx
-    ? lightning
-      ? ['claimed', 'settled'].includes(selectedTx.lightningState || '')
-        ? 'Paid'
-        : selectedTx.lightningState === 'refunded'
-          ? 'Refunded'
-          : selectedTx.lightningState === 'needs_counterparty'
-            ? 'Ready to return'
-            : selectedTx.lightningState === 'failed'
-              ? 'Needs recovery'
-              : 'Processing'
-      : selectedTx.confirmed
-        ? 'Confirmed'
-        : 'Pending'
-    : 'Unknown'
-  const complete = lightning ? ['Paid', 'Refunded'].includes(status) : Boolean(selectedTx?.confirmed)
-  const needsAction = ['Ready to return', 'Needs recovery'].includes(status)
+  const status = described?.state || 'Unknown'
+  const complete = described?.complete || false
+  const needsAction = (described?.attention || 'none') !== 'none'
   const state = !selectedTx ? 'unknown' : complete ? 'complete' : needsAction ? 'attention' : 'pending'
   const StatusIcon = !selectedTx ? CircleHelp : complete ? CircleCheck : needsAction ? CircleAlert : Clock3
-  const copy = lightning
-    ? status === 'Paid'
-      ? 'This Lightning payment is complete.'
-      : status === 'Refunded'
-        ? 'This Lightning payment was refunded.'
-        : status === 'Ready to return'
-          ? 'Return the remaining payment funds to Spending.'
-          : status === 'Needs recovery'
-            ? 'This Lightning payment needs recovery.'
-            : 'This Lightning payment is still processing.'
-    : !selectedTx
-      ? 'Transaction details are not available.'
-      : selectedTx.confirmed
-        ? 'This payment is confirmed.'
-        : boarding || bitcoin || selectedTx.account === 'savings'
-          ? 'This will update automatically after Bitcoin confirmation.'
-          : 'This transfer is still processing.'
+  const copy = !selectedTx
+    ? 'Transaction details are not available.'
+    : described?.copy || 'Transaction details are not available.'
   const amount = selectedTx?.displayAmount ?? selectedTx?.amount ?? 0
 
   return (
