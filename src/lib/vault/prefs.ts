@@ -6,6 +6,31 @@ const THEME_KEY = 'arkade-vault-theme'
 const HAPTICS_KEY = 'arkade-vault-haptics'
 const PRIVACY_LOCK_KEY = 'arkade-vault-privacy-lock'
 const BALANCE_UNIT_KEY = 'arkade-vault-balance-unit'
+const ARRIVAL_BANNERS_KEY = 'arkade-vault-arrival-banners'
+const ARRIVAL_HAPTICS_KEY = 'arkade-vault-arrival-haptics'
+
+function readFlag(key: string, defaultOn: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(key)
+    // Missing or corrupt values keep the default: arrivals stay visible and
+    // haptics stay on until the user chooses otherwise.
+    if (raw === null) return defaultOn
+    if (raw === '1') return true
+    if (raw === '0') return false
+    return defaultOn
+  } catch {
+    return defaultOn
+  }
+}
+
+function writeFlag(key: string, on: boolean): void {
+  try {
+    localStorage.setItem(key, on ? '1' : '0')
+  } catch {
+    // Preferences are advisory. A failed write keeps the in-memory choice
+    // for this session without affecting payments or history.
+  }
+}
 
 export function loadVaultTheme(): Themes {
   const raw = localStorage.getItem(THEME_KEY)
@@ -59,6 +84,32 @@ export function saveVaultTheme(theme: Themes) {
 export function saveVaultHaptics(on: boolean) {
   localStorage.setItem(HAPTICS_KEY, on ? '1' : '0')
   setHapticsEnabled(on)
+}
+
+/**
+ * In-app payment-arrival banners. Device-local, on by default. Disabling
+ * hides banners only: detection, baseline, and dedup keep running, so
+ * re-enabling never replays historical payments.
+ */
+export function loadArrivalBanners(): boolean {
+  return readFlag(ARRIVAL_BANNERS_KEY, true)
+}
+
+export function saveArrivalBanners(on: boolean) {
+  writeFlag(ARRIVAL_BANNERS_KEY, on)
+}
+
+/**
+ * Haptic pulse accompanying an arrival banner. Device-local, on by default,
+ * and always subordinate to the global haptics switch. Visual and
+ * screen-reader feedback never depend on it.
+ */
+export function loadArrivalHaptics(): boolean {
+  return readFlag(ARRIVAL_HAPTICS_KEY, true)
+}
+
+export function saveArrivalHaptics(on: boolean) {
+  writeFlag(ARRIVAL_HAPTICS_KEY, on)
 }
 
 let prefsBooted = false

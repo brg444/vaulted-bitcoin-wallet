@@ -88,12 +88,22 @@ export function seedArrivalBaseline(rows: readonly VaultHistoryItem[], scope: Pa
 const MAX_VISIBLE_ARRIVALS = 3
 const EMPTY_EXCLUDED: ReadonlySet<string> = new Set()
 
+export interface ArrivalDeliveryPrefs {
+  /** In-app banners. Off hides banners while detection and dedup continue. */
+  bannersEnabled: boolean
+  /** Haptic pulse with a banner. Visual and spoken feedback never depend on it. */
+  hapticsEnabled: boolean
+}
+
+const DEFAULT_DELIVERY: ArrivalDeliveryPrefs = { bannersEnabled: true, hapticsEnabled: true }
+
 export function usePaymentArrivals(
   history: readonly VaultHistoryItem[],
   scope: PaymentScope,
   paused: boolean,
   ready: boolean,
   excludedKeys: ReadonlySet<string> = EMPTY_EXCLUDED,
+  delivery: ArrivalDeliveryPrefs = DEFAULT_DELIVERY,
 ): {
   arrivals: PaymentArrival[]
   dismissArrival: (key: string) => void
@@ -104,6 +114,8 @@ export function usePaymentArrivals(
   const pendingRef = useRef<PaymentArrival[]>([])
   const pausedRef = useRef(paused)
   pausedRef.current = paused
+  const deliveryRef = useRef(delivery)
+  deliveryRef.current = delivery
   const aliveRef = useRef(true)
   const generationRef = useRef(0)
   useEffect(() => {
@@ -141,6 +153,14 @@ export function usePaymentArrivals(
     seenRef.current = seen
     saveArrivalBaseline(scope, seen, new Set(history.map((row) => paymentIdentityForItem(row, scope).key)))
     if (fresh.length === 0) return
+    if (!delivery.bannersEnabled) {
+      // Delivery disabled hides banners only: baseline and dedup above keep
+      // running, other tabs arbitrate their own announcements, and
+      // re-enabling replays nothing. Pending notices from before the toggle
+      // are dropped with the same guarantee.
+      pendingRef.current = []
+      return
+    }
     const generation = generationRef.current
     void claimArrivalDelivery(fresh.map((arrival) => arrival.key))
       .then((keys) => {
@@ -153,7 +173,7 @@ export function usePaymentArrivals(
           pendingRef.current = [...queued.values()]
           return
         }
-        hapticSubtle()
+        if (delivery.hapticsEnabled) hapticSubtle()
         setArrivals((current) => {
           const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
           for (const arrival of accepted) queued.set(arrival.key, arrival)
@@ -166,13 +186,13 @@ export function usePaymentArrivals(
       })
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, ready, excludedKeys])
+  }, [history, ready, excludedKeys, delivery.bannersEnabled, delivery.hapticsEnabled])
 
   useEffect(() => {
     if (paused || pendingRef.current.length === 0) return
     const flushed = pendingRef.current
     pendingRef.current = []
-    hapticSubtle()
+    if (deliveryRef.current.hapticsEnabled) hapticSubtle()
     setArrivals((current) => {
       const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
       for (const arrival of flushed) queued.set(arrival.key, arrival)

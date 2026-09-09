@@ -2,6 +2,7 @@ import { useLedgerSavings } from '../vault/useLedgerSavings'
 import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import { usePaymentArrivals } from '../vault/usePaymentArrivals'
+import { useNotificationPrefs } from '../vault/useNotificationPrefs'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
@@ -567,12 +568,21 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   // Browsing history loaded beyond the recent window never feeds arrival
   // observation; those receipts stay visible without bannering as new.
   const excludedArrivalKeys = useMemo(() => new Set((olderHistory || []).map(olderRowKey)), [olderHistory])
+  // Banner and haptic preferences gate presentation only. Detection,
+  // baseline, and dedup continue while banners are disabled, so toggling
+  // never replays historical payments.
+  const { bannersEnabled, arrivalHapticsEnabled } = useNotificationPrefs()
+  const arrivalDelivery = useMemo(
+    () => ({ bannersEnabled, hapticsEnabled: arrivalHapticsEnabled }),
+    [bannersEnabled, arrivalHapticsEnabled],
+  )
   const { arrivals, dismissArrival, openArrivalKey } = usePaymentArrivals(
     visibleHistory,
     arrivalScope,
     busy || locked,
     arrivalReady,
     excludedArrivalKeys,
+    arrivalDelivery,
   )
 
   const {

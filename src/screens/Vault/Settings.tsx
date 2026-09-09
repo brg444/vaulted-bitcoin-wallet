@@ -7,10 +7,14 @@ import { hapticLight, hapticSubtle } from '../../lib/haptics'
 import { clearLogs, getLogs, type LogLine } from '../../lib/logs'
 import { Themes } from '../../lib/types'
 import {
+  loadArrivalBanners,
+  loadArrivalHaptics,
   loadVaultHaptics,
   loadVaultPrivacyLock,
   loadVaultTheme,
   resolveVaultTheme,
+  saveArrivalBanners,
+  saveArrivalHaptics,
   saveVaultHaptics,
   saveVaultPrivacyLock,
   saveVaultTheme,
@@ -24,7 +28,7 @@ import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
 
-type View = 'menu' | 'theme' | 'about' | 'haptics' | 'logs' | 'reset' | 'diagnostics'
+type View = 'menu' | 'theme' | 'about' | 'haptics' | 'notifications' | 'logs' | 'reset' | 'diagnostics'
 
 const THEME_OPTIONS: { value: Themes; testId: string; label: (theme: Themes) => string }[] = [
   { value: Themes.Auto, testId: 'select-option-0', label: () => `Auto (${systemTheme()})` },
@@ -151,6 +155,8 @@ export default function VaultSettings({
   const [view, setView] = useState<View>('menu')
   const [theme, setTheme] = useState(loadVaultTheme)
   const [haptics, setHaptics] = useState(loadVaultHaptics)
+  const [arrivalBanners, setArrivalBanners] = useState(loadArrivalBanners)
+  const [arrivalHaptics, setArrivalHaptics] = useState(loadArrivalHaptics)
   const [privacyLock, setPrivacyLock] = useState(loadVaultPrivacyLock)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
@@ -158,6 +164,8 @@ export default function VaultSettings({
     if (view !== 'menu') return
     setTheme(loadVaultTheme())
     setHaptics(loadVaultHaptics())
+    setArrivalBanners(loadArrivalBanners())
+    setArrivalHaptics(loadArrivalHaptics())
     setPrivacyLock(loadVaultPrivacyLock())
   }, [view])
 
@@ -223,6 +231,56 @@ export default function VaultSettings({
             <span className={haptics ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
           </button>
         </HubGroup>
+      </QgScreen>
+    )
+  }
+
+  if (view === 'notifications') {
+    return (
+      <QgScreen title='Notifications' back={() => setView('menu')}>
+        <HubGroup label='Payment arrivals'>
+          <button
+            type='button'
+            role='switch'
+            aria-checked={arrivalBanners}
+            className='vault-hub-row'
+            data-testid='settings-arrival-banners'
+            onClick={() => {
+              const next = !arrivalBanners
+              setArrivalBanners(next)
+              saveArrivalBanners(next)
+              if (next) hapticLight()
+            }}
+          >
+            <div className='vault-hub-copy'>
+              <p>Arrival banners</p>
+              <p>Show new payments in the wallet</p>
+            </div>
+            <span className={arrivalBanners ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
+          </button>
+          <button
+            type='button'
+            role='switch'
+            aria-checked={arrivalHaptics}
+            className='vault-hub-row'
+            data-testid='settings-arrival-haptics'
+            onClick={() => {
+              const next = !arrivalHaptics
+              setArrivalHaptics(next)
+              saveArrivalHaptics(next)
+              if (next) hapticLight()
+            }}
+          >
+            <div className='vault-hub-copy'>
+              <p>Arrival haptics</p>
+              <p>Vibrate with new payments</p>
+            </div>
+            <span className={arrivalHaptics ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
+          </button>
+        </HubGroup>
+        <p className='qg-copy'>
+          Banners and vibration are advisory. Payments, history, and recovery work the same with them off.
+        </p>
       </QgScreen>
     )
   }
@@ -336,6 +394,12 @@ export default function VaultSettings({
             testId='settings-haptics'
             value={haptics ? 'On' : 'Off'}
             onClick={() => setView('haptics')}
+          />
+          <SettingsRow
+            label='Notifications'
+            testId='settings-notifications'
+            value={arrivalBanners ? 'On' : 'Off'}
+            onClick={() => setView('notifications')}
           />
           <SettingsRow label='About' testId='settings-about' onClick={() => setView('about')} />
         </HubGroup>
