@@ -50,7 +50,7 @@ describe('Ledger native account and signing integration', () => {
   it('registers one complete policy and verifies receive on-device, then signs without registering again', async () => {
     const { app, payment, phone } = setup()
     const record = await registerLedgerSavings(app, payment.contract)
-    expect(record.walletPolicy.keysInfo).toHaveLength(7)
+    expect(record.walletPolicy.keysInfo).toHaveLength(4)
     expect(app.getWalletAddress.mock.calls.map((call) => call.slice(2))).toEqual([
       [0, 0, true],
       [1, 0, false],

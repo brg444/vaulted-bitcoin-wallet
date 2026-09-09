@@ -51,13 +51,19 @@ const vite = await createServer({
   appType: 'custom',
 })
 const results = []
+const replacements = []
 try {
   const { buildLedgerNativeFamily } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeFamily.ts')
   const { defaultSpendingPolicy } = await vite.ssrLoadModule('/src/lib/vault/spendingPolicy.ts')
-  const { ledgerBip32Versions, ledgerRecoveryChild, ledgerRecoveryProgramParent, ledgerSavingsChild } =
-    await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
+  const {
+    ledgerBip32Versions,
+    ledgerRecoveryChild,
+    ledgerSavingsGuardianParent,
+    ledgerGuardianInitiateChild,
+    ledgerGuardianClawbackChild,
+    ledgerSavingsChild,
+  } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
   const { tapLeafForScript } = await vite.ssrLoadModule('/src/lib/vault/program/spend.ts')
-  const { tweakPrivateKey } = await vite.ssrLoadModule('/src/lib/vault/program/tweak.ts')
   const { scalarSecret } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
   const vectors = JSON.parse(
     readFileSync(new URL('../../src/lib/vault/program/ledger-key-vectors.json', import.meta.url)),
@@ -103,15 +109,66 @@ try {
         new Uint8Array(32).fill({ phone: 0x43, hardware: 0x42, recovery: 0x44 }[role]),
         ledgerBip32Versions(context.network),
       ).derive("m/86'/1'/0'")
-    const programSecret = (claimant, cosigner, program, branch) => {
-      const publicParent = ledgerRecoveryProgramParent(context, claimant, cosigner, program)
-      const parent = new HDKey({
-        privateKey: tweakPrivateKey(scalarSecret(cosigner === 'vault' ? 14 : 15), program),
-        chainCode: publicParent.chainCode,
-        versions: ledgerBip32Versions(context.network),
+    const publicParent = ledgerSavingsGuardianParent(context)
+    const guardianParent = new HDKey({
+      privateKey: scalarSecret(14),
+      chainCode: publicParent.chainCode,
+      versions: ledgerBip32Versions(context.network),
+    })
+    assert.equal(guardianParent.publicExtendedKey, publicParent.publicExtendedKey)
+    const checkReplacement = (recovery, change) => {
+      const tree = change ? family.change : family.receive
+      const index = Object.keys(family.recovery).indexOf(recovery.claimant)
+      const script = tree.initiate[index]
+      const address = policyAddress(family.walletPolicy, tree.script, change)
+      const coin = fund(address, tree.script)
+      const user = ledgerSavingsChild(
+        account(recovery.claimant),
+        recovery.claimant === 'recovery' ? change : change + 2,
+      )
+      const guardian = ledgerGuardianInitiateChild(context, guardianParent, recovery.claimant, change)
+      const make = (fee) => {
+        const tx = new Transaction(opts)
+        tx.addInput({
+          txid: coin.id,
+          index: coin.index,
+          sequence: 0xfffffffd,
+          witnessUtxo: { script: tree.script, amount: 100000n },
+          nonWitnessUtxo: hex.decode(coin.raw),
+          tapInternalKey: tree.tapInternalKey,
+          tapLeafScript: [tapLeafForScript(tree.tapLeafScript, script)],
+        })
+        tx.addOutput({ script: recovery.pending.script, amount: 100000n - BigInt(fee) })
+        tx.signIdx(user.privateKey, 0)
+        tx.signIdx(guardian.privateKey, 0)
+        tx.finalize()
+        return tx
+      }
+      const original = make(300)
+      const replacement = make(900)
+      rpc('sendrawtransaction', [hex.encode(original.extract())])
+      assert.equal(rpc('testmempoolaccept', [[hex.encode(replacement.extract())]])[0].allowed, true)
+      rpc('sendrawtransaction', [hex.encode(replacement.extract())])
+      const pool = rpc('getrawmempool')
+      assert.equal(pool.includes(original.id), false)
+      assert.equal(pool.includes(replacement.id), true)
+      rpc('generatetoaddress', [1, mining])
+      const confirmed = rpc('getrawtransaction', [replacement.id, true])
+      assert.equal(confirmed.confirmations, 1)
+      assert.equal(confirmed.vout.length, 1)
+      assert.equal(confirmed.vout[0].scriptPubKey.hex, hex.encode(recovery.pending.script))
+      replacements.push({
+        tier,
+        claimant: recovery.claimant,
+        change,
+        vsize: replacement.vsize,
+        originalFee: 300,
+        replacementFee: 900,
+        replacedAndConfirmed: true,
+        samePendingDestination: true,
+        outputs: 1,
+        authorization: 'fresh claimant and Guardian signatures for replacement',
       })
-      assert.equal(parent.publicExtendedKey, publicParent.publicExtendedKey)
-      return ledgerSavingsChild(parent, branch).privateKey
     }
     const checkSpend = (name, tree, script, secrets, sequence = 0xfffffffd, change = 0) => {
       const address = policyAddress(tree.walletPolicy || family.walletPolicy, tree.script, change)
@@ -168,6 +225,7 @@ try {
         change,
       )
       for (const [index, recovery] of Object.values(family.recovery).entries()) {
+        checkReplacement(recovery, change)
         const branch = recovery.claimant === 'recovery' ? change : change + 2
         // This checks Bitcoin signing authority; named-program execution is a
         // separate runtime test. The disposable cosigner secrets bypass it here.
@@ -177,7 +235,7 @@ try {
           tree.initiate[index],
           [
             ledgerSavingsChild(account(recovery.claimant), branch).privateKey,
-            ...['vault', 'arkade'].map((r) => programSecret(recovery.claimant, r, recovery.initiateProgram, change)),
+            ledgerGuardianInitiateChild(context, guardianParent, recovery.claimant, change).privateKey,
           ],
           undefined,
           change,
@@ -207,7 +265,7 @@ try {
       recovery.guardians.forEach((guardian, i) =>
         checkSpend(`clawback-${recovery.claimant}-${guardian}`, recovery.pending, recovery.pending.clawbacks[i], [
           ledgerRecoveryChild(account(guardian), 'clawback').privateKey,
-          ...['vault', 'arkade'].map((r) => programSecret(recovery.claimant, r, recovery.clawbackProgram, i * 2)),
+          ledgerGuardianClawbackChild(context, guardianParent, recovery.claimant, guardian).privateKey,
         ]),
       )
     }
@@ -221,6 +279,7 @@ try {
         scope:
           'Bitcoin script authority and policy compilation; services deliberately bypassed with public fixture keys',
         results,
+        replacements,
       },
       null,
       2,

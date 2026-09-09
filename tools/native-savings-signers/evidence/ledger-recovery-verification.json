@@ -4,7 +4,7 @@
     {
       "policy": "standard-phone-pending",
       "path": "clawback",
-      "vsize": 194,
+      "vsize": 169,
       "defaultSignature": true,
       "signatureVerified": true,
       "destinationDisplayed": true,
@@ -48,7 +48,7 @@
     {
       "policy": "advanced-phone-pending",
       "path": "clawback",
-      "vsize": 194,
+      "vsize": 169,
       "defaultSignature": true,
       "signatureVerified": true,
       "destinationDisplayed": true,
@@ -92,7 +92,7 @@
     {
       "policy": "advanced-recovery-pending",
       "path": "clawback",
-      "vsize": 194,
+      "vsize": 169,
       "defaultSignature": true,
       "signatureVerified": true,
       "destinationDisplayed": true,

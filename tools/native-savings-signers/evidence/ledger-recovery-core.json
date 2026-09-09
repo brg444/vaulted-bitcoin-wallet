@@ -13,14 +13,14 @@
     {
       "tier": "standard",
       "path": "initiate-phone-0",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "standard",
       "path": "initiate-hardware-0",
-      "vsize": 174,
+      "vsize": 149,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -34,14 +34,14 @@
     {
       "tier": "standard",
       "path": "initiate-phone-1",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "standard",
       "path": "initiate-hardware-1",
-      "vsize": 174,
+      "vsize": 149,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -71,7 +71,7 @@
     {
       "tier": "standard",
       "path": "clawback-phone-hardware",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -101,7 +101,7 @@
     {
       "tier": "standard",
       "path": "clawback-hardware-phone",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -115,21 +115,21 @@
     {
       "tier": "advanced",
       "path": "initiate-phone-0",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "advanced",
       "path": "initiate-hardware-0",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "advanced",
       "path": "initiate-recovery-0",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -143,21 +143,21 @@
     {
       "tier": "advanced",
       "path": "initiate-phone-1",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "advanced",
       "path": "initiate-hardware-1",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "advanced",
       "path": "initiate-recovery-1",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -187,14 +187,14 @@
     {
       "tier": "advanced",
       "path": "clawback-phone-hardware",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "advanced",
       "path": "clawback-phone-recovery",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -224,14 +224,14 @@
     {
       "tier": "advanced",
       "path": "clawback-hardware-phone",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "advanced",
       "path": "clawback-hardware-recovery",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
@@ -261,16 +261,138 @@
     {
       "tier": "advanced",
       "path": "clawback-recovery-phone",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
     },
     {
       "tier": "advanced",
       "path": "clawback-recovery-hardware",
-      "vsize": 182,
+      "vsize": 157,
       "valid": true,
       "outputSubstitutionRejected": true
+    }
+  ],
+  "replacements": [
+    {
+      "tier": "standard",
+      "claimant": "phone",
+      "change": 0,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "standard",
+      "claimant": "hardware",
+      "change": 0,
+      "vsize": 161,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "standard",
+      "claimant": "phone",
+      "change": 1,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "standard",
+      "claimant": "hardware",
+      "change": 1,
+      "vsize": 161,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "advanced",
+      "claimant": "phone",
+      "change": 0,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "advanced",
+      "claimant": "hardware",
+      "change": 0,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "advanced",
+      "claimant": "recovery",
+      "change": 0,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "advanced",
+      "claimant": "phone",
+      "change": 1,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "advanced",
+      "claimant": "hardware",
+      "change": 1,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
+    },
+    {
+      "tier": "advanced",
+      "claimant": "recovery",
+      "change": 1,
+      "vsize": 169,
+      "originalFee": 300,
+      "replacementFee": 900,
+      "replacedAndConfirmed": true,
+      "samePendingDestination": true,
+      "outputs": 1,
+      "authorization": "fresh claimant and Guardian signatures for replacement"
     }
   ]
 }

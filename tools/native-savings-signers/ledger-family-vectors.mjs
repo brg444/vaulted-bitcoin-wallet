@@ -42,8 +42,6 @@ try {
             delay: r.delay,
             pending: tree(r.pending, [r.pending.claim, ...r.pending.clawbacks, r.pending.cancel]),
             quarantine: tree(r.quarantine, [r.quarantine.admin]),
-            initiateProgram: hex.encode(r.initiateProgram),
-            clawbackProgram: hex.encode(r.clawbackProgram),
           },
         ]),
       ),

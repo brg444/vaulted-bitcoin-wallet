@@ -42,7 +42,7 @@ try {
     await validateLedgerSavingsRegistration(contract, JSON.parse(JSON.stringify(registration)))
     return { walletId: registration.walletId, keys: registration.walletPolicy.keysInfo.length, calls }
   }, contract)
-  if (result.keys !== 7 || JSON.stringify(result.calls) !== '[[0,0,true],[1,0,false]]')
+  if (result.keys !== 4 || JSON.stringify(result.calls) !== '[[0,0,true],[1,0,false]]')
     throw new Error('browser registration mismatch')
   mkdirSync(root + 'tools/native-savings-signers/evidence', { recursive: true })
   writeFileSync(

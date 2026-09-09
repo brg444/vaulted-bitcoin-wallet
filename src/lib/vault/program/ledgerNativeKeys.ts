@@ -6,11 +6,10 @@ import { requireSupportedVaultNetwork, type VaultNetwork } from '../network'
 import { TAPROOT_NUMS_XONLY, xOnlyFromCompressed } from '../savingsTree'
 import { type Claimant, familyClaimants } from './constants'
 import { taggedHash } from './context'
-import { arkadeScriptHash, tweakByArkScript } from './tweak'
 
 // A new contract identity, deliberately absent from the live template registry.
-export const LEDGER_NATIVE_TEMPLATE = 'phone-ledger-recovery-savings-v1'
-const DOMAIN = 'vaulted/ledger-native-savings-v1'
+export const LEDGER_NATIVE_TEMPLATE = 'phone-ledger-guardian-savings-v1'
+const DOMAIN = 'vaulted/ledger-guardian-savings-v1'
 const HARDENED = 0x80000000
 
 export interface LedgerAccountOrigin {
@@ -29,7 +28,6 @@ export interface LedgerSavingsKeyContext {
   recovery?: LedgerAccountOrigin
   phoneDirectP256: string
   vaultCosignerBase: string
-  arkadeCosignerBase: string
 }
 
 export function ledgerBip32Versions(network: VaultNetwork) {
@@ -94,7 +92,7 @@ export function ledgerSavingsContextDigest(input: LedgerSavingsKeyContext): Uint
   const direct = lowerHex(input.phoneDirectP256, 33, 'phone direct key')
   if (!p256.utils.isValidPublicKey(direct, true)) throw new Error('invalid phone direct key')
   const accounts = [input.phone, input.hardware, ...(input.recovery ? [input.recovery] : [])]
-  const baseKeys = [input.vaultCosignerBase, input.arkadeCosignerBase]
+  const baseKeys = [input.vaultCosignerBase]
   const pubs = accounts.map((origin) => hex.encode(ledgerAccountKey(origin, input.network).publicKey!))
   for (const base of baseKeys) {
     const pub = lowerHex(base, 33, 'cosigner base')
@@ -136,9 +134,17 @@ export function ledgerSavingsChild(parent: HDKey, branch: number, index = 0): HD
 function exactChild(parent: HDKey, branch: number, index: number): HDKey {
   // scure follows BIP32's invalid-child skip rule; an enrolled coordinate cannot silently advance.
   const step = parent.deriveChild(branch)
-  const child = step.deriveChild(index)
-  if (step.index !== branch || child.index !== index) throw new Error('invalid Ledger Savings child')
-  return child
+  let child: HDKey | undefined
+  try {
+    child = step.deriveChild(index)
+    if (step.index !== branch || child.index !== index) throw new Error('invalid Ledger Savings child')
+    return child
+  } catch (error) {
+    child?.wipePrivateData()
+    throw error
+  } finally {
+    step.wipePrivateData()
+  }
 }
 
 export function ledgerSavingsInternalParent(input: LedgerSavingsKeyContext): HDKey {
@@ -149,27 +155,67 @@ export function ledgerSavingsInternalParent(input: LedgerSavingsKeyContext): HDK
   })
 }
 
-/** Pure construction only: signing services must supply the reconstructed named program. */
-export function ledgerRecoveryProgramParent(
-  input: LedgerSavingsKeyContext,
-  claimant: Claimant,
-  cosigner: 'vault' | 'arkade',
-  program: Uint8Array,
-): HDKey {
-  if (!familyClaimants(Boolean(input.recovery)).includes(claimant)) throw new Error('unenrolled recovery claimant')
-  if (cosigner !== 'vault' && cosigner !== 'arkade') throw new Error('unknown recovery cosigner')
-  if (!(program instanceof Uint8Array) || !program.length) throw new Error('recovery program required')
-  const base = cosigner === 'vault' ? input.vaultCosignerBase : input.arkadeCosignerBase
+/** The Guardian holds this enrolled base key. Recovery transaction policy is
+ * enforced by its named authorization capability before deriving a child. */
+export function ledgerSavingsGuardianParent(input: LedgerSavingsKeyContext): HDKey {
   return new HDKey({
-    publicKey: hex.decode(tweakByArkScript(base, program)),
-    chainCode: taggedHash(
-      `${DOMAIN}/program`,
-      ledgerSavingsContextDigest(input),
-      encodeFields([claimant, cosigner]),
-      arkadeScriptHash(program),
-    ),
+    publicKey: hex.decode(input.vaultCosignerBase),
+    chainCode: taggedHash(`${DOMAIN}/guardian`, ledgerSavingsContextDigest(input)),
     versions: ledgerBip32Versions(input.network),
   })
+}
+
+export function ledgerGuardianInitiateBranch(
+  input: LedgerSavingsKeyContext,
+  claimant: Claimant,
+  change: 0 | 1,
+): number {
+  if (!familyClaimants(Boolean(input.recovery)).includes(claimant)) throw new Error('unenrolled recovery claimant')
+  if (change !== 0 && change !== 1) throw new Error('unenrolled Guardian initiation coordinate')
+  return { phone: 0, hardware: 2, recovery: 4 }[claimant] + change
+}
+
+export function ledgerGuardianClawbackBranch(
+  input: LedgerSavingsKeyContext,
+  claimant: Claimant,
+  guardian: Claimant,
+): number {
+  const claimants = familyClaimants(Boolean(input.recovery))
+  if (!claimants.includes(claimant) || !claimants.includes(guardian) || guardian === claimant)
+    throw new Error('unenrolled Guardian cancellation authority')
+  const branches: Record<Claimant, Partial<Record<Claimant, number>>> = {
+    phone: { hardware: 6, recovery: 8 },
+    hardware: { phone: 10, recovery: 12 },
+    recovery: { phone: 14, hardware: 16 },
+  }
+  return branches[claimant][guardian]!
+}
+
+function requireGuardianParent(input: LedgerSavingsKeyContext, parent: HDKey) {
+  if (parent.publicExtendedKey !== ledgerSavingsGuardianParent(input).publicExtendedKey)
+    throw new Error('Guardian parent does not match enrollment')
+}
+
+export function ledgerGuardianInitiateChild(
+  input: LedgerSavingsKeyContext,
+  parent: HDKey,
+  claimant: Claimant,
+  change: 0 | 1,
+): HDKey {
+  const branch = ledgerGuardianInitiateBranch(input, claimant, change)
+  requireGuardianParent(input, parent)
+  return exactChild(parent, branch, 0)
+}
+
+export function ledgerGuardianClawbackChild(
+  input: LedgerSavingsKeyContext,
+  parent: HDKey,
+  claimant: Claimant,
+  guardian: Claimant,
+): HDKey {
+  const branch = ledgerGuardianClawbackBranch(input, claimant, guardian)
+  requireGuardianParent(input, parent)
+  return exactChild(parent, branch, 0)
 }
 
 /** Disjoint account branches keep each recovery leaf representable by Ledger.

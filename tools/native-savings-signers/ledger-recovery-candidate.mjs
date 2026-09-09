@@ -29,10 +29,9 @@ const keys = {
 const rows = []
 try {
   const { buildLedgerNativeFamily } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeFamily.ts')
-  const { ledgerRecoveryChild, ledgerRecoveryProgramParent, ledgerSavingsChild, LEDGER_RECOVERY_BRANCH } =
+  const { ledgerRecoveryChild, ledgerSavingsGuardianParent, ledgerGuardianClawbackChild, LEDGER_RECOVERY_BRANCH } =
     await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
   const { tapLeafForScript } = await vite.ssrLoadModule('/src/lib/vault/program/spend.ts')
-  const { tweakPrivateKey } = await vite.ssrLoadModule('/src/lib/vault/program/tweak.ts')
   const { scalarSecret } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
   const contexts = JSON.parse(
     readFileSync(new URL('../../src/lib/vault/program/ledger-family-vectors.json', import.meta.url)),
@@ -95,15 +94,9 @@ try {
       if (r.claimant === 'hardware') make('pending', 'claim', r.pending.claim, 'claim', [], r.delay)
       else {
         const hIndex = r.guardians.indexOf('hardware')
-        const cosigners = ['vault', 'arkade'].map((role) => {
-          const pub = ledgerRecoveryProgramParent(context, r.claimant, role, r.clawbackProgram)
-          const parent = new HDKey({
-            privateKey: tweakPrivateKey(scalarSecret(role === 'vault' ? 14 : 15), r.clawbackProgram),
-            chainCode: pub.chainCode,
-            versions,
-          })
-          return ledgerSavingsChild(parent, hIndex * 2).privateKey
-        })
+        const pub = ledgerSavingsGuardianParent(context)
+        const parent = new HDKey({ privateKey: scalarSecret(14), chainCode: pub.chainCode, versions })
+        const cosigners = [ledgerGuardianClawbackChild(context, parent, r.claimant, 'hardware').privateKey]
         make('pending', 'clawback', r.pending.clawbacks[hIndex], 'clawback', cosigners)
         const others = r.guardians.filter((g) => g !== 'hardware')
         make(

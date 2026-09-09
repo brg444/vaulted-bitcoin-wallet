@@ -39,6 +39,9 @@ The script expects three registration failures and one successful derived-policy
 
 ## New Ledger candidate
 
+The [Guardian-only qualification record](evidence/ledger-guardian-qualification.json)
+identifies current source hashes, test results and remaining release gates.
+
 Generate the complete Standard and Advanced candidate policies and PSBTs with public fixtures:
 
 ```sh
@@ -54,9 +57,9 @@ The container uses the same pinned Ledger build described above, with the native
 
 The current `ledger-candidate.json` records the implementation's complete simulator run. `ledger-candidate-initial.json` preserves the earlier prototype's diagnostic trace, whose ad hoc chain codes differ from the implementation. The verifier independently checks the signatures, DEFAULT/ALL restriction, exact recipient/amount/fee screen text, output-mutation failures and finalized sizes. Both tiers passed full and partial signing, measuring 169 and 212 vB respectively.
 
-Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, recovery and physical review remain separate release requirements. Wallet tests now cover subsequent change spending, mixed receive/change inputs, malicious metadata rejection and adapter cancellation. Device and funded lifecycle qualification remain required. The generator now uses the complete new recovery family. Service signing with its derived keys remains a separate compatibility gate.
+Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, recovery and physical review remain separate release requirements. Wallet tests now cover subsequent change spending, mixed receive/change inputs, malicious metadata rejection and adapter cancellation. Device and funded lifecycle qualification remain required. The generator now uses the complete new recovery family. The Guardian named authorization capability and complete lifecycle remain separate qualification gates.
 
-`ledger-key-vectors.mjs` regenerates the reviewed public derivation vectors at `src/lib/vault/program/ledger-key-vectors.json`. The same bytes live in the runtime's `internal/vault/savings/testdata/ledger-key-vectors.json`. Wallet and Go tests independently verify account derivations, program parents, policy templates and output scripts, including private/public derivation agreement. Fixture regeneration requires comparing both repositories; changed golden values represent a contract change.
+`ledger-key-vectors.mjs` regenerates the reviewed public derivation vectors at `src/lib/vault/program/ledger-key-vectors.json`. The same bytes live in the runtime's `internal/vault/savings/testdata/ledger-key-vectors.json`. Wallet and Go tests independently verify account derivations, Guardian parents, policy templates and output scripts, including private/public derivation agreement. Fixture regeneration requires comparing both repositories; changed golden values represent a contract change.
 
 ```sh
 node tools/native-savings-signers/ledger-key-vectors.mjs
@@ -96,7 +99,6 @@ scope. It never opens a USB device or signs with a real wallet. The candidate UI
 is prepared for coordinator integration and stays outside live enrollment until
 the full recovery and release gates pass.
 
-
 ## Complete Ledger recovery family
 
 `ledger-family-vectors.mjs` generates the complete public contract vectors for
@@ -117,7 +119,9 @@ node tools/native-savings-signers/verify-ledger-recovery.mjs
 
 The Core test requires the isolated container described above and accepts 37
 funded spends. It independently compiles each policy into the expected script,
-checks CSV maturity and rejects recipient substitutions. Its cosigner keys are
+checks CSV maturity and rejects recipient substitutions. It also replaces ten
+recovery initiations without an anchor, covering all claimants on receive and
+change. Both the acting user and Guardian sign each fee increase. Its cosigner keys are
 public fixtures used directly, bypassing service policy evaluation deliberately.
 
 The recovery simulator runner tests eight policies containing the hardware key,
@@ -125,6 +129,40 @@ with eleven signing cases. Policies for quarantine after hardware-initiated
 recovery belong to the remaining authorities and are exercised by the Core test.
 The verifier checks the hardware signature, displayed destination, amount and
 fee, output commitment and final transaction construction. Its synthetic parents
-and locally supplied cosigner signatures leave the public Emulator compatibility
-gate open. Run the normal and recovery simulator harnesses sequentially because
+and locally supplied Guardian signatures leave the actual service lifecycle
+unqualified. Run the normal and recovery simulator harnesses sequentially because
 they use the same emulator ports.
+
+The current candidate identity is `phone-ledger-guardian-savings-v1`. Standard
+registers four key records and Advanced registers five; recovery needs a user
+authority and Guardian. A compromised pair can bypass the pending stage. The
+public Emulator has no signature in this new Savings contract, while the earlier
+funded contracts retain their original requirements. Re-run every candidate
+harness after a script or derivation change; historical JSON cannot qualify a
+new contract.
+
+## Guardian transaction and phone backup checks
+
+`ledgerRecovery.ts` prepares one-input, one-output transitions with the exact
+pending or quarantine destination, verifies the user approval, and accepts only
+the Guardian signature on the retained transaction. The detached phone proof
+commits to the same transaction and prevout through a separate digest domain.
+
+```sh
+node tools/native-savings-signers/ledger-recovery-vectors.mjs
+pnpm exec vitest run --maxWorkers=1 src/lib/vault/ledgerRecovery.test.ts src/lib/vault/ledgerPhoneBackup.test.ts
+```
+
+Copy `src/lib/vault/program/ledger-recovery-vectors.json` unchanged to the runtime's
+`internal/application/testdata/ledger-recovery-vectors.json`, then run
+`go test ./internal/application -run TestLedgerSavingsWalletRecoveryVectors`.
+The fourteen vectors establish agreement on phone authorization, canonical
+transaction size and user/Guardian key metadata across the two implementations.
+The runtime also rejects changed derivation indices, branches, fingerprints
+and leaf hashes. Its separate key-capability tests exercise actual signing and
+Bitcoin script validation with the new per-vault root.
+
+The phone backup tests cover both networks, tiers and encryption purposes,
+wrong context and key material, tampering, exact origin verification and secret
+cleanup. These primitives stay outside live enrollment and the existing recovery
+package schema until their complete persistence and restore flow is qualified.

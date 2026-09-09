@@ -1,20 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { hex } from '@scure/base'
+import { HDKey } from '@scure/bip32'
+import { Transaction } from '@scure/btc-signer'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../spendingPolicy'
 import { buildLedgerNativeFamily } from './ledgerNativeFamily'
 import {
   ledgerAccountKey,
+  ledgerBip32Versions,
   ledgerRecoveryChild,
   ledgerRecoveryInternalParent,
+  ledgerSavingsChild,
+  ledgerSavingsGuardianParent,
+  ledgerGuardianInitiateChild,
+  ledgerGuardianClawbackChild,
   type LedgerSavingsKeyContext,
 } from './ledgerNativeKeys'
 import vectors from './ledger-family-vectors.json'
-import { PROGRAM_CSV } from './constants'
+import { PROGRAM_CSV, familyClaimants } from './constants'
+import { checksigScript } from '../savingsTree'
+import { scalarSecret } from './fixtures'
+import { tapLeafForScript } from './spend'
 
 describe('complete Ledger native recovery family', () => {
   for (const vector of vectors) {
     const context = vector.input as LedgerSavingsKeyContext
-    it(`reconstructs ${context.network} ${context.recovery ? 'advanced' : 'standard'} with unchanged recovery rights`, () => {
+    it(`reconstructs ${context.network} ${context.recovery ? 'advanced' : 'standard'} with Guardian recovery authority`, () => {
       const family = buildLedgerNativeFamily(context, defaultSpendingPolicy(context.network))
       expect(family.receive.address).not.toBe(family.change.address)
       expect(family.walletPolicy).toEqual(vector.walletPolicy)
@@ -26,13 +36,37 @@ describe('complete Ledger native recovery family', () => {
         expect(hex.encode(actual.script)).toBe(expected.script)
         expect([actual.admin, ...actual.initiate].map((script) => hex.encode(script))).toEqual(expected.scripts)
       }
+      expect(family).not.toHaveProperty('programs')
+      expect(family.walletPolicy.keysInfo).toHaveLength(context.recovery ? 5 : 4)
+      const guardianParent = ledgerSavingsGuardianParent(context)
+      for (const [change, normal] of [
+        [0, family.receive],
+        [1, family.change],
+      ] as const) {
+        expect(normal.admin).toEqual(
+          checksigScript(
+            ['phone', 'hardware'].map((role) =>
+              ledgerSavingsChild(
+                ledgerAccountKey(context[role as 'phone' | 'hardware'], context.network),
+                change,
+              ).publicKey!.slice(1),
+            ),
+          ),
+        )
+        normal.initiate.forEach((script, i) => {
+          const claimant = familyClaimants(Boolean(context.recovery))[i]
+          const account = ledgerAccountKey(context[claimant]!, context.network)
+          const user = ledgerSavingsChild(account, claimant === 'recovery' ? change : 2 + change)
+          const guardian = ledgerGuardianInitiateChild(context, guardianParent, claimant, change)
+          expect(script).toEqual(checksigScript([user.publicKey!.slice(1), guardian.publicKey!.slice(1)]))
+          expect(script.length).toBe(68)
+        })
+      }
       expect(Object.keys(family.recovery)).toEqual(
         context.recovery ? ['phone', 'hardware', 'recovery'] : ['phone', 'hardware'],
       )
       for (const recovery of Object.values(family.recovery)) {
         const expected = vector.recovery[recovery.claimant as keyof typeof vector.recovery]!
-        expect(hex.encode(recovery.initiateProgram)).toBe(expected.initiateProgram)
-        expect(hex.encode(recovery.clawbackProgram)).toBe(expected.clawbackProgram)
         for (const [actual, want] of [
           [recovery.pending, expected.pending],
           [recovery.quarantine, expected.quarantine],
@@ -56,12 +90,87 @@ describe('complete Ledger native recovery family', () => {
         expect(recovery.pending.claim.at(-1)).toBe(0xb2)
         expect(recovery.pending.walletPolicy.descriptorTemplate).toContain(`older(${recovery.delay})`)
         expect(recovery.quarantine.walletPolicy.keysInfo).toHaveLength(recovery.guardians.length + 1)
-        expect(recovery.pending.walletPolicy.keysInfo).toHaveLength(context.recovery ? 6 : 5)
-        expect(hex.encode(recovery.initiateProgram)).toContain(hex.encode(recovery.pending.script.slice(2)))
-        expect(hex.encode(recovery.clawbackProgram)).toContain(hex.encode(recovery.quarantine.script.slice(2)))
-        // Normal payments have no transition packet, reserve or anchor. These
-        // programs belong only to the explicitly initiated recovery flow.
-        expect(family.programs[recovery.claimant]).toBe(hex.encode(recovery.initiateProgram))
+        expect(recovery.pending.walletPolicy.keysInfo).toHaveLength(context.recovery ? 5 : 4)
+        expect(recovery).not.toHaveProperty('initiateProgram')
+        expect(recovery).not.toHaveProperty('clawbackProgram')
+        const guardianParent = ledgerSavingsGuardianParent(context)
+        recovery.pending.clawbacks.forEach((script, index) => {
+          const guardian = recovery.guardians[index]
+          expect(script).toEqual(
+            checksigScript([
+              ledgerRecoveryChild(ledgerAccountKey(context[guardian]!, context.network), 'clawback').publicKey!.slice(
+                1,
+              ),
+              ledgerGuardianClawbackChild(context, guardianParent, recovery.claimant, guardian).publicKey!.slice(1),
+            ]),
+          )
+          expect(script.length).toBe(68)
+        })
+        expect(recovery.pending.cancel).toEqual(
+          checksigScript(
+            recovery.guardians.map((guardian) =>
+              ledgerRecoveryChild(ledgerAccountKey(context[guardian]!, context.network), 'cancel').publicKey!.slice(1),
+            ),
+          ),
+        )
+        expect(recovery.quarantine.admin).toEqual(
+          checksigScript(
+            recovery.guardians.map((guardian) =>
+              ledgerRecoveryChild(ledgerAccountKey(context[guardian]!, context.network), 'quarantine').publicKey!.slice(
+                1,
+              ),
+            ),
+          ),
+        )
+      }
+    })
+  }
+  for (const vector of vectors) {
+    const context = vector.input as LedgerSavingsKeyContext
+    it(`requires a user and permits phone-plus-Guardian destination choice on ${context.network} ${context.recovery ? 'advanced' : 'standard'}`, () => {
+      const family = buildLedgerNativeFamily(context, defaultSpendingPolicy(context.network))
+      const versions = ledgerBip32Versions(context.network)
+      const phone = HDKey.fromMasterSeed(new Uint8Array(32).fill(0x43), versions).derive(
+        `m/86'/${context.network === 'mainnet' ? 0 : 1}'/0'`,
+      )
+      const guardian = new HDKey({
+        privateKey: scalarSecret(14),
+        chainCode: ledgerSavingsGuardianParent(context).chainCode!,
+        versions,
+      })
+      // This destination deliberately bypasses the pending output. Bitcoin
+      // authority permits it when both user and Guardian keys are compromised;
+      // the honest Guardian's destination check belongs to the runtime.
+      const destination = family.recovery.phone!.quarantine.script
+      expect(destination).not.toEqual(family.recovery.phone!.pending.script)
+      for (const [change, tree] of [
+        [0, family.receive],
+        [1, family.change],
+      ] as const) {
+        const build = () => {
+          const tx = new Transaction({ version: 2, allowUnknownInputs: true, allowUnknownOutputs: true })
+          tx.addInput({
+            txid: '11'.repeat(32),
+            index: 0,
+            sequence: 0xfffffffd,
+            witnessUtxo: { script: tree.script, amount: 100000n },
+            tapInternalKey: tree.tapInternalKey,
+            tapLeafScript: [tapLeafForScript(tree.tapLeafScript, tree.initiate[0])],
+          })
+          tx.addOutput({ script: destination, amount: 99000n })
+          return tx
+        }
+        const guardianSecret = ledgerGuardianInitiateChild(context, guardian, 'phone', change).privateKey!
+        const alone = build()
+        alone.signIdx(guardianSecret, 0)
+        expect(() => alone.finalize()).toThrow()
+        const both = build()
+        both.signIdx(ledgerSavingsChild(phone, 2 + change).privateKey!, 0)
+        both.signIdx(guardianSecret, 0)
+        both.finalize()
+        expect(both.extract().length).toBeGreaterThan(0)
+        expect(both.getInput(0).finalScriptWitness).toHaveLength(4)
+        expect(both.outputsLength).toBe(1)
       }
     })
   }

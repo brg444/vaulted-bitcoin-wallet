@@ -48,7 +48,6 @@ try {
       ...(tier === 'advanced' ? { recovery: origin(r) } : {}),
       phoneDirectP256: PROGRAM_FIXTURE_FAMILY.phoneDirectP256,
       vaultCosignerBase: PROGRAM_FIXTURE_FAMILY.vaultCosignerBase,
-      arkadeCosignerBase: PROGRAM_FIXTURE_FAMILY.arkadeCosignerBase,
     }
     const { walletPolicy, receive, change } = buildLedgerNativeFamily(input, defaultSpendingPolicy('mutinynet'))
     const { descriptorTemplate: template, keysInfo: keys } = walletPolicy

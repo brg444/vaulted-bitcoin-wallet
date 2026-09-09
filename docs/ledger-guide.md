@@ -41,16 +41,26 @@ contract. A failed or cancelled device approval is not retried automatically.
 
 ## Recovery and qualification
 
-The ordinary two-key path does not need the recovery services. Starting delayed
-recovery after losing one key still depends on both recovery services. Ledger
-checks Bitcoin scripts and signatures; it does not evaluate those services’
-programs or remove their trust assumptions.
+The ordinary two-key path needs the phone and Ledger. Starting delayed recovery
+after losing one key requires a remaining user authority and the Guardian. The
+Guardian alone cannot spend. If an attacker controls both a recovery user key
+and the Guardian key, they can bypass the pending stage and steal through that
+recovery leaf. Ledger's transaction review does not protect a different path
+that can be signed without it.
 
-Normal signing, change recognition and signature verification have simulator
-coverage. The complete new delayed-recovery family, phone HD backup restoration,
-funded lifecycle tests and physical Ledger review remain release requirements.
-New native enrollment stays disabled until those requirements pass. Existing
-funded connector wallets require an explicit migration transaction.
+After the pending transaction confirms, its claimant waits the enrolled block
+delay. The remaining user authorities can cancel through their saved scripts.
+The shorter hardware delay applies to this pending stage; it is not a guaranteed
+intervention window when the initiation keys are compromised.
+
+Simulator tests for the new contract pass. Complete backup restoration, funded
+service lifecycle tests and physical Ledger review remain before release. New native
+enrollment stays disabled until these requirements pass. Existing funded
+connector wallets require an explicit migration transaction.
+
+The current Spending recovery tree also needs separate signer qualification;
+it cannot use the tested Ledger policy format unchanged. New enrollment remains
+blocked on resolving that compatibility alongside the Savings release tests.
 
 Spending has separate recovery paths. Its unilateral exit needs saved transaction
 paths updated after activity; Savings policy registration does not replace that
