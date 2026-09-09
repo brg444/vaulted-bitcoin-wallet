@@ -8,9 +8,9 @@ import {
   requireSameNativeSavingsIntent,
   type SavingsCoin,
 } from './savingsSpend'
-import { buildLedgerNativeSavings } from './program/ledgerNativePolicy'
+import { buildLedgerNativeFamily } from './program/ledgerNativeFamily'
 import { ledgerAccountKey, ledgerSavingsChild, type LedgerSavingsKeyContext } from './program/ledgerNativeKeys'
-import type { Claimant } from './program/constants'
+import type { SpendingPolicy } from './spendingPolicy'
 import { requireExactDefaultTapscriptSignatures } from './taprootSignatures'
 
 const TX_OPTS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true } as const
@@ -19,7 +19,7 @@ const TX_OPTS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: tru
 // This candidate is deliberately not accepted by live enrollment or the Recovery Kit parser.
 export interface LedgerSavingsContract {
   context: LedgerSavingsKeyContext
-  programs: Partial<Record<Claimant, string>>
+  spendingPolicy: SpendingPolicy
 }
 export interface LedgerSavingsCoin extends SavingsCoin {
   branch: 0 | 1
@@ -34,7 +34,7 @@ export interface LedgerSavingsPayment {
   feeSats: number
 }
 
-function treeAt(contract: ReturnType<typeof buildLedgerNativeSavings>, branch: number, index: number) {
+function treeAt(contract: ReturnType<typeof buildLedgerNativeFamily>, branch: number, index: number) {
   if ((branch !== 0 && branch !== 1) || index !== 0) throw new Error('unenrolled Ledger Savings coordinate')
   return branch === 0 ? contract.receive : contract.change
 }
@@ -62,8 +62,8 @@ function originFor(
 /** Verifies the actual parent and enrolled receive/change coordinate before
  * building the same native transaction used by pre-connector Savings. */
 export function buildLedgerSavingsPsbt(input: LedgerSavingsPayment): string {
-  const { context, programs } = input.contract
-  const family = buildLedgerNativeSavings(context, programs)
+  const { context, spendingPolicy } = input.contract
+  const family = buildLedgerNativeFamily(context, spendingPolicy)
   return buildNativeSavingsPsbt({
     ...input,
     network: context.network,

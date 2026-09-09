@@ -1,0 +1,276 @@
+{
+  "node": "/Satoshi:31.0.0/",
+  "network": "isolated regtest",
+  "scope": "Bitcoin script authority and policy compilation; services deliberately bypassed with public fixture keys",
+  "results": [
+    {
+      "tier": "standard",
+      "path": "normal-0",
+      "vsize": 157,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "initiate-phone-0",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "initiate-hardware-0",
+      "vsize": 174,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "normal-1",
+      "vsize": 157,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "initiate-phone-1",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "initiate-hardware-1",
+      "vsize": 174,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "claim-phone",
+      "vsize": 134,
+      "valid": true,
+      "outputSubstitutionRejected": true,
+      "csvBlocks": 144,
+      "prematureClaimRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "cancel-phone",
+      "vsize": 125,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "quarantine-phone",
+      "vsize": 117,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "clawback-phone-hardware",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "claim-hardware",
+      "vsize": 133,
+      "valid": true,
+      "outputSubstitutionRejected": true,
+      "csvBlocks": 6,
+      "prematureClaimRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "cancel-hardware",
+      "vsize": 125,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "quarantine-hardware",
+      "vsize": 117,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "standard",
+      "path": "clawback-hardware-phone",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "normal-0",
+      "vsize": 157,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "initiate-phone-0",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "initiate-hardware-0",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "initiate-recovery-0",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "normal-1",
+      "vsize": 157,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "initiate-phone-1",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "initiate-hardware-1",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "initiate-recovery-1",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "claim-phone",
+      "vsize": 134,
+      "valid": true,
+      "outputSubstitutionRejected": true,
+      "csvBlocks": 144,
+      "prematureClaimRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "cancel-phone",
+      "vsize": 157,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "quarantine-phone",
+      "vsize": 141,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "clawback-phone-hardware",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "clawback-phone-recovery",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "claim-hardware",
+      "vsize": 133,
+      "valid": true,
+      "outputSubstitutionRejected": true,
+      "csvBlocks": 6,
+      "prematureClaimRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "cancel-hardware",
+      "vsize": 157,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "quarantine-hardware",
+      "vsize": 141,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "clawback-hardware-phone",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "clawback-hardware-recovery",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "claim-recovery",
+      "vsize": 134,
+      "valid": true,
+      "outputSubstitutionRejected": true,
+      "csvBlocks": 288,
+      "prematureClaimRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "cancel-recovery",
+      "vsize": 157,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "quarantine-recovery",
+      "vsize": 141,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "clawback-recovery-phone",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "tier": "advanced",
+      "path": "clawback-recovery-hardware",
+      "vsize": 182,
+      "valid": true,
+      "outputSubstitutionRejected": true
+    }
+  ]
+}

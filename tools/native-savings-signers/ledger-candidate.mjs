@@ -33,19 +33,11 @@ const xonly = (hd) => hd.publicKey.slice(1)
 const rows = []
 try {
   const { PROGRAM_FIXTURE_FAMILY } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
-  const { buildVaultProgramFamily } = await vite.ssrLoadModule('/src/lib/vault/program/trees.ts')
-  const { buildLedgerNativeSavings } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativePolicy.ts')
+  const { buildLedgerNativeFamily } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeFamily.ts')
   const { signLedgerSavingsWithPhone } = await vite.ssrLoadModule('/src/lib/vault/ledgerSavings.ts')
   const { LEDGER_NATIVE_TEMPLATE } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
   const { defaultSpendingPolicy, spendingPolicyDigest } = await vite.ssrLoadModule('/src/lib/vault/spendingPolicy.ts')
   for (const tier of ['standard', 'advanced']) {
-    const family = buildVaultProgramFamily({
-      ...PROGRAM_FIXTURE_FAMILY,
-      phonePub: hex.encode(child(account(p), 0).publicKey),
-      hardwarePub: hex.encode(child(account(h), 0).publicKey),
-      recoveryPub: tier === 'advanced' ? hex.encode(child(account(r), 0).publicKey) : undefined,
-    })
-    // Recovery transition programs remain fixtures until the full lifecycle is qualified.
     const input = {
       templateVersion: LEDGER_NATIVE_TEMPLATE,
       network: 'mutinynet',
@@ -58,11 +50,7 @@ try {
       vaultCosignerBase: PROGRAM_FIXTURE_FAMILY.vaultCosignerBase,
       arkadeCosignerBase: PROGRAM_FIXTURE_FAMILY.arkadeCosignerBase,
     }
-    const claims = tier === 'advanced' ? ['phone', 'hardware', 'recovery'] : ['phone', 'hardware']
-    const programs = Object.fromEntries(
-      claims.map((claim) => [claim, hex.encode(family.initiateAuth['savings-' + claim])]),
-    )
-    const { walletPolicy, receive, change } = buildLedgerNativeSavings(input, programs)
+    const { walletPolicy, receive, change } = buildLedgerNativeFamily(input, defaultSpendingPolicy('mutinynet'))
     const { descriptorTemplate: template, keysInfo: keys } = walletPolicy
     const parent = new Transaction({ allowUnknownInputs: true })
     parent.addInput({ txid: '00'.repeat(32), index: 99 })
@@ -71,7 +59,7 @@ try {
     const payments = []
     for (const full of [false, true]) {
       const payment = {
-        contract: { context: input, programs },
+        contract: { context: input, spendingPolicy: defaultSpendingPolicy('mutinynet') },
         coins: [
           {
             txid: parent.id,
@@ -104,7 +92,8 @@ try {
       change: change.address,
       hardware: hex.encode(xonly(child(account(h), 0))),
       payments,
-      recoveryScope: 'v1 transition program fixtures; post-tweak BIP32 math only; runtime integration unimplemented',
+      recoveryScope:
+        'complete native recovery family; runtime integration and funded lifecycle qualification remain required',
     })
   }
   writeFileSync(

@@ -1,6 +1,6 @@
 # Ledger-compatible native Savings
 
-Status: native payment integration in progress, 2026-09-09. Ledger is the primary signing target for this candidate. The earlier [unchanged-contract assessment](native-savings-signers.md) remains applicable to existing addresses; this candidate deliberately creates a new contract.
+Status: contract and signer qualification in progress, 2026-09-09. RC activation is blocked on derived-key recovery support in the public Emulator, followed by enrollment, backup and physical-device qualification. Ledger is the primary signing target for this candidate. The earlier [unchanged-contract assessment](native-savings-signers.md) remains applicable to existing addresses; this candidate deliberately creates a new contract.
 
 ## Product flow
 
@@ -46,7 +46,7 @@ Ledger requires disjoint derivations when a key expression occurs in multiple br
 
 The internal key derives from a BIP341 NUMS point encoded as an extended public key. Its chain code is deterministic and public. Public derivation adds known tweaks to a point with an unknown discrete logarithm, preserving an unspendable key path under the standard assumptions. The implemented context commits the vault, network, tier, contract version, Spending policy digest, user account origins, phone authentication key and both cosigner bases. Client and server independently reconstruct the same length-prefixed encoding. Program parents additionally commit the exact program hash, claimant and cosigner role.
 
-Standard uses seven policy entries: NUMS, phone, Ledger, and two program cosigners for each of the two recovery-initiation branches. Advanced adds a recovery authority and its two program cosigners, for ten entries. Both templates fit Ledger's fifteen-key and 512-byte template limits. Every onchain cooperative leaf remains two ordinary signature checks.
+Standard uses seven policy entries: NUMS, phone, Ledger, and two program cosigners for each of the two recovery-initiation branches. Advanced adds a recovery authority and its two program cosigners, for ten entries. Both templates fit Ledger's fifteen-key and 512-byte template limits, with two ordinary signature checks in a normal withdrawal leaf and three in service-assisted recovery leaves.
 
 ## Recovery cosigner derivation
 
@@ -59,7 +59,7 @@ enrolled cosigner base
   → allowed receive/change child at the enrolled index
 ```
 
-Wallet and runtime tests check that public and private BIP32 derivation produce identical child keys after the program tweak. Four shared vectors cover both networks and protection tiers, including identical policy templates, key vectors, receive addresses and change addresses. They use actual v1 transition programs with inherited quarantine and pending destinations. The complete new recovery contract, its final families and registrations still require construction and qualification.
+Wallet and runtime tests check that public and private BIP32 derivation produce identical child keys after the program tweak. Four shared vectors cover both networks and protection tiers, including identical policy templates, key vectors, receive addresses and change addresses. The original derivation vectors remain as historical constructor coverage. The complete family now has separate shared vectors in `ledger-family-vectors.json`, including every pending and quarantine script, recovery program, policy and destination.
 
 Both signing services must reconstruct the named program, chain code and permitted derivation from the immutable enrollment. The signer verifies the prevout and Tapscript commitment, evaluates the program against the exact transaction, derives the expected child inside its key boundary, and returns only the appropriate signature. The caller cannot choose an arbitrary chain code, child path, program or signing digest.
 
@@ -69,7 +69,7 @@ Current runtime signing derives the program key directly in `internal/applicatio
 
 Ledger policies describe receive/change address families. The prototype exercises receive index zero and change index zero. Enrollment and the Recovery Kit must identify the exact permitted coordinates and resulting scripts, and the wallet must retain each input's origin when spending change later. A test that sends change without subsequently recovering or spending it is incomplete.
 
-For the first product implementation, restrict accepted addresses to explicitly enrolled coordinates and reject other derived addresses. The final recovery design must specify whether these outputs converge on shared quarantine/pending destinations or have separate recovery families. That choice affects recovery registration and archive size and remains open until the funded lifecycle tests are defined.
+Construction restricts Savings to receive index zero and change index zero. Both converge on the same claimant-specific pending and quarantine outputs at recovery index zero. The recovery package therefore needs one pending and one quarantine policy per claimant. Recovery policies use disjoint account branches: claim 4, cooperative cancellation 6, server-free cancellation 8, and quarantine release 10. Their corresponding odd branches exist in the policy grammar but are outside the enrolled recovery coordinates.
 
 Phone key derivation and backup restoration must be revised together. Existing phone scalar storage cannot be treated as an HD account silently. Hardware account origins, program xpub construction data, policy identifiers, Ledger authorization HMACs and permitted coordinates belong in the recovery package. Lost HMAC metadata should be recoverable through policy re-registration with the same Ledger seed and exact descriptor.
 
@@ -140,13 +140,51 @@ open. Existing connector recovery and unresolved transaction records remain inta
 The targeted suite passed 315 tests across 37 files, followed by passing checks for stale device callbacks, leaving connector setup after a contract change, and official-client registration/address validation on both networks and tiers. The wallet-generated PSBTs also passed the Standard and Advanced simulator rerun for both payment shapes, retaining the 169 vB full and 212 vB partial sizes. Typecheck, lint and the mainnet build passed. The production dependency audit reported no known vulnerabilities. Chromium passed official-client
 policy serialization, registration metadata reconstruction and address-check
 sequencing with a simulated transport. That browser test does not exercise USB or
-a physical device. Phone HD backup restoration, the complete new recovery family,
-Guardian/Emulator child signing, live enrollment wiring and funded/physical tests
+a physical device. Phone HD backup restoration,
+Guardian/Emulator child signing, live enrollment wiring and integrated/physical tests
 remain before RC activation. No new recovery schema or Contract Pack is enabled by
 this increment.
 
 The recovery companion has matching integration notes on branch
-`codex/ledger-native-recovery-integration` at `469df3d`. Its executable bundles and
+`codex/ledger-native-recovery-integration` at `d9590aa`. Its executable bundles and
 the wallet's pinned recovery submodule remain unchanged until the native recovery
 implementation is complete; the notes distinguish existing connector recovery
 from the new registration metadata and preserve Spending exit-data requirements.
+
+
+## Complete recovery contract qualification, September 9
+
+`ledgerNativeFamily.ts` and runtime `ledger_family.go` now reconstruct the full
+contract from the enrollment context and network-bound Spending policy. Normal
+payment construction and Ledger registration use this family. They no longer
+accept recovery programs supplied separately by the caller. Wallet and runtime
+share four complete vectors covering both networks and tiers.
+
+Pending claims use `and_v(v:pk(claimant),older(delay))`. The new contract omits
+unspendable padding and assigns disjoint branches to the recovery roles. Existing
+contracts retain their original scripts. Bitcoin Core 31 accepted 37 funded
+fixture spends across Standard and Advanced, including normal receive/change,
+every initiation authority, matured claims, cooperative cancellation, server-free
+cancellation and quarantine release. It rejected early CSV claims and destination
+substitutions after signing. The fixture deliberately supplies cosigner secrets
+to measure Bitcoin authority; it does not establish service authorization.
+
+Both normal Ledger payment shapes passed again against the complete family in
+Speculos, retaining 169 vB and 212 vB. All eleven recovery signing cases across eight hardware-owned policies also
+passed. Each displayed the complete destination, amount and fee, produced a
+verified DEFAULT signature, and rejected output substitution. The corresponding
+evidence files distinguish simulator registration and signing from service
+execution and physical hardware.
+
+Runtime test `TestLedgerRecoveryRequiresEmulatorDerivedKeySupport` reproduces
+the pinned Emulator reader’s rejection of the reconstructed derived recovery
+keys; passing it confirms that compatibility remains blocked. A coordinated service upgrade must demonstrate successful named-program
+execution and signing before this contract can be enabled. The required checks
+are specified in [the Emulator compatibility gate](ledger-emulator-compatibility.md).
+
+
+The integrated wallet suite passed 324 tests across 38 files, followed by passing
+fixed-vector assertions for the full family. Typecheck, lint, formatting, the
+mainnet production build and the Chromium client check passed. The full runtime test suite, Savings race tests and vet passed. Deployment readiness still requires the
+Emulator upgrade, evaluated child signing, phone HD backup/restore, enrollment
+and lifecycle integration, and physical Ledger validation.

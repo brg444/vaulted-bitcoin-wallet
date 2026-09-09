@@ -54,7 +54,7 @@ The container uses the same pinned Ledger build described above, with the native
 
 The current `ledger-candidate.json` records the implementation's complete simulator run. `ledger-candidate-initial.json` preserves the earlier prototype's diagnostic trace, whose ad hoc chain codes differ from the implementation. The verifier independently checks the signatures, DEFAULT/ALL restriction, exact recipient/amount/fee screen text, output-mutation failures and finalized sizes. Both tiers passed full and partial signing, measuring 169 and 212 vB respectively.
 
-Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, recovery and physical review remain separate release requirements. Wallet tests now cover subsequent change spending, mixed receive/change inputs, malicious metadata rejection and adapter cancellation. Device and funded lifecycle qualification remain required. The recovery programs in the generator are mathematical fixtures from the existing family; service signing with the new derived keys and the complete recovery contract remain unimplemented.
+Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, recovery and physical review remain separate release requirements. Wallet tests now cover subsequent change spending, mixed receive/change inputs, malicious metadata rejection and adapter cancellation. Device and funded lifecycle qualification remain required. The generator now uses the complete new recovery family. Service signing with its derived keys remains a separate compatibility gate.
 
 `ledger-key-vectors.mjs` regenerates the reviewed public derivation vectors at `src/lib/vault/program/ledger-key-vectors.json`. The same bytes live in the runtime's `internal/vault/savings/testdata/ledger-key-vectors.json`. Wallet and Go tests independently verify account derivations, program parents, policy templates and output scripts, including private/public derivation agreement. Fixture regeneration requires comparing both repositories; changed golden values represent a contract change.
 
@@ -76,7 +76,7 @@ BitBox, Jade, COLDCARD, Krux and Trezor findings rely on the pinned source revie
 
 ## Remaining qualification
 
-Physical registration, persistent wallet reload, actual screen review, QR/SD exchange, cancellation, and the complete funded recovery lifecycle remain release gates. Passing a signing-engine or source-level test does not satisfy those gates.
+The Ledger candidate still requires physical registration and screen review, persistent wallet reload, cancellation/reconnect handling and an integrated recovery lifecycle using the signing services. Its chosen transport is desktop WebHID. Other signer assessments retain their own transport-specific qualification requirements.
 
 ## Native wallet client and UI checks
 
@@ -95,3 +95,36 @@ client serializer and registration validation. Its evidence records that limited
 scope. It never opens a USB device or signs with a real wallet. The candidate UI
 is prepared for coordinator integration and stays outside live enrollment until
 the full recovery and release gates pass.
+
+
+## Complete Ledger recovery family
+
+`ledger-family-vectors.mjs` generates the complete public contract vectors for
+both networks and tiers. Copy `src/lib/vault/program/ledger-family-vectors.json`
+unchanged into the runtime Savings testdata directory. These vectors complement
+the original key-derivation fixtures.
+
+```sh
+node tools/native-savings-signers/ledger-family-vectors.mjs
+node tools/native-savings-signers/ledger-recovery-core.mjs
+node tools/native-savings-signers/ledger-recovery-candidate.mjs
+docker cp tools/native-savings-signers/evidence/ledger-recovery-inputs.json vaulted-ledger-speculos:/native-savings-20260908/ledger-recovery-inputs.json
+docker cp tools/native-savings-signers/ledger-recovery.py vaulted-ledger-speculos:/native-savings-20260908/ledger-recovery.py
+docker exec vaulted-ledger-speculos python /native-savings-20260908/ledger-recovery.py
+docker cp vaulted-ledger-speculos:/native-savings-20260908/ledger-recovery-all.json tools/native-savings-signers/evidence/ledger-recovery.json
+node tools/native-savings-signers/verify-ledger-recovery.mjs
+```
+
+The Core test requires the isolated container described above and accepts 37
+funded spends. It independently compiles each policy into the expected script,
+checks CSV maturity and rejects recipient substitutions. Its cosigner keys are
+public fixtures used directly, bypassing service policy evaluation deliberately.
+
+The recovery simulator runner tests eight policies containing the hardware key,
+with eleven signing cases. Policies for quarantine after hardware-initiated
+recovery belong to the remaining authorities and are exercised by the Core test.
+The verifier checks the hardware signature, displayed destination, amount and
+fee, output commitment and final transaction construction. Its synthetic parents
+and locally supplied cosigner signatures leave the public Emulator compatibility
+gate open. Run the normal and recovery simulator harnesses sequentially because
+they use the same emulator ports.

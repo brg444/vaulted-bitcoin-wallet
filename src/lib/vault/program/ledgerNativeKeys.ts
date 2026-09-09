@@ -130,6 +130,10 @@ export function ledgerSavingsChild(parent: HDKey, branch: number, index = 0): HD
   if (!Number.isInteger(branch) || branch < 0 || branch > 3 || index !== 0) {
     throw new Error('unenrolled Ledger Savings coordinate')
   }
+  return exactChild(parent, branch, index)
+}
+
+function exactChild(parent: HDKey, branch: number, index: number): HDKey {
   // scure follows BIP32's invalid-child skip rule; an enrolled coordinate cannot silently advance.
   const step = parent.deriveChild(branch)
   const child = step.deriveChild(index)
@@ -163,6 +167,40 @@ export function ledgerRecoveryProgramParent(
       ledgerSavingsContextDigest(input),
       encodeFields([claimant, cosigner]),
       arkadeScriptHash(program),
+    ),
+    versions: ledgerBip32Versions(input.network),
+  })
+}
+
+/** Disjoint account branches keep each recovery leaf representable by Ledger.
+ * Recovery outputs are enrolled at index zero; these are semantic roles, not a
+ * caller-selected derivation path for either signing service. */
+export const LEDGER_RECOVERY_BRANCH = {
+  claim: 4,
+  clawback: 6,
+  cancel: 8,
+  quarantine: 10,
+} as const
+
+export function ledgerRecoveryChild(parent: HDKey, role: keyof typeof LEDGER_RECOVERY_BRANCH): HDKey {
+  if (!Object.prototype.hasOwnProperty.call(LEDGER_RECOVERY_BRANCH, role))
+    throw new Error('unknown Ledger recovery key role')
+  return exactChild(parent, LEDGER_RECOVERY_BRANCH[role], 0)
+}
+
+export function ledgerRecoveryInternalParent(
+  input: LedgerSavingsKeyContext,
+  claimant: Claimant,
+  stage: 'pending' | 'quarantine',
+): HDKey {
+  if (!familyClaimants(Boolean(input.recovery)).includes(claimant)) throw new Error('unenrolled recovery claimant')
+  if (stage !== 'pending' && stage !== 'quarantine') throw new Error('unknown recovery stage')
+  return new HDKey({
+    publicKey: hex.decode(`02${TAPROOT_NUMS_XONLY}`),
+    chainCode: taggedHash(
+      `${DOMAIN}/recovery-internal`,
+      ledgerSavingsContextDigest(input),
+      encodeFields([claimant, stage]),
     ),
     versions: ledgerBip32Versions(input.network),
   })

@@ -1,15 +1,16 @@
+import { defaultSpendingPolicy } from '../lib/vault/spendingPolicy'
 import { HDKey } from '@scure/bip32'
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
 import vectors from '../lib/vault/program/ledger-key-vectors.json'
 import { ledgerBip32Versions, type LedgerSavingsKeyContext } from '../lib/vault/program/ledgerNativeKeys'
-import { buildLedgerNativeSavings } from '../lib/vault/program/ledgerNativePolicy'
+import { buildLedgerNativeFamily } from '../lib/vault/program/ledgerNativeFamily'
 import type { LedgerSavingsPayment } from '../lib/vault/ledgerSavings'
 const opts = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true } as const
 export function ledgerPaymentFixture(vector = vectors[0]) {
   const context = structuredClone(vector.input) as LedgerSavingsKeyContext
-  const contract = { context, programs: Object.fromEntries(vector.programParents.map((p) => [p.claimant, p.program])) }
-  const family = buildLedgerNativeSavings(context, contract.programs)
+  const contract = { context, spendingPolicy: defaultSpendingPolicy(context.network) }
+  const family = buildLedgerNativeFamily(context, contract.spendingPolicy)
   const hd = (seed: number) =>
     HDKey.fromMasterSeed(new Uint8Array(32).fill(seed), ledgerBip32Versions(context.network)).derive(
       `m/86'/${context.network === 'mainnet' ? 0 : 1}'/0'`,

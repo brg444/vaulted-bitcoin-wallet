@@ -1,0 +1,206 @@
+[
+  {
+    "id": "standard-phone-pending",
+    "name": "Vaulted phone wait",
+    "template": "tr(@0/**,{{and_v(v:pk(@1/<4;5>/*),older(144)),and_v(v:pk(@2/<6;7>/*),and_v(v:pk(@3/<0;1>/*),pk(@4/<0;1>/*)))},pk(@2/<8;9>/*)})",
+    "keys": [
+      "tpubD6NzVbkrYhZ4YPkTnTbME2ZUft1LEfT9LyGeEsMymWbFaxcPK59eMgXyv2iqqY4r1FsmckkCjxCpdrnvWzqwJKsv7dbyodVbFoUtsG4gx6a",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "tpubD6NzVbkrYhZ4YiMQq6KwLvq36XYV3baCMcPs5EWfFbozoAYfPDpBrf8UntpsqFyi3JjL6np3s33JmoWTu5E4fAW1Eof1gev8tgqBU83ALae",
+      "tpubD6NzVbkrYhZ4YN7zGYoecCNchdM4Nep7JS1x4gaDSGoE8bHynx2VtFYEEstndZCe1TyMPJ7anSGjTePSNjmdacrt5ZzvzXtEaHaF7wyJj2E"
+    ],
+    "address": "tb1p7gexq9dyq95980pdyktjjerplre8au3w6fssw8ufckqnwjkv8zxq6r8v34",
+    "payments": [
+      {
+        "label": "clawback",
+        "hardware": "e20d5d6b2f3bfea38f900f330663141aee7a67242426bc9467fa2919430f11ea",
+        "psbt": "cHNidP8BAF4CAAAAAcP6pSr7y5BsNIjrWnKREKxIzXUv4F2a8obDRKetjATJAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSDyMmAVpAFoU7wtJZcpZGH48n7yLtJhBx+JxYE3Ssw4jAAAAAABASughgEAAAAAACJRIPIyYBWkAWhTvC0llylkYfjyfvIu0mEHH4nFgTdKzDiMQRQm6ZzKjI4qE9dF9v5Q2FEBsCxdH0CsIS5L0xYgtfCS2Z7pJL9nyUAkVAGfijn5Sn8n8Fo1SCIDSBK/FWvZjyF5QIiGtm9Mb9IZ1QcFxBBzMhzUnjUv9h2yr2d4YRCpZYAvrseKKqVQnDdHg5iKK5DK4vyQxZKApWZb3pZaOld9pipBFPu0QxD1fAi1G9/MChWjiCTDYU9aVcZnhM+AsJtMV8uVnukkv2fJQCRUAZ+KOflKfyfwWjVIIgNIEr8Va9mPIXlArtCQqlzOFFXnJVZaRroHcQlGekAqNV3xnDuSVS7s5LvnoF8Qt7pmTkV2+zUw7YlR/dTIRM4ySIPV2RGEpSZXZmIVwJMW7/HW92P0zt1IJg/sVHGXO0lm9UdUCislekHX+CU3MT7FIypVgoZhr1r8fe/Q/qQ+dgkSo8UYJzRVTm0tV2P39Ww1zdbgcRvWMivSaJUL+koJXL489uARzXfGE+9OKGcg4g1day87/qOPkA8zBmMUGu56ZyQkJryUZ/opGUMPEeqtIPu0QxD1fAi1G9/MChWjiCTDYU9aVcZnhM+AsJtMV8uVrSAm6ZzKjI4qE9dF9v5Q2FEBsCxdH0CsIS5L0xYgtfCS2azAIRbiDV1rLzv+o4+QDzMGYxQa7npnJCQmvJRn+ikZQw8R6jkBnukkv2fJQCRUAZ+KOflKfyfwWjVIIgNIEr8Va9mPIXn1rML9VgAAgAEAAIAAAACABgAAAAAAAAABFyCTFu/x1vdj9M7dSCYP7FRxlztJZvVHVAorJXpB1/glNwAA",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      },
+      {
+        "label": "cancel",
+        "hardware": "129526dc3b3ee161359b387a32a409d158f119e8262ad7d9c6751a2c94d1f14d",
+        "psbt": "cHNidP8BAF4CAAAAAcP6pSr7y5BsNIjrWnKREKxIzXUv4F2a8obDRKetjATJAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSDyMmAVpAFoU7wtJZcpZGH48n7yLtJhBx+JxYE3Ssw4jAAAAAABASughgEAAAAAACJRIPIyYBWkAWhTvC0llylkYfjyfvIu0mEHH4nFgTdKzDiMQhXAkxbv8db3Y/TO3UgmD+xUcZc7SWb1R1QKKyV6Qdf4JTfQdSJfImZVE1gmEH7k/x7HFK2LJdgVFzfCqpPOr1qDcyMgEpUm3Ds+4WE1mzh6MqQJ0VjxGegmKtfZxnUaLJTR8U2swCEWEpUm3Ds+4WE1mzh6MqQJ0VjxGegmKtfZxnUaLJTR8U05Aff1bDXN1uBxG9YyK9JolQv6Sglcvjz24BHNd8YT704o9azC/VYAAIABAACAAAAAgAgAAAAAAAAAARcgkxbv8db3Y/TO3UgmD+xUcZc7SWb1R1QKKyV6Qdf4JTcAAA==",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  },
+  {
+    "id": "standard-phone-quarantine",
+    "name": "Vaulted phone safe",
+    "template": "tr(@0/**,pk(@1/<10;11>/*))",
+    "keys": [
+      "tpubD6NzVbkrYhZ4WZ5dbeszkoY9iy7hzymE8VATxDYPHCEatUq4tMPnYxAdxEh13yUi8drWurzUpPkrXa94nLpH7wX9bxD3pALGgG99Zc8n4KF",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U"
+    ],
+    "address": "tb1pvvyvw67c72up6qcttkdzxwcjf6fzpx5l0rfg7lgu364kf7smnfmqc9xqgt",
+    "payments": [
+      {
+        "label": "release",
+        "hardware": "4fa4e5ca44d37933bca48a2beceb6dd401b1ab24ae4d96f3316857688d0d96d3",
+        "psbt": "cHNidP8BAF4CAAAAAfMyCqHUCSke2svSujXDbuSJWOSATdsXj5MLwr9HiT4oAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSBjCMdr2PK4HQMLXZojOxJOkiCan3jSj30cjqtk+huadgAAAAABASughgEAAAAAACJRIGMIx2vY8rgdAwtdmiM7Ek6SIJqfeNKPfRyOq2T6G5p2IhXBncwKuD8UQGHzVG7K/3wPS+Pq8DZ9DGkxIv1G9CtUK5gjIE+k5cpE03kzvKSKK+zrbdQBsaskrk2W8zFoV2iNDZbTrMAhFk+k5cpE03kzvKSKK+zrbdQBsaskrk2W8zFoV2iNDZbTOQGC1uueHh8Not7Zr9aRsq1I19Sgd4mH61BWu0ywNNzpi/Wswv1WAACAAQAAgAAAAIAKAAAAAAAAAAEXIJ3MCrg/FEBh81Ruyv98D0vj6vA2fQxpMSL9RvQrVCuYAAA=",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  },
+  {
+    "id": "standard-hardware-pending",
+    "name": "Vaulted hardware wait",
+    "template": "tr(@0/**,{{and_v(v:pk(@2/<4;5>/*),older(6)),and_v(v:pk(@1/<6;7>/*),and_v(v:pk(@3/<0;1>/*),pk(@4/<0;1>/*)))},pk(@1/<8;9>/*)})",
+    "keys": [
+      "tpubD6NzVbkrYhZ4XNfJ5oxHhR2dfepvowPZ6bQ1P2vwguJwy7MFgTN8jFv626J9PbMn89RTTzNdUug5pmZN9VmnDuvfS1726u8sCcPPQhs3rza",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "tpubD6NzVbkrYhZ4WuBnUthTkzjzoGfK8n21Eum74DTgbh9QUfS6dcWGbhGziZptZu7qpdNvYi7e3HYDhx15Qnxrb1GkctKHzgMjU9PuVH8MkTJ",
+      "tpubD6NzVbkrYhZ4WcBXfH68VZEN25rSukfLWZKTSbPNdw1zFW68Hfb7aE4oGuF8PuZfUaj3x6aWJZridbfkcmaVeHBDJKCWB1nv9gJLbmwRYeA"
+    ],
+    "address": "tb1pwkq38q8x6gued662fkzthvweaxkxt8cak6fru2razamrr9rcrr8qt3sr5q",
+    "payments": [
+      {
+        "label": "claim",
+        "hardware": "5d6e676126250989078f1282fbd520edae143a43bc409ec17e121575b9612026",
+        "psbt": "cHNidP8BAF4CAAAAAZf4BXjGpa6oMEPa1VBH9KO1qeWOAp3bQzTz/HXw1PA8AAAAAAAGAAAAAbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSB1gROA5tI5lutKTYS7sdnprGWfHbaSPih9F3YxlHgYzgAAAAABASughgEAAAAAACJRIHWBE4Dm0jmW60pNhLux2emsZZ8dtpI+KH0XdjGUeBjOYhXBABgm4pfJZJA1BfZ2J40IuxmPB9+SmGJUZ5709DaDMtV2XHhPYRm7+0vIWUvRmcWjyDBXgpaBkDxXtj4vuwp8iGtdku/whsNLcyZMsbgqEKoX8kaYXrTERl4/9CbsG2cVJSBdbmdhJiUJiQePEoL71SDtrhQ6Q7xAnsF+EhV1uWEgJq1WssAhFl1uZ2EmJQmJB48SgvvVIO2uFDpDvECewX4SFXW5YSAmOQHRSRE1uH7VgBpcip/S7MbXgMZl7LnUT3kpYhzlvELO7vWswv1WAACAAQAAgAAAAIAEAAAAAAAAAAEXIAAYJuKXyWSQNQX2dieNCLsZjwffkphiVGee9PQ2gzLVAAA=",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  },
+  {
+    "id": "advanced-phone-pending",
+    "name": "Vaulted phone wait",
+    "template": "tr(@0/**,{{and_v(v:pk(@1/<4;5>/*),older(144)),and_v(v:pk(@2/<6;7>/*),and_v(v:pk(@4/<0;1>/*),pk(@5/<0;1>/*)))},{and_v(v:pk(@3/<6;7>/*),and_v(v:pk(@4/<2;3>/*),pk(@5/<2;3>/*))),and_v(v:pk(@2/<8;9>/*),pk(@3/<8;9>/*))}})",
+    "keys": [
+      "tpubD6NzVbkrYhZ4YWRzfaEZwNJNMM7BFX7bpRorqRhyzcrjrMPiGXsixmuzy5NtX2TFMJRS3vuDzwPwZxZzJsSMfGqLj6W33J5vaRgii1QhMXN",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "[8bc48cf1/86'/1'/0']tpubDDTHqfwm4Bx8WyxfyJFFPNKuza1UVBJfRTXu8eJfTYUWyxpyPv91gE4HLtCLKTT7a2QpJXrtYaNppGGPBhMYLtXddBVi7NNKeEFLQRskKYk",
+      "tpubD6NzVbkrYhZ4XdCjswmyDXYrdS8bdvtJwMhcLjZnxqbkxUQq4aFb2hXfQUKtdnWq18aMD2Kzt3id8bjKz4Hg9TK8r3rdcvWVSQsZUBi5jxH",
+      "tpubD6NzVbkrYhZ4XKWLUFG4cwAFui8roL5VN2KrT9imFksfTA3CauyzMveJ75y9LJ94n79uFwVR87ickZb1EDhjQD5sorGefLqwNrDGT9DcQ9q"
+    ],
+    "address": "tb1pn6f57gu072855v0lhxgtp0d6y0pwslyydw8pphwl0xpmtvtvfm4qrhkwk3",
+    "payments": [
+      {
+        "label": "clawback",
+        "hardware": "e20d5d6b2f3bfea38f900f330663141aee7a67242426bc9467fa2919430f11ea",
+        "psbt": "cHNidP8BAF4CAAAAAR8LUf+SZSbffmJ+lb5m4KsdHfnT+/a4eYYoPBbZpeGuAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSCek08jj/KPSjH/uZCwvbojwuh8hGuOEN3feYO1sWxO6gAAAAABASughgEAAAAAACJRIJ6TTyOP8o9KMf+5kLC9uiPC6HyEa44Q3d95g7WxbE7qQRRw1gDxnBrdHQl29QOWR6rlWmdBAScnFUXlMs7fdPc09RjCAA2pG+ayeUprsGFFxY4HsgutC7JVFZaVxNDMi7daQCmxmXpoqXUVxV4AOfItp8Ex0k4fhDm/o9ES2OUD55BfHiFN+eLz8vdQDjIwOHNy+T23fR6viqSq1hmOCwE2gJ5BFJtG4DUC3Gy4kM3E+cWVVIHNj5hS0TNv2bRCDTSqDf8pGMIADakb5rJ5SmuwYUXFjgeyC60LslUVlpXE0MyLt1pADCSyAk3IMBzkkYV1ZlroZTOjKoXFym/J3ZyGnLQ4bRo1fGft/nT6kuIWGu2UlUx5Gi6lYfofxCZ7SjIQMm9mj2IVwdrdg0JfOxQC2jf2uENCubSN/+Q0MqZlpXppj5mpE/F0MT7FIypVgoZhr1r8fe/Q/qQ+dgkSo8UYJzRVTm0tV2Ow2/15DdzqC3c8pFffZGZedIkWrNXeRp8srzbPHl+WO2cg4g1day87/qOPkA8zBmMUGu56ZyQkJryUZ/opGUMPEeqtIJtG4DUC3Gy4kM3E+cWVVIHNj5hS0TNv2bRCDTSqDf8prSBw1gDxnBrdHQl29QOWR6rlWmdBAScnFUXlMs7fdPc09azAIRbiDV1rLzv+o4+QDzMGYxQa7npnJCQmvJRn+ikZQw8R6jkBGMIADakb5rJ5SmuwYUXFjgeyC60LslUVlpXE0MyLt1r1rML9VgAAgAEAAIAAAACABgAAAAAAAAABFyDa3YNCXzsUAto39rhDQrm0jf/kNDKmZaV6aY+ZqRPxdAAA",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      },
+      {
+        "label": "cancel",
+        "hardware": "129526dc3b3ee161359b387a32a409d158f119e8262ad7d9c6751a2c94d1f14d",
+        "psbt": "cHNidP8BAF4CAAAAAR8LUf+SZSbffmJ+lb5m4KsdHfnT+/a4eYYoPBbZpeGuAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSCek08jj/KPSjH/uZCwvbojwuh8hGuOEN3feYO1sWxO6gAAAAABASughgEAAAAAACJRIJ6TTyOP8o9KMf+5kLC9uiPC6HyEa44Q3d95g7WxbE7qQRQE7woPEbhKc8AfJ9w2I+PIhMcH36gwbVbWvp1EHN/vvHkAR+87kiIZwLoFWVYO54eaIYz53XiVZYe7UAXMhGKlQLyflU3/XpOR9ZKEZJMN3vA6TwT6mX350QX0/eSrCuJN+VI5PLG7ukOSSzUqNFeG/+g95t3TF901oCE2i30gmatiFcHa3YNCXzsUAto39rhDQrm0jf/kNDKmZaV6aY+ZqRPxdJpUTx5dfgvkWpHdnjcP9x15gDkfF7FmjQlT5qlyj8tqLWniou9dhUOI+K9Cqb48ontdu9pilxRfDMV4p7bXKKJFIBKVJtw7PuFhNZs4ejKkCdFY8RnoJirX2cZ1GiyU0fFNrSAE7woPEbhKc8AfJ9w2I+PIhMcH36gwbVbWvp1EHN/vvKzAIRYSlSbcOz7hYTWbOHoypAnRWPEZ6CYq19nGdRoslNHxTTkBeQBH7zuSIhnAugVZVg7nh5ohjPndeJVlh7tQBcyEYqX1rML9VgAAgAEAAIAAAACACAAAAAAAAAABFyDa3YNCXzsUAto39rhDQrm0jf/kNDKmZaV6aY+ZqRPxdAAA",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  },
+  {
+    "id": "advanced-phone-quarantine",
+    "name": "Vaulted phone safe",
+    "template": "tr(@0/**,and_v(v:pk(@1/<10;11>/*),pk(@2/<10;11>/*)))",
+    "keys": [
+      "tpubD6NzVbkrYhZ4Wy2tvuXr4YrkPz2Rgvwo9TbSvUKog478GhMh54g8NxmFgPkTkpnXEUh1VLJvVs3YVqWQ5KqSfVsAvaXHi3mDpPxCJdmDcfn",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "[8bc48cf1/86'/1'/0']tpubDDTHqfwm4Bx8WyxfyJFFPNKuza1UVBJfRTXu8eJfTYUWyxpyPv91gE4HLtCLKTT7a2QpJXrtYaNppGGPBhMYLtXddBVi7NNKeEFLQRskKYk"
+    ],
+    "address": "tb1p55l56z39llcnu0lwmnsym6tskuvr6jrqjrhx8grm5hvtfw0n3ywqffnv06",
+    "payments": [
+      {
+        "label": "release",
+        "hardware": "4fa4e5ca44d37933bca48a2beceb6dd401b1ab24ae4d96f3316857688d0d96d3",
+        "psbt": "cHNidP8BAF4CAAAAAbPLGFhXZtZpDONxvh4aaNAGhIRp3zwlkiiZ+FIEfS9dAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSClP00KJf/xPj/u3OBN6XC3GD1IYJDuY6B7pdi0ufOJHAAAAAABASughgEAAAAAACJRIKU/TQol//E+P+7c4E3pcLcYPUhgkO5joHul2LS584kcQRRdsFAQIBdlaIF2GoM/MDgNEJWiC25g3+3dwKXBPKlh5TC1Kj1zSeaO8LhFpaWeDk6hL6K5NowM+QldipukRZV0QI3OAFvkOODEO2KylGhLb5k7YPzCfbU4PF2jwfLV071tSknI2edV8zMwGRfgRBW0vxkGUB+NmcUYIAMSHPrAo60iFcESXO5OX+lNoPR2qgGlso4hfyzHl4ZgJ8+3GulXLnKm/0UgT6TlykTTeTO8pIor7Ott1AGxqySuTZbzMWhXaI0NltOtIF2wUBAgF2VogXYagz8wOA0QlaILbmDf7d3ApcE8qWHlrMAhFk+k5cpE03kzvKSKK+zrbdQBsaskrk2W8zFoV2iNDZbTOQEwtSo9c0nmjvC4RaWlng5OoS+iuTaMDPkJXYqbpEWVdPWswv1WAACAAQAAgAAAAIAKAAAAAAAAAAEXIBJc7k5f6U2g9HaqAaWyjiF/LMeXhmAnz7ca6Vcucqb/AAA=",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  },
+  {
+    "id": "advanced-hardware-pending",
+    "name": "Vaulted hardware wait",
+    "template": "tr(@0/**,{{and_v(v:pk(@2/<4;5>/*),older(6)),and_v(v:pk(@1/<6;7>/*),and_v(v:pk(@4/<0;1>/*),pk(@5/<0;1>/*)))},{and_v(v:pk(@3/<6;7>/*),and_v(v:pk(@4/<2;3>/*),pk(@5/<2;3>/*))),and_v(v:pk(@1/<8;9>/*),pk(@3/<8;9>/*))}})",
+    "keys": [
+      "tpubD6NzVbkrYhZ4Wmmy9mbDRC79ZY8nqNE4gy4yEx5U1dRBkN9HwDz9Y94D2YxfPd6aT9yFWtrw8DaK5HVkaYtqZYaP63N8nrP58ttEE37hkDo",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "[8bc48cf1/86'/1'/0']tpubDDTHqfwm4Bx8WyxfyJFFPNKuza1UVBJfRTXu8eJfTYUWyxpyPv91gE4HLtCLKTT7a2QpJXrtYaNppGGPBhMYLtXddBVi7NNKeEFLQRskKYk",
+      "tpubD6NzVbkrYhZ4Wq1fG9yF2YY99GN3FhAHNXakRCt64SP2LHDEb1ENRpbaTkoNpQ2Lg8hJSYm7g3B88pJ8dWwbZZjGzMiM5cgxfTU4QysuUNZ",
+      "tpubD6NzVbkrYhZ4WWaV7asjUKyQNZvZ8kVcQ97Edo2ZnPSkw6ec2gBYFCqtAf4DcSJHXZooXgGTuy8t62ziEuFBBPQP1yWm3FpUdr8HhNpJevk"
+    ],
+    "address": "tb1p7emajk8wvjz55m30r2ktz4ur9slna6t5zmtkyh3tt8q4725qrwvsw9czqg",
+    "payments": [
+      {
+        "label": "claim",
+        "hardware": "5d6e676126250989078f1282fbd520edae143a43bc409ec17e121575b9612026",
+        "psbt": "cHNidP8BAF4CAAAAAYxekZPOeYiDxf46PT7sO02394bApzj8RUDjdXtdGH/EAAAAAAAGAAAAAbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSD2d9lY7mSFSm4vGqyxV4MsPz7pdBbXYl4rWcFfKoAbmQAAAAABASughgEAAAAAACJRIPZ32VjuZIVKbi8arLFXgyw/Pul0FtdiXitZwV8qgBuZYhXByb7ncHKcsJ7X+zNlq0HJE1WNUPD3ZR5KI8xXV44fLEANXDPWPZqco3VrQ9b+e0y2mHcrziVLp6SllkJZJ//TsvhPhaxfZRBCmue5dznqzM+XcuO9N5zEnxjqHONeP/GCJSBdbmdhJiUJiQePEoL71SDtrhQ6Q7xAnsF+EhV1uWEgJq1WssAhFl1uZ2EmJQmJB48SgvvVIO2uFDpDvECewX4SFXW5YSAmOQHRSRE1uH7VgBpcip/S7MbXgMZl7LnUT3kpYhzlvELO7vWswv1WAACAAQAAgAAAAIAEAAAAAAAAAAEXIMm+53BynLCe1/szZatByRNVjVDw92UeSiPMV1eOHyxAAAA=",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  },
+  {
+    "id": "advanced-recovery-pending",
+    "name": "Vaulted recovery wait",
+    "template": "tr(@0/**,{{and_v(v:pk(@3/<4;5>/*),older(288)),and_v(v:pk(@1/<6;7>/*),and_v(v:pk(@4/<0;1>/*),pk(@5/<0;1>/*)))},{and_v(v:pk(@2/<6;7>/*),and_v(v:pk(@4/<2;3>/*),pk(@5/<2;3>/*))),and_v(v:pk(@1/<8;9>/*),pk(@2/<8;9>/*))}})",
+    "keys": [
+      "tpubD6NzVbkrYhZ4YLmAL14maqBZH9vXuN1PkfphzcZvPAiqR6HeM4SHm3NWSKN6eyMNYiDRwU5TW13XjC9TdKhUjYV5ekGnjpfBcWfuKXPNhof",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "[8bc48cf1/86'/1'/0']tpubDDTHqfwm4Bx8WyxfyJFFPNKuza1UVBJfRTXu8eJfTYUWyxpyPv91gE4HLtCLKTT7a2QpJXrtYaNppGGPBhMYLtXddBVi7NNKeEFLQRskKYk",
+      "tpubD6NzVbkrYhZ4XcyJSrJ3uBKKSR6WZ24i6p4EU8p6ftMj9f3UARA29JhoXa1fpseC8WEANrY5se3eHoyhL8k6vrNTuo5bdGWXYNmQeK2ivR1",
+      "tpubD6NzVbkrYhZ4WZinLL3y61bL8pfkRruQyuJnSxCKzVXL77hWSWSBzpzw6eg1fne59HS2sThtbmHEbH4pVqu1y3QibQYzZeiy8xCx7WmeWH2"
+    ],
+    "address": "tb1pw549wsuptnp3ez009hu6u9kdphspqt6zswc8ap8yr8shn8efnhuqvfrmep",
+    "payments": [
+      {
+        "label": "clawback",
+        "hardware": "e20d5d6b2f3bfea38f900f330663141aee7a67242426bc9467fa2919430f11ea",
+        "psbt": "cHNidP8BAF4CAAAAAR24YfEux0x9K3t3rejpPvOLY0fpK5O4XTyn4Y2imLzgAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSB1KldDgVzDHInvLfmuFs0N4BAvQoOwfoTkGeF5nymd+AAAAAABASughgEAAAAAACJRIHUqV0OBXMMcie8t+a4WzQ3gEC9Cg7B+hOQZ4XmfKZ34QRQY+9wmxOsUJJ4796+Y7mj+zcnA9VpUqEV7aPVHoQe0yqcWGDaI2sD2Zjll1e5r5vaYt+SRNRF8qWGpV25coZ0cQClrJvap5kFijKW/36cHx6gywdXFcPlgiV5xEuc0A4UcCdCdQpQarI6KLU9brmM+6Dk3gvA8XSRbnqNYDwIO3z5BFGbEa7Cyjtx3dn29JHxUgTOYxTyNnNC0yOpldphDRnUypxYYNojawPZmOWXV7mvm9pi35JE1EXypYalXblyhnRxA2iDKIjnkIMg2j0XmkjDK/VpCxa01k7hCcC9pnlB8nDFGpC1+613wYIYsXgk9rvzzSzFgl+a9V9+/CubaBe81UGIVwcn7bIEb4cCjtGEL9CFB6DnYHCXvFP/mVLFJpCdueYNITk+VEHuMTagUcD9SgUO58f+oxbcGrSB8T/bgKDOmzPS4YjXQeS9LS96Qaby8tLhqqORPD1e8YnwkzOA5/Nz18mcg4g1day87/qOPkA8zBmMUGu56ZyQkJryUZ/opGUMPEeqtIBj73CbE6xQknjv3r5juaP7NycD1WlSoRXto9UehB7TKrSBmxGuwso7cd3Z9vSR8VIEzmMU8jZzQtMjqZXaYQ0Z1MqzAIRbiDV1rLzv+o4+QDzMGYxQa7npnJCQmvJRn+ikZQw8R6jkBpxYYNojawPZmOWXV7mvm9pi35JE1EXypYalXblyhnRz1rML9VgAAgAEAAIAAAACABgAAAAAAAAABFyDJ+2yBG+HAo7RhC/QhQeg52Bwl7xT/5lSxSaQnbnmDSAAA",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      },
+      {
+        "label": "cancel",
+        "hardware": "129526dc3b3ee161359b387a32a409d158f119e8262ad7d9c6751a2c94d1f14d",
+        "psbt": "cHNidP8BAF4CAAAAAR24YfEux0x9K3t3rejpPvOLY0fpK5O4XTyn4Y2imLzgAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSB1KldDgVzDHInvLfmuFs0N4BAvQoOwfoTkGeF5nymd+AAAAAABASughgEAAAAAACJRIHUqV0OBXMMcie8t+a4WzQ3gEC9Cg7B+hOQZ4XmfKZ34QRQOrSnbh3Dj7/NnYOqw6ZK2I+pzQbgHwfQ+9CN6ZHBg0k5PlRB7jE2oFHA/UoFDufH/qMW3Bq0gfE/24Cgzpsz0QObjBH9s+JgbfQf2FqInvJEsPjXI3UG2E2wqMfX+YHNP5thZ5YEwrQdD4Q/Oy+cqnz43X95mx2j9C+MHNWBICcxiFcHJ+2yBG+HAo7RhC/QhQeg52Bwl7xT/5lSxSaQnbnmDSKcWGDaI2sD2Zjll1e5r5vaYt+SRNRF8qWGpV25coZ0cuGI10HkvS0vekGm8vLS4aqjkTw9XvGJ8JMzgOfzc9fJFIA6tKduHcOPv82dg6rDpkrYj6nNBuAfB9D70I3pkcGDSrSASlSbcOz7hYTWbOHoypAnRWPEZ6CYq19nGdRoslNHxTazAIRYSlSbcOz7hYTWbOHoypAnRWPEZ6CYq19nGdRoslNHxTTkBTk+VEHuMTagUcD9SgUO58f+oxbcGrSB8T/bgKDOmzPT1rML9VgAAgAEAAIAAAACACAAAAAAAAAABFyDJ+2yBG+HAo7RhC/QhQeg52Bwl7xT/5lSxSaQnbnmDSAAA",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  },
+  {
+    "id": "advanced-recovery-quarantine",
+    "name": "Vaulted recovery safe",
+    "template": "tr(@0/**,and_v(v:pk(@1/<10;11>/*),pk(@2/<10;11>/*)))",
+    "keys": [
+      "tpubD6NzVbkrYhZ4WxkQ8aTyMVyserzaLXh1YrHo8W1tN8AERSSJ4FTdrzyg1igS6xYeGMePoSWasmGijMpc1z6KNNw1tbdtGP3LCHL82ap9ud4",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U"
+    ],
+    "address": "tb1pn6fq44y5s2r9te40p0ae68ss76m7470f2al0heqdargvtk5r9xaqvpz07v",
+    "payments": [
+      {
+        "label": "release",
+        "hardware": "4fa4e5ca44d37933bca48a2beceb6dd401b1ab24ae4d96f3316857688d0d96d3",
+        "psbt": "cHNidP8BAF4CAAAAAXqGMEY+9/pLMkgVIhLtn39D7a29TP7sNE5uWlI34XgVAAAAAAD9////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSCekgrUlIKGVeavC/udHhD2t+r56Vd+++QN6NDF2oMpugAAAAABASughgEAAAAAACJRIJ6SCtSUgoZV5q8L+50eEPa36vnpV3775A3o0MXagym6QRQq5p2lpHu0oqirL1RWapjPUrwdoV9SyAMlmQ6RpY/sUR5DAUEncJk/OziIZC36bpplN8gf1BpeWBfg+3tfVpGXQHc8wHCXT9eHfIdgry/Bw1r3HdKJZoDSSzZT3retemXV7yuh1g753CboSNMg1YrfaNTmzb+rtXLkNS40AgcUz0QiFcBuQuYkhCPZ1bZcTSAwt9uu5ZdTDKmwNCGgTVNShiDhR0UgKuadpaR7tKKoqy9UVmqYz1K8HaFfUsgDJZkOkaWP7FGtIE+k5cpE03kzvKSKK+zrbdQBsaskrk2W8zFoV2iNDZbTrMAhFk+k5cpE03kzvKSKK+zrbdQBsaskrk2W8zFoV2iNDZbTOQEeQwFBJ3CZPzs4iGQt+m6aZTfIH9QaXlgX4Pt7X1aRl/Wswv1WAACAAQAAgAAAAIAKAAAAAAAAAAEXIG5C5iSEI9nVtlxNIDC3267ll1MMqbA0IaBNU1KGIOFHAAA=",
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000
+      }
+    ]
+  }
+]

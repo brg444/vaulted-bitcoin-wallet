@@ -1,0 +1,126 @@
+{
+  "scope": "Speculos Bitcoin Test 2.4.2; synthetic inputs; live services and physical hardware excluded",
+  "results": [
+    {
+      "policy": "standard-phone-pending",
+      "path": "clawback",
+      "vsize": 194,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "standard-phone-pending",
+      "path": "cancel",
+      "vsize": 137,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "standard-phone-quarantine",
+      "path": "release",
+      "vsize": 129,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "standard-hardware-pending",
+      "path": "claim",
+      "vsize": 145,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "advanced-phone-pending",
+      "path": "clawback",
+      "vsize": 194,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "advanced-phone-pending",
+      "path": "cancel",
+      "vsize": 169,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "advanced-phone-quarantine",
+      "path": "release",
+      "vsize": 153,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "advanced-hardware-pending",
+      "path": "claim",
+      "vsize": 145,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "advanced-recovery-pending",
+      "path": "clawback",
+      "vsize": 194,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "advanced-recovery-pending",
+      "path": "cancel",
+      "vsize": 169,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    },
+    {
+      "policy": "advanced-recovery-quarantine",
+      "path": "release",
+      "vsize": 153,
+      "defaultSignature": true,
+      "signatureVerified": true,
+      "destinationDisplayed": true,
+      "amountDisplayed": true,
+      "feeDisplayed": true,
+      "outputSubstitutionRejected": true
+    }
+  ]
+}

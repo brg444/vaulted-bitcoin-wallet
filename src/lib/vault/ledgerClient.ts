@@ -1,7 +1,7 @@
 import { Buffer } from 'buffer'
 import { hex } from '@scure/base'
 import type { AppClient } from '@ledgerhq/ledger-bitcoin'
-import { buildLedgerNativeSavings } from './program/ledgerNativePolicy'
+import { buildLedgerNativeFamily } from './program/ledgerNativeFamily'
 import { ledgerAccountKey, ledgerSavingsContextDigest, type LedgerAccountOrigin } from './program/ledgerNativeKeys'
 import {
   acceptLedgerSavingsSignatures,
@@ -17,7 +17,7 @@ export interface LedgerSavingsRegistration {
   contextDigest: string
   walletId: string
   walletHmac: string
-  walletPolicy: ReturnType<typeof buildLedgerNativeSavings>['walletPolicy']
+  walletPolicy: ReturnType<typeof buildLedgerNativeFamily>['walletPolicy']
   receiveAddress: string
   changeAddress: string
 }
@@ -31,7 +31,7 @@ async function policyFor(contract: LedgerSavingsContract) {
   // The official client uses the Node Buffer API. Load it only for Ledger work.
   globalThis.Buffer ??= Buffer as unknown as typeof globalThis.Buffer
   const { WalletPolicy } = await import('@ledgerhq/ledger-bitcoin')
-  const family = buildLedgerNativeSavings(contract.context, contract.programs)
+  const family = buildLedgerNativeFamily(contract.context, contract.spendingPolicy)
   const { name, descriptorTemplate, keysInfo } = family.walletPolicy
   return { family, policy: new WalletPolicy(name, descriptorTemplate, keysInfo) }
 }

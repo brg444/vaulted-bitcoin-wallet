@@ -2,10 +2,10 @@
   {
     "tier": "standard",
     "registered": true,
-    "walletId": "b9ad365b3198fcaf34293f5f4d65f46605f3ade7d41af619c5010daa594948f0",
+    "walletId": "fc4e11879c9b1b20ef8991333ed31b2a6a240753b817922eb27f564a186b63d4",
     "addresses": {
-      "0": "tb1p7r0ffyfzdw0cjr3hvptyp058370k595tym45l0ahkgakdd29lexshtdhfk",
-      "1": "tb1pemnuprl6dpqcdla0a5vx50ekqru3tmyrr229ltwhfv2nce96russhpk6sf"
+      "0": "tb1p3uhwkejwv3mwwgwqy9c9rupldu4typmrt0gk4kdeexjttu42v5sqynrvvt",
+      "1": "tb1pj39ysqct4j5qdh592r04x6jxc84l27hhmpec0x3m7fy09p5c9h4sl3k7f0"
     },
     "payments": [
       {
@@ -14,7 +14,7 @@
           {
             "index": 0,
             "pubkey": "dc8d2f9eff0c4f4dbde070a48e330efc908b62a766568d91e658f284b324b878",
-            "signature": "f4d2ea541f30594f826f7904abeef2dc5da86360c93c5bdbcecc1a1f12fa532c8c0f3d8ac46eb969d245ba5e53f034eb08b135a38cc6ce10d9b1fab8e1a040e7"
+            "signature": "499a73b3f94af79006a3ee0a6c8e580f4b9ba3bf49fef4b1b4933d70552f79b378bca157e613e386dfa56ce61c893557532b85f3feb23ac59e674adb128ffca9"
           }
         ],
         "screens": [
@@ -35,7 +35,7 @@
           {
             "index": 0,
             "pubkey": "dc8d2f9eff0c4f4dbde070a48e330efc908b62a766568d91e658f284b324b878",
-            "signature": "1dee7c4214eb372f1765bdcdd682d8aa0a64085af52b2afb9fc006aaeb7bcd7db44a3d1e06f4bc9071c05f988d766939d950bbcd6bda8eaa02b3c9db271918fd"
+            "signature": "cfadab7355da4d4519b31852f61f5603aec5e979cb9f4d1e36e2d2ce971b31bfc25f2c58d903c11973e8fdd4d2fc50a20459329bbe38839c9bd3c10584b999da"
           }
         ],
         "screens": [
@@ -53,6 +53,39 @@
       }
     ],
     "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted Savings",
+      "Wallet policy (1/4) | tr(@0/**,{{and_ | v(v:pk(@1/**),pk(@2/* | *)),and_",
+      "Wallet policy (2/4) | v(v:pk(@1/<2;3>/*),an | d_ | v(v:pk(@3/**),pk(@4/",
+      "Wallet policy (3/4) | **)))},and_ | v(v:pk(@2/<2;3>/*),an | d_",
+      "Wallet policy (4/4) | v(v:pk(@5/**),pk(@6/* | *)))})",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4Y | 79TjK6ghtBJbyryuRNX | DFQTnqk8kzZo7GHS",
+      "Key @0,...my (2/3) | H8HTfBhQEhkfUjuK2 | wd7SGpe56LBezgmba | dT5gEsHZyakK7321P5",
+      "Key @0,...my (3/3) | rDgxEpy",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @3, theirs (1/3) | tpubD6NzVbkrYhZ4Xr | J3nS9hyKkbpchPVpbk | zra3dcUc2LmriZQ9YY",
+      "Key @3, theirs (2/3) | Bgm8ocLz2kg87BHDb | QFhfFvFZXV3P4T2sP | UxWTPShFs71dvRYp8",
+      "Key @3, theirs (3/3) | a2Ss3A",
+      "Key @4, theirs (1/3) | tpubD6NzVbkrYhZ4YJ | 2ci6LRXfMbyi3yGQhn | BSHpY4ousGRKGPYa",
+      "Key @4, theirs (2/3) | a78cBZkNimH4DsYdi | n4HXmjA6APZm4zgB | Js17S1N74pM93gp2Q",
+      "Key @4, theirs (3/3) | c2EfurMEK",
+      "Key @5, theirs (1/3) | tpubD6NzVbkrYhZ4X | UqMzTHUQkX5BrQvK | k1LdDPX63UryABgY6",
+      "Key @5, theirs (2/3) | Web93eVPC7Agw6Am | rf2eFqZrTsZWQmaMz | 4fmHzoD7uQUpVbQ",
+      "Key @5, theirs (3/3) | etbfZ9UwUxArp",
+      "Key @6, theirs (1/3) | tpubD6NzVbkrYhZ4Y | NEMtmmSfSeNpKksk | bz2nvaQT1DvSoQp6",
+      "Key @6, theirs (2/3) | oVWAFS8XCPvTquVw | qHCSVGcmChJS5QCz1 | FGmJazHVjj5LHzP9ZP",
+      "Key @6, theirs (3/3) | cLsy7oXWYMx",
+      "Register account",
+      "Account registered",
+      "Loading",
       "Bitcoin Testnet | app is ready",
       "Loading",
       "Bitcoin Testnet | app is ready",
@@ -82,10 +115,10 @@
   {
     "tier": "advanced",
     "registered": true,
-    "walletId": "804e87d3406481fd7739670f3e40797c3eba42462024f6bb3766fabf110ab54f",
+    "walletId": "398737108a8b26da7c58290bbec676702f275a1c294549e0fae274275d291ae6",
     "addresses": {
-      "0": "tb1pplzy4fl0jg6d838tk43vngyv7rytf36kh7z7dduwmsnla8lc0x9s378e68",
-      "1": "tb1pcdj8253tlze7dz5tkqq3u49772rcduetlhgfa66gwumgkkvg8uassqymjg"
+      "0": "tb1pnkavgy805sjc4d76tue903h9u3kq9wr8uthcpp9cwkr0ant9ulpsxc3pqg",
+      "1": "tb1prz0h4ut73ffs69hm4mmydmclajkd0d4l5atx8tsdslu42yfxsjjssy40f5"
     },
     "payments": [
       {
@@ -94,7 +127,7 @@
           {
             "index": 0,
             "pubkey": "dc8d2f9eff0c4f4dbde070a48e330efc908b62a766568d91e658f284b324b878",
-            "signature": "caa348ae1367762625b9a5d20876971d3c9655defcc499f1ccabc9c8548cbd39a3d15d94865e787712e49aa5e921f608ff252d899c70201aa8c667909b5cb997"
+            "signature": "28caf1db63efa1a4281f3fe12d3b48beeb4ed19735fb877e032a43be6bcfc7ec949f7a253e33d513ce35fee0172b1b691d3c468e5df54a28225b5eddd9a2b434"
           }
         ],
         "screens": [
@@ -115,7 +148,7 @@
           {
             "index": 0,
             "pubkey": "dc8d2f9eff0c4f4dbde070a48e330efc908b62a766568d91e658f284b324b878",
-            "signature": "acbb6ae40ade69ce203d60b66af2eb3050073fa7d5cfe9fa7c8caa11b98e8ab86f0db9519f141a597c17acb304ecb53b42dfe77235850662f3fa1c0bf8be059f"
+            "signature": "811940caaf4d9ea1483c77b91b80ab08e5709f03a18a32c601bc195d16c3d089cbea27b7a619d623a3d27edd3d350d1e1cf0e98f6537478b994e87583901d6cd"
           }
         ],
         "screens": [
@@ -133,6 +166,49 @@
       }
     ],
     "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted Savings",
+      "Wallet policy (1/5) | tr(@0/**,{{and_ | v(v:pk(@1/**),pk(@2/* | *)),and_",
+      "Wallet policy (2/5) | v(v:pk(@1/<2;3>/*),an | d_ | v(v:pk(@3/**),pk(@4/",
+      "Wallet policy (3/5) | **)))},{and_ | v(v:pk(@2/<2;3>/*),an | d_",
+      "Wallet policy (4/5) | v(v:pk(@5/**),pk(@6/* | *))),and_ | v(v:pk(@9/**),and_",
+      "Wallet policy (5/5) | v(v:pk(@7/**),pk(@8/* | *)))}})",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4X | VzHPwQtb8y8Y2gv7v | zkcbVh422gzgNNo9K",
+      "Key @0,...my (2/3) | MU3SdASfwjLdyeXEt | mcjep9DoRxwXSeJs4 | W39dakEvU65LnHc1E",
+      "Key @0,...my (3/3) | ySdYgMSwS",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @3, theirs (1/3) | tpubD6NzVbkrYhZ4Y | d2ALSbnGodw3wvVF | h4BtA2T7RqBytu6EG",
+      "Key @3, theirs (2/3) | d8bu6Ucim3nqzY876 | dWo9oKxX6Ac7a2juW | kjTeCBHP18SNnF8h3",
+      "Key @3, theirs (3/3) | 8m1yhFiaEq",
+      "Key @4, theirs (1/3) | tpubD6NzVbkrYhZ4X | 7PafLiktqwgf7m6bRF | DvWGgnMQ3rHE797z",
+      "Key @4, theirs (2/3) | wb29obCaoqHBo6AT | upTBXBRXACLcNQns | UdpLtgZ5G3d2wMxV",
+      "Key @4, theirs (3/3) | AVxyZRiqFPRN",
+      "Key @5, theirs (1/3) | tpubD6NzVbkrYhZ4Y | KnuV2irNWyBcaPPPFr | wZFxGzQAJZ5tYUXFo",
+      "Key @5, theirs (2/3) | yP2h1oyG7doJixEhhx | UMZGKwm8s8jxyf6iR | 3T9BxeV4DwtD68AHi",
+      "Key @5, theirs (3/3) | CtEQBAF",
+      "Key @6, theirs (1/3) | tpubD6NzVbkrYhZ4W | MAVjA2WS1haChjFJw | VWFXJENxxec5nrHtd4",
+      "Key @6, theirs (2/3) | Z9gtGCENasyKkvAPrD | c5A4EqeybfWbs8Ktf | mXGTgMjeBo5h77t96",
+      "Key @6, theirs (3/3) | 2eLfakV",
+      "Key @7, theirs (1/3) | tpubD6NzVbkrYhZ4Y | 6bM2RuDYr3dmkqdW | Nkdz4ZR3pbzUG26sq",
+      "Key @7, theirs (2/3) | Ng4e61J8fHAu8LTdG | xvtBTryNo3CRBYLfKK | kvCQryqQd7AmaVszq",
+      "Key @7, theirs (3/3) | bj9ud9DTG",
+      "Key @8, theirs (1/3) | tpubD6NzVbkrYhZ4W | x7q2VU7roWDrD9Te2 | 9r4Yehry7r3qhjSKtuH",
+      "Key @8, theirs (2/3) | UZKximjg65XdV5CnEe | QrfkPQzimqiAroqbzq | EYBDPjBee3ckuLbvhq",
+      "Key @8, theirs (3/3) | SPsi",
+      "Key @9, theirs (1/3) | [8bc48cf1/86'/1'/0']tp | ubDDTHqfwm4Bx8W | yxfyJFFPNKuza1UVBJf",
+      "Key @9, theirs (2/3) | RTXu8eJfTYUWyxpyP | v91gE4HLtCLKTT7a2 | QpJXrtYaNppGGPBh",
+      "Key @9, theirs (3/3) | MYLtXddBVi7NNKeEF | LQRskKYk",
+      "Register account",
+      "Account registered",
+      "Loading",
       "Bitcoin Testnet | app is ready",
       "Loading",
       "Bitcoin Testnet | app is ready",

@@ -7,7 +7,9 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 const vector = JSON.parse(readFileSync(root + 'src/lib/vault/program/ledger-key-vectors.json'))[0]
 const contract = {
   context: vector.input,
-  programs: Object.fromEntries(vector.programParents.map((p) => [p.claimant, p.program])),
+  spendingPolicy: JSON.parse(
+    readFileSync(new URL('../../src/lib/vault/program/ledger-family-vectors.json', import.meta.url)),
+  )[0].spendingPolicy,
 }
 const vite = await createServer({
   root,
@@ -24,8 +26,8 @@ try {
   )
   const result = await page.evaluate(async (contract) => {
     const { registerLedgerSavings, validateLedgerSavingsRegistration } = await import('/src/lib/vault/ledgerClient.ts')
-    const { buildLedgerNativeSavings } = await import('/src/lib/vault/program/ledgerNativePolicy.ts')
-    const family = buildLedgerNativeSavings(contract.context, contract.programs)
+    const { buildLedgerNativeFamily } = await import('/src/lib/vault/program/ledgerNativeFamily.ts')
+    const family = buildLedgerNativeFamily(contract.context, contract.spendingPolicy)
     const calls = []
     const app = {
       getMasterFingerprint: async () => contract.context.hardware.fingerprint,
