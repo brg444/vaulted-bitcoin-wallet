@@ -1,3 +1,4 @@
+import type { BoardingFinalRequest } from '../../cosignerClient'
 import { buildConnectorEnrollmentPreview } from '../../program/connectorEnrollmentCore'
 import { p2tr } from '@scure/btc-signer'
 import { packExitArchive } from '../exitArchive'
@@ -225,4 +226,45 @@ export function recoveryFixture(
     },
   }
   return { archive, kit, status, spending, board, tx, coin }
+}
+
+/** Synthetic linked, signed boarding evidence; test scalars never leave fixtures. */
+export function boardingJournalFixture(handle = 'test-handle') {
+  const fixture = recoveryFixture()
+  const descriptor = fixture.status.vtxoBoardingDescriptor!
+  const root = p2tr(hex.decode(compressedFromScalar(21)).slice(1))
+  const commitment = new Transaction({ version: 3 })
+  commitment.addInput({
+    txid: '12'.repeat(32),
+    index: 0,
+    witnessUtxo: { script: fixture.board.pkScript, amount: 40_000n },
+    tapLeafScript: [fixture.board.forfeit()],
+  })
+  commitment.addOutput({ amount: 40_000n, script: root.script })
+  const unsignedCommitmentTx = base64.encode(commitment.toPSBT())
+  commitment.sign(scalarSecret(19))
+  const tree = new Transaction({ version: 3 })
+  tree.addInput({
+    txid: commitment.id,
+    index: 0,
+    witnessUtxo: { script: root.script, amount: 40_000n },
+    tapInternalKey: root.tapInternalKey,
+  })
+  tree.addOutput({ amount: 40_000n, script: fixture.spending.pkScript })
+  const unsignedTree = base64.encode(tree.toPSBT())
+  tree.sign(scalarSecret(21))
+  const request: BoardingFinalRequest = {
+    handle,
+    psbt: base64.encode(commitment.toPSBT()),
+    inputIndexes: [0],
+    signedForfeits: [],
+    validatedBatch: {
+      batchId: 'batch-fixture',
+      batchExpiry: 604_672,
+      unsignedCommitmentTx,
+      vtxoTree: [{ txid: tree.id, tx: base64.encode(tree.toPSBT()), children: {} }],
+      expectedRecipients: [{ address: fixture.status.spendingArkAddress!, amountSats: 40_000 }],
+    },
+  }
+  return { ...fixture, descriptor, request, unsignedTree }
 }

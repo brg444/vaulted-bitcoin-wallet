@@ -19,6 +19,13 @@ import { networkPins } from '../networkPins'
 import { readBounded } from '../bounded'
 import { isConnectorTemplate } from '../program/connector'
 import { connectorPinFromVerifiedStatus } from '../program/connectorEnroll'
+import {
+  loadBoardingTranscripts,
+  mergeBoardingTranscripts,
+  storeBoardingTranscripts,
+  validateBoardingTranscripts,
+  type BoardingTranscript,
+} from './boardingJournal'
 import { hashBoardingEnrollmentDescriptor } from '../program/enroll'
 
 export interface VaultRecoveryArchive {
@@ -27,6 +34,7 @@ export interface VaultRecoveryArchive {
   kit: RecoveryKit
   status: VaultStatus
   spending: ExitArchive
+  boardingTranscripts?: BoardingTranscript[]
   onchain: { txid: string; vout: number; value: number; script: string; parentHex: string }[]
 }
 
@@ -68,10 +76,11 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
 export function validateVaultRecoveryArchive(value: VaultRecoveryArchive) {
   if (!value || value.name !== 'vaulted-program-recovery-data' || value.version !== 1)
     throw new Error('Invalid program recovery data')
-  const binding = vaultRecoveryBinding(value.kit, value.status)
-  validateExitArchive(value.spending, binding)
   if (!Array.isArray(value.onchain) || value.onchain.length > 1024 || JSON.stringify(value).length > 24_000_000)
     throw new Error('Onchain recovery data exceeds the archive limit')
+  const binding = vaultRecoveryBinding(value.kit, value.status)
+  validateExitArchive(value.spending, binding)
+  validateBoardingTranscripts(value.boardingTranscripts ?? [], value.status.vtxoBoardingDescriptor!)
   const scripts = new Set(archiveAddresses(value.kit, value.status).map((tree) => tree.script))
   const seen = new Set<string>()
   for (const coin of value.onchain) {
@@ -178,6 +187,11 @@ export async function captureVaultRecoveryArchive(kit: RecoveryKit, status: Vaul
     try {
       const spending = await captureExitArchive(binding, repository, previous?.spending ?? null)
       const onchain = await captureOnchain(savedKit, savedStatus, previous)
+      const boardingTranscripts = mergeBoardingTranscripts(
+        savedStatus.vtxoBoardingDescriptor!,
+        previous?.boardingTranscripts ?? [],
+        await loadBoardingTranscripts(savedStatus.vaultId, savedStatus.vtxoBoardingDescriptor!),
+      )
       const archive = validateVaultRecoveryArchive({
         name: 'vaulted-program-recovery-data',
         version: 1,
@@ -185,6 +199,7 @@ export async function captureVaultRecoveryArchive(kit: RecoveryKit, status: Vaul
         status: savedStatus,
         spending,
         onchain,
+        boardingTranscripts,
       })
       const db = await archiveDatabase(savedStatus.vaultId, binding.network)
       try {
@@ -233,6 +248,11 @@ export async function storeVaultRecoveryArchive(value: VaultRecoveryArchive) {
       archive = validateVaultRecoveryArchive({
         ...previous,
         onchain,
+        boardingTranscripts: mergeBoardingTranscripts(
+          incoming.status.vtxoBoardingDescriptor!,
+          previous.boardingTranscripts ?? [],
+          incoming.boardingTranscripts ?? [],
+        ),
         spending: {
           ...previous.spending,
           coins: packExitArchive(coins),
@@ -241,6 +261,12 @@ export async function storeVaultRecoveryArchive(value: VaultRecoveryArchive) {
         },
       })
     }
+    const boardingTranscripts = await storeBoardingTranscripts(
+      archive.status.vaultId,
+      archive.status.vtxoBoardingDescriptor!,
+      archive.boardingTranscripts ?? [],
+    )
+    archive = validateVaultRecoveryArchive({ ...archive, boardingTranscripts })
     const db = await archiveDatabase(archive.status.vaultId, binding.network)
     try {
       await new Promise<void>((resolve, reject) => {

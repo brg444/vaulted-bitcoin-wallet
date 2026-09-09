@@ -67,6 +67,7 @@ export interface VaultContextProps {
   recoveryArchiveError: string
   backupRecoveryKit: () => Promise<boolean>
   balanceError: string
+  boardingError: string
   balancesLoaded: boolean
   boardingAddress: string
   restoreRecoveryArchive: (raw?: unknown) => Promise<void>
@@ -160,6 +161,7 @@ export const VaultContext = createContext<VaultContextProps>({
   recoveryArchiveError: '',
   backupRecoveryKit: async () => false,
   balanceError: '',
+  boardingError: '',
   balancesLoaded: false,
   boardingAddress: '',
   restoreRecoveryArchive: async () => {},

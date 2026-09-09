@@ -403,14 +403,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [liveNetwork],
   )
   const reportError = useCallback((message: string) => setError(message), [])
-  const { balanceError, balancesLoaded, history, positions, refreshBalance, refreshingBalance } = useVaultBalances({
-    addressPin,
-    enrollment,
-    initialStatusChecked,
-    locked,
-    setStatus,
-    status,
-  })
+  const { balanceError, boardingError, balancesLoaded, history, positions, refreshBalance, refreshingBalance } =
+    useVaultBalances({
+      addressPin,
+      enrollment,
+      initialStatusChecked,
+      locked,
+      setStatus,
+      status,
+    })
   const spendingAvailableSats = positions.spending.availableSats
   const savingsAvailableSats = positions.savings.availableSats
   const dailyLimit = status?.enrolled ? (status.periodAllowance ?? setup.dailyLimitSats) : setup.dailyLimitSats
@@ -1566,6 +1567,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       recoveryArchiveStatus,
       recoveryArchiveError,
       balanceError,
+      boardingError,
       balancesLoaded,
       boardingAddress,
       restoreRecoveryKit,
@@ -1710,6 +1712,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       recoveryArchiveStatus,
       recoveryArchiveError,
       balanceError,
+      boardingError,
       balancesLoaded,
       boardingAddress,
       restoreRecoveryKit,

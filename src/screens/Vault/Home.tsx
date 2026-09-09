@@ -20,6 +20,7 @@ export default function VaultHome() {
     busy,
     error,
     balanceError,
+    boardingError,
     pendingPayments = [],
     openPendingPayment,
     navigate,
@@ -96,6 +97,7 @@ export default function VaultHome() {
         ) : null
       }
     >
+      {spending && boardingError ? <PaymentNotice message={boardingError} /> : null}
       {spending && spendingBitcoin?.error ? <PaymentNotice message={spendingBitcoin.error} /> : null}
       {spending
         ? pendingPayments.map((payment) => (

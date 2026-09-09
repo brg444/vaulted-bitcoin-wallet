@@ -238,6 +238,19 @@ describe('Vault home account boundaries', () => {
     expect(screen.queryByText('Wallet activity is unavailable.')).toBeNull()
   })
 
+  it('shows a boarding failure beside the retained Spending balance', () => {
+    const message = 'Deposit boarding needs attention. Guardian could not complete this attempt.'
+    renderHome({
+      boardingError: message,
+      positions: {
+        spending: { availableSats: 1_300, pendingSats: 30_608, totalSats: 31_908 },
+        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+      },
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent(message)
+    expect(screen.getByTestId('vault-balance')).toHaveTextContent('₿31,908')
+  })
+
   it('shows a rejected Bitcoin payment even with no retained pending operation', () => {
     renderHome({ error: 'Bitcoin payment was not sent. Registration was rejected.', pendingPayments: [] })
     expect(screen.getByRole('alert')).toHaveTextContent('Bitcoin payment was not sent')

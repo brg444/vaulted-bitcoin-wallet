@@ -33,6 +33,7 @@ interface VaultBalancesOptions {
 
 interface VaultBalanceSnapshot {
   boardingBalance: number
+  boardingError?: string
   history: VaultHistoryItem[]
   savingsSats: number
   savingsSpendableSats: number
@@ -285,6 +286,7 @@ export function useVaultBalances({
           const preserveSpending = hasSnapshotRef.current
           setSnapshot((current) => ({
             boardingBalance: preserveSpending ? current.boardingBalance : boarding.balance,
+            boardingError: preserveSpending ? current.boardingError : undefined,
             history: mergeVaultHistory(
               savings.history,
               preserveSpending ? current.history.filter((item) => item.account === 'spend') : boarding.history,
@@ -302,6 +304,7 @@ export function useVaultBalances({
         }
         const nextSnapshot = {
           boardingBalance: spendingAddress && liveStatus.enrolled ? spending.boardingBalance || 0 : boarding.balance,
+          boardingError: spending.boardingError,
           history: mergeVaultHistory(
             savings.history,
             spendingAddress && liveStatus.enrolled ? spending.history : boarding.history,
@@ -404,6 +407,7 @@ export function useVaultBalances({
 
   return {
     balanceError,
+    boardingError: snapshot.boardingError || '',
     balancesLoaded,
     history,
     positions,

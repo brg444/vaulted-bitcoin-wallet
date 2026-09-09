@@ -8,7 +8,8 @@ import {
 } from '../cosignerClient'
 import { hexToBytes } from '../hex'
 import type { BoardingDescriptor } from '../types'
-import { waitForVaultSettlementStream } from './settlementEventSource'
+import { waitForVaultSettlementStream, vaultSettlementStreamGuard } from './settlementEventSource'
+import { persistBoardingTranscript } from './boardingJournal'
 
 function exactRecipient(recipient: Recipient): BoardingRecipientWire {
   if (
@@ -76,10 +77,13 @@ export function createBoardingSigningAdapter(vaultId: string, descriptor: Boardi
   if (publicKey.length !== 32 || hex.encode(publicKey) !== descriptor.vaultBoardCosignerPub.slice(2)) {
     throw new Error('vault-board-v1 cosigner key is invalid')
   }
-  let preparedStream: { handle: string; topic: string } | undefined
+  let generation = 0
+  let preparedStream: { handle: string; topic: string; requireOpen?: () => void } | undefined
   return {
     publicKey,
     async prepareRegistration(request) {
+      const current = ++generation
+      preparedStream = undefined
       if (request.inputs.length !== 1 || request.recipients.length !== 1) {
         throw new Error('vault-board-v1 requires one boarding input and one recipient')
       }
@@ -92,6 +96,7 @@ export function createBoardingSigningAdapter(vaultId: string, descriptor: Boardi
         inputs: [{ txid: input.txid, vout: input.vout }],
         recipients: [exactRecipient(request.recipients[0])],
       })
+      if (current !== generation) throw new Error('Boarding preparation was superseded')
       preparedStream =
         prepared.status === 'ready' && prepared.handle
           ? { handle: prepared.handle, topic: `${input.txid}:${input.vout}` }
@@ -99,10 +104,13 @@ export function createBoardingSigningAdapter(vaultId: string, descriptor: Boardi
       return prepared
     },
     async registerIntent(request) {
-      if (!preparedStream || preparedStream.handle !== request.handle) {
+      const stream = preparedStream
+      if (!stream || stream.handle !== request.handle) {
         throw new Error('vault-board-v1 registration is not bound to the prepared outpoint')
       }
-      await waitForVaultSettlementStream(preparedStream.topic)
+      await waitForVaultSettlementStream(stream.topic)
+      if (preparedStream !== stream) throw new Error('Boarding registration was superseded')
+      stream.requireOpen = vaultSettlementStreamGuard(stream.topic)
       return vaultCosignerClient.boarding.register({
         handle: request.handle,
         psbt: request.psbt,
@@ -118,14 +126,24 @@ export function createBoardingSigningAdapter(vaultId: string, descriptor: Boardi
         message: deleteMessage(request.message),
       })
     },
-    submitCommitment(request) {
-      return vaultCosignerClient.boarding.final({
+    async submitCommitment(request) {
+      const stream = preparedStream
+      if (!stream?.requireOpen || stream.handle !== request.handle)
+        throw new Error('Boarding final request is not bound to its registered stream')
+      const requireOpen = stream.requireOpen
+      requireOpen()
+      const exact = {
         handle: request.handle,
         psbt: request.psbt,
         inputIndexes: [...request.inputIndexes],
         signedForfeits: [...request.signedForfeits],
         validatedBatch: finalBatch(request.validatedBatch),
-      })
+      }
+      await persistBoardingTranscript(vaultId, descriptor, exact)
+      if (preparedStream !== stream || stream.requireOpen !== requireOpen)
+        throw new Error('Boarding final request was superseded')
+      requireOpen()
+      return vaultCosignerClient.boarding.final(exact)
     },
   }
 }

@@ -363,6 +363,37 @@ describe('useVaultBalances', () => {
     expect(result.current.balanceError).toBe('')
   })
 
+  it('keeps boarding failure visible with the funds until a successful snapshot clears it', async () => {
+    const boardingError = 'Deposit boarding needs attention. Guardian could not complete this attempt.'
+    const history = [
+      {
+        txid: 'boarding',
+        type: 'received' as const,
+        amount: 30_608,
+        confirmed: false,
+        account: 'spend' as const,
+        activity: 'boarding' as const,
+      },
+    ]
+    mockedSnapshot.mockResolvedValueOnce({ balance: 1_300, boardingBalance: 30_608, boardingError, history })
+    const { result } = setupHook()
+    await act(async () => result.current.refreshBalance())
+    expect(result.current.boardingError).toBe(boardingError)
+    expect(result.current.positions.spending).toEqual({ availableSats: 1_300, pendingSats: 30_608, totalSats: 31_908 })
+    expect(loadBalanceSnapshot(STATUS.vaultId)?.boardingError).toBe(boardingError)
+
+    mockedSnapshot.mockRejectedValueOnce(new Error('worker unavailable'))
+    await act(async () => result.current.refreshBalance())
+    expect(result.current.boardingError).toBe(boardingError)
+    expect(result.current.positions.spending.totalSats).toBe(31_908)
+
+    mockedSnapshot.mockResolvedValueOnce({ balance: 31_908, boardingBalance: 0, history: [] })
+    await act(async () => result.current.refreshBalance())
+    expect(result.current.boardingError).toBe('')
+    expect(result.current.positions.spending).toEqual({ availableSats: 31_908, pendingSats: 0, totalSats: 31_908 })
+    expect(loadBalanceSnapshot(STATUS.vaultId)?.boardingError).toBeUndefined()
+  })
+
   it('keeps the previous account snapshot when a worker read fails', async () => {
     let savingsRound = 0
     mockedUtxos.mockImplementation(async (address) => {

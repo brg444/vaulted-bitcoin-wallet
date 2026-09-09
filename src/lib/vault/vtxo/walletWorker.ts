@@ -63,6 +63,8 @@ type WalletRuntime = {
   onWorkerMessage: (event: MessageEvent) => void
   lightningObserver: VaultLightningObserverScheduler
   boardingSettle?: Promise<void>
+  boardingError?: string
+  boardingRetryAfter?: number
 }
 
 let runtime: WalletRuntime | undefined
@@ -505,6 +507,8 @@ export async function reviveVaultWalletWorker(status: VaultStatus): Promise<Wall
 export interface VaultBoardingSettlementRuntime {
   listeners: Set<() => void>
   boardingSettle?: Promise<void>
+  boardingError?: string
+  boardingRetryAfter?: number
 }
 
 // Each confirmed input is enumerated over 0..cap. Size the budget so later
@@ -568,19 +572,34 @@ export async function vaultBoardingSettleParams(
   throw new Error('vault-board-v1 has no economical confirmed input within the Operator limit')
 }
 
+const VAULT_BOARDING_RETRY_DELAY_MS = 15_000
+
 export function scheduleVaultBoardingSettlement(
   current: VaultBoardingSettlementRuntime,
   settle: () => Promise<string>,
 ): Promise<void> {
   if (current.boardingSettle) return current.boardingSettle
+  if (Date.now() < (current.boardingRetryAfter || 0)) return Promise.resolve()
   let tracked: Promise<void>
   tracked = settle()
     .then(() => {
+      current.boardingError = undefined
+      current.boardingRetryAfter = undefined
       current.listeners.forEach((listener) => listener())
     })
     .catch((error) => {
+      // A listener refresh must not immediately start another failed attempt.
+      current.boardingRetryAfter = Date.now() + VAULT_BOARDING_RETRY_DELAY_MS
       if (!(error instanceof Error) || !error.message.includes('No inputs found')) {
         consoleError(error, 'Vault boarding settlement')
+        const message =
+          error instanceof Error && error.message.includes('final authorization cannot be released')
+            ? 'Deposit boarding needs attention. Guardian could not complete this attempt. The deposit is not yet available in Spending.'
+            : 'Deposit boarding is delayed. The deposit is not yet available in Spending.'
+        if (current.boardingError !== message) {
+          current.boardingError = message
+          current.listeners.forEach((listener) => listener())
+        }
       }
     })
     .finally(() => {
@@ -595,6 +614,7 @@ export interface VaultWalletVtxoSnapshot {
   pendingBalance?: number
   boardingBalance?: number
   boardingConfirmedBalance?: number
+  boardingError?: string
   commitmentIds?: string[]
   recoveryVtxos?: { txid: string; vout: number; value: number; script: string }[]
   history: VaultHistoryItem[]
@@ -620,6 +640,10 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
     current.wallet.getBoardingUtxos(),
     current.wallet.getBalance(),
   ])
+  if (balance.boarding.confirmed === 0 && !current.boardingSettle) {
+    current.boardingError = undefined
+    current.boardingRetryAfter = undefined
+  }
   if (status.templateVersion !== LIGHT_PROFILE && balance.boarding.confirmed > 0) {
     void scheduleVaultBoardingSettlement(current, async () => {
       const params = await vaultBoardingSettleParams(
@@ -676,6 +700,7 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
       : {}),
     boardingBalance: status.templateVersion === LIGHT_PROFILE ? 0 : balance.boarding.total,
     boardingConfirmedBalance: status.templateVersion === LIGHT_PROFILE ? 0 : balance.boarding.confirmed,
+    boardingError: status.templateVersion === LIGHT_PROFILE ? undefined : current.boardingError,
     history: [...detectedBoardingHistory, ...activityHistory],
   }
 }
