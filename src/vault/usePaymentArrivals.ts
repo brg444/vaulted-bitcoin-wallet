@@ -118,6 +118,11 @@ export function usePaymentArrivals(
   deliveryRef.current = delivery
   const aliveRef = useRef(true)
   const generationRef = useRef(0)
+  // Delivery generation: disabling banners invalidates in-flight
+  // announcements without touching detection baseline. A claim that resolves
+  // after disable-then-re-enable belongs to the older generation and stays
+  // silent, while genuinely new payments announce normally.
+  const deliveryGenRef = useRef(0)
   useEffect(() => {
     aliveRef.current = true
     return () => {
@@ -162,11 +167,15 @@ export function usePaymentArrivals(
       return
     }
     const generation = generationRef.current
+    const deliveryGen = deliveryGenRef.current
     void claimArrivalDelivery(fresh.map((arrival) => arrival.key))
       .then((keys) => {
         if (!aliveRef.current || generationRef.current !== generation) return
         // Read delivery preferences at delivery time: a toggle while the
-        // claim was pending invalidates the announcement.
+        // claim was pending invalidates the announcement. A disable and
+        // re-enable before resolution still drops the old notice because the
+        // delivery generation advanced.
+        if (deliveryGenRef.current !== deliveryGen) return
         const live = deliveryRef.current
         if (!live.bannersEnabled) return
         const accepted = fresh.filter((arrival) => keys.includes(arrival.key))
@@ -214,6 +223,7 @@ export function usePaymentArrivals(
   const bannersOn = delivery.bannersEnabled
   useEffect(() => {
     if (bannersOn) return
+    deliveryGenRef.current += 1
     pendingRef.current = []
     setArrivals([])
   }, [bannersOn])

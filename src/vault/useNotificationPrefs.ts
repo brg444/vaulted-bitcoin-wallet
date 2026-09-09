@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { loadArrivalBanners, loadArrivalHaptics, subscribeArrivalPrefs, type ArrivalPrefKey } from '../lib/vault/prefs'
+import {
+  ARRIVAL_PREF_STORAGE_KEYS,
+  adoptStoredArrivalPrefs,
+  loadArrivalBanners,
+  loadArrivalHaptics,
+  subscribeArrivalPrefs,
+  type ArrivalPrefKey,
+} from '../lib/vault/prefs'
 
 export interface NotificationPrefs {
   bannersEnabled: boolean
@@ -24,8 +31,12 @@ export function useNotificationPrefs(): NotificationPrefs {
         key === 'banners' ? { ...current, bannersEnabled: value } : { ...current, arrivalHapticsEnabled: value },
       )
     }
-    const onStorage = () => {
-      setPrefs({ bannersEnabled: loadArrivalBanners(), arrivalHapticsEnabled: loadArrivalHaptics() })
+    const onStorage = (event: StorageEvent) => {
+      // Cross-document sync follows actual preference changes only: events
+      // for unrelated keys leave the session choice untouched, while a clear
+      // (null key) re-reads whatever storage still holds.
+      if (event.key !== null && !(ARRIVAL_PREF_STORAGE_KEYS as readonly string[]).includes(event.key)) return
+      setPrefs(adoptStoredArrivalPrefs())
     }
     const unsubscribe = subscribeArrivalPrefs(onBus)
     window.addEventListener('storage', onStorage)

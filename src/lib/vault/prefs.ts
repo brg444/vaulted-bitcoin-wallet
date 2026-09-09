@@ -9,20 +9,6 @@ const BALANCE_UNIT_KEY = 'arkade-vault-balance-unit'
 const ARRIVAL_BANNERS_KEY = 'arkade-vault-arrival-banners'
 const ARRIVAL_HAPTICS_KEY = 'arkade-vault-arrival-haptics'
 
-function readFlag(key: string, defaultOn: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(key)
-    // Missing or corrupt values keep the default: arrivals stay visible and
-    // haptics stay on until the user chooses otherwise.
-    if (raw === null) return defaultOn
-    if (raw === '1') return true
-    if (raw === '0') return false
-    return defaultOn
-  } catch {
-    return defaultOn
-  }
-}
-
 function writeFlag(key: string, on: boolean): void {
   try {
     localStorage.setItem(key, on ? '1' : '0')
@@ -89,13 +75,16 @@ export function saveVaultHaptics(on: boolean) {
 /**
  * In-app payment-arrival banners. Device-local, on by default. Disabling
  * hides banners only: detection, baseline, and dedup keep running, so
- * re-enabling never replays historical payments.
+ * re-enabling never replays historical payments. The session fallback keeps
+ * the in-memory choice authoritative for this tab even when the storage
+ * write fails or the component remounts.
  */
 export function loadArrivalBanners(): boolean {
-  return readFlag(ARRIVAL_BANNERS_KEY, true)
+  return sessionArrivalPrefs.banners ?? storedArrivalFlag(ARRIVAL_BANNERS_KEY) ?? true
 }
 
 export function saveArrivalBanners(on: boolean) {
+  sessionArrivalPrefs.banners = on
   writeFlag(ARRIVAL_BANNERS_KEY, on)
   emitArrivalPref('banners', on)
 }
@@ -106,13 +95,45 @@ export function saveArrivalBanners(on: boolean) {
  * screen-reader feedback never depend on it.
  */
 export function loadArrivalHaptics(): boolean {
-  return readFlag(ARRIVAL_HAPTICS_KEY, true)
+  return sessionArrivalPrefs.haptics ?? storedArrivalFlag(ARRIVAL_HAPTICS_KEY) ?? true
 }
 
 export function saveArrivalHaptics(on: boolean) {
+  sessionArrivalPrefs.haptics = on
   writeFlag(ARRIVAL_HAPTICS_KEY, on)
   emitArrivalPref('haptics', on)
 }
+
+/** In-session arrival choices, authoritative when storage is stale or failed. */
+const sessionArrivalPrefs: { banners: boolean | null; haptics: boolean | null } = {
+  banners: null,
+  haptics: null,
+}
+
+function storedArrivalFlag(key: string): boolean | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === '1') return true
+    if (raw === '0') return false
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Adopt successfully stored values, used when another tab reports a change.
+ * Missing, corrupt, or unreadable storage leaves the session choice alone.
+ */
+export function adoptStoredArrivalPrefs(): { bannersEnabled: boolean; arrivalHapticsEnabled: boolean } {
+  const banners = storedArrivalFlag(ARRIVAL_BANNERS_KEY)
+  if (banners !== null) sessionArrivalPrefs.banners = banners
+  const haptics = storedArrivalFlag(ARRIVAL_HAPTICS_KEY)
+  if (haptics !== null) sessionArrivalPrefs.haptics = haptics
+  return { bannersEnabled: loadArrivalBanners(), arrivalHapticsEnabled: loadArrivalHaptics() }
+}
+
+export const ARRIVAL_PREF_STORAGE_KEYS = [ARRIVAL_BANNERS_KEY, ARRIVAL_HAPTICS_KEY] as const
 
 export type ArrivalPrefKey = 'banners' | 'haptics'
 export type ArrivalPrefListener = (key: ArrivalPrefKey, value: boolean) => void

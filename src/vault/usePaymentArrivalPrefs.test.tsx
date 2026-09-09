@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { hapticSubtle } from '../lib/haptics'
 import { claimArrivalDelivery } from '../lib/vault/arrivalDelivery'
+import { saveArrivalBanners, saveArrivalHaptics } from '../lib/vault/prefs'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { usePaymentArrivals, type ArrivalDeliveryPrefs } from './usePaymentArrivals'
 import { useNotificationPrefs } from './useNotificationPrefs'
@@ -123,6 +124,34 @@ describe('arrival delivery preferences', () => {
     await waitFor(() => expect(result.current.arrivals).toEqual([]))
   })
 
+  it('drops a stale claim across disable and re-enable but announces new payments', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-prefs-7' }
+    const stored = row({ txid: 'stored' })
+    let resolveClaim!: (keys: readonly string[]) => void
+    mockedClaim.mockImplementationOnce(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolveClaim = (keys) => resolve([...keys])
+        }),
+    )
+    const { result, rerender } = renderHook(
+      ({ rows, delivery }) => usePaymentArrivals(rows, scope, false, true, new Set(), delivery),
+      { initialProps: { rows: [stored], delivery: ENABLED } },
+    )
+    rerender({ rows: [stored, row({ txid: 'stale' })], delivery: ENABLED })
+    await waitFor(() => expect(mockedClaim).toHaveBeenCalledTimes(1))
+    // Disable advances the delivery generation; re-enable before resolution.
+    rerender({ rows: [stored, row({ txid: 'stale' })], delivery: NO_BANNERS })
+    rerender({ rows: [stored, row({ txid: 'stale' })], delivery: ENABLED })
+    await act(async () => {
+      resolveClaim(['tx:mutinynet:vault-prefs-7:spend:stale:received'])
+    })
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
+
+    rerender({ rows: [stored, row({ txid: 'stale' }), row({ txid: 'genuine' })], delivery: ENABLED })
+    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['genuine']))
+  })
+
   it('reads haptics at delivery time, not at detection time', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-prefs-6' }
     const stored = row({ txid: 'stored' })
@@ -151,16 +180,38 @@ describe('arrival delivery preferences', () => {
 describe('notification preferences scope', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    saveArrivalBanners(true)
+    saveArrivalHaptics(true)
   })
+
+  function keyedStorageEvent(key: string | null): Event {
+    try {
+      return new StorageEvent('storage', { key })
+    } catch {
+      const event = new Event('storage')
+      Object.defineProperty(event, 'key', { value: key })
+      return event
+    }
+  }
 
   it('defaults on, persists per device, and picks up other tabs', async () => {
     const { result } = renderHook(() => useNotificationPrefs())
     expect(result.current).toEqual({ bannersEnabled: true, arrivalHapticsEnabled: true })
 
     window.localStorage.setItem('arkade-vault-arrival-banners', '0')
-    window.dispatchEvent(new Event('storage'))
+    window.dispatchEvent(keyedStorageEvent('arkade-vault-arrival-banners'))
     await waitFor(() => expect(result.current.bannersEnabled).toBe(false))
     expect(result.current.arrivalHapticsEnabled).toBe(true)
+  })
+
+  it('ignores unrelated storage keys from other documents', async () => {
+    const { result } = renderHook(() => useNotificationPrefs())
+    expect(result.current.bannersEnabled).toBe(true)
+
+    window.localStorage.setItem('unrelated-key', '0')
+    window.dispatchEvent(keyedStorageEvent('unrelated-key'))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current).toEqual({ bannersEnabled: true, arrivalHapticsEnabled: true })
   })
 
   it('keeps the session consistent when the storage write itself fails', async () => {
@@ -175,6 +226,31 @@ describe('notification preferences scope', () => {
         saveArrivalBanners(false)
       })
       await waitFor(() => expect(result.current.bannersEnabled).toBe(false))
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
+  it('survives remount and unrelated storage events after failed writes', async () => {
+    const { saveArrivalBanners } = await import('../lib/vault/prefs')
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    try {
+      const first = renderHook(() => useNotificationPrefs())
+      act(() => {
+        saveArrivalBanners(false)
+      })
+      await waitFor(() => expect(first.result.current.bannersEnabled).toBe(false))
+      first.unmount()
+
+      const second = renderHook(() => useNotificationPrefs())
+      expect(second.result.current.bannersEnabled).toBe(false)
+
+      window.dispatchEvent(keyedStorageEvent('unrelated-key'))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(second.result.current.bannersEnabled).toBe(false)
+      second.unmount()
     } finally {
       setItem.mockRestore()
     }
