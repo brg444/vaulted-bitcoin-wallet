@@ -196,7 +196,12 @@ describe('arrival delivery preferences', () => {
     rerender({ rows: [stored, row({ txid: 'batch-a', amount: 1_000 }), row({ txid: 'batch-b', amount: 2_000 })] })
     await waitFor(() => expect(mockedClaim).toHaveBeenCalledTimes(1))
     rerender({
-      rows: [stored, row({ txid: 'batch-a', amount: 1_000 }), row({ txid: 'batch-b', amount: 2_000 }), row({ txid: 'batch-c', amount: 4_000 })],
+      rows: [
+        stored,
+        row({ txid: 'batch-a', amount: 1_000 }),
+        row({ txid: 'batch-b', amount: 2_000 }),
+        row({ txid: 'batch-c', amount: 4_000 }),
+      ],
     })
     await waitFor(() => expect(mockedClaim).toHaveBeenCalledTimes(2))
     await act(async () => {
