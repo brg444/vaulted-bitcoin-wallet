@@ -54,7 +54,7 @@ The container uses the same pinned Ledger build described above, with the native
 
 The current `ledger-candidate.json` records the implementation's complete simulator run. `ledger-candidate-initial.json` preserves the earlier prototype's diagnostic trace, whose ad hoc chain codes differ from the implementation. The verifier independently checks the signatures, DEFAULT/ALL restriction, exact recipient/amount/fee screen text, output-mutation failures and finalized sizes. Both tiers passed full and partial signing, measuring 169 and 212 vB respectively.
 
-Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, subsequent change spending, malicious metadata rejection, recovery, physical review and user cancellation remain separate release requirements. The recovery programs in the generator are mathematical fixtures from the existing family; service signing with the new derived keys and the complete recovery contract remain unimplemented.
+Candidate parents are synthetic. These tests establish simulator registration, derivation and normal signing, while funded acceptance, recovery and physical review remain separate release requirements. Wallet tests now cover subsequent change spending, mixed receive/change inputs, malicious metadata rejection and adapter cancellation. Device and funded lifecycle qualification remain required. The recovery programs in the generator are mathematical fixtures from the existing family; service signing with the new derived keys and the complete recovery contract remain unimplemented.
 
 `ledger-key-vectors.mjs` regenerates the reviewed public derivation vectors at `src/lib/vault/program/ledger-key-vectors.json`. The same bytes live in the runtime's `internal/vault/savings/testdata/ledger-key-vectors.json`. Wallet and Go tests independently verify account derivations, program parents, policy templates and output scripts, including private/public derivation agreement. Fixture regeneration requires comparing both repositories; changed golden values represent a contract change.
 
@@ -77,3 +77,21 @@ BitBox, Jade, COLDCARD, Krux and Trezor findings rely on the pinned source revie
 ## Remaining qualification
 
 Physical registration, persistent wallet reload, actual screen review, QR/SD exchange, cancellation, and the complete funded recovery lifecycle remain release gates. Passing a signing-engine or source-level test does not satisfy those gates.
+
+## Native wallet client and UI checks
+
+The candidate PSBT generator calls `ledgerSavings.ts`, including its parent checks
+and phone HD signing. `ledgerClient.ts` uses the official JavaScript client;
+registration metadata is tied to the exact policy and reconstructed addresses.
+Its Node tests avoid the separate typed-array realms introduced by jsdom.
+
+```sh
+pnpm exec vitest run --maxWorkers=2 src/lib/vault/ledgerSavings.test.ts src/lib/vault/ledgerClient.test.ts src/screens/Vault/LedgerSavingsApproval.test.tsx
+node tools/native-savings-signers/ledger-client-browser.mjs
+```
+
+The browser check uses Chromium and a simulated transport to exercise the real
+client serializer and registration validation. Its evidence records that limited
+scope. It never opens a USB device or signs with a real wallet. The candidate UI
+is prepared for coordinator integration and stays outside live enrollment until
+the full recovery and release gates pass.

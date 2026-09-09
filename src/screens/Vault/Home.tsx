@@ -1,10 +1,8 @@
 import PaymentNotice from './qg/PaymentNotice'
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
-import ConnectorSetup from './ConnectorSetup'
-import ConnectorDeposit from './ConnectorDeposit'
 import AccountHome from './AccountHome'
 import VaultHistory from './History'
 import PendingPayment from './qg/PendingPayment'
@@ -12,7 +10,6 @@ import PendingPayment from './qg/PendingPayment'
 export default function VaultHome() {
   const {
     account,
-    status,
     spendingBitcoin,
     balancesLoaded,
     boardingAddress,
@@ -41,15 +38,6 @@ export default function VaultHome() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  const [setupView, setSetupView] = useState<'home' | 'setup' | 'deposit'>('home')
-  if (status && setupView === 'setup')
-    return (
-      <ConnectorSetup status={status} onBack={() => setSetupView('home')} onDeposit={() => setSetupView('deposit')} />
-    )
-  if (status && setupView === 'deposit')
-    return (
-      <ConnectorDeposit status={status} onBack={() => setSetupView('setup')} onAddress={() => setSetupView('home')} />
-    )
   const spending = account === 'spend'
   const position = spending ? positions.spending : positions.savings
 

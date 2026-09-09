@@ -74,9 +74,9 @@ export default function VaultReceive() {
     await copy(request, spending ? 'Payment request' : 'Savings address')
   }
 
-  if (view === 'setup' && status)
+  if (view === 'setup' && status && isConnectorTemplate(status.templateVersion))
     return <ConnectorSetup status={status} onBack={() => setView('receive')} onDeposit={() => setView('deposit')} />
-  if (view === 'deposit' && status)
+  if (view === 'deposit' && status && isConnectorTemplate(status.templateVersion))
     return <ConnectorDeposit status={status} onBack={() => setView('setup')} onAddress={() => setView('receive')} />
 
   return (

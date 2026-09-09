@@ -1,6 +1,6 @@
 # Ledger-compatible native Savings
 
-Status: implementation foundation, 2026-09-08. Ledger is the primary signing target for this candidate. The earlier [unchanged-contract assessment](native-savings-signers.md) remains applicable to existing addresses; this candidate deliberately creates a new contract.
+Status: native payment integration in progress, 2026-09-09. Ledger is the primary signing target for this candidate. The earlier [unchanged-contract assessment](native-savings-signers.md) remains applicable to existing addresses; this candidate deliberately creates a new contract.
 
 ## Product flow
 
@@ -103,3 +103,50 @@ The first implementation lives in wallet `program/ledgerNativeKeys.ts` and `prog
 | Already-funded connector contracts                                                            | Keep the required migration/signing path until funds and unresolved operations are explicitly migrated, then remove the obsolete implementation. |
 
 The database retains its current authenticated schema and migration history. Restoring the prior native contract model does not mean reverting database versions or reinterpreting funded scripts. The new identity is `phone-ledger-recovery-savings-v1`; it remains absent from the live template registry and Contract Pack during qualification. There is no new user-facing contract selector, signing endpoint or RC deployment in this implementation increment.
+
+## Wallet integration increment, September 9
+
+`ledgerSavings.ts` now constructs native payments through the same builder used
+by existing native Savings. It verifies parent transactions, values and enrolled
+receive/change coordinates; supplies Ledger key origins and change metadata;
+and verifies the phone and hardware signatures against the retained payment.
+Tests spend the resulting change and combine receive and change coins in a later
+transaction on both networks and protection tiers. The qualification generator
+uses this shared code for every PSBT.
+
+`ledgerClient.ts` uses the official `@ledgerhq/ledger-bitcoin` 0.3.1 client and
+WebHID transport. Registration sends one complete policy, checks the connected
+account, verifies the receiving address on the device, and checks the change
+address. A validated registration record retains the exact policy, context
+binding and authorization HMAC for later signing or recovery-package inclusion.
+That record is not a Recovery Kit and does not establish delayed-recovery support.
+
+`LedgerSavingsApproval.tsx` provides the native registration and signing screens
+for the future enrollment/payment coordinator. It handles cancellation, duplicate
+clicks, connection cleanup and failed approval persistence. It does not select a
+contract or broadcast. Successful signing proceeds to the coordinator without
+another signing button; an uncertain callback outcome requires checking the
+wallet before another attempt. This component is not connected to live enrollment
+while the recovery contract remains incomplete.
+
+The main Ledger guide now describes native Savings with its qualification limits.
+Existing connector instructions have a separate guide, linked for those wallets.
+Recovery help receives the enrolled program and tier; ordinary native transfers
+and delayed recovery have separate service requirements. Unreachable connector
+setup state was deleted from Home. Receive and Security retain setup only for an
+actual connector contract, including after a program change while the screen is
+open. Existing connector recovery and unresolved transaction records remain intact.
+
+The targeted suite passed 315 tests across 37 files, followed by passing checks for stale device callbacks, leaving connector setup after a contract change, and official-client registration/address validation on both networks and tiers. The wallet-generated PSBTs also passed the Standard and Advanced simulator rerun for both payment shapes, retaining the 169 vB full and 212 vB partial sizes. Typecheck, lint and the mainnet build passed. The production dependency audit reported no known vulnerabilities. Chromium passed official-client
+policy serialization, registration metadata reconstruction and address-check
+sequencing with a simulated transport. That browser test does not exercise USB or
+a physical device. Phone HD backup restoration, the complete new recovery family,
+Guardian/Emulator child signing, live enrollment wiring and funded/physical tests
+remain before RC activation. No new recovery schema or Contract Pack is enabled by
+this increment.
+
+The recovery companion has matching integration notes on branch
+`codex/ledger-native-recovery-integration` at `469df3d`. Its executable bundles and
+the wallet's pinned recovery submodule remain unchanged until the native recovery
+implementation is complete; the notes distinguish existing connector recovery
+from the new registration metadata and preserve Spending exit-data requirements.

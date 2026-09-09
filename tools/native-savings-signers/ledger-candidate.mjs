@@ -2,7 +2,6 @@
 import { createServer } from 'vite'
 import { HDKey } from '@scure/bip32'
 import { Transaction, p2tr, TEST_NETWORK } from '@scure/btc-signer'
-import { tapLeafHash } from '@scure/btc-signer/payment.js'
 import { hex, base64 } from '@scure/base'
 import { pbkdf2Sync } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
@@ -36,6 +35,7 @@ try {
   const { PROGRAM_FIXTURE_FAMILY } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
   const { buildVaultProgramFamily } = await vite.ssrLoadModule('/src/lib/vault/program/trees.ts')
   const { buildLedgerNativeSavings } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativePolicy.ts')
+  const { signLedgerSavingsWithPhone } = await vite.ssrLoadModule('/src/lib/vault/ledgerSavings.ts')
   const { LEDGER_NATIVE_TEMPLATE } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
   const { defaultSpendingPolicy, spendingPolicyDigest } = await vite.ssrLoadModule('/src/lib/vault/spendingPolicy.ts')
   for (const tier of ['standard', 'advanced']) {
@@ -59,10 +59,10 @@ try {
       arkadeCosignerBase: PROGRAM_FIXTURE_FAMILY.arkadeCosignerBase,
     }
     const claims = tier === 'advanced' ? ['phone', 'hardware', 'recovery'] : ['phone', 'hardware']
-    const { walletPolicy, receive, change } = buildLedgerNativeSavings(
-      input,
-      Object.fromEntries(claims.map((claim) => [claim, hex.encode(family.initiateAuth['savings-' + claim])])),
+    const programs = Object.fromEntries(
+      claims.map((claim) => [claim, hex.encode(family.initiateAuth['savings-' + claim])]),
     )
+    const { walletPolicy, receive, change } = buildLedgerNativeSavings(input, programs)
     const { descriptorTemplate: template, keysInfo: keys } = walletPolicy
     const parent = new Transaction({ allowUnknownInputs: true })
     parent.addInput({ txid: '00'.repeat(32), index: 99 })
@@ -70,48 +70,29 @@ try {
     const recipient = p2tr(xonly(account(r)), undefined, TEST_NETWORK)
     const payments = []
     for (const full of [false, true]) {
-      const tx = new Transaction({ version: 2, allowUnknownInputs: true, allowUnknownOutputs: true })
-      const leaf = receive.tapLeafScript.find(([, v]) => hex.encode(v.slice(0, -1)) === hex.encode(receive.admin))
-      tx.addInput({
-        txid: parent.id,
-        index: 0,
-        nonWitnessUtxo: parent.toBytes(true, true),
-        witnessUtxo: { script: receive.script, amount: 100000n },
-        tapLeafScript: [leaf],
-        tapInternalKey: receive.tapInternalKey,
-        tapBip32Derivation: [
-          [
-            xonly(child(account(h), 0)),
-            { hashes: [tapLeafHash(receive.admin)], der: { fingerprint: h.fingerprint, path: [...path, 0, 0] } },
-          ],
+      const payment = {
+        contract: { context: input, programs },
+        coins: [
+          {
+            txid: parent.id,
+            vout: 0,
+            value: 100000,
+            branch: 0,
+            index: 0,
+            parentTxHex: hex.encode(parent.toBytes(true, true)),
+          },
         ],
-        sequence: 0xffffffff,
-      })
-      tx.addOutput({ script: recipient.script, amount: full ? 99000n : 20000n })
-      if (!full)
-        tx.addOutput({
-          script: change.script,
-          amount: 79000n,
-          tapInternalKey: change.tapInternalKey,
-          tapTree: [change.admin, ...change.initiate].map((script, i) => ({
-            depth: tier === 'standard' && i === 2 ? 1 : 2,
-            version: 0xc0,
-            script,
-          })),
-          tapBip32Derivation: [
-            [
-              xonly(child(account(h), 1)),
-              { hashes: [tapLeafHash(change.admin)], der: { fingerprint: h.fingerprint, path: [...path, 1, 0] } },
-            ],
-          ],
-        })
-      tx.sign(child(account(p), 0).privateKey)
+        destAddress: recipient.address,
+        amountSats: full ? 99000 : 20000,
+        feeSats: 1000,
+      }
+      const psbt = signLedgerSavingsWithPhone(payment, account(p))
       payments.push({
         full,
         recipient: recipient.address,
         amount: full ? 99000 : 20000,
         fee: 1000,
-        psbt: base64.encode(tx.toPSBT()),
+        psbt: base64.encode(hex.decode(psbt)),
         parent: hex.encode(parent.toBytes(true, true)),
       })
     }

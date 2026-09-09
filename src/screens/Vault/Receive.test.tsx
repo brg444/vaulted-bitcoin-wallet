@@ -1,3 +1,4 @@
+import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -128,4 +129,27 @@ describe('Vault receive', () => {
     expect(screen.getByText('Savings is not restored on this device. Sign in again to restore it.')).toBeTruthy()
     expect(screen.queryByText(/setup finishes/)).toBeNull()
   })
+})
+
+it('leaves connector setup when the enrolled contract changes to native Savings', async () => {
+  const value = {
+    account: 'savings',
+    status: { templateVersion: DUAL_CONNECTOR_TEMPLATE },
+    savingsAddress: 'tb1qsavings',
+    navigate: vi.fn(),
+  } as unknown as VaultContextProps
+  const wrapper = (current: VaultContextProps) => (
+    <ToastProvider>
+      <VaultContext.Provider value={current}>
+        <VaultReceive />
+      </VaultContext.Provider>
+    </ToastProvider>
+  )
+  const view = render(wrapper(value))
+  await userEvent.click(screen.getByRole('button', { name: 'Set up Savings signer' }))
+  expect(screen.getByRole('heading', { name: 'Savings signer setup' })).toBeVisible()
+  view.rerender(wrapper({ ...value, status: { ...value.status!, templateVersion: LEDGER_NATIVE_TEMPLATE } }))
+  expect(screen.queryByRole('heading', { name: 'Savings signer setup' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Set up Savings signer' })).toBeNull()
+  expect(screen.getByTestId('receive-qr')).toBeVisible()
 })
