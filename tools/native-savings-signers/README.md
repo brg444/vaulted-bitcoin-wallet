@@ -124,14 +124,26 @@ recovery initiations without an anchor, covering all claimants on receive and
 change. Both the acting user and Guardian sign each fee increase. Its cosigner keys are
 public fixtures used directly, bypassing service policy evaluation deliberately.
 
-The recovery simulator runner tests eight policies containing the hardware key,
-with eleven signing cases. Policies for quarantine after hardware-initiated
+The recovery simulator runner tests ten policies containing the hardware key,
+with fifteen signing cases. These include hardware initiation from Savings
+receive and change in both tiers, using the two normal policies. The hardware
+receives an unsigned PSBT from the wallet's recovery builder; the verifier checks
+its signature before adding the public fixture Guardian signature. Policies for quarantine after hardware-initiated
 recovery belong to the remaining authorities and are exercised by the Core test.
 The verifier checks the hardware signature, displayed destination, amount and
 fee, output commitment and final transaction construction. Its synthetic parents
 and locally supplied Guardian signatures leave the actual service lifecycle
 unqualified. Run the normal and recovery simulator harnesses sequentially because
 they use the same emulator ports.
+
+The recorded evidence retains the original eleven recovery captures and adds
+four hardware-initiation captures. `ledger-recovery-run-provenance.json` records
+their source commit and file hashes. To reproduce just those four cases, run the
+generator and Python runner with `RECOVERY_CASE_SET=hardware-initiation`, copy
+the runner's output to `evidence/ledger-recovery-hardware-initiation.json`, then
+run the verifier with `--merge-hardware-initiation`. This merge mode requires
+the retained records to match commit `f1feaa82`. The full run above replaces all
+captures and verifies the complete fifteen-case set.
 
 The current candidate identity is `phone-ledger-guardian-savings-v1`. Standard
 registers four key records and Advanced registers five; recovery needs a user

@@ -3,7 +3,7 @@
   "recordedDate": "2026-09-09",
   "status": "candidate capability qualified; enrollment disabled; RC unchanged",
   "runtimeCommit": "48e35f2",
-  "recoveryCompanionCommit": "b3cd690",
+  "recoveryCompanionCommit": "7773d19",
   "companionChange": "integration documentation only; executable and wallet submodule pin unchanged",
   "ledger": {
     "sourceCommit": "2c7956fe566bd7f6f690288130033441fabc5f10",
@@ -16,12 +16,13 @@
     "normalSimulatorPayments": 4,
     "normalFullVsize": 169,
     "normalPartialVsize": 212,
-    "recoverySimulatorPolicies": 8,
-    "recoverySimulatorPayments": 11,
+    "recoverySimulatorPolicies": 10,
+    "recoverySimulatorPayments": 15,
     "coreFundedPaths": 37,
     "coreRecoveryReplacements": 10,
     "walletRuntimeRecoveryVectors": 14,
-    "runtimeDerivationMutationsRejected": 112
+    "runtimeDerivationMutationsRejected": 112,
+    "recoveryHardwareInitiationPayments": 4
   },
   "checks": {
     "integratedWalletTestsPassed": 348,
@@ -57,10 +58,15 @@
     "tools/native-savings-signers/evidence/ledger-candidate-inputs.json": "a6149fb3941309872420666d0370dd5dad8ff1e9ccd7778bc5ca04499326241f",
     "tools/native-savings-signers/evidence/ledger-candidate.json": "ca0952ae8c57657232295e49a77b1f7a4387c4f4f5422c0e6829aa2da72e710f",
     "tools/native-savings-signers/evidence/ledger-candidate-verification.json": "bd93f737fbb3a474b5c8bf2b3a7cb3594fce47ead1f96983ef75feaa7e9aa973",
-    "tools/native-savings-signers/evidence/ledger-recovery-inputs.json": "8984985a4b1c3e4c1403679975f62cd35e6789f4660a7448ebab19fd2fb67e55",
-    "tools/native-savings-signers/evidence/ledger-recovery.json": "74b76c4318a8c9a89bbaaa8f4da8f571c5da406c24c1255a650bb9cc7f4e8646",
-    "tools/native-savings-signers/evidence/ledger-recovery-verification.json": "03cc401f1863278c0998de5784ac578c8ac2d9e61930221c0b61e9d1d8c01cc2",
+    "tools/native-savings-signers/evidence/ledger-recovery-inputs.json": "58c436ae291624c5f3d464340325c42a28dbcf05e04961d787a55399b773542c",
+    "tools/native-savings-signers/evidence/ledger-recovery.json": "09e37d494d286cc792464f9654bd70fe6523550f5f7c71fe4523d372e22cef08",
+    "tools/native-savings-signers/evidence/ledger-recovery-verification.json": "f3622dfc3af20007942d2f37ad91262ffbd0d26f39b3729faecaa8eb252c2616",
     "tools/native-savings-signers/evidence/ledger-recovery-core.json": "1b413ce8f84aca880bc3f7feb564ac9bf503ae9d1e7f6604e0035f9f1588e306",
-    "tools/native-savings-signers/evidence/ledger-client-browser.json": "28e9d91d1d116c4b2d569773d9da017dc122bb2a12426482db08e29cb1fa5006"
+    "tools/native-savings-signers/evidence/ledger-client-browser.json": "28e9d91d1d116c4b2d569773d9da017dc122bb2a12426482db08e29cb1fa5006",
+    "tools/native-savings-signers/evidence/ledger-recovery-hardware-initiation.json": "dc6afaad2e017e695a5be4e1a49e697477df1d7e420c313506bb5672b3056df5",
+    "tools/native-savings-signers/evidence/ledger-recovery-run-provenance.json": "99d9847aeb9a8980444718bf06e283d71315257d1e0e5bae3f2312ae008b3f96",
+    "tools/native-savings-signers/ledger-recovery-candidate.mjs": "70d8e4fcefa4c694ae71dd1ccbf433f511121586e5ddf68b83c550651943be71",
+    "tools/native-savings-signers/ledger-recovery.py": "cae57ba0ea58c9a12ba075aced77fdfca161af827ba39236a0c650afb5435507",
+    "tools/native-savings-signers/verify-ledger-recovery.mjs": "2aeb9f9695fbaca3441a80ba4aff07b575d509f1508e172bf994ad5ebfbdbdb0"
   }
 }

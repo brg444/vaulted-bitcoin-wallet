@@ -142,8 +142,12 @@ contract and cannot establish this contract's compatibility.
 The Guardian-only normal simulator run passed all four withdrawals: full payments
 with one Taproot recipient measured 169 vB, and partial payments with Taproot
 recipient and Savings change measured 212 vB. These sizes include both signatures.
-All eleven recovery signing cases across eight policies also passed destination,
-amount, fee and signature checks in the same simulator build. The funded Core
+All fifteen recovery signing cases across ten policies also passed destination,
+amount, fee and signature checks in the same simulator build. Four supplemental
+cases started hardware recovery from receive and change, reusing the two normal
+policies. Ledger signed the canonical unsigned transaction before the fixture
+Guardian added its signature; the original eleven captures remain unchanged.
+The funded Core
 run accepted all 37 contract paths and ten recovery initiation
 replacements, with early CSV claims and output substitutions rejected. The
 Guardian validates 14 independently generated wallet transaction/proof vectors;
@@ -213,4 +217,6 @@ the matched wallet, runtime Contract Pack and companion bundle together.
 
 Wallet recovery primitives return PSBT hex, while the runtime parser and response
 use Base64. The HTTP adapter must convert explicitly and retain the same unsigned
-transaction and metadata through both representations.
+transaction and metadata through both representations. Persist the exact
+user-signed PSBT and detached phone proof before requesting Guardian signing;
+retries reuse those bytes without repeating user approval.
