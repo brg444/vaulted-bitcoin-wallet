@@ -39,6 +39,7 @@ interface ReceivingBinding {
   claimPublicKey: string
 }
 export interface LightningAddress {
+  name?: string
   id: string
   address: string
   lnurl: string
@@ -50,15 +51,49 @@ export interface LightningAddress {
 const storageKey = (status: VaultStatus) => `vaulted:lnurl:v1:${status.network}:${status.vaultId}`
 export const lightningAddressEnabled = () => import.meta.env.VITE_VAULT_LNURL === 'true'
 
+export function validLightningName(name: string) {
+  return (
+    /^[a-z][a-z0-9_-]{2,31}$/.test(name) &&
+    !/^v[0-9a-f]{16}$/.test(name) &&
+    ![
+      'admin',
+      'support',
+      'security',
+      'abuse',
+      'postmaster',
+      'vaulted',
+      'root',
+      'system',
+      'api',
+      'www',
+      'lnurl',
+    ].includes(name)
+  )
+}
+export async function lightningNameAvailable(name: string, address?: LightningAddress) {
+  if (!validLightningName(name)) return false
+  const response = await fetch(`${LNURL_ORIGIN}/v1/vaulted/names/${encodeURIComponent(name)}`, {
+    credentials: 'omit',
+    redirect: 'error',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(10_000),
+    headers: address ? { Authorization: `Bearer ${address.readToken}` } : undefined,
+  })
+  const raw = await readBounded(response, 1024)
+  if (!response.ok) throw new Error('Could not check this name. Please try again.')
+  return JSON.parse(raw).available === true
+}
 export function validateLightningAddress(value: LightningAddress, status: VaultStatus) {
+  const name = value.name ?? value.id
   const encoded = bech32
-    .encode('lnurl', bech32.toWords(new TextEncoder().encode(`${LNURL_ORIGIN}/.well-known/lnurlp/${value.id}`)), 1023)
+    .encode('lnurl', bech32.toWords(new TextEncoder().encode(`${LNURL_ORIGIN}/.well-known/lnurlp/${name}`)), 1023)
     .toUpperCase()
   const b = value.binding
   const descriptor = status.lightDescriptorHash ?? status.connectorEnrollment?.descriptorHash
   if (
     !/^v[0-9a-f]{16}$/.test(value.id) ||
-    value.address !== `${value.id}@ln.getvaulted.xyz` ||
+    (name !== value.id && !validLightningName(name)) ||
+    value.address !== `${name}@ln.getvaulted.xyz` ||
     value.lnurl !== encoded ||
     !/^[0-9a-f]{64}$/.test(value.readToken) ||
     typeof value.active !== 'boolean' ||
@@ -97,10 +132,11 @@ async function post<T>(phase: string, body: unknown): Promise<T> {
   if (!res.ok) throw new Error('Lightning address setup is unavailable. Your existing address has been retained.')
   return JSON.parse(raw) as T
 }
-export async function configureLightningAddress(status: VaultStatus, action: 'register' | 'revoke') {
+export async function configureLightningAddress(status: VaultStatus, action: 'register' | 'revoke', name = '') {
   if (status.clientOrigin !== location.origin || status.rpId !== location.hostname)
     throw new Error('Wallet origin mismatch.')
-  const challenge = await post<{ challengeId: string; challenge: string }>('challenge', { action })
+  if (name && (action !== 'register' || !validLightningName(name))) throw new Error('Invalid Lightning address name.')
+  const challenge = await post<{ challengeId: string; challenge: string }>('challenge', { action, name })
   if (!/^[0-9a-f]{64}$/.test(challenge.challenge)) throw new Error('Invalid Lightning address challenge.')
   const credential = (await navigator.credentials.get({
     publicKey: passkeyGetOptions({
@@ -123,6 +159,7 @@ export async function configureLightningAddress(status: VaultStatus, action: 're
     const credentialId = hex.encode(new Uint8Array(credential.rawId))
     const result = validateLightningAddress(
       await post<LightningAddress>(action, {
+        name,
         vaultId: status.vaultId,
         challengeId: challenge.challengeId,
         credentialId,
@@ -138,6 +175,7 @@ export async function configureLightningAddress(status: VaultStatus, action: 're
       }),
       status,
     )
+    if (name && result.name !== name) throw new Error('Lightning address name did not match your request.')
     localStorage.setItem(storageKey(status), JSON.stringify(result))
     if (localStorage.getItem(storageKey(status)) !== JSON.stringify(result))
       throw new Error('Lightning address could not be saved.')

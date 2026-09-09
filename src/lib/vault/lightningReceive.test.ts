@@ -603,6 +603,17 @@ describe('Lightning address receipt import', () => {
       receipts[0].preimage = '00'.repeat(32)
       await expect(importLightningAddressReceipts(input)).rejects.toThrow('Invalid Lightning address recovery record')
       expect((await target.getAllRfqSwaps())[0].profile.hashlock).toEqual(r.profile.hashlock)
+      const custom = {
+        ...address,
+        name: 'alex',
+        address: 'alex@ln.getvaulted.xyz',
+        lnurl: bech32
+          .encode('lnurl', bech32.toWords(new TextEncoder().encode(`${LNURL_ORIGIN}/.well-known/lnurlp/alex`)), 1023)
+          .toUpperCase(),
+      }
+      expect(validateLightningAddress(custom as never, h.status).id).toBe(address.id)
+      expect(() => validateLightningAddress({ ...custom, name: 'someone-else' } as never, h.status)).toThrow()
+      expect(() => validateLightningAddress({ ...custom, name: '../alex' } as never, h.status)).toThrow()
       expect(() => validateLightningAddress({ ...address, lnurl: 'LNURL1WRONG' } as never, h.status)).toThrow(
         'does not match',
       )

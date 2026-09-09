@@ -4,6 +4,8 @@ import { copyToClipboard } from '../../lib/clipboard'
 import {
   configureLightningAddress,
   loadLightningAddress,
+  lightningNameAvailable,
+  validLightningName,
   type LightningAddress as Address,
 } from '../../lib/vault/lnurl'
 import type { VaultStatus } from '../../lib/vault/types'
@@ -16,6 +18,8 @@ export default function LightningAddress({ status }: { status: VaultStatus }) {
       return undefined
     }
   })
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
@@ -23,7 +27,16 @@ export default function LightningAddress({ status }: { status: VaultStatus }) {
     setBusy(true)
     setError('')
     try {
-      setAddress(await configureLightningAddress(status, action))
+      const chosen = action === 'register' ? name.trim().toLowerCase() : ''
+      if (action === 'register') {
+        if (!validLightningName(chosen))
+          throw new Error('Use 3–32 characters, starting with a letter: a–z, 0–9, hyphens or underscores.')
+        if (chosen !== address?.name && !(await lightningNameAvailable(chosen, address)))
+          throw new Error('That name is unavailable. Please choose another.')
+      }
+      setAddress(await configureLightningAddress(status, action, chosen))
+      setEditing(false)
+      setCopied(false)
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Lightning address setup failed.')
     } finally {
@@ -34,7 +47,7 @@ export default function LightningAddress({ status }: { status: VaultStatus }) {
     <details className='qg-prose' aria-label='Reusable Lightning address'>
       <summary className='qg-secondary'>Lightning address</summary>
       <div className='qg-stack'>
-        {address?.active ? (
+        {address?.active && !editing ? (
           <>
             <p className='qg-copy'>
               Receive into Spending while Vaulted is closed. Fees are deducted from the amount sent, up to{' '}
@@ -58,6 +71,16 @@ export default function LightningAddress({ status }: { status: VaultStatus }) {
             >
               {copied ? 'Copied' : 'Copy address'}
             </button>
+            <button
+              className='qg-secondary'
+              onClick={() => {
+                setName(address.name && address.name !== address.id ? address.name : '')
+                setError('')
+                setEditing(true)
+              }}
+            >
+              Edit address
+            </button>
             <button className='qg-secondary' disabled={busy} onClick={() => void configure('revoke')}>
               {busy ? 'Updating…' : 'Disable address'}
             </button>
@@ -65,12 +88,48 @@ export default function LightningAddress({ status }: { status: VaultStatus }) {
         ) : (
           <>
             <p className='qg-copy'>
-              Create a reusable address to receive while Vaulted is closed. Confirm setup once with your passkey;
-              individual payments need no approval. The receive fee comes out of the amount sent.
+              {editing
+                ? 'Choose a new address name and confirm with your passkey.'
+                : 'Create a reusable address to receive while Vaulted is closed. Confirm setup once with your passkey; individual payments need no approval. The receive fee comes out of the amount sent.'}
             </p>
-            <button className='qg-secondary' disabled={busy} onClick={() => void configure('register')}>
-              {busy ? 'Setting up…' : 'Set up Lightning address'}
+            <label className='qg-field' htmlFor='lightning-address-name'>
+              <span>Address name</span>
+              <input
+                id='lightning-address-name'
+                value={name}
+                maxLength={32}
+                autoCapitalize='none'
+                autoCorrect='off'
+                spellCheck={false}
+                autoComplete='off'
+                placeholder='yourname'
+                aria-describedby='lightning-address-preview'
+                onChange={(event) => {
+                  setName(event.target.value.toLowerCase())
+                  setError('')
+                }}
+                disabled={busy}
+              />
+            </label>
+            <p id='lightning-address-preview' className='qg-copy' style={{ overflowWrap: 'anywhere' }}>
+              {name.trim() || 'yourname'}@ln.getvaulted.xyz
+            </p>
+            {editing ? <p className='qg-copy'>Previously shared addresses will keep working for this wallet.</p> : null}
+            <button className='qg-secondary' disabled={busy || !name.trim()} onClick={() => void configure('register')}>
+              {busy ? 'Updating…' : editing ? 'Save address' : 'Set up Lightning address'}
             </button>
+            {editing ? (
+              <button
+                className='qg-secondary'
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false)
+                  setError('')
+                }}
+              >
+                Cancel
+              </button>
+            ) : null}
           </>
         )}
         {error ? (
