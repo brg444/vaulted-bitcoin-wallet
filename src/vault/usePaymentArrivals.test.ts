@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { IDBFactory } from 'fake-indexeddb'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { seedArrivalBaseline, usePaymentArrivals } from './usePaymentArrivals'
 import { saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
 import type { VaultHistoryItem } from '../lib/vault/history'
@@ -8,28 +9,29 @@ function row(partial: Partial<VaultHistoryItem> & { txid: string }): VaultHistor
   return { type: 'received', amount: 12_000, confirmed: true, account: 'spend', ...partial }
 }
 
-describe('arrival readiness', () => {
+describe('arrival readiness', async () => {
   beforeEach(() => {
     window.localStorage.clear()
+    vi.stubGlobal('indexedDB', new IDBFactory())
   })
 
-  it('ignores history before readiness and seeds quietly once ready', () => {
+  it('ignores history before readiness and seeds quietly once ready', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-ready-1' }
     const history = [row({ txid: 'stored' })]
     const { result, rerender } = renderHook(({ rows, ready }) => usePaymentArrivals(rows, scope, false, ready), {
       initialProps: { rows: history, ready: false },
     })
-    expect(result.current.arrivals).toEqual([])
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
 
     rerender({ rows: history, ready: true })
-    expect(result.current.arrivals).toEqual([])
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
 
     const next = [...history, row({ txid: 'fresh' })]
     rerender({ rows: next, ready: true })
-    expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh'])
+    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh']))
   })
 
-  it('replays nothing after a reload thanks to durable receipts', () => {
+  it('replays nothing after a reload thanks to durable receipts', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-ready-2' }
     const stored = row({ txid: 'stored' })
     const { result, rerender, unmount } = renderHook(
@@ -37,7 +39,7 @@ describe('arrival readiness', () => {
       { initialProps: { rows: [stored], ready: true } },
     )
     rerender({ rows: [stored, row({ txid: 'fresh' })], ready: true })
-    expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh'])
+    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh']))
     unmount()
 
     // A reload starts from empty history and hydrates in stages. Receipted
@@ -52,39 +54,41 @@ describe('arrival readiness', () => {
     reloaded.unmount()
   })
 
-  it('buffers arrivals while an approval is in flight and flushes after', () => {
+  it('buffers arrivals while an approval is in flight and flushes after', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-ready-3' }
     const { result, rerender } = renderHook(({ rows, paused }) => usePaymentArrivals(rows, scope, paused, true), {
       initialProps: { rows: [row({ txid: 'stored' })], paused: false },
     })
     rerender({ rows: [row({ txid: 'stored' }), row({ txid: 'during-approval' })], paused: true })
-    expect(result.current.arrivals).toEqual([])
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
     act(() => {
       rerender({ rows: [row({ txid: 'stored' }), row({ txid: 'during-approval' })], paused: false })
     })
-    expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['during-approval'])
+    await waitFor(() =>
+      expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['during-approval']),
+    )
   })
 
-  it('starts a fresh baseline on vault switch', () => {
+  it('starts a fresh baseline on vault switch', async () => {
     const first = { network: 'mutinynet', vaultId: 'vault-ready-4a' }
     const second = { network: 'mutinynet', vaultId: 'vault-ready-4b' }
     const history = [row({ txid: 'shared-txid' })]
     const { result, rerender } = renderHook(({ scope }) => usePaymentArrivals(history, scope, false, true), {
       initialProps: { scope: first },
     })
-    expect(result.current.arrivals).toEqual([])
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
     rerender({ scope: second })
-    expect(result.current.arrivals).toEqual([])
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
   })
 
-  it('banners a payment in at most one tab through the stored baseline', () => {
+  it('banners a payment in at most one tab through the stored baseline', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-ready-6' }
     const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true), {
       initialProps: { rows: [row({ txid: 'stored' })] },
     })
     expect(first.result.current.arrivals).toEqual([])
     first.rerender({ rows: [row({ txid: 'stored' }), row({ txid: 'fresh' })] })
-    expect(first.result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh'])
+    await waitFor(() => expect(first.result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh']))
 
     const second = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true), {
       initialProps: { rows: [row({ txid: 'stored' }), row({ txid: 'fresh' })] },
@@ -94,7 +98,7 @@ describe('arrival readiness', () => {
     second.unmount()
   })
 
-  it('seeds the stored baseline and banners only unseen available keys', () => {
+  it('seeds the stored baseline and banners only unseen available keys', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-ready-5' }
     saveArrivalBaseline(scope, new Map([['lightning:mutinynet:vault-ready-5:rfq-old', true]]))
     const seeded = seedArrivalBaseline(

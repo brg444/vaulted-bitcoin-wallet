@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { describePayment, paymentIdentityForItem, type PaymentScope } from '../lib/vault/payments'
 import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
+import { claimArrivalDelivery } from '../lib/vault/arrivalDelivery'
 import { hapticSubtle } from '../lib/haptics'
 
 export interface PaymentArrival {
@@ -18,7 +19,7 @@ export interface PaymentArrival {
  * reads rows and queues notices without touching any lifecycle.
  *
  * Readiness: detection starts only after a successful baseline snapshot for
- * the active scope (cached or refreshed). Earlier history is ignored, never
+ * the active scope, fetched successfully. Earlier history is ignored, never
  * queued, so a cold load cannot turn stored rows into new-payment alerts.
  * Presented payments persist as device-local receipts, so a reload or a
  * staged hydration replays nothing. Clearing local data reseeds quietly from
@@ -90,9 +91,20 @@ export function usePaymentArrivals(
   const [arrivals, setArrivals] = useState<PaymentArrival[]>([])
   const seenRef = useRef<Map<string, boolean> | null>(null)
   const pendingRef = useRef<PaymentArrival[]>([])
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
+  const aliveRef = useRef(true)
+  const generationRef = useRef(0)
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+    }
+  }, [])
   const scopeKey = `${scope.network}:${scope.vaultId}`
   const scopeRef = useRef(scopeKey)
   if (scopeRef.current !== scopeKey) {
+    generationRef.current += 1
     scopeRef.current = scopeKey
     seenRef.current = null
     pendingRef.current = []
@@ -104,12 +116,12 @@ export function usePaymentArrivals(
     if (!seenRef.current) {
       // The first post-readiness history merges into the stored baseline.
       // With no stored baseline this seeds quietly, so a fresh load never
-      // replays old payments; with one, genuinely new available keys banner.
+      // replays old payments. Subsequent snapshots detect new available keys.
       seenRef.current = seedArrivalBaseline(history, scope)
     } else {
       // Another tab may have presented arrivals since this tab's last run.
-      // Merge stored keys so a payment banners in at most one tab. A
-      // simultaneous detection race across tabs remains explicitly pending.
+      // Merge observed keys; the atomic delivery receipt below arbitrates
+      // simultaneous detections from separate tabs.
       for (const [key, available] of loadArrivalBaseline(scope)) {
         if (!seenRef.current.has(key)) seenRef.current.set(key, available)
       }
@@ -118,19 +130,29 @@ export function usePaymentArrivals(
     seenRef.current = seen
     saveArrivalBaseline(scope, seen, new Set(history.map((row) => paymentIdentityForItem(row, scope).key)))
     if (fresh.length === 0) return
-    if (paused) {
-      const queued = new Map(pendingRef.current.map((arrival) => [arrival.key, arrival]))
-      for (const arrival of fresh) queued.set(arrival.key, arrival)
-      pendingRef.current = [...queued.values()]
-      return
-    }
-    hapticSubtle()
-    setArrivals((current) => {
-      const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
-      for (const arrival of [...pendingRef.current, ...fresh]) queued.set(arrival.key, arrival)
-      pendingRef.current = []
-      return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
-    })
+    const generation = generationRef.current
+    void claimArrivalDelivery(fresh.map((arrival) => arrival.key))
+      .then((keys) => {
+        if (!aliveRef.current || generationRef.current !== generation) return
+        const accepted = fresh.filter((arrival) => keys.includes(arrival.key))
+        if (!accepted.length) return
+        if (pausedRef.current) {
+          const queued = new Map(pendingRef.current.map((arrival) => [arrival.key, arrival]))
+          for (const arrival of accepted) queued.set(arrival.key, arrival)
+          pendingRef.current = [...queued.values()]
+          return
+        }
+        hapticSubtle()
+        setArrivals((current) => {
+          const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
+          for (const arrival of accepted) queued.set(arrival.key, arrival)
+          return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
+        })
+      })
+      .catch(() => {
+        // Delivery storage failure suppresses an optional banner; payment
+        // history and lifecycle processing remain available.
+      })
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history, ready])

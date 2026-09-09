@@ -204,6 +204,7 @@ export function useVaultBalances({
     async (vaultId?: string) => {
       const version = ++refreshVersion.current
       setRefreshingBalance(true)
+      setSnapshotFresh(false)
       try {
         const id = String(
           vaultId ||
