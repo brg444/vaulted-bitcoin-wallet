@@ -97,6 +97,7 @@ export function loadArrivalBanners(): boolean {
 
 export function saveArrivalBanners(on: boolean) {
   writeFlag(ARRIVAL_BANNERS_KEY, on)
+  emitArrivalPref('banners', on)
 }
 
 /**
@@ -110,6 +111,35 @@ export function loadArrivalHaptics(): boolean {
 
 export function saveArrivalHaptics(on: boolean) {
   writeFlag(ARRIVAL_HAPTICS_KEY, on)
+  emitArrivalPref('haptics', on)
+}
+
+export type ArrivalPrefKey = 'banners' | 'haptics'
+export type ArrivalPrefListener = (key: ArrivalPrefKey, value: boolean) => void
+
+const arrivalPrefListeners = new Set<ArrivalPrefListener>()
+
+/**
+ * Same-document subscription for arrival preferences. Browser storage events
+ * reach other documents only, so Settings writes in this tab would otherwise
+ * leave the provider stale until reload. The emitted value is authoritative
+ * for the session even when the storage write itself fails.
+ */
+export function subscribeArrivalPrefs(listener: ArrivalPrefListener): () => void {
+  arrivalPrefListeners.add(listener)
+  return () => {
+    arrivalPrefListeners.delete(listener)
+  }
+}
+
+function emitArrivalPref(key: ArrivalPrefKey, value: boolean): void {
+  for (const listener of [...arrivalPrefListeners]) {
+    try {
+      listener(key, value)
+    } catch {
+      // One failing subscriber must not block the remaining session state.
+    }
+  }
 }
 
 let prefsBooted = false

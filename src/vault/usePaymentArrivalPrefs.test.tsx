@@ -1,6 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { hapticSubtle } from '../lib/haptics'
 import { claimArrivalDelivery } from '../lib/vault/arrivalDelivery'
 import type { VaultHistoryItem } from '../lib/vault/history'
@@ -8,7 +8,9 @@ import { usePaymentArrivals, type ArrivalDeliveryPrefs } from './usePaymentArriv
 import { useNotificationPrefs } from './useNotificationPrefs'
 
 vi.mock('../lib/haptics', () => ({ hapticSubtle: vi.fn() }))
-vi.mock('../lib/vault/arrivalDelivery', () => ({ claimArrivalDelivery: vi.fn(async (keys: string[]) => keys) }))
+vi.mock('../lib/vault/arrivalDelivery', () => ({
+  claimArrivalDelivery: vi.fn(async (keys: readonly string[]) => keys),
+}))
 
 const mockedHaptic = vi.mocked(hapticSubtle)
 const mockedClaim = vi.mocked(claimArrivalDelivery)
@@ -42,8 +44,8 @@ describe('arrival delivery preferences', () => {
     mockedClaim.mockClear()
     rerender({ rows: [stored, row({ txid: 'fresh' }), row({ txid: 'hidden' })], delivery: NO_BANNERS })
     await waitFor(() => expect(mockedClaim).not.toHaveBeenCalled())
-    // The earlier banner stays visible until dismissed; nothing new is added.
-    expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh'])
+    // Disabling dismisses visible and pending notices; nothing new is added.
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
   })
 
   it('never replays disabled-period payments after re-enabling', async () => {
@@ -80,6 +82,70 @@ describe('arrival delivery preferences', () => {
     await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['quiet', 'loud']))
     expect(mockedHaptic).toHaveBeenCalled()
   })
+
+  it('drops a pending claim announcement when banners are disabled mid-flight', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-prefs-4' }
+    const stored = row({ txid: 'stored' })
+    let resolveClaim!: (keys: readonly string[]) => void
+    mockedClaim.mockImplementationOnce(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolveClaim = (keys) => resolve([...keys])
+        }),
+    )
+    const { result, rerender } = renderHook(
+      ({ rows, delivery }) => usePaymentArrivals(rows, scope, false, true, new Set(), delivery),
+      { initialProps: { rows: [stored], delivery: ENABLED } },
+    )
+    rerender({ rows: [stored, row({ txid: 'inflight' })], delivery: ENABLED })
+    await waitFor(() => expect(mockedClaim).toHaveBeenCalledTimes(1))
+    rerender({ rows: [stored, row({ txid: 'inflight' })], delivery: NO_BANNERS })
+    await act(async () => {
+      resolveClaim(['tx:mutinynet:vault-prefs-4:spend:inflight:received'])
+    })
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
+  })
+
+  it('drops approval-buffered arrivals on disable and stays quiet after re-enable', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-prefs-5' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows, paused, delivery }) => usePaymentArrivals(rows, scope, paused, true, new Set(), delivery),
+      { initialProps: { rows: [stored], paused: true, delivery: ENABLED } },
+    )
+    rerender({ rows: [stored, row({ txid: 'buffered' })], paused: true, delivery: ENABLED })
+    await waitFor(() => expect(mockedClaim).toHaveBeenCalled())
+    rerender({ rows: [stored, row({ txid: 'buffered' })], paused: true, delivery: NO_BANNERS })
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
+    rerender({ rows: [stored, row({ txid: 'buffered' })], paused: false, delivery: NO_BANNERS })
+    expect(result.current.arrivals).toEqual([])
+    rerender({ rows: [stored, row({ txid: 'buffered' })], paused: false, delivery: ENABLED })
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
+  })
+
+  it('reads haptics at delivery time, not at detection time', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-prefs-6' }
+    const stored = row({ txid: 'stored' })
+    let resolveClaim!: (keys: readonly string[]) => void
+    mockedClaim.mockImplementationOnce(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolveClaim = (keys) => resolve([...keys])
+        }),
+    )
+    const { result, rerender } = renderHook(
+      ({ rows, delivery }) => usePaymentArrivals(rows, scope, false, true, new Set(), delivery),
+      { initialProps: { rows: [stored], delivery: NO_HAPTICS } },
+    )
+    rerender({ rows: [stored, row({ txid: 'retimed' })], delivery: NO_HAPTICS })
+    await waitFor(() => expect(mockedClaim).toHaveBeenCalledTimes(1))
+    rerender({ rows: [stored, row({ txid: 'retimed' })], delivery: ENABLED })
+    await act(async () => {
+      resolveClaim(['tx:mutinynet:vault-prefs-6:spend:retimed:received'])
+    })
+    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['retimed']))
+    expect(mockedHaptic).toHaveBeenCalled()
+  })
 })
 
 describe('notification preferences scope', () => {
@@ -95,5 +161,22 @@ describe('notification preferences scope', () => {
     window.dispatchEvent(new Event('storage'))
     await waitFor(() => expect(result.current.bannersEnabled).toBe(false))
     expect(result.current.arrivalHapticsEnabled).toBe(true)
+  })
+
+  it('keeps the session consistent when the storage write itself fails', async () => {
+    const { saveArrivalBanners } = await import('../lib/vault/prefs')
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    try {
+      const { result } = renderHook(() => useNotificationPrefs())
+      expect(result.current.bannersEnabled).toBe(true)
+      act(() => {
+        saveArrivalBanners(false)
+      })
+      await waitFor(() => expect(result.current.bannersEnabled).toBe(false))
+    } finally {
+      setItem.mockRestore()
+    }
   })
 })

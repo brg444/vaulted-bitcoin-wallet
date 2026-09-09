@@ -165,6 +165,10 @@ export function usePaymentArrivals(
     void claimArrivalDelivery(fresh.map((arrival) => arrival.key))
       .then((keys) => {
         if (!aliveRef.current || generationRef.current !== generation) return
+        // Read delivery preferences at delivery time: a toggle while the
+        // claim was pending invalidates the announcement.
+        const live = deliveryRef.current
+        if (!live.bannersEnabled) return
         const accepted = fresh.filter((arrival) => keys.includes(arrival.key))
         if (!accepted.length) return
         if (pausedRef.current) {
@@ -173,7 +177,7 @@ export function usePaymentArrivals(
           pendingRef.current = [...queued.values()]
           return
         }
-        if (delivery.hapticsEnabled) hapticSubtle()
+        if (live.hapticsEnabled) hapticSubtle()
         setArrivals((current) => {
           const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
           for (const arrival of accepted) queued.set(arrival.key, arrival)
@@ -190,6 +194,10 @@ export function usePaymentArrivals(
 
   useEffect(() => {
     if (paused || pendingRef.current.length === 0) return
+    if (!deliveryRef.current.bannersEnabled) {
+      pendingRef.current = []
+      return
+    }
     const flushed = pendingRef.current
     pendingRef.current = []
     if (deliveryRef.current.hapticsEnabled) hapticSubtle()
@@ -199,6 +207,16 @@ export function usePaymentArrivals(
       return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
     })
   }, [paused])
+
+  // Disabling banners invalidates pending and visible notices immediately,
+  // even when no fresh history arrives. Detection, baseline, and dedup above
+  // keep running, so re-enabling replays nothing.
+  const bannersOn = delivery.bannersEnabled
+  useEffect(() => {
+    if (bannersOn) return
+    pendingRef.current = []
+    setArrivals([])
+  }, [bannersOn])
 
   const dismissArrival = useCallback((key: string) => {
     pendingRef.current = pendingRef.current.filter((arrival) => arrival.key !== key)

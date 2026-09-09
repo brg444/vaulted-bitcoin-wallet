@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { loadArrivalBanners, loadArrivalHaptics } from '../lib/vault/prefs'
+import { loadArrivalBanners, loadArrivalHaptics, subscribeArrivalPrefs, type ArrivalPrefKey } from '../lib/vault/prefs'
 
 export interface NotificationPrefs {
   bannersEnabled: boolean
@@ -19,11 +19,20 @@ export function useNotificationPrefs(): NotificationPrefs {
   }))
 
   useEffect(() => {
-    const sync = () => {
+    const onBus = (key: ArrivalPrefKey, value: boolean) => {
+      setPrefs((current) =>
+        key === 'banners' ? { ...current, bannersEnabled: value } : { ...current, arrivalHapticsEnabled: value },
+      )
+    }
+    const onStorage = () => {
       setPrefs({ bannersEnabled: loadArrivalBanners(), arrivalHapticsEnabled: loadArrivalHaptics() })
     }
-    window.addEventListener('storage', sync)
-    return () => window.removeEventListener('storage', sync)
+    const unsubscribe = subscribeArrivalPrefs(onBus)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      unsubscribe()
+      window.removeEventListener('storage', onStorage)
+    }
   }, [])
 
   return prefs
