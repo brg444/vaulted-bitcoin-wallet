@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, QrCode, ScanLine, Shield } from 'lucide-react'
-import { prettyNumber } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { hapticLight, hapticSubtle } from '../../lib/haptics'
 import Content from './Content'
-import AccountBalance from './AccountBalance'
+import AccountBalance, { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import { QgMark } from './qg/QgScreen'
 import styles from './AccountHome.module.css'
 
@@ -26,6 +26,7 @@ export default function AccountHome({
   alert,
   description,
   children,
+  denomination,
 }: {
   account: 'Spending' | 'Savings'
   totalSats?: number
@@ -43,8 +44,11 @@ export default function AccountHome({
   alert?: ReactNode
   description?: ReactNode
   children?: ReactNode
+  denomination?: BalanceDenomination
 }) {
   const spending = account === 'Spending'
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
   return (
     <Content className={`qg-home-content ${styles.surface} ${styles.content}`} onRefresh={onRefresh}>
       <main className={`qg-home ${styles.home}`}>
@@ -103,11 +107,12 @@ export default function AccountHome({
             account={account}
             balancesLoaded={balancesLoaded}
             refreshingBalance={refreshingBalance}
+            denomination={denomination}
           />
         ) : null}
         {balancesLoaded && pendingSats > 0 ? (
           <p className='qg-available'>
-            ₿{prettyNumber(availableSats)} available · ₿{prettyNumber(pendingSats)} pending
+            {formatMoney(availableSats, money)} available · {formatMoney(pendingSats, money)} pending
           </p>
         ) : null}
         {description ? <div className={styles.description}>{description}</div> : null}

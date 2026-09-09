@@ -2,7 +2,8 @@ import { useContext, useEffect, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { gitCommit } from '../../_gitCommit'
 import { copyToClipboard } from '../../lib/clipboard'
-import { prettyAgo, prettyAmount, prettyLongText } from '../../lib/format'
+import { prettyAgo, prettyLongText } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { hapticLight, hapticSubtle } from '../../lib/haptics'
 import { clearLogs, getLogs, type LogLine } from '../../lib/logs'
 import { Themes } from '../../lib/types'
@@ -17,6 +18,7 @@ import {
   systemTheme,
 } from '../../lib/vault/prefs'
 import { setSessionLocked } from '../../lib/vault/enrollmentStore'
+import { useBalanceDenomination } from './AccountBalance'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import type { VaultStatus } from '../../lib/vault/types'
 import { VaultContext } from '../../vault/context'
@@ -139,6 +141,8 @@ export default function VaultSettings({
 } = {}) {
   const context = useContext(VaultContext)
   const { reset, setup } = context
+  const denom = useBalanceDenomination()
+  const money = { unit: denom.unit, rate: denom.rate }
   const status = light ? light.status : context.status
   const busy = light ? light.busy : context.busy
   const liveNetwork = light ? status?.network === 'mutinynet' : context.liveNetwork
@@ -258,8 +262,8 @@ export default function VaultSettings({
             ? 'Advanced — separate recovery key'
             : 'Standard — no separate recovery key',
       ],
-      ['Per-payment limit', prettyAmount(status?.txCap || setup.txCapSats)],
-      ['Rolling allowance', prettyAmount(status?.periodAllowance || setup.dailyLimitSats)],
+      ['Per-payment limit', formatMoney(status?.txCap || setup.txCapSats, money)],
+      ['Rolling allowance', formatMoney(status?.periodAllowance || setup.dailyLimitSats, money)],
       ['Vault service', readinessLabel],
       ['Site', status?.clientOrigin || location.origin],
       ['RP ID', status?.rpId],

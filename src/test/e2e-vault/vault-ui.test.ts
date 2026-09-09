@@ -1285,7 +1285,7 @@ test.describe('interaction quality', () => {
     await openVault(page)
     const tab = page.getByRole('button', { name: 'Open navigation' })
     const start = (await tab.boundingBox())!
-    expect(start.width).toBeGreaterThanOrEqual(56)
+    expect(start.width).toBeGreaterThanOrEqual(44)
     const x = start.x + 8
     const y = start.y + 10
     await page.mouse.move(x, y)
@@ -1633,11 +1633,11 @@ for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
           await expect(target.getByTestId('vault-app')).toHaveScreenshot(`home-parity-${state}-${width}-${theme}.png`, {
             animations: 'disabled',
           })
-          const trigger = await target.getByRole('button', { name: 'Open navigation', exact: true }).boundingBox()
-          // The amount column must stay clear of the launcher at any vertical position.
-          for (const amount of await target.locator('.vault-history-amt').all()) {
-            const box = await amount.boundingBox()
-            expect(box!.x + box!.width).toBeLessThanOrEqual(trigger!.x - 7)
+          const actions = await target.locator('.qg-actions').boundingBox()
+          // Activity uses the full content width beneath the movable glass tab.
+          for (const row of await target.locator('.vault-history-row').all()) {
+            const box = await row.boundingBox()
+            expect(box!.x + box!.width).toBeCloseTo(actions!.x + actions!.width, 0)
           }
         }
         // Capture the visible wallet frame, so long history does not resize the

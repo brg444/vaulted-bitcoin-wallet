@@ -4,7 +4,8 @@ import { hex } from '@scure/base'
 import { Fingerprint, FileKey, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
-import { prettyAmount } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
+import { useBalanceDenomination } from './AccountBalance'
 import { broadcastTx, fetchAddressUtxos } from '../../lib/vault/esplora'
 import { recoveryOnchainFeeSats, SAVINGS_CLAIM_VBYTES, SAVINGS_TRANSITION_VBYTES } from '../../lib/vault/onchainFee'
 import { parseIncomingPsbt, psbtFile } from '../../lib/vault/savingsSpend'
@@ -75,6 +76,8 @@ function RecoverAlert({ text }: { text: string }) {
 }
 
 export default function VaultRecover() {
+  const denomination = useBalanceDenomination()
+  const money = (value: number) => formatMoney(value, denomination)
   const {
     backupRecoveryKit,
     backupRecoveryArchive,
@@ -716,7 +719,7 @@ export default function VaultRecover() {
             {matureBoardingSats > 0 ? (
               <HubRow
                 title='Recover received Bitcoin'
-                detail={prettyAmount(matureBoardingSats)}
+                detail={money(matureBoardingSats)}
                 testId='recover-mature-boarding'
                 onClick={() => setBackupView('boarding')}
               />
@@ -851,7 +854,7 @@ export default function VaultRecover() {
       ) : backupView === 'boarding' ? (
         <>
           <h1>Recover received Bitcoin</h1>
-          <p className='qg-copy'>{prettyAmount(matureBoardingSats)} has waited long enough for this recovery path.</p>
+          <p className='qg-copy'>{money(matureBoardingSats)} has waited long enough for this recovery path.</p>
           <p className='qg-copy'>
             Your passkey will authorize a one-time recovery to this device. A network fee is deducted before the
             transaction is sent.
@@ -905,7 +908,7 @@ export default function VaultRecover() {
           </QgGuidance>
           {report && 'coverage' in report && pasted.trim() ? (
             <p className='qg-copy'>
-              This file contains Spending paths for {prettyAmount(report.coverage.archivedSats)}, saved{' '}
+              This file contains Spending paths for {money(report.coverage.archivedSats)}, saved{' '}
               {new Date(report.coverage.capturedAt!).toLocaleString()}. This check does not establish coverage of later
               activity or verify access to your signing keys.
             </p>

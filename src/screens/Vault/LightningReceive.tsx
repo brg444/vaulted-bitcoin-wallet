@@ -1,5 +1,3 @@
-import LightningAddress from './LightningAddress'
-import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import { useEffect, useRef, useState } from 'react'
 import { RestArkProvider, RestEmulatorProvider } from '@arkade-os/sdk'
 import type { RfqSwapRecord } from '@arkade-os/swap'
@@ -13,6 +11,8 @@ import { withVaultLightningLifecycleLock } from '../../lib/vault/lightningLock'
 import { withVaultWalletState } from '../../lib/vault/vtxo/walletWorker'
 import { networkPins } from '../../lib/vault/networkPins'
 import type { VaultStatus } from '../../lib/vault/types'
+import { formatMoney, satsFromUsd, usdInputFromSats } from '../../lib/vault/fiatDisplay'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import { prettyAmount } from '../../lib/format'
 import QgScreen, { QgPrimary } from './qg/QgScreen'
@@ -21,15 +21,20 @@ export default function LightningReceive({
   onBack,
   status,
   refreshBalance,
+  denomination,
 }: {
   onBack: () => void
   status: VaultStatus
   refreshBalance: () => Promise<void>
+  denomination?: BalanceDenomination
 }) {
   const actions = useRef({ status, refreshBalance })
   actions.current = { status, refreshBalance }
   const vaultId = status.vaultId
   const [amount, setAmount] = useState('')
+  const [usdInput, setUsdInput] = useState('')
+  // Canonical sats last produced by typing; vault switches bypass it.
+  const typedSats = useRef<string | null>(null)
   const [record, setRecord] = useState<RfqSwapRecord>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -47,6 +52,15 @@ export default function LightningReceive({
   const rfqId = record?.rfqId
   const paid = record?.state === 'settled'
   const expired = current ? now >= current.invoiceExpiresAt : false
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
+  const fiatActive = denom.unit === 'usd' && Boolean(denom.rate)
+  // The reusable address lives on the primary receive screen; this view only
+  // creates amount-specific invoices. Amounts stay canonical sats; the USD
+  // field is display-only so rounding can never alter the invoice amount.
+  const showUsd = fiatActive
+  const moneyText = (sats: number) => (fiatActive ? formatMoney(sats, money) : `${sats.toLocaleString()} sats`)
+  const heroAmount = (sats: number) => (fiatActive ? formatMoney(sats, money) : prettyAmount(sats))
   const profile = vaultLightningSolverProfile(status?.network)
   let estimate: ReturnType<typeof vaultLightningReceivePlan> | undefined
   try {
@@ -58,10 +72,25 @@ export default function LightningReceive({
   useEffect(() => {
     setRecord(undefined)
     setAmount('')
+    setUsdInput('')
+    typedSats.current = null
     setError('')
     setCopied(false)
     setBusy(false)
   }, [vaultId])
+
+  const displayedRate = useRef<number | null>(null)
+  useEffect(() => {
+    if (denom.unit !== 'usd' || !denom.rate) {
+      displayedRate.current = null
+      return
+    }
+    if (amount !== typedSats.current || displayedRate.current !== denom.rate.pricePerBtc) {
+      displayedRate.current = denom.rate.pricePerBtc
+      typedSats.current = amount
+      setUsdInput(amount && Number(amount) > 0 ? usdInputFromSats(Number(amount), denom.rate) : '')
+    }
+  }, [denom.unit, denom.rate, amount])
 
   useEffect(() => {
     if (!rfqId || paid) return
@@ -155,8 +184,37 @@ export default function LightningReceive({
   const another = () => {
     setRecord(undefined)
     setAmount('')
+    setUsdInput('')
+    typedSats.current = null
     setError('')
     setCopied(false)
+  }
+
+  const setReceiveAmount = (raw: string) => {
+    if (showUsd) {
+      const normalized = raw.replace(/[^\d.]/g, '')
+      if (!/^\d*(?:\.\d{0,2})?$/.test(normalized)) return
+      setUsdInput(normalized)
+      const sats = String(satsFromUsd(Number(normalized) || 0, denom.rate?.pricePerBtc || 0))
+      typedSats.current = sats
+      setAmount(sats)
+      return
+    }
+    typedSats.current = null
+    setAmount(raw.replace(/[^0-9]/g, ''))
+  }
+
+  const toggleReceiveUnit = async () => {
+    if (denom.unit === 'usd') {
+      await denom.setUnit('sats')
+      return
+    }
+    const rate = await denom.setUnit('usd')
+    if (!rate) {
+      setError('USD amounts are unavailable. Enter bitcoin instead.')
+      return
+    }
+    setUsdInput(amount ? usdInputFromSats(Number(amount), rate) : '')
   }
   return (
     <QgScreen
@@ -186,18 +244,17 @@ export default function LightningReceive({
       }
     >
       <div className='qg-stack qg-invoice'>
-        {!current && lightningAddressEnabled() ? <LightningAddress key={status.vaultId} status={status} /> : null}
         {current ? (
           <>
             <div className='qg-receive-copy qg-invoice-summary'>
               <p className='qg-invoice-label'>You receive</p>
-              <h1 style={amountSizeStyle(prettyAmount(record!.amount!))}>
-                <QgAmount value={prettyAmount(record!.amount!)} />
+              <h1 style={amountSizeStyle(heroAmount(record!.amount!))}>
+                <QgAmount value={heroAmount(record!.amount!)} />
               </h1>
               {paid || expired ? (
                 <p className='qg-copy' role='status' aria-live='polite'>
                   {paid
-                    ? `${record!.amount?.toLocaleString()} sats received in Spending.`
+                    ? `${fiatActive ? formatMoney(record!.amount!, money) : `${record!.amount?.toLocaleString()} sats`} received in Spending.`
                     : 'This invoice has expired. Any payment already in progress is still being checked.'}
                 </p>
               ) : null}
@@ -205,13 +262,10 @@ export default function LightningReceive({
             <section className='qg-invoice-fee' aria-label='Sender fee'>
               <div>
                 <span>Fee paid by sender</span>
-                <strong>{(current.quote.from_amount - record!.amount!).toLocaleString()} sats</strong>
+                <strong>{moneyText(current.quote.from_amount - record!.amount!)}</strong>
               </div>
               {!paid && !expired && current.quote.from_amount > current.estimatedPaySats ? (
-                <p>
-                  {(current.quote.from_amount - current.estimatedPaySats).toLocaleString()} sats above the advertised
-                  estimate.
-                </p>
+                <p>{moneyText(current.quote.from_amount - current.estimatedPaySats)} above the advertised estimate.</p>
               ) : null}
             </section>
             {!paid && !expired ? (
@@ -224,7 +278,7 @@ export default function LightningReceive({
             <section className='qg-details' aria-label='Invoice details'>
               <div>
                 <span>Sender total</span>
-                <strong>{current.quote.from_amount.toLocaleString()} sats</strong>
+                <strong>{moneyText(current.quote.from_amount)}</strong>
               </div>
               {!paid && !expired ? (
                 <div>
@@ -236,27 +290,32 @@ export default function LightningReceive({
           </>
         ) : (
           <>
-            <section className='qg-amount-entry' style={amountSizeStyle(amount || '0')}>
-              <label htmlFor='qg-receive-amount'>Amount to receive (sats)</label>
+            <section className='qg-amount-entry' style={amountSizeStyle(showUsd ? usdInput || '0' : amount || '0')}>
+              <label htmlFor='qg-receive-amount'>Amount to receive ({showUsd ? 'USD' : 'sats'})</label>
               <div>
-                <span className='qg-denomination' aria-hidden='true'>
-                  ₿
-                </span>
+                <button
+                  type='button'
+                  className='qg-denomination'
+                  aria-label={`Amount in ${showUsd ? 'US dollars' : 'bitcoin satoshis'}. Change denomination`}
+                  onClick={() => void toggleReceiveUnit()}
+                >
+                  {showUsd ? '$' : '₿'}
+                </button>
                 <input
                   id='qg-receive-amount'
-                  aria-label='Amount to receive (sats)'
-                  inputMode='numeric'
+                  aria-label={`Amount to receive (${showUsd ? 'USD' : 'sats'})`}
+                  inputMode={showUsd ? 'decimal' : 'numeric'}
                   autoComplete='off'
-                  placeholder='1,000'
+                  placeholder={showUsd ? '0.00' : '1,000'}
                   disabled={busy}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
+                  value={showUsd ? usdInput : amount}
+                  onChange={(e) => setReceiveAmount(e.target.value)}
                 />
               </div>
             </section>
             <p className='qg-helper'>
               {estimate
-                ? `Estimated sender total: ${estimate.maxPaySats.toLocaleString()} sats.`
+                ? `Estimated sender total: ${moneyText(estimate.maxPaySats)}.`
                 : 'Enter the amount you want in Spending.'}
             </p>
             <p className='qg-copy'>

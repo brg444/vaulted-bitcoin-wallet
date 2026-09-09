@@ -45,6 +45,7 @@
     "test:unit": "vitest run --exclude '**/e2e/**'",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.vault.config.ts",
+    "test:ux": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.ux.config.ts",
     "test:visual": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.visual.config.ts",
     "test:e2e:ui": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.vault.config.ts --ui",
     "test:codegen": "playwright codegen localhost:3003",

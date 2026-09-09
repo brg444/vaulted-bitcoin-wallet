@@ -1,14 +1,18 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import { Fiats } from '../../lib/types'
+import type { VaultBalanceUnit, VaultFiatDisplayRate } from '../../lib/vault/fiatDisplay'
+import { saveVaultBalanceUnit } from '../../lib/vault/prefs'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultHome from './Home'
 
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.resolve(false) }))
 
-function renderHome(overrides: Partial<VaultContextProps>) {
+function renderHome(overrides: Partial<VaultContextProps> & { balanceUnit?: VaultBalanceUnit }) {
+  const { balanceUnit: initialUnit = 'sats', ...rest } = overrides
   const value = {
     account: 'spend',
     balancesLoaded: true,
@@ -34,15 +38,50 @@ function renderHome(overrides: Partial<VaultContextProps>) {
     clearSpendDraft: vi.fn(),
     setSpendDraft: vi.fn(),
     spendingArkAddress: 'tark1spendingaddress',
-    ...overrides,
+    ...rest,
   } as unknown as VaultContextProps
-  render(
-    <ToastProvider>
-      <VaultContext.Provider value={value}>
-        <VaultHome />
-      </VaultContext.Provider>
-    </ToastProvider>,
-  )
+  const legacySetFiat = value.setFiatDisplay
+  function Harness() {
+    const [unit, setUnit] = useState<VaultBalanceUnit>(initialUnit)
+    const [rate, setRate] = useState<VaultFiatDisplayRate | null>(value.fiatDisplayRate ?? null)
+    // Mirrors the provider: one persisted preference, sats fallback when the rate fails.
+    const setBalanceUnit =
+      value.setBalanceUnit ??
+      (async (next: VaultBalanceUnit) => {
+        try {
+          saveVaultBalanceUnit(next)
+        } catch {
+          // Storage failures keep the in-memory unit.
+        }
+        setUnit(next)
+        if (next === 'sats') {
+          setRate(null)
+          await legacySetFiat?.(false)
+          return null
+        }
+        const loaded = (await legacySetFiat?.(true)) ?? null
+        setRate(loaded)
+        return loaded
+      })
+    return (
+      <ToastProvider>
+        <VaultContext.Provider
+          value={
+            {
+              ...value,
+              balanceUnit: unit,
+              fiatDisplayRate: rate,
+              balanceRateStatus: rate ? 'ready' : unit === 'usd' ? 'unavailable' : 'idle',
+              setBalanceUnit,
+            } as unknown as VaultContextProps
+          }
+        >
+          <VaultHome />
+        </VaultContext.Provider>
+      </ToastProvider>
+    )
+  }
+  render(<Harness />)
   return value
 }
 
@@ -161,14 +200,16 @@ describe('Vault home account boundaries', () => {
     expect(hero).toHaveTextContent('₿128,000')
     await user.click(hero)
     expect(hero).toHaveTextContent('$160.00')
+    expect(screen.getByText('$100.00 available · $60.00 pending')).toBeTruthy()
     expect(setFiatDisplay).toHaveBeenCalledWith(true)
     expect(localStorage.getItem('arkade-vault-balance-unit')).toBe('usd')
     await user.click(hero)
     expect(hero).toHaveTextContent('₿128,000')
     expect(setFiatDisplay).toHaveBeenCalledWith(false)
+    expect(localStorage.getItem('arkade-vault-balance-unit')).toBeNull()
   })
 
-  it('keeps sats selected when the USD price is unavailable', async () => {
+  it('keeps the USD preference with a sats fallback when the price is unavailable', async () => {
     const user = userEvent.setup()
     const setFiatDisplay = vi.fn().mockResolvedValue(null)
     renderHome({ fiatDisplayRate: null, setFiatDisplay })
@@ -177,8 +218,10 @@ describe('Vault home account boundaries', () => {
     await user.click(hero)
 
     expect(hero).toHaveTextContent('₿12,000')
-    expect(localStorage.getItem('arkade-vault-balance-unit')).toBeNull()
+    expect(hero).toHaveAttribute('data-balance-unit', 'usd')
+    expect(localStorage.getItem('arkade-vault-balance-unit')).toBe('usd')
     expect(await screen.findByText('USD balance is unavailable. Try again later.')).toBeTruthy()
+    expect(await screen.findByText('USD rate unavailable — showing bitcoin.')).toBeTruthy()
   })
 
   it('shows total Spending balance even when some sats are still arriving', () => {

@@ -96,7 +96,7 @@
 }
 
 .home :global(.vault-history) {
-  padding-inline-end: max(0px, calc(56px + var(--qg-space-8) - var(--qg-gutter)));
+  padding-inline-end: 0;
 }
 .description {
   display: grid;

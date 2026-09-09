@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatMoney, hasUsdRate } from '../../lib/vault/fiatDisplay'
+import { useBalanceDenomination } from './AccountBalance'
 import { psbtFile } from '../../lib/vault/savingsSpend'
 import { base64, hex } from '@scure/base'
 import {
@@ -24,6 +26,11 @@ export default function ConnectorDeposit({
   onBack?: () => void
   onAddress?: () => void
 }) {
+  const denomination = useBalanceDenomination()
+  const money = (value: number) =>
+    denomination.unit === 'usd' && hasUsdRate(denomination.rate)
+      ? formatMoney(value, denomination)
+      : `${value.toLocaleString()} sats`
   const [saved, setSaved] = useState<SavedFunding | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -232,19 +239,17 @@ export default function ConnectorDeposit({
               <section className='qg-summary' aria-label='Deposit details'>
                 <div>
                   <span>To Savings</span>
-                  <strong>{saved.prepared.savings.toLocaleString()} sats</strong>
+                  <strong>{money(saved.prepared.savings)}</strong>
                 </div>
                 <div>
                   <span>Signer reserve</span>
                   <strong>
-                    {saved.prepared.reserve
-                      ? `${saved.prepared.reserve.toLocaleString()} sats included`
-                      : 'Already funded'}
+                    {saved.prepared.reserve ? `${money(saved.prepared.reserve)} included` : 'Already funded'}
                   </strong>
                 </div>
                 <div>
                   <span>Network fee</span>
-                  <strong>{saved.prepared.fee.toLocaleString()} sats</strong>
+                  <strong>{money(saved.prepared.fee)}</strong>
                 </div>
               </section>
               {txid ? (

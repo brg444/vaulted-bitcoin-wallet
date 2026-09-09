@@ -2,10 +2,12 @@ import { useContext } from 'react'
 import Text from '../../components/Text'
 import TransferArrowIcon from '../../icons/TransferArrow'
 import { prettyAmount, prettyNumber } from '../../lib/format'
+import { formatMoney, hasUsdRate } from '../../lib/vault/fiatDisplay'
 import { hapticSubtle } from '../../lib/haptics'
 import { RECENT_HISTORY_LIMIT } from '../../lib/vault/constants'
 import { groupVaultHistory, type VaultHistoryItem } from '../../lib/vault/history'
 import { VaultContext } from '../../vault/context'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import styles from './History.module.css'
 
 function historyTime(blockTime?: number): string {
@@ -32,13 +34,17 @@ export function VaultHistoryList({
   history,
   openTx,
   refreshingBalance = false,
+  denomination,
 }: {
   account: 'spend' | 'savings'
   balancesLoaded: boolean
   history: VaultHistoryItem[]
   openTx: (tx: VaultHistoryItem) => void
   refreshingBalance?: boolean
+  denomination?: BalanceDenomination
 }) {
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
   return (
     <section
       className='vault-history'
@@ -81,6 +87,8 @@ export function VaultHistoryList({
                       : 'Savings approval pending'
                 const amount = tx.displayAmount ?? tx.amount
                 const time = historyTime(tx.blockTime)
+                const fiatActive = denom.unit === 'usd' && hasUsdRate(denom.rate)
+                const displayAmount = formatMoney(amount, money)
                 const state =
                   bitcoinPending && ['preparing', 'prepared'].includes(tx.bitcoinStage || '')
                     ? 'Awaiting approval'
@@ -113,7 +121,7 @@ export function VaultHistoryList({
                     key={`${tx.account}:${tx.txid}:${tx.type}`}
                     className='vault-history-row'
                     data-testid={`vault-tx-${tx.txid}`}
-                    aria-label={`${connector ? connectorLabel : savingsHandoff ? 'Waiting for hardware' : lightning ? 'Lightning payment' : bitcoinPending ? 'Bitcoin payment' : sent ? 'Sent' : 'Received'} ${prettyAmount(amount)}. ${state}.`}
+                    aria-label={`${connector ? connectorLabel : savingsHandoff ? 'Waiting for hardware' : lightning ? 'Lightning payment' : bitcoinPending ? 'Bitcoin payment' : sent ? 'Sent' : 'Received'} ${fiatActive ? displayAmount : prettyAmount(amount)}. ${state}.`}
                     onClick={() => {
                       hapticSubtle()
                       openTx(tx)
@@ -142,8 +150,14 @@ export function VaultHistoryList({
                     </span>
                     <span className={sent ? 'vault-history-amt' : 'vault-history-amt is-in'}>
                       {sent ? '−' : '+'}
-                      <span className='vault-history-unit'>₿</span>
-                      {prettyNumber(amount)}
+                      {fiatActive ? (
+                        displayAmount
+                      ) : (
+                        <>
+                          <span className='vault-history-unit'>₿</span>
+                          {prettyNumber(amount)}
+                        </>
+                      )}
                     </span>
                   </button>
                 )

@@ -12,7 +12,8 @@ import {
   type SpendingPolicyCapabilities,
 } from '../lib/vault/spendingPolicy'
 import type { ProtectionTier } from '../lib/vault/protectionTier'
-import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
+import type { VaultBalanceUnit, VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
+import type { VaultRateStatus } from '../lib/vault/useDisplayUnit'
 import { EMPTY_VAULT_POSITIONS, type VaultAccountPositions } from './balances'
 
 export type VaultAccount = 'spend' | 'savings'
@@ -99,6 +100,9 @@ export interface VaultContextProps {
   fiatDisplayRate: VaultFiatDisplayRate | null
   fiatDisplayEnabled: boolean
   setFiatDisplay: (enabled: boolean) => Promise<VaultFiatDisplayRate | null>
+  balanceUnit: VaultBalanceUnit
+  balanceRateStatus: VaultRateStatus
+  setBalanceUnit: (unit: VaultBalanceUnit) => Promise<VaultFiatDisplayRate | null>
   signIn: () => Promise<void>
   finishPlan: () => void
   hasLocalEnrollment: boolean
@@ -191,6 +195,9 @@ export const VaultContext = createContext<VaultContextProps>({
   fiatDisplayRate: null,
   fiatDisplayEnabled: false,
   setFiatDisplay: async () => null,
+  balanceUnit: 'sats',
+  balanceRateStatus: 'idle',
+  setBalanceUnit: async () => null,
   signIn: async () => {},
   finishPlan: () => {},
   hasLocalEnrollment: false,

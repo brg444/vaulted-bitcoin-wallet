@@ -3168,3 +3168,315 @@ html.palette-dark .qg-progress {
 .qg-main > :is(.qg-money-field, .qg-summary, .qg-field) + .qg-copy {
   margin-top: var(--qg-space-12);
 }
+
+/* Receive: a single destination, with the method and its payload kept together. */
+.qg-receive-methods {
+  width: 100%;
+  margin: 0;
+}
+.qg-methods-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--qg-line);
+  margin-bottom: 24px;
+}
+.qg-method-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 7px;
+  min-height: 48px;
+  padding: 8px 4px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--qg-muted);
+  font-size: 15px;
+  font-weight: 500;
+}
+.qg-method-tab svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+.qg-method-tab::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  inset-inline: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--qg-purple);
+  transform: scaleX(0);
+  transition: transform 180ms ease;
+}
+.qg-method-tab.is-on {
+  color: var(--qg-purple);
+}
+.qg-method-tab.is-on::after {
+  transform: scaleX(1);
+}
+.qg-method-panel {
+  animation: qg-receive-enter 180ms ease both;
+}
+.qg-lightning,
+.qg-receive-destination {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  text-align: center;
+}
+.qg-lightning .qg-qr-modest {
+  order: -1;
+}
+.qg-method-panel .qg-qr-modest {
+  width: min(240px, 32dvh, 100%);
+  margin: 0 auto 24px;
+}
+.qg-qr-modest .vault-receive-qr {
+  border-radius: 24px;
+  border-color: color-mix(in srgb, var(--qg-line) 75%, transparent);
+  box-shadow: 0 8px 24px -18px rgb(36 20 70 / 24%);
+  padding: 10px;
+}
+.qg-receive-caption {
+  margin: 0 0 6px;
+  color: var(--qg-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.qg-lightning-address {
+  width: 100%;
+}
+.qg-receive-address {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--qg-ink);
+  cursor: pointer;
+}
+.qg-receive-address strong {
+  max-width: 100%;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  letter-spacing: -0.35px;
+}
+.qg-receive-destination .qg-receive-address strong {
+  font-size: 14px;
+  max-width: 32ch;
+}
+.qg-receive-address span {
+  color: var(--qg-purple);
+  font-size: 13px;
+}
+.qg-receive-note {
+  max-width: 32ch;
+  margin: 12px auto;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--qg-muted);
+}
+.qg-lightning > details {
+  width: 100%;
+  margin-top: 0;
+}
+.qg-receive-manage {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--qg-muted);
+  font-size: 13px;
+  list-style: none;
+}
+.qg-receive-manage::-webkit-details-marker {
+  display: none;
+}
+.qg-receive-manage::after {
+  content: '+';
+  font-size: 17px;
+}
+[open] > .qg-receive-manage::after {
+  content: '−';
+}
+.qg-lightning > details .qg-stack {
+  padding-block: 12px;
+}
+.qg-method-lightning > .qg-text {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--qg-line);
+  border-radius: 0;
+  font-size: 15px;
+  color: var(--qg-ink);
+  text-align: left;
+}
+.qg-method-lightning > .qg-text::after {
+  content: '↗';
+  color: var(--qg-purple);
+  font-size: 21px;
+}
+@keyframes qg-receive-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A slim liquid lens sits over activity; the larger invisible edge is the touch target. */
+.qg-launcher .qg-launcher-trigger {
+  width: 44px;
+  height: 62px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  isolation: isolate;
+}
+html.palette-dark .qg-launcher .qg-launcher-trigger {
+  background: transparent;
+  border: 0;
+}
+.qg-launcher-trigger::before,
+.qg-launcher-trigger::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 8px;
+  border-radius: 21px 0 0 21px;
+  pointer-events: none;
+}
+.qg-launcher-trigger::before {
+  z-index: -1;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-right: 0;
+  background:
+    radial-gradient(
+      ellipse at var(--glass-x, 30%) calc(var(--glass-y, 15%) + var(--qg-launcher-drag-y, 0px) * 0.35),
+      rgb(255 255 255 / 82%),
+      rgb(255 255 255 / 5%) 68%
+    ),
+    linear-gradient(
+      var(--glass-angle, 120deg),
+      rgb(255 255 255 / 28%),
+      rgb(243 235 248 / 8%) 45%,
+      rgb(255 255 255 / 50%)
+    );
+  -webkit-backdrop-filter: blur(9px) saturate(1.8) contrast(1.05);
+  backdrop-filter: blur(9px) saturate(1.8) contrast(1.05);
+  box-shadow:
+    -3px 4px 14px -5px rgb(26 17 39 / 19%),
+    inset 1px 0 1px rgb(255 255 255 / 80%),
+    inset -1px -1px 3px rgb(86 65 104 / 12%);
+}
+.qg-launcher-trigger::after {
+  border-left: 1px solid rgb(255 255 255 / 85%);
+  background: linear-gradient(
+    var(--glass-angle, 120deg),
+    transparent 18%,
+    rgb(255 255 255 / 60%) 21%,
+    transparent 27%,
+    transparent 76%,
+    rgb(255 255 255 / 25%) 86%,
+    transparent
+  );
+  opacity: 0.55;
+}
+.qg-launcher-trigger .qg-launcher-mark {
+  margin-left: 8px;
+  width: 18px;
+  height: 18px;
+}
+.qg-launcher-trigger .qg-launcher-mark svg {
+  width: 18px;
+  height: 18px;
+}
+.qg-launcher-trigger.is-repositioning::before {
+  -webkit-backdrop-filter: blur(6px) saturate(2);
+  backdrop-filter: blur(6px) saturate(2);
+}
+html.palette-dark .qg-launcher-trigger::before {
+  border-color: rgb(255 255 255 / 25%);
+  background:
+    radial-gradient(
+      ellipse at var(--glass-x, 30%) calc(var(--glass-y, 15%) + var(--qg-launcher-drag-y, 0px) * 0.35),
+      rgb(240 222 255 / 24%),
+      transparent 70%
+    ),
+    linear-gradient(var(--glass-angle, 120deg), rgb(124 111 142 / 24%), rgb(37 31 45 / 18%) 50%, rgb(215 195 239 / 17%));
+  box-shadow:
+    -3px 4px 16px -5px rgb(0 0 0 / 35%),
+    inset 1px 0 1px rgb(255 255 255 / 32%),
+    inset -1px -1px 3px rgb(0 0 0 / 20%);
+}
+html.palette-dark .qg-launcher-trigger::after {
+  opacity: 0.25;
+}
+.qg-launcher-trigger:focus-visible .qg-launcher-mark {
+  transform: scale(1.15);
+  color: var(--qg-purple);
+}
+@media (prefers-reduced-motion: reduce) {
+  .qg-method-panel {
+    animation: none;
+  }
+  .qg-method-tab::after {
+    transition: none;
+  }
+  .qg-launcher-trigger::after {
+    display: none;
+  }
+}
+@supports not ((backdrop-filter: blur(9px)) or (-webkit-backdrop-filter: blur(9px))) {
+  .qg-launcher-trigger::before {
+    background: var(--qg-paper);
+  }
+  html.palette-dark .qg-launcher-trigger::before {
+    background: var(--qg-paper);
+  }
+}
+
+@media (max-height: 740px) {
+  .qg-lightning {
+    gap: 0;
+  }
+  .qg-receive-methods {
+    margin-top: -8px;
+  }
+  .qg-methods-tabs {
+    margin-bottom: 12px;
+  }
+  .qg-method-tab {
+    min-height: 44px;
+  }
+  .qg-receive-address strong {
+    font-size: 16px;
+  }
+  .qg-method-panel .qg-qr-modest {
+    width: min(220px, 100%);
+    margin-bottom: 8px;
+  }
+  .qg-method-lightning > .qg-text {
+    margin-top: 8px;
+  }
+}

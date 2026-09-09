@@ -1,10 +1,27 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import { VaultContext, type VaultAccount, type VaultContextProps } from '../../vault/context'
 import VaultReceive from './Receive'
 import { DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
+
+const gates = vi.hoisted(() => ({ receive: false, address: false }))
+vi.mock('../../lib/vault/lightningConfig', () => ({ vaultLightningReceiveEnabled: () => gates.receive }))
+vi.mock('../../lib/vault/lnurl', () => ({
+  lightningAddressEnabled: () => gates.address,
+  loadLightningAddress: () => ({ active: true, address: 'alex@ln.getvaulted.xyz' }),
+}))
+vi.mock('./LightningAddress', () => ({
+  default: ({ primary }: { primary?: boolean }) => (
+    <div data-testid='primary-lightning' data-primary={String(primary)}>
+      alex@ln.getvaulted.xyz
+    </div>
+  ),
+}))
+vi.mock('./LightningReceive', () => ({
+  default: ({ onBack }: { onBack: () => void }) => <button onClick={onBack}>Invoice amount; back to Receive</button>,
+}))
 
 vi.mock('./ConnectorSetup', () => ({ default: () => <h1>Savings signer setup</h1> }))
 
@@ -16,9 +33,10 @@ vi.mock('../../components/QrCode', () => ({
   ),
 }))
 
-function renderReceive(account: VaultAccount, connector = false) {
+function renderReceive(account: VaultAccount, connector = false, lightning = false) {
   const value = {
     account,
+    ...(lightning ? { status: { network: 'mainnet', vaultId: 'fixture-vault' }, refreshBalance: vi.fn() } : {}),
     ...(connector ? { status: { templateVersion: DUAL_CONNECTOR_TEMPLATE } } : {}),
     boardingAddress: 'tb1qboarding',
     liveNetwork: true,
@@ -53,7 +71,16 @@ function renderReceiveWithoutAddresses(account: VaultAccount) {
   )
 }
 
+afterEach(() => {
+  Reflect.deleteProperty(navigator, 'share')
+  Reflect.deleteProperty(navigator, 'canShare')
+})
+
 describe('Vault receive', () => {
+  beforeEach(() => {
+    gates.receive = false
+    gates.address = false
+  })
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -128,4 +155,59 @@ describe('Vault receive', () => {
     expect(screen.getByText('Savings is not restored on this device. Sign in again to restore it.')).toBeTruthy()
     expect(screen.queryByText(/setup finishes/)).toBeNull()
   })
+
+  it('shows a configured Lightning address on primary Receive and opens a specific invoice separately', async () => {
+    gates.receive = true
+    gates.address = true
+    const user = userEvent.setup()
+    renderReceive('spend', false, true)
+    expect(screen.getByText('alex@ln.getvaulted.xyz')).toBeVisible()
+    expect(screen.getByTestId('primary-lightning')).toHaveAttribute('data-primary', 'true')
+    await user.click(screen.getByRole('button', { name: 'Create invoice' }))
+    expect(screen.queryByTestId('primary-lightning')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Invoice amount; back to Receive' }))
+    expect(screen.getByTestId('primary-lightning')).toBeVisible()
+  })
+
+  it('keeps Lightning out of Savings even when both gates are enabled', () => {
+    gates.receive = true
+    gates.address = true
+    renderReceive('savings', false, true)
+    expect(screen.queryByTestId('primary-lightning')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Create invoice' })).toBeNull()
+    expect(screen.getByTestId('receive-qr')).toHaveTextContent('tb1qsavings')
+  })
+
+  it('retains invoice receive when reusable Lightning addresses are disabled', () => {
+    gates.receive = true
+    renderReceive('spend', false, true)
+    expect(screen.queryByTestId('primary-lightning')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Create invoice' })).toBeVisible()
+  })
+
+  it('respects the Lightning receive gate even with reusable addresses enabled', () => {
+    gates.address = true
+    renderReceive('spend', false, true)
+    expect(screen.queryByTestId('primary-lightning')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Create invoice' })).toBeNull()
+  })
+})
+
+it('shares the destination for the selected receiving method', async () => {
+  gates.receive = true
+  gates.address = true
+  const share = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'share', { configurable: true, value: share })
+  const user = userEvent.setup()
+  renderReceive('spend', false, true)
+  await user.click(screen.getByRole('button', { name: 'Share address' }))
+  expect(share).toHaveBeenLastCalledWith({ title: 'Vaulted Lightning address', text: 'alex@ln.getvaulted.xyz' })
+  await user.click(screen.getByTestId('receive-method-fast'))
+  expect(screen.getByTestId('receive-qr')).toHaveTextContent('tark1spending')
+  await user.click(screen.getByRole('button', { name: 'Share address' }))
+  expect(share).toHaveBeenLastCalledWith({ title: 'Vaulted Spending address', text: 'tark1spending' })
+  await user.click(screen.getByTestId('receive-method-bitcoin'))
+  expect(screen.getByTestId('receive-qr')).toHaveTextContent('tb1qboarding')
+  await user.click(screen.getByRole('button', { name: 'Share address' }))
+  expect(share).toHaveBeenLastCalledWith({ title: 'Vaulted Bitcoin address', text: 'tb1qboarding' })
 })

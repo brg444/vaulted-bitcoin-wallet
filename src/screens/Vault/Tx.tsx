@@ -2,14 +2,16 @@ import BitcoinPaymentStatus from './BitcoinPaymentStatus'
 import { useContext } from 'react'
 import { CircleAlert, CircleCheck, CircleHelp, Clock3 } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
-import { prettyAmount, prettyDate } from '../../lib/format'
+import { prettyDate } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { VaultContext } from '../../vault/context'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import TransactionReference from './qg/TransactionReference'
 import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 
-export default function VaultTx() {
+export default function VaultTx({ denomination }: { denomination?: BalanceDenomination }) {
   const {
     busy,
     error,
@@ -19,6 +21,8 @@ export default function VaultTx() {
     spendingBitcoin,
     status: vaultStatus,
   } = useContext(VaultContext)
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
   const bitcoin = selectedTx?.activity === 'bitcoin'
   const operation =
     bitcoin && spendingBitcoin?.operation && spendingBitcoin.operation.operationId === selectedTx?.bitcoinOperationId
@@ -114,8 +118,8 @@ export default function VaultTx() {
         </span>
       </div>
       <div className='qg-transaction-amount'>
-        <h1 style={amountSizeStyle(`${sent ? '−' : '+'}${prettyAmount(amount)}`)}>
-          <QgAmount value={`${sent ? '−' : '+'}${prettyAmount(amount)}`} />
+        <h1 style={amountSizeStyle(`${sent ? '−' : '+'}${formatMoney(amount, money)}`)}>
+          <QgAmount value={`${sent ? '−' : '+'}${formatMoney(amount, money)}`} />
         </h1>
       </div>
       <section className='qg-details'>
@@ -123,7 +127,7 @@ export default function VaultTx() {
           <div>
             <span>{lightning && !sent ? 'Fee paid by sender' : 'Fee'}</span>
             <strong>
-              <QgAmount value={prettyAmount(selectedTx.fee)} />
+              <QgAmount value={formatMoney(selectedTx.fee, money)} />
             </strong>
           </div>
         ) : null}

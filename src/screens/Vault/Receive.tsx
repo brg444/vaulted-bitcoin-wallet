@@ -1,3 +1,5 @@
+import SpendingReceive from './SpendingReceive'
+import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import LightningReceive from './LightningReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
 import ConnectorDeposit from './ConnectorDeposit'
@@ -85,6 +87,17 @@ export default function VaultReceive() {
   if (view === 'deposit' && status)
     return <ConnectorDeposit status={status} onBack={() => setView('setup')} onAddress={() => setView('receive')} />
 
+  if (spending && status && lightningAddressEnabled() && vaultLightningReceiveEnabled(status.network, status.vaultId))
+    return (
+      <SpendingReceive
+        status={status}
+        fastAddress={spendingArkAddress}
+        bitcoinAddress={boardingAddress}
+        onClose={() => navigate('home')}
+        onInvoice={() => setView('lightning')}
+      />
+    )
+
   return (
     <QgScreen
       title='Receive'
@@ -145,7 +158,7 @@ export default function VaultReceive() {
         ) : null}
       </div>
       {spending && vaultLightningReceiveEnabled(status?.network, status?.vaultId) ? (
-        <QgSecondary label='Receive Lightning' onClick={() => setView('lightning')} />
+        <QgSecondary label='Create invoice' onClick={() => setView('lightning')} />
       ) : null}
       {!spending && isConnectorTemplate(status?.templateVersion) ? (
         <QgSecondary label='Set up Savings signer' onClick={() => setView('setup')} />

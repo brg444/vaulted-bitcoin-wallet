@@ -103,6 +103,7 @@ import { requireProtectionTier, type ProtectionTier } from '../lib/vault/protect
 import { importConnectorOrigin } from '../lib/vault/program/connectorOrigin'
 import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
 import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
+import { useDisplayUnit } from '../lib/vault/useDisplayUnit'
 import { getPriceFeed } from '../lib/fiat'
 import { Fiats } from '../lib/types'
 import { loadVaultPrivacyLock } from '../lib/vault/prefs'
@@ -227,6 +228,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setFiatDisplayRate(null)
     return null
   }, [])
+
+  const {
+    unit: balanceUnit,
+    rateStatus: balanceRateStatus,
+    setUnit: setBalanceUnit,
+  } = useDisplayUnit({
+    rate: fiatDisplayRate,
+    ensureRate: () => setFiatDisplay(true),
+    clearRate: () => {
+      setFiatDisplayEnabled(false)
+      setFiatDisplayRate(null)
+    },
+  })
 
   useEffect(() => {
     let existing: EnrollmentSecrets | null = null
@@ -1599,6 +1613,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       fiatDisplayRate,
       fiatDisplayEnabled,
       setFiatDisplay,
+      balanceUnit,
+      balanceRateStatus,
+      setBalanceUnit,
       finishPlan,
       hasLocalEnrollment: Boolean(enrollment),
       locked,
@@ -1744,6 +1761,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       fiatDisplayRate,
       fiatDisplayEnabled,
       setFiatDisplay,
+      balanceUnit,
+      balanceRateStatus,
+      setBalanceUnit,
       finishPlan,
       lastTxid,
       lastTxKind,

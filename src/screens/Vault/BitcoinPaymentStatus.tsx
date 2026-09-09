@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Address, OutScript } from '@scure/btc-signer'
 import { hex } from '@scure/base'
-import { prettyAmount } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { vaultAddressNetwork } from '../../lib/vault/bitcoin'
 import { bitcoinPlanOutputs, type BitcoinPaymentJournal } from '../../lib/vault/spendingBitcoinStore'
 import { checkSpendingBitcoin, cancelSpendingBitcoin } from '../../lib/vault/spendingBitcoinFunding'
 import type { VaultStatus } from '../../lib/vault/types'
 import { QgSecondary } from './qg/QgScreen'
+import { useBalanceDenomination } from './AccountBalance'
 
 /** Details for the selected history row; reconciliation continues automatically. */
 export default function BitcoinPaymentStatus({
@@ -20,6 +21,8 @@ export default function BitcoinPaymentStatus({
 }) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const denom = useBalanceDenomination()
+  const money = { unit: denom.unit, rate: denom.rate }
   if (!operation) return error ? <p role='alert'>{error}</p> : null
   const outputs = operation.plan ? bitcoinPlanOutputs(operation.plan.plan) : operation.outputs || []
   return (
@@ -31,7 +34,7 @@ export default function BitcoinPaymentStatus({
           // eslint-disable-next-line react/no-array-index-key
           <div key={`${i}:${output.script}`}>
             <span>
-              Output {i + 1} · {prettyAmount(output.amountSats)}
+              Output {i + 1} · {formatMoney(output.amountSats, money)}
             </span>
             <strong style={{ overflowWrap: 'anywhere', minWidth: 0 }}>
               {Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(output.script)))}

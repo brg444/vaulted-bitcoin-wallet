@@ -1,7 +1,8 @@
 import QgGuidance from './qg/QgGuidance'
 import { useContext, useState, type ReactNode } from 'react'
 import { Fingerprint, FileKey, Server, ShieldCheck } from 'lucide-react'
-import { prettyAmount } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
+import { useBalanceDenomination } from './AccountBalance'
 import { shortKey } from '../../lib/vault/setupPlan'
 import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
@@ -54,6 +55,8 @@ function SecurityTile({
 }
 
 export default function VaultKeys() {
+  const denomination = useBalanceDenomination()
+  const money = (value: number) => formatMoney(value, denomination)
   const {
     busy,
     spendingRenewals,
@@ -123,7 +126,7 @@ export default function VaultKeys() {
             onClick: () => openRecover('kit', 'keys'),
             testId: 'security-kit',
           }}
-          limits={{ value: `${prettyAmount(perPayment)} each`, onClick: () => setView('limits') }}
+          limits={{ value: `${money(perPayment)} each`, onClick: () => setView('limits') }}
           renewal={{
             value: spendingRenewals?.error
               ? 'Needs attention'
@@ -188,11 +191,11 @@ export default function VaultKeys() {
           <section className='qg-summary'>
             <div>
               <span>Per payment</span>
-              <strong>{prettyAmount(perPayment)}</strong>
+              <strong>{money(perPayment)}</strong>
             </div>
             <div>
               <span>Rolling 24 hours</span>
-              <strong>{prettyAmount(limit)}</strong>
+              <strong>{money(limit)}</strong>
             </div>
           </section>
           <p className='qg-copy'>

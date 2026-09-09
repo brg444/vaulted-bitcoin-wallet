@@ -2,6 +2,7 @@ import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RestArkProvider, RestEmulatorProvider } from '@arkade-os/sdk'
+import { Fiats } from '../../lib/types'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import LightningReceive from './LightningReceive'
 import { networkPins } from '../../lib/vault/networkPins'
@@ -81,7 +82,12 @@ function record(expired = false) {
     },
   }
 }
-function show() {
+function show(denomination?: {
+  unit: 'sats' | 'usd'
+  rate: { currency: Fiats; pricePerBtc: number } | null
+  rateStatus: 'idle' | 'loading' | 'ready' | 'unavailable'
+  setUnit: (unit: 'sats' | 'usd') => Promise<{ currency: Fiats; pricePerBtc: number } | null>
+}) {
   const value = {
     status: { enrolled: true, vaultId: 'aa', network: 'mainnet', arkadeCosignerOrigin: 'https://emulator.invalid' },
     backupRecoveryArchive: mocks.backup,
@@ -89,7 +95,12 @@ function show() {
   } as unknown as VaultContextProps
   return render(
     <VaultContext.Provider value={value}>
-      <LightningReceive status={value.status!} refreshBalance={value.refreshBalance} onBack={() => {}} />
+      <LightningReceive
+        status={value.status!}
+        refreshBalance={value.refreshBalance}
+        onBack={() => {}}
+        denomination={denomination}
+      />
     </VaultContext.Provider>,
   )
 }
@@ -214,5 +225,74 @@ describe('Lightning receive screen', () => {
     expect(mocks.request).toHaveBeenCalledOnce()
     expect(await mocks.list()).toEqual([expired])
     expect(mocks.backup).not.toHaveBeenCalled()
+  })
+
+  it('enters USD while keeping the invoice amount in canonical sats', async () => {
+    const user = userEvent.setup()
+    const rate = { currency: Fiats.USD, pricePerBtc: 1_000_000 }
+    show({ unit: 'usd', rate, rateStatus: 'ready', setUnit: async () => rate })
+    expect(screen.getByRole('textbox', { name: 'Amount to receive (USD)' })).toHaveValue('')
+    await user.type(screen.getByRole('textbox', { name: 'Amount to receive (USD)' }), '12.50')
+    await user.click(screen.getByRole('button', { name: 'Create invoice' }))
+    expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ amountSats: 1_250 }))
+    expect(await screen.findByTestId('invoice-qr')).toHaveTextContent('lightning:lnbc-fixture')
+    // QgAmount splits the currency symbol into its own element, so ancestors match too.
+    expect(screen.getAllByText((_, element) => element?.textContent === '$10.00').length).toBeGreaterThan(0)
+    expect(screen.getAllByText((_, element) => element?.textContent === '$0.04').length).toBeGreaterThan(0)
+  })
+
+  it('derives the USD field when the rate arrives after sats entry', async () => {
+    const user = userEvent.setup()
+    const rate = { currency: Fiats.USD, pricePerBtc: 100_000 }
+    const value = {
+      status: { enrolled: true, vaultId: 'aa', network: 'mainnet', arkadeCosignerOrigin: 'https://emulator.invalid' },
+      refreshBalance: async () => {},
+    } as unknown as VaultContextProps
+    const { rerender } = render(
+      <VaultContext.Provider value={value}>
+        <LightningReceive
+          status={value.status!}
+          refreshBalance={value.refreshBalance}
+          onBack={() => {}}
+          denomination={{ unit: 'usd', rate: null, rateStatus: 'unavailable', setUnit: async () => null }}
+        />
+      </VaultContext.Provider>,
+    )
+    // No rate yet: sats entry stays canonical.
+    await user.type(screen.getByRole('textbox', { name: 'Amount to receive (sats)' }), '331')
+    rerender(
+      <VaultContext.Provider value={value}>
+        <LightningReceive
+          status={value.status!}
+          refreshBalance={value.refreshBalance}
+          onBack={() => {}}
+          denomination={{ unit: 'usd', rate, rateStatus: 'ready', setUnit: async () => rate }}
+        />
+      </VaultContext.Provider>,
+    )
+    expect(screen.getByRole('textbox', { name: 'Amount to receive (USD)' })).toHaveValue('0.33')
+    const updatedRate = { ...rate, pricePerBtc: 200_000 }
+    rerender(
+      <VaultContext.Provider value={value}>
+        <LightningReceive
+          status={value.status!}
+          refreshBalance={value.refreshBalance}
+          onBack={() => {}}
+          denomination={{ unit: 'usd', rate: updatedRate, rateStatus: 'ready', setUnit: async () => updatedRate }}
+        />
+      </VaultContext.Provider>,
+    )
+    expect(screen.getByRole('textbox', { name: 'Amount to receive (USD)' })).toHaveValue('0.66')
+    rerender(
+      <VaultContext.Provider value={value}>
+        <LightningReceive
+          status={value.status!}
+          refreshBalance={value.refreshBalance}
+          onBack={() => {}}
+          denomination={{ unit: 'sats', rate: updatedRate, rateStatus: 'ready', setUnit: async () => updatedRate }}
+        />
+      </VaultContext.Provider>,
+    )
+    expect(screen.getByRole('textbox', { name: 'Amount to receive (sats)' })).toHaveValue('331')
   })
 })

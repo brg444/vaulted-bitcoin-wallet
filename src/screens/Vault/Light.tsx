@@ -1,4 +1,6 @@
 import LightningReceive from './LightningReceive'
+import { lightningAddressEnabled } from '../../lib/vault/lnurl'
+import SpendingReceive from './SpendingReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
 import QgGuidance from './qg/QgGuidance'
 import TransactionReference from './qg/TransactionReference'
@@ -38,6 +40,7 @@ import {
 } from '../../lib/vault/light/recovery'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { prettyAmount } from '../../lib/format'
+import { formatMoney, satsFromUsd, usdInputFromSats } from '../../lib/vault/fiatDisplay'
 import {
   Check,
   Clock3,
@@ -56,6 +59,7 @@ import { HubGroup, HubRow } from './ui'
 import homeStyles from './AccountHome.module.css'
 import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
+import { useBalanceDenomination } from './AccountBalance'
 import { VaultHistoryList } from './History'
 import { amountSizeStyle } from './qg/QgAmount'
 import DestinationField from './qg/DestinationField'
@@ -179,6 +183,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [watchAddress, setWatchAddress] = useState('')
   const [address, setAddress] = useState('')
   const [amount, setAmount] = useState('')
+  const [sendUsdInput, setSendUsdInput] = useState('')
+  // Canonical sats last produced by typing; external resets bypass it.
+  const typedSendSats = useRef<string | null>(null)
   const [quote, setQuote] = useState<VaultVtxoSpendQuote | null>(null)
   const [resumingPayment, setResumingPayment] = useState(false)
   const [lastTx, setLastTx] = useState('')
@@ -488,6 +495,50 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     await copyToClipboard(text)
     setNotice('Copied')
   }
+  const denom = useBalanceDenomination()
+  const money = { unit: denom.unit, rate: denom.rate }
+  const fiatActive = denom.unit === 'usd' && Boolean(denom.rate)
+  const moneyText = (value: number) => (fiatActive ? formatMoney(value, money) : sats(value))
+  const moneyHero = (value: number) => (fiatActive ? formatMoney(value, money) : prettyAmount(value))
+  const sendShowUsd = fiatActive
+  // Canonical send amounts stay sats strings; the USD field is display-only.
+  const setSendAmount = (raw: string) => {
+    if (sendShowUsd) {
+      const normalized = raw.replace(/[^\d.]/g, '')
+      if (!/^\d*(?:\.\d{0,2})?$/.test(normalized)) return
+      setSendUsdInput(normalized)
+      const sats = String(satsFromUsd(Number(normalized) || 0, denom.rate?.pricePerBtc || 0))
+      typedSendSats.current = sats
+      setAmount(sats)
+      return
+    }
+    typedSendSats.current = null
+    setAmount(raw)
+  }
+  const toggleSendUnit = async () => {
+    if (denom.unit === 'usd') {
+      await denom.setUnit('sats')
+      return
+    }
+    const rate = await denom.setUnit('usd')
+    if (!rate) {
+      setError('USD amounts are unavailable. Enter bitcoin instead.')
+      return
+    }
+    setSendUsdInput(amount ? usdInputFromSats(Number(amount), rate) : '')
+  }
+  const displayedRate = useRef<number | null>(null)
+  useEffect(() => {
+    if (denom.unit !== 'usd' || !denom.rate) {
+      displayedRate.current = null
+      return
+    }
+    if (amount !== typedSendSats.current || displayedRate.current !== denom.rate.pricePerBtc) {
+      displayedRate.current = denom.rate.pricePerBtc
+      typedSendSats.current = amount
+      setSendUsdInput(amount && Number(amount) > 0 ? usdInputFromSats(Number(amount), denom.rate) : '')
+    }
+  }, [denom.unit, denom.rate, amount])
   const activity = (rows: VaultHistoryItem[], account: 'spend' | 'savings' = 'spend', loaded = true) => (
     <VaultHistoryList
       account={account}
@@ -495,6 +546,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       history={rows}
       openTx={openTransaction}
       refreshingBalance={account === 'spend' && balanceRefreshes > 0}
+      denomination={denom}
     />
   )
   const lock = () =>
@@ -998,15 +1050,15 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           <>
             <div className='light-panel'>
               <div>
-                <strong>{sats(recoveryFile.exitPackage.totals.recoveredSats)} to recover</strong>
-                <p>Estimated network fees: {sats(recoveryFile.exitPackage.totals.totalFeeSats)}</p>
+                <strong>{moneyText(recoveryFile.exitPackage.totals.recoveredSats)} to recover</strong>
+                <p>Estimated network fees: {moneyText(recoveryFile.exitPackage.totals.totalFeeSats)}</p>
                 <p>
                   Owner-only delay: {lightExitDelayLabel(recoveryFile.descriptor.exitDelaySeconds)}. Bitcoin
                   confirmation times are additional.
                 </p>
                 <p>
-                  Provide at least {sats(recoveryFile.exitPackage.totals.fundingRequiredSats)} in Bitcoin for recovery
-                  fees at the address below. Fees are separate from your spending balance.
+                  Provide at least {moneyText(recoveryFile.exitPackage.totals.fundingRequiredSats)} in Bitcoin for
+                  recovery fees at the address below. Fees are separate from your spending balance.
                 </p>
               </div>
             </div>
@@ -1134,6 +1186,20 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'receive-lightning' && status && record)
     content = <LightningReceive status={status} refreshBalance={refresh} onBack={() => navigate('receive')} />
+  else if (
+    view === 'receive' &&
+    status &&
+    lightningAddressEnabled() &&
+    vaultLightningReceiveEnabled(status.network, status.vaultId)
+  )
+    content = (
+      <SpendingReceive
+        status={status}
+        fastAddress={String(status.spendingArkAddress || '')}
+        onClose={() => navigate('home')}
+        onInvoice={() => navigate('receive-lightning')}
+      />
+    )
   else if (view === 'receive' && status)
     content = (
       <QgScreen
@@ -1156,7 +1222,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           <p className='qg-copy'>Send from a wallet that supports Arkade. This is an Arkade receiving address.</p>
         </div>
         {vaultLightningReceiveEnabled(status.network, status.vaultId) ? (
-          <QgSecondary label='Receive Lightning' onClick={() => navigate('receive-lightning')} />
+          <>
+            <QgSecondary label='Create invoice' onClick={() => navigate('receive-lightning')} />
+          </>
         ) : null}
       </QgScreen>
     )
@@ -1194,21 +1262,33 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <section className='qg-amount-entry' style={amountSizeStyle(amount)}>
-          <label htmlFor='light-send-amount'>Amount, in sats</label>
+        <section className='qg-amount-entry' style={amountSizeStyle(sendShowUsd ? sendUsdInput || '0' : amount)}>
+          <label htmlFor='light-send-amount'>Amount, in {sendShowUsd ? 'USD' : 'sats'}</label>
           <div>
-            <span aria-hidden='true'>₿</span>
+            <button
+              type='button'
+              className='qg-denomination'
+              aria-label={`Amount in ${sendShowUsd ? 'US dollars' : 'bitcoin satoshis'}. Change denomination`}
+              onClick={() => void toggleSendUnit()}
+            >
+              {sendShowUsd ? '$' : '₿'}
+            </button>
             <input
               id='light-send-amount'
               disabled={busy}
-              inputMode='numeric'
-              type='number'
+              inputMode={sendShowUsd ? 'decimal' : 'numeric'}
+              type={sendShowUsd ? 'text' : 'number'}
               min='330'
-              placeholder='20,000'
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              placeholder={sendShowUsd ? '0.00' : '20,000'}
+              value={sendShowUsd ? sendUsdInput : amount}
+              onChange={(e) => setSendAmount(e.target.value)}
             />
           </div>
+          {denom.unit === 'usd' && !denom.rate ? (
+            <p className='qg-helper' role='status'>
+              USD rate unavailable — enter bitcoin instead.
+            </p>
+          ) : null}
         </section>
         <DestinationField
           label='Arkade address'
@@ -1220,11 +1300,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           onScan={() => navigate('scan-send')}
         />
         <p className='qg-available'>
-          {sats(Math.max(0, Math.min(snapshot?.balance ?? 0, status.periodRemaining)))} available within your rolling
-          limit
+          {moneyText(Math.max(0, Math.min(snapshot?.balance ?? 0, status.periodRemaining)))} available within your
+          rolling limit
         </p>
         <p className='qg-helper'>
-          Up to {sats(status.txCap)} per payment. You will see the network fee before approving.
+          Up to {moneyText(status.txCap)} per payment. You will see the network fee before approving.
         </p>
       </QgScreen>
     )
@@ -1236,7 +1316,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         footer={
           <QgPrimary
             label={
-              busy ? 'Completing payment…' : resumingPayment ? 'Continue payment' : `Approve ${sats(quote.amountSats)}`
+              busy
+                ? 'Completing payment…'
+                : resumingPayment
+                  ? 'Continue payment'
+                  : `Approve ${moneyText(quote.amountSats)}`
             }
             loading={busy}
             onClick={() =>
@@ -1251,6 +1335,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
                 setView('success')
                 setAddress('')
                 setAmount('')
+                setSendUsdInput('')
                 setQuote(null)
                 setResumingPayment(false)
                 await refresh()
@@ -1259,7 +1344,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           />
         }
       >
-        <ReviewAmount value={prettyAmount(quote.amountSats)} label='You are sending'>
+        <ReviewAmount value={moneyHero(quote.amountSats)} label='You are sending'>
           {resumingPayment ? <p>Continue the original payment from its last saved step.</p> : null}
         </ReviewAmount>
         <div className='qg-details'>
@@ -1269,11 +1354,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
           </div>
           <div>
             <span>Network fee</span>
-            <strong>{sats(quote.feeSats)}</strong>
+            <strong>{moneyText(quote.feeSats)}</strong>
           </div>
           <div>
             <span>Total</span>
-            <strong>{sats(quote.amountSats + quote.feeSats)}</strong>
+            <strong>{moneyText(quote.amountSats + quote.feeSats)}</strong>
           </div>
         </div>
         <p className='qg-helper'>Approve with your passkey to send this payment.</p>
@@ -1424,7 +1509,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               testId: 'security-kit',
             }}
             limits={{
-              value: `${prettyAmount(record.descriptor.spendingPolicy.txRecipientCapSats)} each`,
+              value: `${moneyHero(record.descriptor.spendingPolicy.txRecipientCapSats)} each`,
               onClick: () => setSecuritySection('limits'),
             }}
             renewal={{
@@ -1486,9 +1571,9 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               <div>
                 <strong>Spending limits</strong>
                 <p>
-                  {sats(record.descriptor.spendingPolicy.txRecipientCapSats)} per payment
+                  {moneyText(record.descriptor.spendingPolicy.txRecipientCapSats)} per payment
                   <br />
-                  {sats(record.descriptor.spendingPolicy.periodAllowanceSats)} in a rolling 24 hours
+                  {moneyText(record.descriptor.spendingPolicy.periodAllowanceSats)} in a rolling 24 hours
                 </p>
               </div>
             </div>
@@ -1651,7 +1736,8 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <span className='light-success'>{selectedTx.confirmed ? <Check /> : <Clock3 />}</span>
         <h1>{selectedTx.confirmed ? 'Confirmed' : 'Pending'}</h1>
         <p className='qg-copy'>
-          {selectedTx.type === 'sent' ? 'Sent' : 'Received'} · {sats(selectedTx.displayAmount ?? selectedTx.amount)}
+          {selectedTx.type === 'sent' ? 'Sent' : 'Received'} ·{' '}
+          {moneyText(selectedTx.displayAmount ?? selectedTx.amount)}
         </p>
         <TransactionReference txid={selectedTx.txid} explorer={link} />
       </QgScreen>
@@ -1677,11 +1763,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <div className='light-panel'>
           <div>
             <p>Amount renewed</p>
-            <strong>{sats(renewalReview.valueSats)}</strong>
+            <strong>{moneyText(renewalReview.valueSats)}</strong>
             <p>Renewal fee</p>
-            <strong>{sats(renewalReview.feeSats)}</strong>
+            <strong>{moneyText(renewalReview.feeSats)}</strong>
             <p>Amount after renewal</p>
-            <strong>{sats(renewalReview.receiverSats)}</strong>
+            <strong>{moneyText(renewalReview.receiverSats)}</strong>
           </div>
         </div>
         <p className='qg-copy'>
@@ -1710,6 +1796,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               spending: snapshot ? snapshot.balance + (snapshot.pendingBalance || 0) : null,
               savings: watched ? (savings?.balance ?? null) : 0,
             }}
+            denomination={denom}
             onAccount={(account) => {
               if (account === 'savings') void openSavings()
               else navigate('home')
