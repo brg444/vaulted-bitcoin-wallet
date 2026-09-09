@@ -19,6 +19,7 @@ export default function VaultTx() {
     selectedTx,
     spendingBitcoin,
     status: vaultStatus,
+    txReturn,
   } = useContext(VaultContext)
   const bitcoin = selectedTx?.activity === 'bitcoin'
   const operation =
@@ -50,7 +51,7 @@ export default function VaultTx() {
   return (
     <QgScreen
       title={lightning ? 'Lightning payment' : bitcoin ? 'Bitcoin payment' : 'Transaction'}
-      dismiss={() => navigate('home')}
+      dismiss={() => navigate(txReturn)}
       footer={
         <>
           <ErrorMessage error={Boolean(error)} text={error} />
@@ -62,7 +63,7 @@ export default function VaultTx() {
               label='Return to Spending'
             />
           ) : null}
-          <QgSecondary onClick={() => navigate('home')} label='Back to Wallet' />
+          <QgSecondary onClick={() => navigate(txReturn)} label='Back to Wallet' />
         </>
       }
     >

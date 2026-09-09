@@ -39,21 +39,29 @@ export interface EsploraTx {
 export const ESPLORA_TX_PAGE_SIZE = 25
 const MAX_ESPLORA_TX_PAGES = Math.ceil(RECENT_HISTORY_LIMIT / ESPLORA_TX_PAGE_SIZE)
 
-export async function fetchAddressTxs(address: string): Promise<EsploraTx[]> {
+async function fetchAddressTxPage(address: string, cursor: string): Promise<EsploraTx[]> {
   const encodedAddress = encodeURIComponent(address)
+  const suffix = cursor ? `/chain/${encodeURIComponent(cursor)}` : ''
+  const res = await fetch(`${esploraBase()}/address/${encodedAddress}/txs${suffix}`)
+  return esploraJson<EsploraTx[]>(res, 'Could not load activity')
+}
+
+function mergeAddressTx(accumulated: Map<string, EsploraTx>, transactions: EsploraTx[]): void {
+  for (const transaction of transactions) {
+    const previous = accumulated.get(transaction.txid)
+    if (!previous || (!previous.status.confirmed && transaction.status.confirmed)) {
+      accumulated.set(transaction.txid, transaction)
+    }
+  }
+}
+
+export async function fetchAddressTxs(address: string): Promise<EsploraTx[]> {
   const byTxid = new Map<string, EsploraTx>()
   const cursors = new Set<string>()
   let cursor = ''
   for (let page = 0; page < MAX_ESPLORA_TX_PAGES; page += 1) {
-    const suffix = cursor ? `/chain/${encodeURIComponent(cursor)}` : ''
-    const res = await fetch(`${esploraBase()}/address/${encodedAddress}/txs${suffix}`)
-    const transactions = await esploraJson<EsploraTx[]>(res, 'Could not load activity')
-    for (const transaction of transactions) {
-      const previous = byTxid.get(transaction.txid)
-      if (!previous || (!previous.status.confirmed && transaction.status.confirmed)) {
-        byTxid.set(transaction.txid, transaction)
-      }
-    }
+    const transactions = await fetchAddressTxPage(address, cursor)
+    mergeAddressTx(byTxid, transactions)
     const confirmed = transactions.filter((transaction) => transaction.status.confirmed)
     if (confirmed.length < ESPLORA_TX_PAGE_SIZE) break
     const next = confirmed.at(-1)?.txid || ''
@@ -62,6 +70,44 @@ export async function fetchAddressTxs(address: string): Promise<EsploraTx[]> {
     cursor = next
   }
   return [...byTxid.values()].slice(0, RECENT_HISTORY_LIMIT)
+}
+
+/**
+ * Older Bitcoin records beyond the recent window, paged from a known
+ * transaction id. Only Esplora-backed address history supports this; SDK
+ * activity, journals, and local approval records are already complete.
+ * Returns the records and whether the address is exhausted. A failed page or
+ * a stalled cursor throws a retryable error instead of masquerading as an
+ * empty result, so the caller can offer a retry without losing its place.
+ */
+export async function fetchOlderAddressTxs(
+  address: string,
+  afterTxid: string,
+  pages = MAX_ESPLORA_TX_PAGES,
+): Promise<{ transactions: EsploraTx[]; exhausted: boolean }> {
+  const byTxid = new Map<string, EsploraTx>()
+  const cursors = new Set<string>()
+  let cursor = afterTxid
+  for (let page = 0; page < Math.max(1, pages); page += 1) {
+    let transactions: EsploraTx[]
+    try {
+      transactions = await fetchAddressTxPage(address, cursor)
+    } catch {
+      throw new Error(
+        page === 0 ? 'Could not load older activity' : 'Older activity stopped partway before finishing the window',
+      )
+    }
+    mergeAddressTx(byTxid, transactions)
+    const confirmed = transactions.filter((transaction) => transaction.status.confirmed)
+    if (confirmed.length < ESPLORA_TX_PAGE_SIZE) return { transactions: [...byTxid.values()], exhausted: true }
+    const next = confirmed.at(-1)?.txid || ''
+    if (!next || next === cursor || cursors.has(next)) {
+      throw new Error('Older activity paging stalled without advancing')
+    }
+    cursors.add(next)
+    cursor = next
+  }
+  return { transactions: [...byTxid.values()], exhausted: false }
 }
 
 export async function fetchAddressUtxos(address: string): Promise<EsploraUtxo[]> {

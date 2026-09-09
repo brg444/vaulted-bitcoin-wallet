@@ -2,6 +2,7 @@ import type { LedgerSavingsView } from './useLedgerSavings'
 import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
+import type { OlderActivityState } from './useVaultBalances'
 import type { PaymentArrival } from './usePaymentArrivals'
 import { createContext } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
@@ -37,6 +38,7 @@ export type VaultScreen =
   | 'problem'
   | 'home'
   | 'receive'
+  | 'activity'
   | 'send'
   | 'review'
   | 'success'
@@ -118,6 +120,10 @@ export interface VaultContextProps {
   history: VaultHistoryItem[]
   selectedTx: VaultHistoryItem | null
   openTx: (tx: VaultHistoryItem) => void
+  txReturn: VaultScreen
+  allHistory: VaultHistoryItem[]
+  loadOlderActivity: () => Promise<{ added: number; exhausted: boolean }>
+  olderActivity: OlderActivityState
   arrivals: PaymentArrival[]
   dismissArrival: (key: string) => void
   openArrival: (key: string) => void
@@ -218,6 +224,10 @@ export const VaultContext = createContext<VaultContextProps>({
   history: [],
   selectedTx: null,
   openTx: () => {},
+  txReturn: 'home',
+  allHistory: [],
+  loadOlderActivity: async () => ({ added: 0, exhausted: true }),
+  olderActivity: { status: 'idle', error: '' },
   arrivals: [],
   dismissArrival: () => {},
   openArrival: () => {},

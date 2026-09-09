@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { VaultHistoryItem } from '../lib/vault/history'
+import { olderRowKey, type VaultHistoryItem } from '../lib/vault/history'
 import { describePayment, paymentIdentityForItem, type PaymentScope } from '../lib/vault/payments'
 import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
 import { claimArrivalDelivery } from '../lib/vault/arrivalDelivery'
@@ -40,10 +40,16 @@ function outgoingReferences(rows: readonly VaultHistoryItem[]): Set<string> {
   return new Set(rows.filter((row) => row.type === 'sent' && !row.txid.startsWith('bitcoin:')).map((row) => row.txid))
 }
 
+/**
+ * Browsing history loaded beyond the recent window never feeds arrival
+ * observation: older receipts are marked seen without bannering, so paging
+ * through history cannot manufacture a new-payment alert.
+ */
 export function detectPaymentArrivals(
   seen: ReadonlyMap<string, boolean>,
   rows: readonly VaultHistoryItem[],
   scope: PaymentScope,
+  excludedKeys: ReadonlySet<string> = EMPTY_EXCLUDED,
 ): { arrivals: PaymentArrival[]; seen: Map<string, boolean> } {
   const next = new Map(seen)
   const arrivals: PaymentArrival[] = []
@@ -54,10 +60,10 @@ export function detectPaymentArrivals(
     const was = next.get(key)
     if (was === undefined) {
       next.set(key, available)
-      if (available) arrivals.push({ key, item: row })
+      if (available && !excludedKeys.has(olderRowKey(row))) arrivals.push({ key, item: row })
       continue
     }
-    if (available && !was) {
+    if (available && !was && !excludedKeys.has(olderRowKey(row))) {
       next.set(key, true)
       arrivals.push({ key, item: row })
     }
@@ -77,12 +83,14 @@ export function seedArrivalBaseline(rows: readonly VaultHistoryItem[], scope: Pa
 }
 
 const MAX_VISIBLE_ARRIVALS = 3
+const EMPTY_EXCLUDED: ReadonlySet<string> = new Set()
 
 export function usePaymentArrivals(
   history: readonly VaultHistoryItem[],
   scope: PaymentScope,
   paused: boolean,
   ready: boolean,
+  excludedKeys: ReadonlySet<string> = EMPTY_EXCLUDED,
 ): {
   arrivals: PaymentArrival[]
   dismissArrival: (key: string) => void
@@ -126,7 +134,7 @@ export function usePaymentArrivals(
         if (!seenRef.current.has(key)) seenRef.current.set(key, available)
       }
     }
-    const { arrivals: fresh, seen } = detectPaymentArrivals(seenRef.current, history, scope)
+    const { arrivals: fresh, seen } = detectPaymentArrivals(seenRef.current, history, scope, excludedKeys)
     seenRef.current = seen
     saveArrivalBaseline(scope, seen, new Set(history.map((row) => paymentIdentityForItem(row, scope).key)))
     if (fresh.length === 0) return
@@ -155,7 +163,7 @@ export function usePaymentArrivals(
       })
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, ready])
+  }, [history, ready, excludedKeys])
 
   useEffect(() => {
     if (paused || pendingRef.current.length === 0) return

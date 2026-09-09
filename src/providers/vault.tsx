@@ -32,7 +32,7 @@ import {
 import { loadAddressPin, type AddressPin } from '../lib/vault/pin'
 import { zeroBytes } from '../lib/vault/ceremony/directauth'
 import { broadcastTx, confirmedSpendables, fetchAddressUtxos } from '../lib/vault/esplora'
-import { recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
+import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
 import {
   buildSavingsPsbt,
   finalizeSavingsPsbt,
@@ -189,6 +189,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [lastTxid, setLastTxid] = useState('')
   const [lastTxKind, setLastTxKind] = useState<'onchain' | 'vtxo' | 'lightning' | ''>('')
   const [selectedTx, setSelectedTx] = useState<VaultHistoryItem | null>(null)
+  const [txReturn, setTxReturn] = useState<VaultScreen>('home')
   const [loaded, setLoaded] = useState(false)
   const [initialStatusChecked, setInitialStatusChecked] = useState(false)
   const [account, setAccount] = useState<VaultAccount>('spend')
@@ -407,15 +408,25 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [liveNetwork],
   )
   const reportError = useCallback((message: string) => setError(message), [])
-  const { balanceError, balancesLoaded, snapshotFresh, history, positions, refreshBalance, refreshingBalance } =
-    useVaultBalances({
-      addressPin,
-      enrollment,
-      initialStatusChecked,
-      locked,
-      setStatus,
-      status,
-    })
+  const {
+    balanceError,
+    balancesLoaded,
+    snapshotFresh,
+    history,
+    positions,
+    refreshBalance,
+    refreshingBalance,
+    loadOlderActivity,
+    olderActivity,
+    olderHistory,
+  } = useVaultBalances({
+    addressPin,
+    enrollment,
+    initialStatusChecked,
+    locked,
+    setStatus,
+    status,
+  })
   const spendingAvailableSats = positions.spending.availableSats
   const savingsAvailableSats = positions.savings.availableSats
   const dailyLimit = status?.enrolled ? (status.periodAllowance ?? setup.dailyLimitSats) : setup.dailyLimitSats
@@ -553,11 +564,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [status?.network, status?.vaultId],
   )
   const arrivalReady = snapshotFresh && Boolean(status?.vaultId) && Boolean(status?.network)
+  // Browsing history loaded beyond the recent window never feeds arrival
+  // observation; those receipts stay visible without bannering as new.
+  const excludedArrivalKeys = useMemo(() => new Set((olderHistory || []).map(olderRowKey)), [olderHistory])
   const { arrivals, dismissArrival, openArrivalKey } = usePaymentArrivals(
     visibleHistory,
     arrivalScope,
     busy || locked,
     arrivalReady,
+    excludedArrivalKeys,
   )
 
   const {
@@ -1794,6 +1809,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       lastTxKind,
       history: recentAccountHistory(visibleHistory, account),
       selectedTx,
+      txReturn,
+      allHistory: visibleHistory,
+      loadOlderActivity,
+      olderActivity,
       arrivals,
       dismissArrival,
       openArrival: (key: string) => {
@@ -1851,6 +1870,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           return
         }
         setSelectedTx(tx)
+        setTxReturn(screen)
         setError('')
         setScreen('tx')
       },
@@ -1968,6 +1988,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       arrivals,
       dismissArrival,
       openArrivalKey,
+      txReturn,
+      loadOlderActivity,
+      olderActivity,
       pendingSavingsHandoff,
       pendingConnector,
       selectedTx,

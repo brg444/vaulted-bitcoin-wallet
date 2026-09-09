@@ -14,6 +14,54 @@ function historyTime(blockTime?: number): string {
   return new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(blockTime * 1000))
 }
 
+export function historyRowState(tx: VaultHistoryItem): string {
+  const described = describePayment(tx)
+  const time = historyTime(tx.blockTime)
+  // Confirmed availability keeps its time; pending and attention rows keep
+  // the shared state wording untouched.
+  return time && described.complete && ['arkade', 'boarding', 'bitcoin-savings'].includes(described.route)
+    ? `${described.state} · ${time}`
+    : described.state
+}
+
+/** One activity row, shared by the Home recent list and full activity. */
+export function VaultHistoryRow({ tx, openTx }: { tx: VaultHistoryItem; openTx: (tx: VaultHistoryItem) => void }) {
+  const sent = tx.type === 'sent'
+  const described = describePayment(tx)
+  const amount = tx.displayAmount ?? tx.amount
+  const state = historyRowState(tx)
+  return (
+    <button
+      type='button'
+      key={`${tx.account}:${tx.txid}:${tx.type}`}
+      className='vault-history-row'
+      data-testid={`vault-tx-${tx.txid}`}
+      aria-label={`${described.title} ${prettyAmount(amount)}. ${state}.`}
+      onClick={() => {
+        hapticSubtle()
+        openTx(tx)
+      }}
+    >
+      <span className='vault-history-icon' aria-hidden='true'>
+        <TransferArrowIcon incoming={!sent} />
+      </span>
+      <span className='vault-history-copy'>
+        <Text small bold>
+          {described.title}
+        </Text>
+        <Text color='neutral-600' tiny>
+          {state}
+        </Text>
+      </span>
+      <span className={sent ? 'vault-history-amt' : 'vault-history-amt is-in'}>
+        {sent ? '−' : '+'}
+        <span className='vault-history-unit'>₿</span>
+        {prettyNumber(amount)}
+      </span>
+    </button>
+  )
+}
+
 export default function VaultHistory() {
   const { account, balancesLoaded, history, openTx, refreshingBalance } = useContext(VaultContext)
   return (
@@ -68,48 +116,9 @@ export function VaultHistoryList({
           {groupVaultHistory(history).map((group) => (
             <div className='vault-history-group' key={group.key}>
               <h3 className='vault-history-group-label vault-visually-hidden'>{group.label}</h3>
-              {group.items.map((tx) => {
-                const sent = tx.type === 'sent'
-                const described = describePayment(tx)
-                const amount = tx.displayAmount ?? tx.amount
-                const time = historyTime(tx.blockTime)
-                // Confirmed availability keeps its time; pending and attention
-                // rows keep the shared state wording untouched.
-                const state =
-                  time && described.complete && ['arkade', 'boarding', 'bitcoin-savings'].includes(described.route)
-                    ? `${described.state} · ${time}`
-                    : described.state
-                return (
-                  <button
-                    type='button'
-                    key={`${tx.account}:${tx.txid}:${tx.type}`}
-                    className='vault-history-row'
-                    data-testid={`vault-tx-${tx.txid}`}
-                    aria-label={`${described.title} ${prettyAmount(amount)}. ${state}.`}
-                    onClick={() => {
-                      hapticSubtle()
-                      openTx(tx)
-                    }}
-                  >
-                    <span className='vault-history-icon' aria-hidden='true'>
-                      <TransferArrowIcon incoming={!sent} />
-                    </span>
-                    <span className='vault-history-copy'>
-                      <Text small bold>
-                        {described.title}
-                      </Text>
-                      <Text color='neutral-600' tiny>
-                        {state}
-                      </Text>
-                    </span>
-                    <span className={sent ? 'vault-history-amt' : 'vault-history-amt is-in'}>
-                      {sent ? '−' : '+'}
-                      <span className='vault-history-unit'>₿</span>
-                      {prettyNumber(amount)}
-                    </span>
-                  </button>
-                )
-              })}
+              {group.items.map((tx) => (
+                <VaultHistoryRow key={`${tx.account}:${tx.txid}:${tx.type}`} tx={tx} openTx={openTx} />
+              ))}
             </div>
           ))}
         </div>

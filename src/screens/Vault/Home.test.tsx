@@ -100,6 +100,16 @@ describe('Vault home account boundaries', () => {
     expect(openTx).toHaveBeenCalledWith(tx)
   })
 
+  it('opens full activity from Home without disturbing the recent list', async () => {
+    const user = userEvent.setup()
+    const value = renderHome({
+      history: [{ txid: 'known', type: 'received', amount: 12000, confirmed: true, blockTime: 10, account: 'spend' }],
+    })
+    expect(screen.getByRole('heading', { name: 'Recent' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'See all activity' }))
+    expect(value.navigate).toHaveBeenCalledWith('activity')
+  })
+
   it('keeps receive details behind the explicit Home utilities', () => {
     renderHome({ account: 'spend' })
     expect(screen.queryByTestId('account-address')).toBeNull()

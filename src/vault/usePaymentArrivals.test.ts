@@ -81,6 +81,20 @@ describe('arrival readiness', async () => {
     await waitFor(() => expect(result.current.arrivals).toEqual([]))
   })
 
+  it('never banners browsing history excluded from arrival observation', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-ready-7' }
+    const older = row({ txid: 'older-browsed', account: 'savings', blockTime: 100 })
+    const excluded = new Set(['savings:older-browsed:received'])
+    const { result, rerender } = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, excluded), {
+      initialProps: { rows: [older] },
+    })
+    await waitFor(() => expect(result.current.arrivals).toEqual([]))
+    rerender({ rows: [older, row({ txid: 'fresh-live', blockTime: 200 })] })
+    await waitFor(() =>
+      expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh-live']),
+    )
+  })
+
   it('banners a payment in at most one tab through the stored baseline', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-ready-6' }
     const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true), {

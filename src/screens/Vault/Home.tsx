@@ -126,6 +126,9 @@ export default function VaultHome() {
         </button>
       ) : null}
       <VaultHistory />
+      <button type='button' className='qg-text' onClick={() => navigate('activity')}>
+        See all activity
+      </button>
     </AccountHome>
   )
 }

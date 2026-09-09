@@ -9,6 +9,7 @@ import './screens/Vault/quiet-guardian-flows.css'
 import './screens/Vault/qg/layout.css'
 import './screens/Vault/quiet-guardian-screens.css'
 import VaultHome from './screens/Vault/Home'
+import VaultActivity from './screens/Vault/Activity'
 import VaultReceive from './screens/Vault/Receive'
 import VaultReview from './screens/Vault/Review'
 import VaultSend from './screens/Vault/Send'
@@ -88,6 +89,7 @@ export default function VaultApp() {
     ready: <VaultReady />,
     problem: <VaultProblem />,
     home: <VaultHome />,
+    activity: <VaultActivity />,
     receive: <VaultReceive />,
     send: <VaultSend />,
     review: <VaultReview />,
