@@ -351,7 +351,15 @@ export async function requestVaultLightningReceive(input: {
   assertReceivable({ quote, payDeadline, now })
   const address = script.address(pins.arkHrp, hex.decode(pins.operatorSignerPub).slice(1)).encode()
   await registerLockupContract(input.contracts, script, address)
-  const record = createVaultLightningReceiveRecord({ status, quote, script, preimage, payDeadline, estimatedPaySats: plan.maxPaySats, now })
+  const record = createVaultLightningReceiveRecord({
+    status,
+    quote,
+    script,
+    preimage,
+    payDeadline,
+    estimatedPaySats: plan.maxPaySats,
+    now,
+  })
   await input.repository.saveRfqSwap(record)
   const persisted = await input.repository.getRfqSwap(rfqId)
   if (!persisted || JSON.stringify(persisted) !== JSON.stringify(record))
