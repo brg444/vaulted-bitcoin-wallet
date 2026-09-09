@@ -63,9 +63,12 @@ export function detectPaymentArrivals(
       if (available && !excludedKeys.has(olderRowKey(row))) arrivals.push({ key, item: row })
       continue
     }
-    if (available && !was && !excludedKeys.has(olderRowKey(row))) {
+    if (available && !was) {
+      // Record the available transition as seen even while excluded: the
+      // banner stays suppressed, but removing the exclusion later must not
+      // replay the historical receipt as a new arrival.
       next.set(key, true)
-      arrivals.push({ key, item: row })
+      if (!excludedKeys.has(olderRowKey(row))) arrivals.push({ key, item: row })
     }
   }
   return { arrivals, seen: next }
