@@ -430,6 +430,50 @@ html.palette-dark .qg-mark-imprint {
   cursor: pointer;
 }
 
+.qg-payment-arrivals {
+  display: grid;
+  gap: 12px;
+  margin: var(--qg-space-16) 0;
+}
+.qg-payment-arrival {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-field-radius);
+  background: var(--qg-green-soft);
+  color: var(--qg-ink);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.qg-payment-arrival strong {
+  font-weight: var(--qg-weight-strong);
+}
+.qg-payment-arrival-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qg-payment-arrival-actions button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-field-radius);
+  background: var(--qg-paper);
+  color: var(--qg-ink);
+  font-size: 15px;
+  font-weight: var(--qg-weight-medium);
+  cursor: pointer;
+}
+.qg-payment-arrival-dismiss {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+  color: var(--qg-muted);
+}
+
 html.palette-dark .qg-footer-error,
 html.palette-dark .qg-footer .qg-footer-error,
 html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface {

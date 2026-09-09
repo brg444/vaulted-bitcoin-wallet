@@ -2,6 +2,7 @@ import type { LedgerSavingsView } from './useLedgerSavings'
 import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
+import type { PaymentArrival } from './usePaymentArrivals'
 import { createContext } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { emptySetupPlan, type VaultSetupPlan } from '../lib/vault/setupPlan'
@@ -117,6 +118,9 @@ export interface VaultContextProps {
   history: VaultHistoryItem[]
   selectedTx: VaultHistoryItem | null
   openTx: (tx: VaultHistoryItem) => void
+  arrivals: PaymentArrival[]
+  dismissArrival: (key: string) => void
+  openArrival: (key: string) => void
   liveNetwork: boolean
   navigate: (screen: VaultScreen) => void
   openRecover: (view?: 'kit' | 'lost', exit?: VaultScreen) => void
@@ -214,6 +218,9 @@ export const VaultContext = createContext<VaultContextProps>({
   history: [],
   selectedTx: null,
   openTx: () => {},
+  arrivals: [],
+  dismissArrival: () => {},
+  openArrival: () => {},
   liveNetwork: false,
   navigate: () => {},
   openRecover: () => {},

@@ -1,3 +1,4 @@
+import PaymentArrivalBanners from './PaymentArrivals'
 import ConnectorDeposit from './ConnectorDeposit'
 import ConnectorSetup from './ConnectorSetup'
 import { isConnectorTemplate } from '../../lib/vault/program/connector'
@@ -36,7 +37,17 @@ function AddressRow({
 }
 
 export default function VaultReceive() {
-  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status } = useContext(VaultContext)
+  const {
+    account,
+    boardingAddress,
+    navigate,
+    savingsAddress,
+    spendingArkAddress,
+    status,
+    arrivals = [],
+    dismissArrival,
+    openArrival,
+  } = useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
@@ -94,6 +105,11 @@ export default function VaultReceive() {
       }
     >
       <div className='qg-receive'>
+        <PaymentArrivalBanners
+          arrivals={arrivals}
+          onOpen={(arrival) => openArrival(arrival.key)}
+          onDismiss={dismissArrival}
+        />
         <span className='qg-protected'>
           {spending ? <ShieldCheck /> : <KeyRound />}
           {spending ? 'Spending limits' : 'Two-key Savings'}

@@ -129,6 +129,41 @@ describe('Vault receive', () => {
     expect(screen.getByText('Savings is not restored on this device. Sign in again to restore it.')).toBeTruthy()
     expect(screen.queryByText(/setup finishes/)).toBeNull()
   })
+
+  it('shows an arrival above the reusable address and opens its details', async () => {
+    const user = userEvent.setup()
+    const openArrival = vi.fn()
+    const dismissArrival = vi.fn()
+    const value = {
+      account: 'spend',
+      boardingAddress: 'tb1qboarding',
+      liveNetwork: true,
+      navigate: () => {},
+      savingsAddress: 'tb1qsavings',
+      spendingArkAddress: 'tark1spending',
+      arrivals: [
+        {
+          key: 'tx:mutinynet:vault:spend:deposit:received',
+          item: { txid: 'deposit', type: 'received', amount: 12_000, confirmed: true, account: 'spend' },
+        },
+      ],
+      dismissArrival,
+      openArrival,
+    } as unknown as VaultContextProps
+    render(
+      <ToastProvider>
+        <VaultContext.Provider value={value}>
+          <VaultReceive />
+        </VaultContext.Provider>
+      </ToastProvider>,
+    )
+
+    expect(screen.getByText('Received ₿12,000 in Spending.')).toBeVisible()
+    expect(screen.getByTestId('receive-bitcoin-address')).toBeVisible()
+    expect(screen.getByTestId('receive-arkade-address')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'View details' }))
+    expect(openArrival).toHaveBeenCalledWith('tx:mutinynet:vault:spend:deposit:received')
+  })
 })
 
 it('leaves connector setup when the enrolled contract changes to native Savings', async () => {

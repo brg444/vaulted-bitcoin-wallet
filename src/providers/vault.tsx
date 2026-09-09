@@ -1,6 +1,7 @@
 import { useLedgerSavings } from '../vault/useLedgerSavings'
 import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
+import { usePaymentArrivals } from '../vault/usePaymentArrivals'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
@@ -541,6 +542,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       )
     })
   }, [visibleHistory])
+  // Arrival banners read the unfiltered history so a Savings deposit still
+  // surfaces while Spending is selected. Presentation pauses while an
+  // approval is in flight and resumes after it finishes.
+  const arrivalScope = useMemo(
+    () => ({ network: status?.network || '', vaultId: status?.vaultId || '' }),
+    [status?.network, status?.vaultId],
+  )
+  const { arrivals, dismissArrival, openArrivalKey } = usePaymentArrivals(visibleHistory, arrivalScope, busy)
 
   const {
     backupRecoveryKit,
@@ -1776,6 +1785,16 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       lastTxKind,
       history: recentAccountHistory(visibleHistory, account),
       selectedTx,
+      arrivals,
+      dismissArrival,
+      openArrival: (key: string) => {
+        const found = openArrivalKey(key)
+        if (!found) return
+        dismissArrival(key)
+        setSelectedTx(found)
+        setError('')
+        setScreen('tx')
+      },
       openTx: (tx) => {
         const ledger = ledgerSavings.view
         if (
@@ -1937,6 +1956,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       lastTxid,
       lastTxKind,
       visibleHistory,
+      arrivals,
+      dismissArrival,
+      openArrivalKey,
       pendingSavingsHandoff,
       pendingConnector,
       selectedTx,

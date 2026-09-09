@@ -1,4 +1,5 @@
 import PaymentNotice from './qg/PaymentNotice'
+import PaymentArrivalBanners from './PaymentArrivals'
 import { useContext, useEffect } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
@@ -19,6 +20,9 @@ export default function VaultHome() {
     balanceError,
     pendingPayments = [],
     openPendingPayment,
+    arrivals = [],
+    dismissArrival,
+    openArrival,
     navigate,
     openSendScan,
     openRecover,
@@ -102,6 +106,12 @@ export default function VaultHome() {
           ))
         : null}
       {error && (pendingPayments.length > 0 || error !== balanceError) ? <PaymentNotice message={error} /> : null}
+
+      <PaymentArrivalBanners
+        arrivals={arrivals}
+        onOpen={(arrival) => openArrival(arrival.key)}
+        onDismiss={dismissArrival}
+      />
 
       {!spending ? (
         <button
