@@ -1,1 +1,5 @@
 src/lib/vault/ceremony/**
+
+# Byte-identical Guardian Contract Packs are pinned by SHA256.
+src/lib/vault/contract-pack.json
+src/lib/vault/contract-pack.mainnet.json

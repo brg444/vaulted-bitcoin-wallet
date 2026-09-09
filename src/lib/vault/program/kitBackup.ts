@@ -50,11 +50,16 @@ export function kitFromFacts(input: {
   if (input.status?.templateVersion === LEDGER_NATIVE_TEMPLATE) {
     try {
       const descriptor = buildLedgerRecoveryDescriptor(ledgerEnrollmentFromStatus(input.status))
-      if ((input.enrollment?.phoneBip340Pub && input.enrollment.phoneBip340Pub !== descriptor.keys.phoneBip340) ||
-          (input.hardwarePub && input.hardwarePub !== descriptor.keys.hardware) ||
-          (input.recoveryPub && input.recoveryPub !== descriptor.keys.recovery)) return null
+      if (
+        (input.enrollment?.phoneBip340Pub && input.enrollment.phoneBip340Pub !== descriptor.keys.phoneBip340) ||
+        (input.hardwarePub && input.hardwarePub !== descriptor.keys.hardware) ||
+        (input.recoveryPub && input.recoveryPub !== descriptor.keys.recovery)
+      )
+        return null
       return buildRecoveryKit(descriptor)
-    } catch { return null }
+    } catch {
+      return null
+    }
   }
   const recoveryPub = input.recoveryPub || input.status?.recoveryPub || ''
   const hardwarePub = input.hardwarePub || input.status?.externalOwnerWalletPub || ''

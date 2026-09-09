@@ -271,7 +271,9 @@ export function buildVaultProgramDescriptor(input: VaultProgramDescriptorInput):
   })
 }
 
-export function validateVaultProgramDescriptor(d: VaultProgramDescriptor | LedgerRecoveryDescriptor): VaultProgramDescriptor {
+export function validateVaultProgramDescriptor(
+  d: VaultProgramDescriptor | LedgerRecoveryDescriptor,
+): VaultProgramDescriptor {
   if (d.schema !== PROGRAM_SCHEMA) throw new Error('unsupported vault schema')
   if (!SUPPORTED_NETWORKS.includes(d.network)) throw new Error(`unsupported network ${d.network}`)
   if (!d.vaultId || String(d.vaultId).trim() === '') throw new Error('vault id required')

@@ -56,9 +56,11 @@ export function recoveryBinding(kit: RecoveryKit, status: VaultStatus): Recovery
     protectionTier: kit.protectionTier,
     policyVersion: status.policyVersion,
     spendingPolicyDigest: kit.spendingPolicyDigest,
-    descriptorHash: isLedgerRecoveryKit(kit) ? kit.descriptor.enrollmentDescriptorHash : isConnectorTemplate(status.templateVersion)
-      ? status.connectorEnrollment!.descriptorHash
-      : status.vtxoBoardingDescriptorHash!,
+    descriptorHash: isLedgerRecoveryKit(kit)
+      ? kit.descriptor.enrollmentDescriptorHash
+      : isConnectorTemplate(status.templateVersion)
+        ? status.connectorEnrollment!.descriptorHash
+        : status.vtxoBoardingDescriptorHash!,
   }
 }
 
@@ -130,9 +132,14 @@ export function buildRecoveryHeader(
       phoneBip340Pub: enrollment.phoneBip340Pub,
       nonce: enrollment.nonce,
       ciphertext: enrollment.ciphertext,
-      ...(enrollment.ledgerSavings ? { ledgerSavings: validateLedgerSavingsEnrollmentSecrets(
-        enrollment.ledgerSavings, isLedgerRecoveryKit(validKit) ? validKit.descriptor.ledgerSavings : undefined,
-      ) } : {}),
+      ...(enrollment.ledgerSavings
+        ? {
+            ledgerSavings: validateLedgerSavingsEnrollmentSecrets(
+              enrollment.ledgerSavings,
+              isLedgerRecoveryKit(validKit) ? validKit.descriptor.ledgerSavings : undefined,
+            ),
+          }
+        : {}),
     },
     origin: status.clientOrigin,
     rpId: status.rpId,
@@ -205,7 +212,12 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
       file.connectorJournal,
     )
   } else if (file.connectorJournal !== undefined) throw new Error('Connector journal on another program')
-  if (file.spendingJournal !== undefined || file.lightningJournal !== undefined || file.ledgerSavingsJournal !== undefined || file.ledgerRecoveryJournal !== undefined)
+  if (
+    file.spendingJournal !== undefined ||
+    file.lightningJournal !== undefined ||
+    file.ledgerSavingsJournal !== undefined ||
+    file.ledgerRecoveryJournal !== undefined
+  )
     validateRecoveryJournals(header.status, file as VaultRecoveryFile & RecoveryJournals)
   return file
 }
@@ -305,7 +317,10 @@ export async function openLocalRecoveryBackup(
   const file = parseEncryptedRecoveryBackup(raw)
   if (location.origin !== file.header.origin || location.hostname !== file.header.rpId)
     throw new Error(`Open recovery at ${file.header.origin} to use the original passkey`)
-  const { spendingPhone: phone, ledgerSavingsSeed } = await unlockVaultPhoneKeys(file.header.enrollment, file.header.status)
+  const { spendingPhone: phone, ledgerSavingsSeed } = await unlockVaultPhoneKeys(
+    file.header.enrollment,
+    file.header.status,
+  )
   try {
     const decoded = await decryptRecoveryBackup(file, await recoveryBackupKey(phone, file.header))
     if (restored) await restored(decoded, phone, ledgerSavingsSeed)

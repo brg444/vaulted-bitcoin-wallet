@@ -3,7 +3,11 @@ import { sameBip340Key } from '../setupPlan'
 import type { VaultStatus } from '../types'
 import { isLedgerRecoveryKit, type RecoveryKit } from './kit'
 import { LEDGER_NATIVE_TEMPLATE } from './ledgerNativeKeys'
-import { buildLedgerRecoveryDescriptor, hashLedgerRecoveryDescriptor, ledgerEnrollmentFromStatus } from './ledgerRecoveryDescriptor'
+import {
+  buildLedgerRecoveryDescriptor,
+  hashLedgerRecoveryDescriptor,
+  ledgerEnrollmentFromStatus,
+} from './ledgerRecoveryDescriptor'
 
 export function watcherEnabledForTemplate(templateVersion?: string): boolean {
   return templateVersion === SAVINGS_TEMPLATE || templateVersion === LEDGER_NATIVE_TEMPLATE
@@ -11,8 +15,15 @@ export function watcherEnabledForTemplate(templateVersion?: string): boolean {
 
 export function kitMatchesLiveVault(kit: RecoveryKit, status: VaultStatus): boolean {
   if (isLedgerRecoveryKit(kit)) {
-    try { return status.enrolled && hashLedgerRecoveryDescriptor(buildLedgerRecoveryDescriptor(ledgerEnrollmentFromStatus(status))) === kit.descriptorHash }
-    catch { return false }
+    try {
+      return (
+        status.enrolled &&
+        hashLedgerRecoveryDescriptor(buildLedgerRecoveryDescriptor(ledgerEnrollmentFromStatus(status))) ===
+          kit.descriptorHash
+      )
+    } catch {
+      return false
+    }
   }
   const descriptor = kit.descriptor
   if (!status.enrolled || status.templateVersion !== SAVINGS_TEMPLATE) return false

@@ -16,8 +16,16 @@ import {
 import { vaultRecoveryBinding } from '../vtxo/recoveryArchive'
 import { kitFromFacts } from '../program/kitBackup'
 import { hex } from '@scure/base'
-import { exportLedgerSavingsPaymentJournal, validateLedgerSavingsPaymentJournal, type LedgerSavingsPaymentJournal } from '../ledgerSavingsWallet'
-import { exportLedgerRecoveryJournal, validateLedgerRecoveryJournal, type LedgerRecoveryJournal } from '../ledgerRecoveryWallet'
+import {
+  exportLedgerSavingsPaymentJournal,
+  validateLedgerSavingsPaymentJournal,
+  type LedgerSavingsPaymentJournal,
+} from '../ledgerSavingsWallet'
+import {
+  exportLedgerRecoveryJournal,
+  validateLedgerRecoveryJournal,
+  type LedgerRecoveryJournal,
+} from '../ledgerRecoveryWallet'
 import { ledgerEnrollmentFromStatus } from '../program/ledgerRecoveryDescriptor'
 import {
   captureLightningRecoveryJournal,
@@ -50,9 +58,11 @@ export function validateRecoveryJournals(status: VaultStatus, data: RecoveryJour
   validateLightningRecoveryJournal(data.lightningJournal, recoveryLightningBinding(status))
   if (status.ledgerSavings) {
     const contract = ledgerEnrollmentFromStatus(status).savings
-    if (data.ledgerSavingsJournal !== undefined) validateLedgerSavingsPaymentJournal(contract, data.ledgerSavingsJournal)
+    if (data.ledgerSavingsJournal !== undefined)
+      validateLedgerSavingsPaymentJournal(contract, data.ledgerSavingsJournal)
     if (data.ledgerRecoveryJournal !== undefined) validateLedgerRecoveryJournal(contract, data.ledgerRecoveryJournal)
-  } else if (data.ledgerSavingsJournal !== undefined || data.ledgerRecoveryJournal !== undefined) throw new Error('Ledger journal on another program')
+  } else if (data.ledgerSavingsJournal !== undefined || data.ledgerRecoveryJournal !== undefined)
+    throw new Error('Ledger journal on another program')
   return data
 }
 export async function captureRecoveryJournals(
@@ -75,8 +85,16 @@ export async function captureRecoveryJournals(
       previous: previous?.lightningJournal,
     })
     const contract = status.ledgerSavings ? ledgerEnrollmentFromStatus(status).savings : undefined
-    return validateRecoveryJournals(status, { spendingJournal, lightningJournal,
-      ...(contract ? { ledgerSavingsJournal: await exportLedgerSavingsPaymentJournal(contract), ledgerRecoveryJournal: exportLedgerRecoveryJournal(contract) } : {}) })
+    return validateRecoveryJournals(status, {
+      spendingJournal,
+      lightningJournal,
+      ...(contract
+        ? {
+            ledgerSavingsJournal: await exportLedgerSavingsPaymentJournal(contract),
+            ledgerRecoveryJournal: exportLedgerRecoveryJournal(contract),
+          }
+        : {}),
+    })
   } finally {
     await Promise.allSettled([
       contracts[Symbol.asyncDispose](),

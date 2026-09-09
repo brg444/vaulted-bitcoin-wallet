@@ -36,7 +36,11 @@ import { sameSpendingPolicy, spendingPolicyDigest, validateSpendingPolicy, type 
 import { requireProtectionTierMatchesRecovery, type ProtectionTier } from './protectionTier'
 import { LEDGER_NATIVE_TEMPLATE, ledgerAccountKey, type LedgerAccountOrigin } from './program/ledgerNativeKeys'
 import { deriveLedgerPhoneAccount, generateLedgerPhoneSeed, wrapLedgerPhoneSeed } from './ledgerPhoneBackup'
-import { canonicalLedgerValue, validateLedgerSavingsEnrollmentSecrets, type LedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollment'
+import {
+  canonicalLedgerValue,
+  validateLedgerSavingsEnrollmentSecrets,
+  type LedgerSavingsEnrollmentSecrets,
+} from './program/ledgerEnrollment'
 import {
   validateLedgerSavingsEnrollmentDescriptor,
   hashLedgerSavingsEnrollment,

@@ -31,15 +31,23 @@ import { provisionBoardingKey } from '../vtxo/board'
 import { storeRecoveryImport } from './fileStore'
 
 /** Idempotent, conservative import; no archived status is treated as current chain state. */
-export async function restoreVaultRecoveryFile(value: VaultRecoveryFile, phone: Uint8Array, ledgerSavingsSeed?: Uint8Array) {
+export async function restoreVaultRecoveryFile(
+  value: VaultRecoveryFile,
+  phone: Uint8Array,
+  ledgerSavingsSeed?: Uint8Array,
+) {
   const file = validateVaultRecoveryFile(JSON.parse(JSON.stringify(value)))
   if (!navigator.locks) throw new Error('Web Locks required to restore complete recovery data')
-  const spending = Uint8Array.from(phone), savings = ledgerSavingsSeed ? Uint8Array.from(ledgerSavingsSeed) : undefined
+  const spending = Uint8Array.from(phone),
+    savings = ledgerSavingsSeed ? Uint8Array.from(ledgerSavingsSeed) : undefined
   try {
     return await navigator.locks.request(`vaulted:complete-recovery:${file.header.binding.descriptorHash}`, () =>
       restoreLocked(file, spending, savings),
     )
-  } finally { spending.fill(0); savings?.fill(0) }
+  } finally {
+    spending.fill(0)
+    savings?.fill(0)
+  }
 }
 
 async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerSavingsSeed?: Uint8Array) {
@@ -49,7 +57,12 @@ async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerS
     throw new Error('Recovery phone key changed')
   if (isLedgerRecoveryKit(file.header.kit)) {
     const context = file.header.kit.descriptor.ledgerSavings.context
-    if (!ledgerSavingsSeed || canonicalLedgerValue(deriveLedgerPhoneAccount(ledgerSavingsSeed, context.network, context.phone.path[2] - 0x80000000)) !== canonicalLedgerValue(context.phone))
+    if (
+      !ledgerSavingsSeed ||
+      canonicalLedgerValue(
+        deriveLedgerPhoneAccount(ledgerSavingsSeed, context.network, context.phone.path[2] - 0x80000000),
+      ) !== canonicalLedgerValue(context.phone)
+    )
       throw new Error('Recovery Savings HD seed does not match the enrolled origin')
   } else if (ledgerSavingsSeed) throw new Error('Savings HD seed supplied for a legacy recovery file')
   const existingKit = loadLocalKit(status.vaultId)

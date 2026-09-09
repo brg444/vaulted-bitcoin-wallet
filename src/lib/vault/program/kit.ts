@@ -5,7 +5,9 @@ import { hashVaultProgramDescriptor, validateVaultProgramDescriptor, type VaultP
 import type { ProtectionTier } from '../protectionTier'
 import { canonicalLedgerValue } from './ledgerEnrollment'
 import {
-  LEDGER_RECOVERY_SCHEMA, hashLedgerRecoveryDescriptor, validateLedgerRecoveryDescriptor,
+  LEDGER_RECOVERY_SCHEMA,
+  hashLedgerRecoveryDescriptor,
+  validateLedgerRecoveryDescriptor,
   type LedgerRecoveryDescriptor,
 } from './ledgerRecoveryDescriptor'
 
@@ -32,7 +34,9 @@ export interface LedgerRecoveryKit {
 
 export type RecoveryKit = LegacyRecoveryKit | LedgerRecoveryKit
 
-export function isLedgerRecoveryKit(kit: RecoveryKit): kit is LedgerRecoveryKit { return kit.version === 4 }
+export function isLedgerRecoveryKit(kit: RecoveryKit): kit is LedgerRecoveryKit {
+  return kit.version === 4
+}
 
 export interface RecoveryKitReport {
   vaultId: string
@@ -47,8 +51,14 @@ export function buildRecoveryKit(descriptor: VaultProgramDescriptor | LedgerReco
 export function buildRecoveryKit(descriptor: VaultProgramDescriptor | LedgerRecoveryDescriptor): RecoveryKit {
   if (descriptor.schema === LEDGER_RECOVERY_SCHEMA) {
     const d = validateLedgerRecoveryDescriptor(descriptor)
-    return { name: RECOVERY_KIT_NAME, version: 4, descriptor: d, descriptorHash: hashLedgerRecoveryDescriptor(d),
-      spendingPolicyDigest: d.policy.digest, protectionTier: d.protectionTier }
+    return {
+      name: RECOVERY_KIT_NAME,
+      version: 4,
+      descriptor: d,
+      descriptorHash: hashLedgerRecoveryDescriptor(d),
+      spendingPolicyDigest: d.policy.digest,
+      protectionTier: d.protectionTier,
+    }
   }
   const d = validateVaultProgramDescriptor(descriptor)
   return {
@@ -68,7 +78,8 @@ export function parseRecoveryKit(raw: unknown): RecoveryKit {
   if (!kit || kit.name !== RECOVERY_KIT_NAME) throw new Error('not a Recovery Kit')
   if (kit.version === 4) {
     const built = buildRecoveryKit(validateLedgerRecoveryDescriptor(kit.descriptor))
-    if (canonicalLedgerValue(kit) !== canonicalLedgerValue(built)) throw new Error('Ledger Recovery Kit binding changed')
+    if (canonicalLedgerValue(kit) !== canonicalLedgerValue(built))
+      throw new Error('Ledger Recovery Kit binding changed')
     return built
   }
   if (kit.version !== RECOVERY_KIT_VERSION) throw new Error('unsupported Recovery Kit version')
@@ -92,7 +103,9 @@ export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
   const familyKeys = familyKeysFor(Boolean(d.keys.recovery))
   const trees = [
     { role: 'savings', address: d.savings.address },
-    ...(isLedgerRecoveryKit(parsed) ? [{ role: 'savings-change', address: parsed.descriptor.savingsChange.address }] : []),
+    ...(isLedgerRecoveryKit(parsed)
+      ? [{ role: 'savings-change', address: parsed.descriptor.savingsChange.address }]
+      : []),
     ...familyKeys.map((key) => ({
       role: `pending-${key}`,
       address: d.pending[key].address,
