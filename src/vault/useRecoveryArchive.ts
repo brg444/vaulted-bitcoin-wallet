@@ -31,20 +31,27 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
       session.current = null
     }
   }, [enrollment?.vaultId, locked])
-  const capture = useCallback(async () => {
+  const capture = useCallback(async (requireCloudBackup = false) => {
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault to update recovery data')
     const context = contextEpoch.current
     const activity = activityEpoch.current
     const unchanged = () => context === contextEpoch.current && activity === activityEpoch.current
     const file = await captureVaultRecoveryFile(status, enrollment)
-    if (!unchanged()) return file
+    if (requireCloudBackup && context !== contextEpoch.current)
+      throw new Error('Wallet session changed during recovery backup')
+    if (!requireCloudBackup && !unchanged()) return file
     const active = session.current
     if (active && active.header.binding.vaultId === status.vaultId) {
       await syncRecoveryCloudBackup(active, file)
+      if (requireCloudBackup && context !== contextEpoch.current)
+        throw new Error('Wallet session changed during recovery backup')
       if (!unchanged()) return file
       setRecoveryArchiveStatus(`Encrypted cloud backup verified ${new Date().toLocaleString()}`)
-    } else setRecoveryArchiveStatus(`Transaction recovery data saved on this device ${new Date().toLocaleString()}`)
+    } else {
+      if (requireCloudBackup) throw new Error('Unlock this vault again to enable backup')
+      setRecoveryArchiveStatus(`Transaction recovery data saved on this device ${new Date().toLocaleString()}`)
+    }
     setRecoveryArchiveError('')
     return file
   }, [])
@@ -99,7 +106,7 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
       if (epoch !== contextEpoch.current) throw new Error('Unlock this vault again to enable backup')
       session.current = opened
     }
-    await capture()
+    await capture(true)
   }, [capture])
   const downloadRecoveryArchive = useCallback(async (format: 'encrypted' | 'portable' = 'encrypted') => {
     const { enrollment, status, locked } = current.current

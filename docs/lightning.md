@@ -96,6 +96,19 @@ before the quote is displayed; the encrypted backup must succeed before an
 approved invoice can be shared. Failed backup attempts keep the invoice hidden,
 including during subsequent status refreshes.
 
+Creating or reopening an invoice does not start passkey authentication or a
+cloud upload. Fee confirmation saves the approved invoice to the encrypted
+backup once, then records successful backup locally. Reopening that invoice
+reuses the confirmation. A failed upload never enables sharing; older records
+without a completed-backup marker require confirmation again. The first share
+can still request a passkey when the backup session is closed.
+
+The amount, fee review, and invoice screens show separate receive amounts,
+sender fees, and sender totals. Progress labels distinguish connecting,
+requesting an invoice, and saving recovery data. After invoice expiry the user
+can request another invoice while the earlier payment remains in the journal
+for reconciliation and recovery.
+
 ## Incoming claims and recovery
 
 Keep Vaulted open while the payment completes. The foreground receive flow has
@@ -162,3 +175,35 @@ Validation of this implementation passed with Node 24:
   passed.
 - Browser fee review and approval at 320, 390, and 1,280 pixels: passed using a
   synthetic, unpayable invoice, with no horizontal overflow or page errors.
+
+## Receive UX follow-up (2026-09-09)
+
+An unfunded live quote probe completed in about 4.2 seconds and returned 1,007
+sats paid for 1,000 sats received. This measures the probe's quote flow, not
+invoice sharing or a funded payment. The screen now runs independent service
+checks concurrently and removes full recovery uploads from invoice creation
+and reopening. Backup remains required before sharing. Explicit backup requests now complete
+their cloud upload even when a background activity refresh arrives during
+capture, and reject if the wallet session changes.
+
+Kukks' merged [wallet LNURL integration](https://github.com/arkade-os/wallet/pull/559)
+keeps the session and invoice listener at wallet level, so changing screens
+does not end receiving. A payer can request an amount through LNURL while the
+wallet creates the invoice and handles the payment in the background.
+The separate [offline self-claim service](https://github.com/ArkLabsHQ/lnurl-server/pull/22)
+adds server-side claims behind its own configuration gate.
+
+Vaulted does not activate either integration in this change. A reusable
+Lightning address needs authenticated registration bound to the enrolled
+Spending destination, an explicit fee acceptance policy, durable payment
+secrets, and qualified claim, restart, and recovery behavior. The existing
+Vaulted service design is in the offline-receive review worktree's
+`lnurl-server/docs/vaulted-offline-receive.md`. The funded recovery restrictions
+above still apply.
+
+Validation for this follow-up passed on Node 24: 181 unit-test files and 1,546
+tests, with one existing test skipped; type checking, lint, and formatting also
+passed. Browser checks exercised amount entry, fee review, approval, and reload
+at 320, 390, and 1,280 pixels in both themes with a synthetic, unpayable invoice.
+Creation and reload made no backup calls; approval made one. No horizontal
+overflow or page errors were observed.

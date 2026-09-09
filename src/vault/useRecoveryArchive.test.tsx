@@ -70,7 +70,7 @@ describe('automatic program recovery backups', () => {
     expect(mocks.open).toHaveBeenCalledTimes(1)
     unmount()
   })
-  it('does not let an older capture report current after another wallet event', async () => {
+  it('completes an explicit cloud backup across activity without reporting its snapshot as current', async () => {
     const { result, unmount } = renderHook(() => useRecoveryArchive(enrollment, status, false))
     let finish!: (value: typeof file) => void
     mocks.capture.mockImplementationOnce(
@@ -88,8 +88,32 @@ describe('automatic program recovery backups', () => {
       finish(file)
       await operation
     })
-    expect(mocks.sync).not.toHaveBeenCalled()
+    expect(mocks.sync).toHaveBeenCalledTimes(1)
     expect(result.current.recoveryArchiveStatus).not.toContain('verified')
+    unmount()
+  })
+  it('rejects an explicit backup if the wallet locks during capture', async () => {
+    let finish!: (value: typeof file) => void
+    mocks.capture.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const { result, rerender, unmount } = renderHook(({ locked }) => useRecoveryArchive(enrollment, status, locked), {
+      initialProps: { locked: false },
+    })
+    let operation!: Promise<void>
+    await act(async () => {
+      operation = result.current.backupRecoveryArchive()
+    })
+    const rejected = expect(operation).rejects.toThrow('Wallet session changed')
+    rerender({ locked: true })
+    await act(async () => {
+      finish(file)
+      await rejected
+    })
+    expect(mocks.sync).not.toHaveBeenCalled()
     unmount()
   })
   it('does not restore a cloud session whose unlock finished after the wallet locked', async () => {

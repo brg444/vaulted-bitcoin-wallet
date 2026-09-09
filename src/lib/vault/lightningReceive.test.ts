@@ -31,6 +31,7 @@ import {
 import {
   requestVaultLightningReceive,
   approveVaultLightningReceive,
+  recordVaultLightningReceiveBackup,
   receiveProfile,
   validateReceiveRecord,
 } from './lightningReceive'
@@ -489,4 +490,19 @@ it('requires an exact, durable fee approval for a quote above the card estimate'
   await expect(approveVaultLightningReceive(h.repository, r.rfqId, 1006, NOW + 300)).rejects.toThrow(
     'changed or expired',
   )
+})
+
+it('records backup completion durably after fee approval and rejects malformed backup markers', async () => {
+  const h = await harness()
+  const record = await h.request()
+  await expect(recordVaultLightningReceiveBackup(h.repository, record.rfqId)).rejects.toThrow(
+    'Review the Lightning fee first',
+  )
+  await approveVaultLightningReceive(h.repository, record.rfqId, 1004, NOW)
+  const saved = await recordVaultLightningReceiveBackup(h.repository, record.rfqId)
+  expect(receiveProfile(saved).invoiceBackedUpAt).toBe(NOW)
+  expect(receiveProfile((await h.repository.getRfqSwap(record.rfqId))!).invoiceBackedUpAt).toBe(NOW)
+  const invalid = structuredClone(saved)
+  receiveProfile(invalid).invoiceBackedUpAt = -1
+  expect(() => receiveProfile(invalid)).toThrow('Invalid Lightning receive record')
 })

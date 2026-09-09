@@ -43,6 +43,7 @@ export interface VaultLightningReceiveProfile {
   payoutAddress: string
   estimatedPaySats: number
   approvedPaySats?: number
+  invoiceBackedUpAt?: number
   phonePub: string
   /** Kept before submission, so a lost response resumes the same claim. */
   claim?: { txid: string; arkTx: string; checkpoints: string[] }
@@ -75,6 +76,7 @@ export function receiveProfile(record: RfqSwapRecord): VaultLightningReceiveProf
     p.quote.to_amount !== record.amount ||
     !whole(p.quote.refund_locktime) ||
     (p.approvedPaySats !== undefined && p.approvedPaySats !== p.quote.from_amount) ||
+    (p.invoiceBackedUpAt !== undefined && (!whole(p.invoiceBackedUpAt) || p.approvedPaySats !== p.quote.from_amount)) ||
     typeof p.payoutAddress !== 'string' ||
     !p.payoutAddress
   ) {
@@ -179,6 +181,7 @@ export function validateReceiveRecord(
   if (
     !whole(p.estimatedPaySats) ||
     (p.approvedPaySats !== undefined && p.approvedPaySats !== p.quote.from_amount) ||
+    (p.invoiceBackedUpAt !== undefined && (!whole(p.invoiceBackedUpAt) || p.approvedPaySats !== p.quote.from_amount)) ||
     p.quote.rfq_id !== record.rfqId ||
     p.quote.pair !== 'lightning:BTC->arkade:BTC' ||
     hex.encode(actualScript.pkScript) !== contract.script ||
@@ -368,5 +371,20 @@ export async function approveVaultLightningReceive(
   const saved = await repository.getRfqSwap(rfqId)
   if (!saved || receiveProfile(saved).approvedPaySats !== paySats)
     throw new Error('Lightning fee approval was not durably stored.')
+  return saved
+}
+
+/** Record a completed backup after its exact approved invoice has been saved remotely. */
+export async function recordVaultLightningReceiveBackup(repository: AssetSwapRepository, rfqId: string) {
+  const record = await repository.getRfqSwap(rfqId)
+  if (!record) throw new Error('Lightning invoice is no longer available.')
+  const profile = receiveProfile(record)
+  if (profile.approvedPaySats !== profile.quote.from_amount) throw new Error('Review the Lightning fee first.')
+  profile.invoiceBackedUpAt = Math.floor(Date.now() / 1000)
+  record.updatedAt = profile.invoiceBackedUpAt
+  await repository.saveRfqSwap(record)
+  const saved = await repository.getRfqSwap(rfqId)
+  if (!saved || receiveProfile(saved).invoiceBackedUpAt !== profile.invoiceBackedUpAt)
+    throw new Error('Lightning backup confirmation was not durably stored.')
   return saved
 }
