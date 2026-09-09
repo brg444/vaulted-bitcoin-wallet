@@ -1,3 +1,4 @@
+import { copyArkadeReceiveAddress } from './fixtures/receive'
 import { expect, test } from './fixtures/passkey'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -104,7 +105,7 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
 
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 45000 })
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
-  const address = (await page.locator('.light-address').innerText()).trim()
+  const address = await copyArkadeReceiveAddress(page)
   await save('browser-funding-request.json', { address, amount: 50000 })
   const funded = await page.request.post('https://faucet.mutinynet.arkade.sh/faucet', {
     data: { address, amount: 50000 },
@@ -119,10 +120,10 @@ test('Light enrolls, receives and pays with real Mutinynet providers', async ({ 
   const recipient = await (await page.request.get('https://faucet.mutinynet.arkade.sh/address')).json()
   expect(recipient.offchain).toMatch(/^tark1/)
   await page.getByRole('button', { name: 'Send', exact: true }).click()
-  await page.getByLabel('Arkade address', { exact: true }).fill(recipient.offchain)
-  await page.getByLabel('Amount, in sats').fill('10000')
+  await page.getByRole('textbox', { name: 'To', exact: true }).fill(recipient.offchain)
+  await page.locator('#qg-send-amount').fill('10000')
   await page.getByRole('button', { name: 'Review payment', exact: true }).click()
-  await page.getByRole('button', { name: 'Approve 10,000 sats', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve payment', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Payment sent', level: 1, exact: true })).toBeVisible({
     timeout: 60000,
   })

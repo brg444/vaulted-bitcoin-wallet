@@ -1,6 +1,8 @@
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import type { SpendingPolicy } from './spendingPolicy'
 import type { ProtectionTier } from './protectionTier'
+import type { LedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollment'
+import type { LedgerSavingsEnrollmentDescriptor } from './program/ledgerRecoveryDescriptor'
 
 export const ENROLL_STORE = 'arkade-vault-v2:enrollment'
 export const SELECTED_VAULT_STORE = 'arkade-vault-v2:selected-vault'
@@ -91,6 +93,8 @@ export function findStoredEnrollment(storage: Storage = localStorage): Enrollmen
 }
 
 export type StagedEnrollment = EnrollmentSecrets & {
+  ledgerSavingsDraft?: Omit<LedgerSavingsEnrollmentSecrets, 'registration'>
+  ledgerSavingsDescriptor?: LedgerSavingsEnrollmentDescriptor
   handle: string
   userHandle: string
   clientDataJSON: string

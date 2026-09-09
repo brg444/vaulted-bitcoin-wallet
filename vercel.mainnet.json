@@ -5,8 +5,12 @@
   "framework": null,
   "env": {
     "VAULT_RELEASE_NETWORK": "mainnet",
+    "VAULT_LIGHT_ONLY_ENROLLMENT": "true",
+    "VITE_VAULT_LIGHT_ONLY_ENROLLMENT": "true",
     "VITE_VAULT_RELEASE_NETWORK": "mainnet",
-    "VITE_VAULT_LIGHTNING_SEND": "true"
+    "VITE_VAULT_LIGHTNING_SEND": "true",
+    "VITE_VAULT_LIGHTNING_RECEIVE": "true",
+    "VITE_VAULT_LNURL": "true"
   },
   "headers": [
     { "source": "/release.json", "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }] },

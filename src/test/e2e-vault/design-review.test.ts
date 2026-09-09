@@ -53,7 +53,7 @@ for (const width of [320, 375, 1440]) {
       await expect(trigger).not.toHaveClass(/is-coasting/, { timeout: 4000 })
       await trigger.click()
       await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
-      await page.screenshot({ path: testInfo.outputPath('launcher-open.png'), scale: 'css' })
+      await page.screenshot({ path: testInfo.outputPath('launcher-open.png'), scale: 'css', animations: 'disabled' })
       await page.keyboard.press('Escape')
       await expect(trigger).toBeFocused()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

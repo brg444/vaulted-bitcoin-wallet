@@ -63,8 +63,19 @@ export default function VaultPlan() {
         {advanced
           ? 'The separate recovery key can recover Savings if both normal keys are lost.'
           : 'If both normal keys are lost, Standard has no separate recovery key.'}{' '}
-        Starting delayed recovery requires the recovery services.
+        {setup.ledger
+          ? 'Starting delayed recovery requires the Guardian. A compromised user key together with a compromised Guardian can bypass the recovery delay; the Guardian cannot spend alone.'
+          : 'Starting delayed recovery requires the recovery services.'}
       </p>
+      {setup.ledger ? (
+        <p className='qg-copy'>
+          Emergency Spending exit requires entering your Ledger seed backup into the offline recovery tool.{' '}
+          {advanced
+            ? 'The separate recovery wallet seed is also required.'
+            : 'Your recovered phone key is also required.'}{' '}
+          That computer can access every account under the entered seeds.
+        </p>
+      ) : null}
       <label className='qg-consent'>
         <input type='checkbox' checked={consented} onChange={(event) => setConsented(event.target.checked)} />
         <span>I understand that this protection choice and these Spending limits cannot be changed after setup.</span>

@@ -69,7 +69,13 @@ export default function VaultKeys() {
     spendingArkAddress,
     status,
   } = useContext(VaultContext)
-  const [view, setView] = useState<'overview' | 'keys' | 'limits' | 'renewal' | 'signer' | 'deposit'>('overview')
+  const [selectedView, setSelectedView] = useState<'overview' | 'keys' | 'limits' | 'renewal' | 'signer' | 'deposit'>(
+    'overview',
+  )
+  const view =
+    !isConnectorTemplate(status?.templateVersion) && (selectedView === 'signer' || selectedView === 'deposit')
+      ? 'overview'
+      : selectedView
   const phoneCovered = Boolean(status?.enrolled)
   const devicesCovered = Boolean(status?.passkeyLoginAvailable)
   const canEnableOther = hasLocalEnrollment && status?.enrolled && !status.passkeyLoginAvailable
@@ -91,9 +97,16 @@ export default function VaultKeys() {
           : 'Can’t reach'
   const vaultReady = phoneCovered && addressCovered && readiness.state === 'ready'
 
-  if (view === 'signer' && status)
-    return <ConnectorSetup status={status} onBack={() => setView('overview')} onDeposit={() => setView('deposit')} />
-  if (view === 'deposit' && status) return <ConnectorDeposit status={status} onBack={() => setView('signer')} />
+  if (view === 'signer' && status && isConnectorTemplate(status.templateVersion))
+    return (
+      <ConnectorSetup
+        status={status}
+        onBack={() => setSelectedView('overview')}
+        onDeposit={() => setSelectedView('deposit')}
+      />
+    )
+  if (view === 'deposit' && status && isConnectorTemplate(status.templateVersion))
+    return <ConnectorDeposit status={status} onBack={() => setSelectedView('signer')} />
 
   return (
     <QgScreen
@@ -107,7 +120,7 @@ export default function VaultKeys() {
               : 'Automatic renewal'
       }
       dismiss={view === 'overview' ? () => navigate('home') : undefined}
-      back={view !== 'overview' ? () => setView('overview') : undefined}
+      back={view !== 'overview' ? () => setSelectedView('overview') : undefined}
     >
       {view === 'overview' ? (
         <SecurityOverview
@@ -118,7 +131,7 @@ export default function VaultKeys() {
           access={{
             value: !phoneCovered ? 'Passkey needed' : devicesCovered ? 'Passkey available' : 'This device only',
             attention: !phoneCovered,
-            onClick: () => setView('keys'),
+            onClick: () => setSelectedView('keys'),
           }}
           backup={{
             value: 'Review saved copies',
@@ -126,7 +139,7 @@ export default function VaultKeys() {
             onClick: () => openRecover('kit', 'keys'),
             testId: 'security-kit',
           }}
-          limits={{ value: `${money(perPayment)} each`, onClick: () => setView('limits') }}
+          limits={{ value: `${money(perPayment)} each`, onClick: () => setSelectedView('limits') }}
           renewal={{
             value: spendingRenewals?.error
               ? 'Needs attention'
@@ -134,13 +147,13 @@ export default function VaultKeys() {
                 ? `${Object.values(spendingRenewals.operations).filter((operation) => operation.status?.state === 'armed' && operation.status.expiresAt * 1000 > Date.now()).length} scheduled`
                 : 'Unavailable',
             attention: Boolean(spendingRenewals?.error),
-            onClick: () => setView('renewal'),
+            onClick: () => setSelectedView('renewal'),
             testId: 'security-readiness',
           }}
         >
           <HubGroup>
             {isConnectorTemplate(status?.templateVersion) ? (
-              <HubRow title='Savings signer setup' onClick={() => setView('signer')} />
+              <HubRow title='Savings signer setup' onClick={() => setSelectedView('signer')} />
             ) : null}
             <HubRow title='I lost a key' onClick={() => openRecover('lost', 'keys')} testId='security-lost' />
           </HubGroup>

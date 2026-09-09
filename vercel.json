@@ -1,18 +1,21 @@
 {
-  "buildCommand": "pnpm build:mutinynet",
+  "buildCommand": "pnpm build:mainnet",
   "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": "dist",
   "framework": null,
+  "env": {
+    "VAULT_RELEASE_NETWORK": "mainnet",
+    "VAULT_LIGHT_ONLY_ENROLLMENT": "true",
+    "VITE_VAULT_LIGHT_ONLY_ENROLLMENT": "true",
+    "VITE_VAULT_RELEASE_NETWORK": "mainnet",
+    "VITE_VAULT_LIGHTNING_SEND": "true",
+    "VITE_VAULT_LIGHTNING_RECEIVE": "true",
+    "VITE_VAULT_LNURL": "true"
+  },
   "headers": [
     { "source": "/release.json", "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }] },
-    {
-      "source": "/",
-      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
-    },
-    {
-      "source": "/index.html",
-      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
-    },
+    { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }] },
+    { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }] },
     {
       "source": "/vault-wallet-service-worker.mjs",
       "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
@@ -22,7 +25,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://emulator.mutinynet.arkade.sh https://mutinynet.arkade.sh https://blockchain.info wss://nostr.arkade.sh; worker-src 'self'"
+          "value": "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://ln.getvaulted.xyz https://emulator.arkade.computer https://arkade.computer https://mempool.arkade.sh wss://mempool.arkade.sh https://blockchain.info wss://nostr.arkade.sh; worker-src 'self'"
         },
         { "key": "Referrer-Policy", "value": "no-referrer" },
         { "key": "X-Content-Type-Options", "value": "nosniff" }
@@ -37,6 +40,7 @@
     { "source": "/v1/vtxo/savings-setup/:phase", "destination": "/api/gateway?route=savings-setup&phase=:phase" },
     { "source": "/v1/vtxo/bitcoin/:phase", "destination": "/api/gateway?route=bitcoin&phase=:phase" },
     { "source": "/v1/vtxo/delegate/:phase", "destination": "/api/gateway?route=vtxo-delegate&phase=:phase" },
+    { "source": "/v1/lnurl/:phase", "destination": "/api/gateway?route=lnurl&phase=:phase" },
     { "source": "/v1/recovery-archive/:phase", "destination": "/api/gateway?route=recovery-archive&phase=:phase" },
     { "source": "/v1/light/backup/:phase", "destination": "/api/gateway?route=light-backup&phase=:phase" },
     { "source": "/v1/light/enroll/:phase", "destination": "/api/gateway?route=light-enroll&phase=:phase" },
@@ -48,25 +52,13 @@
     { "source": "/v1/vtxo/reserve", "destination": "/api/v1/vtxo-reserve" },
     { "source": "/v1/vtxo/abort", "destination": "/api/v1/vtxo-abort" },
     { "source": "/v1/vtxo/authorize", "destination": "/api/v1/vtxo-authorize" },
-    {
-      "source": "/v1/vtxo/checkpoints/authorize",
-      "destination": "/api/v1/vtxo-checkpoints-authorize"
-    },
+    { "source": "/v1/vtxo/checkpoints/authorize", "destination": "/api/v1/vtxo-checkpoints-authorize" },
     { "source": "/v1/vtxo/finalize", "destination": "/api/v1/vtxo-finalize" },
-    {
-      "source": "/v1/vtxo/board/:phase",
-      "destination": "/api/gateway?route=board&phase=:phase"
-    },
+    { "source": "/v1/vtxo/board/:phase", "destination": "/api/gateway?route=board&phase=:phase" },
     { "source": "/v1/connector/operation", "destination": "/api/v1/connector-operation" },
     { "source": "/v1/connector/withdraw/authorize", "destination": "/api/v1/connector-withdraw-authorize" },
     { "source": "/v1/:path*", "destination": "/api/v1/:path*" },
-    {
-      "source": "/esplora/:path*",
-      "destination": "https://mempool.mutinynet.arkade.sh/api/:path*"
-    },
-    {
-      "source": "/((?!assets/|api/|health(?:/|$)|v1(?:/|$)).*)",
-      "destination": "/index.html"
-    }
+    { "source": "/esplora/:path*", "destination": "https://mempool.space/api/:path*" },
+    { "source": "/((?!assets/|api/|health(?:/|$)|v1(?:/|$)).*)", "destination": "/index.html" }
   ]
 }

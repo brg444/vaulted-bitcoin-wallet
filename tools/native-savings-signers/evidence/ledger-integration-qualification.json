@@ -1,0 +1,204 @@
+{
+  "schema": "vaulted/ledger-integration-qualification-v1",
+  "date": "2026-09-09",
+  "walletSource": "75b1532632b5d8fd53556b8140062f0c206a601c",
+  "runtimeSource": "8a1b06401e66e83c3158702a13003269dbf34cea",
+  "companionSource": "2c0d9b96cd0f244a7d93f9550ee60b76c3de8e0f",
+  "deployment": {
+    "readyWithEnrollmentDisabled": true,
+    "ledgerSavingsEnabled": false,
+    "physicalLedgerQualified": false,
+    "rcChanged": false
+  },
+  "softwareChecks": {
+    "wallet": {
+      "passed": 1791,
+      "skipped": 1,
+      "method": "Full suite plus serial reruns of recovery coordinator and portable suites after parallel-run timeouts; all tests covered"
+    },
+    "runtime": {
+      "check": "make check passed",
+      "race": "All non-application packages passed make race; all 348 application tests passed in four disjoint groups after the whole-package ten-minute timeout",
+      "applicationRaceGroups": 4
+    },
+    "fundedGuardianService": {
+      "regtestCases": 10,
+      "restartExactReplay": true
+    },
+    "companion": {
+      "testsPassed": 42,
+      "standaloneDesktopLaunch": true,
+      "sdkTransport": true
+    },
+    "mainnetBuild": true,
+    "typecheck": true,
+    "lint": true,
+    "format": true,
+    "writingStyle": true,
+    "mainnetOperatorPins": true,
+    "privateCosignerPins": true
+  },
+  "proofs": {
+    "offlineBrowser": {
+      "scope": "Public fixture offline browser signing; no physical Ledger, network or broadcast",
+      "results": [
+        {
+          "network": "mutinynet",
+          "advanced": false,
+          "kind": "vaulted-ledger-offline-spending",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        },
+        {
+          "network": "mutinynet",
+          "advanced": false,
+          "kind": "vaulted-ledger-offline-fee",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        },
+        {
+          "network": "mutinynet",
+          "advanced": true,
+          "kind": "vaulted-ledger-offline-spending",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        },
+        {
+          "network": "mutinynet",
+          "advanced": true,
+          "kind": "vaulted-ledger-offline-fee",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        },
+        {
+          "network": "mainnet",
+          "advanced": false,
+          "kind": "vaulted-ledger-offline-spending",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        },
+        {
+          "network": "mainnet",
+          "advanced": false,
+          "kind": "vaulted-ledger-offline-fee",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        },
+        {
+          "network": "mainnet",
+          "advanced": true,
+          "kind": "vaulted-ledger-offline-spending",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        },
+        {
+          "network": "mainnet",
+          "advanced": true,
+          "kind": "vaulted-ledger-offline-fee",
+          "onlineBlocked": true,
+          "seedCleared": true,
+          "signatureVerified": true
+        }
+      ]
+    },
+    "fundedSpending": {
+      "scope": "Funded isolated regtest; mainnet scripts and policies, public offline seeds; SDK parent+CPFP then CSV sweep; no physical Ledger",
+      "results": [
+        {
+          "advanced": false,
+          "parentAndFeeChildAccepted": true,
+          "immatureSweepRejected": true,
+          "matureSweepConfirmed": true,
+          "amount": 39835,
+          "destination": "bc1pzrkmtm7uyyn92xafdf9g50j5pgus28flzdl05gacusw2prf86zvsrgw2hw"
+        },
+        {
+          "advanced": true,
+          "parentAndFeeChildAccepted": true,
+          "immatureSweepRejected": true,
+          "matureSweepConfirmed": true,
+          "amount": 39835,
+          "destination": "bc1pw57ahwvgapw2z5k4qfdmw70ly2h0dzu0f0252lwzr4ave6pdehrs57gr0x"
+        }
+      ]
+    },
+    "renderedWallet": {
+      "scope": "Rendered public fixtures; no hardware approval",
+      "results": [
+        {
+          "width": 390,
+          "flow": "receive",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 390,
+          "flow": "setup",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 390,
+          "flow": "plan",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 390,
+          "flow": "payment",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 390,
+          "flow": "recovery",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 1280,
+          "flow": "receive",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 1280,
+          "flow": "setup",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 1280,
+          "flow": "plan",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 1280,
+          "flow": "payment",
+          "horizontalOverflow": false
+        },
+        {
+          "width": 1280,
+          "flow": "recovery",
+          "horizontalOverflow": false
+        }
+      ]
+    }
+  },
+  "contractPacks": {
+    "mutinynet": "8ff990fb1362ecaedcdbb67305f296c0416279d4df4151fd3c39f675bfd57926",
+    "mainnet": "41d8933f587903eb023705829d214ad82a41b491221dfabba8f90903b8643089"
+  },
+  "artifacts": {
+    "DEPLOYMENT.md": "855f6ea1bb2ea1cc64aa768f3c59c34fc0ca065fb67d6fc00126a69d598db0a6",
+    "vault-authorizer-linux-amd64": "d7fc1e487b5e19ac0337718cd02058e2217ebcd3d37b7e3fa816e04367650112",
+    "vaulted-mainnet-wallet.zip": "6862ce349bd5b43a4973f972469707462585fd02cf0d6118a78729657911ceda",
+    "vaulted-recovery-macos-arm64.zip": "1a573a1af5fbd9b2f262a4d1a671f55813cc638ea51c44ad670bcbd654be0dce"
+  },
+  "limits": [
+    "No physical Ledger registration or device display qualification.",
+    "No live mainnet exit; funded exit evidence uses isolated regtest with mainnet scripts and policies.",
+    "Guardian restart requires the existing real-TTY unlock ceremony.",
+    "Existing closed-browser backup and renewal coverage limits remain."
+  ]
+}

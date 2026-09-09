@@ -1,3 +1,4 @@
+import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
@@ -171,9 +172,11 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
       {!rebroadcastingConnector ? (
         <p className='qg-copy qg-approval-copy'>
           {fromSavings
-            ? hardwareFirst
-              ? 'Sign with your external wallet, then approve with your passkey to send.'
-              : 'Approve with your passkey, then sign with your external wallet.'
+            ? status?.templateVersion === LEDGER_NATIVE_TEMPLATE
+              ? 'Approve with your passkey, then review the recipient, amount and fee on your Ledger.'
+              : hardwareFirst
+                ? 'Sign with your external wallet, then approve with your passkey to send.'
+                : 'Approve with your passkey, then sign with your external wallet.'
             : bitcoinSend
               ? 'Confirm this destination and fee. Keep the wallet open while your payment joins a batch; Bitcoin confirmation follows.'
               : 'Approve with your passkey. The vault service checks your payment limits.'}

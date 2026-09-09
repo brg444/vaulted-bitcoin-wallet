@@ -22,10 +22,29 @@ function nestedErrorMessages(err: unknown, seen = new Set<unknown>()): string[] 
   return messages
 }
 
+const LEDGER_ENROLLMENT_MESSAGES: Readonly<Record<string, string>> = {
+  'Finish or cancel the Ledger setup already in progress.': 'Finish or cancel the Ledger setup already in progress.',
+  'Ledger Savings enrollment is not available on this deployment yet.':
+    'This Guardian does not support Ledger Savings setup yet. Your passkey has not been created.',
+  'Spending recovery key does not match the selected Ledger account':
+    'The selected Ledger account does not match the recovery key. Import the intended public account again.',
+  'Ledger recovery account does not match the selected protection':
+    'The selected protection does not match your Ledger accounts. Review your hardware and recovery accounts.',
+  'Guardian changed the selected Ledger Savings enrollment':
+    'The returned vault does not match your selected Ledger setup. Setup has not completed.',
+  'Ledger enrollment changed while completing setup':
+    'The returned vault does not match your saved Ledger setup. Keep this browser data and retry the original setup.',
+  'Staged Ledger enrollment changed':
+    'The saved Ledger setup could not be verified. Keep this browser data and review the original setup.',
+  'Ledger registration does not match this Savings wallet. Register the original policy again.':
+    'The Ledger registration does not match this vault. Register the original Savings policy again.',
+}
+
 export function humanizeVaultError(err: unknown): string {
   if (err instanceof ConnectorUserError || err instanceof BitcoinPaymentError) return err.message
   const parts = nestedErrorMessages(err)
   const raw = parts[0] || (err instanceof Error ? err.message : String(err || 'Something went wrong'))
+  if (Object.hasOwn(LEDGER_ENROLLMENT_MESSAGES, raw)) return LEDGER_ENROLLMENT_MESSAGES[raw]
   const name = err instanceof Error ? err.name.toLowerCase() : ''
   const msg = parts.join(' \n ').toLowerCase() || raw.toLowerCase()
   if (isVaultConcurrencyUnavailableError(err)) {

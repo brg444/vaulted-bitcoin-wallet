@@ -23,6 +23,14 @@ export async function openLight(
 ) {
   const record = await lightTestEnrollment()
   const status = lightTestStatus(record.descriptor)
+  const pending = pendingPayment && {
+    ...pendingPayment,
+    vaultId: status.vaultId,
+    operationId: '11'.repeat(16),
+    bundleDigest: '22'.repeat(32),
+    arkTxid: '33'.repeat(32),
+    stage: 'authorized',
+  }
   const history = snapshot?.history ?? [
     {
       account: 'spend',
@@ -52,18 +60,28 @@ export async function openLight(
   await override(page, 'lib/vault/vtxo/walletWorker.ts', {
     fetchVaultWalletVtxoSnapshot: `async () => ({balance:${snapshot?.balance ?? 12000},pendingBalance:${snapshot?.pendingBalance ?? 2000},recoveryVtxos:[],history:${JSON.stringify(history)}})`,
     subscribeVaultWalletEvents: `() => () => {}`,
+    ensureVaultWalletWorker: `async () => ({})`,
     shutdownVaultWalletWorker: `async () => {}`,
   })
   await override(page, 'lib/vault/vtxo/spend.ts', {
     reconcilePersistedVtxoSpend: `async () => {}`,
+    previewVaultVtxoSend: `async (_status,address,amount) => ({destAddress:address,amountSats:amount,feeSats:20})`,
     reserveVaultVtxo: `async (_record,_status,address,amount) => ({destAddress:address,amountSats:amount,feeSats:20})`,
-    sendVaultVtxo: `async () => ({txid:'${'ef'.repeat(32)}'})`,
+    sendVaultVtxo: `async () => ({txid:'${'ef'.repeat(32)}',feeSats:20})`,
+    createVtxoSpendUnlocker: `() => ({unlock:async () => ({phoneSecret:new Uint8Array(32).fill(1),scalar:new Uint8Array(32).fill(1),assertion:{}}),dispose(){}})`,
     ...(pendingPayment
       ? {
-          loadPersistedVtxoSpend: `() => (${JSON.stringify(pendingPayment)})`,
+          loadPersistedVtxoSpend: `() => (${JSON.stringify(pending)})`,
+          listPersistedVtxoSpends: `() => [${JSON.stringify(pending)}]`,
+          loadPersistedVtxoSpendById: `() => (${JSON.stringify(pending)})`,
           quoteFromPersistedVtxoSpend: `(payment) => payment`,
         }
       : {}),
+  })
+  await override(page, 'lib/vault/light/guardianDelegation.ts', { authorizeGuardianRenewals: `async () => null` })
+  await override(page, 'lib/vault/lightning.ts', {
+    loadVaultLightningFundingQuote: `async () => undefined`,
+    withVaultLightningRepository: `async (_id, run) => run({})`,
   })
   await override(page, 'lib/fiat.ts', { getPriceFeed: `async () => ({usd:100000})` })
   if (watch) {

@@ -135,7 +135,7 @@ describe('Vault home account boundaries', () => {
     expect(screen.queryByText('Bitcoin payment from Spending')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Check payment status' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: /Bitcoin payment ₿1,400.*Pending/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Bitcoin payment ₿1,400.*Checking status/ }))
     expect(openTx).toHaveBeenCalledWith(tx)
   })
 

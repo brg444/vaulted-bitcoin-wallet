@@ -2,6 +2,7 @@ import SpendingReceive from './SpendingReceive'
 import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import LightningReceive from './LightningReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
+import PaymentArrivalBanners from './PaymentArrivals'
 import ConnectorDeposit from './ConnectorDeposit'
 import ConnectorSetup from './ConnectorSetup'
 import { isConnectorTemplate } from '../../lib/vault/program/connector'
@@ -40,8 +41,18 @@ function AddressRow({
 }
 
 export default function VaultReceive() {
-  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status, refreshBalance } =
-    useContext(VaultContext)
+  const {
+    account,
+    boardingAddress,
+    navigate,
+    savingsAddress,
+    spendingArkAddress,
+    status,
+    refreshBalance,
+    arrivals = [],
+    dismissArrival,
+    openArrival,
+  } = useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
@@ -50,7 +61,7 @@ export default function VaultReceive() {
     () =>
       boardingAddress && spendingArkAddress
         ? encodeVaultBip21({ bitcoinAddress: boardingAddress, arkadeAddress: spendingArkAddress })
-        : '',
+        : spendingArkAddress,
     [boardingAddress, spendingArkAddress],
   )
   const request = spending ? unified : savingsAddress
@@ -82,9 +93,9 @@ export default function VaultReceive() {
   if (view === 'lightning' && spending && status)
     return <LightningReceive status={status} refreshBalance={refreshBalance} onBack={() => setView('receive')} />
 
-  if (view === 'setup' && status)
+  if (view === 'setup' && status && isConnectorTemplate(status.templateVersion))
     return <ConnectorSetup status={status} onBack={() => setView('receive')} onDeposit={() => setView('deposit')} />
-  if (view === 'deposit' && status)
+  if (view === 'deposit' && status && isConnectorTemplate(status.templateVersion))
     return <ConnectorDeposit status={status} onBack={() => setView('setup')} onAddress={() => setView('receive')} />
 
   if (spending && status && lightningAddressEnabled() && vaultLightningReceiveEnabled(status.network, status.vaultId))
@@ -95,6 +106,13 @@ export default function VaultReceive() {
         bitcoinAddress={boardingAddress}
         onClose={() => navigate('home')}
         onInvoice={() => setView('lightning')}
+        arrivals={
+          <PaymentArrivalBanners
+            arrivals={arrivals}
+            onOpen={(arrival) => openArrival(arrival.key)}
+            onDismiss={dismissArrival}
+          />
+        }
       />
     )
 
@@ -113,6 +131,11 @@ export default function VaultReceive() {
       }
     >
       <div className='qg-receive'>
+        <PaymentArrivalBanners
+          arrivals={arrivals}
+          onOpen={(arrival) => openArrival(arrival.key)}
+          onDismiss={dismissArrival}
+        />
         <span className='qg-protected'>
           {spending ? <ShieldCheck /> : <KeyRound />}
           {spending ? 'Spending limits' : 'Two-key Savings'}
@@ -137,13 +160,15 @@ export default function VaultReceive() {
               copied={copied === spendingArkAddress}
               onCopy={() => void copy(spendingArkAddress, 'Fast payment address')}
             />
-            <AddressRow
-              label='Bitcoin'
-              value={boardingAddress}
-              testId='receive-bitcoin-address'
-              copied={copied === boardingAddress}
-              onCopy={() => void copy(boardingAddress, 'Bitcoin address')}
-            />
+            {boardingAddress ? (
+              <AddressRow
+                label='Bitcoin'
+                value={boardingAddress}
+                testId='receive-bitcoin-address'
+                copied={copied === boardingAddress}
+                onCopy={() => void copy(boardingAddress, 'Bitcoin address')}
+              />
+            ) : null}
           </section>
         ) : savingsAddress ? (
           <section className='qg-addresses' aria-label='Payment addresses'>

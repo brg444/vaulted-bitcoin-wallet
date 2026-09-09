@@ -10,6 +10,7 @@ import {
 import { fingerprint, hexToBytes } from './hex'
 import { requireProtectionTier, requireProtectionTierMatchesRecovery, type ProtectionTier } from './protectionTier'
 import { spendingPolicyFromLimits, validateSpendingPolicy, type SpendingPolicy } from './spendingPolicy'
+import { validateLedgerSetup, ledgerSpendingPublicKey, type VaultSetupLedger } from './ledgerSetup'
 
 export const SETUP_STORE_KEY = 'arkade-vault-v2:setup'
 
@@ -28,6 +29,7 @@ export interface VaultSetupConnector {
 }
 
 export interface VaultSetupPlan {
+  ledger?: VaultSetupLedger
   protectionTier: ProtectionTier
   hardwarePub: string
   recoveryPub: string
@@ -175,11 +177,27 @@ export function loadSetupPlan(storage: Storage = localStorage): VaultSetupPlan |
   }
   const connector = validSetupConnector(parsed.connector)
   if (Object.hasOwn(parsed, 'connector') && (!connector || parsed.hardwarePub !== connector.connectorPub)) return null
+  let ledger: VaultSetupLedger | undefined
+  if (parsed.ledger) {
+    try {
+      if (connector) return null
+      const network = requireReleaseNetwork(parsed.ledger.hardware.path[1] === 0x80000000 ? 'mainnet' : 'mutinynet')
+      ledger = validateLedgerSetup(parsed.ledger, network)
+      if (
+        ledgerSpendingPublicKey(ledger.hardware, network) !== parsed.hardwarePub ||
+        (ledger.recovery ? ledgerSpendingPublicKey(ledger.recovery, network) : '') !== parsed.recoveryPub
+      )
+        return null
+    } catch {
+      return null
+    }
+  }
   return {
     protectionTier: requireProtectionTier(parsed.protectionTier),
     hardwarePub: String(parsed.hardwarePub || ''),
     recoveryPub: String(parsed.recoveryPub || ''),
     ...(connector ? { connector } : {}),
+    ...(ledger ? { ledger } : {}),
     txCapSats: Number(parsed.txCapSats),
     dailyLimitSats: Number(parsed.dailyLimitSats),
     absoluteFeeCapSats: Number(parsed.absoluteFeeCapSats),

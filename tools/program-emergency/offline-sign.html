@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'; object-src 'none'" />
+    <title>Offline Ledger emergency recovery</title>
+    <style>
+      :root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+      body { max-width: 44rem; margin: 3rem auto; padding: 0 1.2rem; }
+      h1 { line-height: 1.2; } label { display: block; margin: 1rem 0; }
+      textarea,input:not([type=checkbox]),button { box-sizing: border-box; padding: .7rem; font: inherit; }
+      textarea,input:not([type=checkbox]) { width: 100%; } button { margin: .5rem 0; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; border: 1px solid #888; }
+      [hidden] { display: none !important; } #error { color: #c44; }
+    </style>
+  </head>
+  <body>
+    <h1>Offline Ledger emergency recovery</h1>
+    <p>This page signs one saved Spending recovery transaction. Entering a Ledger backup seed exposes every account protected by that seed to this computer. Use a trusted offline computer and retire the seed after this emergency recovery.</p>
+    <p>Load the request exported by the recovery companion, then disconnect this computer from every network. This page blocks network requests and exports only the signed PSBT. Keep your seed words and optional passphrase out of all recovery files.</p>
+    <label>Offline Spending request<input id="request-file" type="file" accept=".json" /></label>
+    <pre id="review" hidden></pre>
+    <button id="offline">Check offline connection</button>
+    <section id="secret" hidden>
+      <label><input id="accept" type="checkbox" /> I accept that this computer receives the seed for all of its accounts, and I will retire that seed after recovery.</label>
+      <label>Ledger seed words<textarea id="mnemonic" rows="4" autocomplete="off" spellcheck="false" autocapitalize="none"></textarea></label>
+      <label>Optional BIP39 passphrase<input id="passphrase" type="password" autocomplete="off" spellcheck="false" /></label>
+      <button id="sign">Sign this exact recovery transaction</button>
+      <button id="clear">Clear seed and passphrase</button>
+    </section>
+    <p id="error" role="alert"></p>
+    <p id="status" role="status"></p>
+    <button id="download" hidden>Download signed PSBT</button>
+    <script type="module" src="./offline-sign.js"></script>
+  </body>
+</html>

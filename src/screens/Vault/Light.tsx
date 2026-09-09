@@ -1,7 +1,5 @@
-import LightningReceive from './LightningReceive'
-import { lightningAddressEnabled } from '../../lib/vault/lnurl'
-import SpendingReceive from './SpendingReceive'
-import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
+import { VaultProvider } from '../../providers/vault'
+import SpendingScreens from './SpendingScreens'
 import QgGuidance from './qg/QgGuidance'
 import TransactionReference from './qg/TransactionReference'
 import { WalletHelpContext } from './qg/Help'
@@ -22,7 +20,6 @@ import {
   clearGuardianDelegationReads,
   guardianRenewalCoverage,
 } from '../../lib/vault/light/guardianDelegation'
-import { guardianRenewalSpendUnlocker } from '../../lib/vault/light/delegationCeremony'
 import type { GuardianDelegationJournal } from '../../lib/vault/light/delegationStore'
 import {
   captureLightRecoveryArchive,
@@ -40,7 +37,7 @@ import {
 } from '../../lib/vault/light/recovery'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { prettyAmount } from '../../lib/format'
-import { formatMoney, satsFromUsd, usdInputFromSats } from '../../lib/vault/fiatDisplay'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import {
   Check,
   Clock3,
@@ -57,15 +54,11 @@ import AccountHome from './AccountHome'
 import SecurityOverview from './SecurityOverview'
 import { HubGroup, HubRow } from './ui'
 import homeStyles from './AccountHome.module.css'
-import Scanner from './Scanner'
 import { VaultLauncher } from './Navigation'
 import { useBalanceDenomination } from './AccountBalance'
 import { VaultHistoryList } from './History'
-import { amountSizeStyle } from './qg/QgAmount'
-import DestinationField from './qg/DestinationField'
 import VaultSettings from './Settings'
 import QgScreen, { QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
-import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
 import { fetchPublicStatus, fetchVaultStatusUnpinned } from '../../lib/vault/status'
 import { defaultLightPolicy, type LightPolicy } from '../../lib/vault/light/contract'
@@ -95,21 +88,11 @@ import {
   shutdownVaultWalletWorker,
   type VaultWalletVtxoSnapshot,
 } from '../../lib/vault/vtxo/walletWorker'
-import {
-  reserveVaultVtxo,
-  sendVaultVtxo,
-  reconcilePersistedVtxoSpend,
-  loadPersistedVtxoSpend,
-  quoteFromPersistedVtxoSpend,
-  type VaultVtxoSpendQuote,
-} from '../../lib/vault/vtxo/spend'
+import { reconcilePersistedVtxoSpend } from '../../lib/vault/vtxo/spend'
 import type { VaultStatus } from '../../lib/vault/types'
 import type { VaultHistoryItem } from '../../lib/vault/history'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { useScreenMotion } from './qg/useScreenMotion'
-import PaymentResult from './qg/PaymentResult'
-import ReviewAmount from './qg/ReviewAmount'
-import PendingPayment from './qg/PendingPayment'
 import { useIntentPress } from './qg/useIntentPress'
 import './light.css'
 
@@ -119,14 +102,8 @@ type View =
   | 'auto-backup'
   | 'unlock'
   | 'home'
-  | 'receive'
-  | 'receive-lightning'
-  | 'send'
-  | 'review'
-  | 'success'
   | 'savings'
   | 'savings-address'
-  | 'scan-send'
   | 'settings'
   | 'security'
   | 'restore'
@@ -181,14 +158,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [watched, setWatched] = useState<WatchedSavingsAddress | null>(null)
   const [savings, setSavings] = useState<{ balance: number; history: VaultHistoryItem[] } | null>(null)
   const [watchAddress, setWatchAddress] = useState('')
-  const [address, setAddress] = useState('')
-  const [amount, setAmount] = useState('')
-  const [sendUsdInput, setSendUsdInput] = useState('')
-  // Canonical sats last produced by typing; external resets bypass it.
-  const typedSendSats = useRef<string | null>(null)
-  const [quote, setQuote] = useState<VaultVtxoSpendQuote | null>(null)
-  const [resumingPayment, setResumingPayment] = useState(false)
-  const [lastTx, setLastTx] = useState('')
   const [selectedTx, setSelectedTx] = useState<VaultHistoryItem | null>(null)
   const [renewalReview, setRenewalReview] = useState<LightRenewalPlan | null>(null)
   const renewalApproval = useRef<((accepted: boolean) => void) | null>(null)
@@ -500,45 +469,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const fiatActive = denom.unit === 'usd' && Boolean(denom.rate)
   const moneyText = (value: number) => (fiatActive ? formatMoney(value, money) : sats(value))
   const moneyHero = (value: number) => (fiatActive ? formatMoney(value, money) : prettyAmount(value))
-  const sendShowUsd = fiatActive
-  // Canonical send amounts stay sats strings; the USD field is display-only.
-  const setSendAmount = (raw: string) => {
-    if (sendShowUsd) {
-      const normalized = raw.replace(/[^\d.]/g, '')
-      if (!/^\d*(?:\.\d{0,2})?$/.test(normalized)) return
-      setSendUsdInput(normalized)
-      const sats = String(satsFromUsd(Number(normalized) || 0, denom.rate?.pricePerBtc || 0))
-      typedSendSats.current = sats
-      setAmount(sats)
-      return
-    }
-    typedSendSats.current = null
-    setAmount(raw)
-  }
-  const toggleSendUnit = async () => {
-    if (denom.unit === 'usd') {
-      await denom.setUnit('sats')
-      return
-    }
-    const rate = await denom.setUnit('usd')
-    if (!rate) {
-      setError('USD amounts are unavailable. Enter bitcoin instead.')
-      return
-    }
-    setSendUsdInput(amount ? usdInputFromSats(Number(amount), rate) : '')
-  }
-  const displayedRate = useRef<number | null>(null)
-  useEffect(() => {
-    if (denom.unit !== 'usd' || !denom.rate) {
-      displayedRate.current = null
-      return
-    }
-    if (amount !== typedSendSats.current || displayedRate.current !== denom.rate.pricePerBtc) {
-      displayedRate.current = denom.rate.pricePerBtc
-      typedSendSats.current = amount
-      setSendUsdInput(amount && Number(amount) > 0 ? usdInputFromSats(Number(amount), denom.rate) : '')
-    }
-  }, [denom.unit, denom.rate, amount])
   const activity = (rows: VaultHistoryItem[], account: 'spend' | 'savings' = 'spend', loaded = true) => (
     <VaultHistoryList
       account={account}
@@ -560,7 +490,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       setStatus(null)
       setView('unlock')
     })
-  const pendingPayment = view === 'home' && status ? loadPersistedVtxoSpend(status.vaultId) : null
   let content: React.ReactNode
   if (view === 'setup')
     content = (
@@ -1119,261 +1048,32 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     )
   else if (view === 'home' && record)
     content = (
-      <AccountHome
-        account='Spending'
-        totalSats={snapshot ? snapshot.balance + (snapshot.pendingBalance || 0) : 0}
-        availableSats={snapshot?.balance || 0}
-        pendingSats={snapshot?.pendingBalance || 0}
-        balancesLoaded={snapshot !== null}
-        refreshingBalance={balanceRefreshes > 0}
-        onRefresh={() => run(refresh)}
-        security={{ label: 'Open Security', disabled: busy, onClick: () => navigate('security') }}
-        onScan={() => navigate('scan-send')}
-        onReceive={() => navigate('receive')}
-        utilitiesDisabled={busy || !status}
-        primaryAction={{
-          label: 'Send',
-          disabled: busy || !status || !snapshot?.balance,
-          onClick: () => navigate('send'),
-        }}
-        secondaryAction={{ label: 'Receive', disabled: busy || !status, onClick: () => navigate('receive') }}
-      >
-        {coverage?.cancelling ? (
-          <p className='qg-copy' role='status'>
-            Guardian is resolving a previous renewal. Payments may be temporarily unavailable.
-          </p>
-        ) : null}
-        {cloudError ? (
-          <p className='qg-copy' role='status'>
-            Cloud backup needs attention. Open Security to retry.
-          </p>
-        ) : null}
-        {renewalTiming?.due && (!coverage?.available || coverage.pending > 0) ? (
-          <div className='light-panel'>
-            <Clock3 />
-            <div>
-              <strong>{renewalTiming.expired ? 'Check expired Spending' : 'Spending needs renewal soon'}</strong>
-              <p>
-                {renewalTiming.expired
-                  ? 'Some Spending has expired. Open Security to check your recovery options.'
-                  : `Some funds still need renewal authorization. The next expiry is ${new Date(renewalTiming.expiresAt!).toLocaleString()}. Open Security to check coverage.`}
-              </p>
-            </div>
-          </div>
-        ) : null}
-        {recoveryDataError ? <p className='qg-copy'>{recoveryDataError}</p> : null}
-        {status && pendingPayment ? (
-          <PendingPayment
-            amount={pendingPayment.amountSats}
-            description='Resume the saved payment to check its current status.'
-            label='Resume pending payment'
-            disabled={busy}
-            onResume={() =>
-              void run(async () => {
-                await refresh()
-                const p = loadPersistedVtxoSpend(status.vaultId)
-                if (p) {
-                  setQuote(quoteFromPersistedVtxoSpend(p))
-                  setResumingPayment(true)
-                  setView('review')
-                } else setNotice('Payment reconciled')
-              })
-            }
-          />
-        ) : null}
-        {activity(snapshot?.history || [], 'spend', snapshot !== null)}
-      </AccountHome>
-    )
-  else if (view === 'receive-lightning' && status && record)
-    content = <LightningReceive status={status} refreshBalance={refresh} onBack={() => navigate('receive')} />
-  else if (
-    view === 'receive' &&
-    status &&
-    lightningAddressEnabled() &&
-    vaultLightningReceiveEnabled(status.network, status.vaultId)
-  )
-    content = (
-      <SpendingReceive
-        status={status}
-        fastAddress={String(status.spendingArkAddress || '')}
-        onClose={() => navigate('home')}
-        onInvoice={() => navigate('receive-lightning')}
-      />
-    )
-  else if (view === 'receive' && status)
-    content = (
-      <QgScreen
-        title='Receive'
-        dismiss={() => navigate('home')}
-        footer={
-          <QgPrimary
-            label='Copy receiving address'
-            icon={<Copy />}
-            onClick={() => void run(() => copy(String(status.spendingArkAddress)))}
-          />
-        }
-      >
-        <div className='qg-receive'>
-          <p className='qg-eyebrow'>Spending · Arkade</p>
-          <div className='qg-qr'>
-            <QrCode large value={String(status.spendingArkAddress)} />
-          </div>
-          <p className='light-address'>{status.spendingArkAddress}</p>
-          <p className='qg-copy'>Send from a wallet that supports Arkade. This is an Arkade receiving address.</p>
-        </div>
-        {vaultLightningReceiveEnabled(status.network, status.vaultId) ? (
+      <SpendingScreens
+        homeNotice={
           <>
-            <QgSecondary label='Create invoice' onClick={() => navigate('receive-lightning')} />
+            {coverage?.cancelling ? (
+              <p className='qg-copy' role='status'>
+                Guardian is resolving a previous renewal. Payments may be temporarily unavailable.
+              </p>
+            ) : null}
+            {cloudError ? (
+              <p className='qg-copy' role='status'>
+                Cloud backup needs attention. Open Security to retry.
+              </p>
+            ) : null}
+            {renewalTiming?.due && (!coverage?.available || coverage.pending > 0) ? (
+              <p className='qg-copy' role='status'>
+                Some Spending needs renewal. Open Security to check renewal coverage and recovery options.
+              </p>
+            ) : null}
+            {recoveryDataError ? (
+              <p className='qg-copy' role='status'>
+                {recoveryDataError}
+              </p>
+            ) : null}
           </>
-        ) : null}
-      </QgScreen>
-    )
-  else if (view === 'scan-send')
-    content = (
-      <Scanner
-        label='Scan address'
-        close={() => navigate('send')}
-        manual={() => navigate('send')}
-        onError={() => setError('Camera unavailable. Enter the address manually.')}
-        onData={(value) => {
-          setAddress(value.trim())
-          navigate('send')
-        }}
+        }
       />
-    )
-  else if (view === 'send' && status && record)
-    content = (
-      <QgScreen
-        title='Send'
-        dismiss={() => navigate('home')}
-        footer={
-          <QgPrimary
-            label='Review payment'
-            loading={busy}
-            disabled={!address || !amount}
-            onClick={() =>
-              void run(async () => {
-                const q = await reserveVaultVtxo(record.enrollment, status, address, Number(amount))
-                setQuote(q)
-                setResumingPayment(false)
-                setView('review')
-              })
-            }
-          />
-        }
-      >
-        <section className='qg-amount-entry' style={amountSizeStyle(sendShowUsd ? sendUsdInput || '0' : amount)}>
-          <label htmlFor='light-send-amount'>Amount, in {sendShowUsd ? 'USD' : 'sats'}</label>
-          <div>
-            <button
-              type='button'
-              className='qg-denomination'
-              aria-label={`Amount in ${sendShowUsd ? 'US dollars' : 'bitcoin satoshis'}. Change denomination`}
-              onClick={() => void toggleSendUnit()}
-            >
-              {sendShowUsd ? '$' : '₿'}
-            </button>
-            <input
-              id='light-send-amount'
-              disabled={busy}
-              inputMode={sendShowUsd ? 'decimal' : 'numeric'}
-              type={sendShowUsd ? 'text' : 'number'}
-              min='330'
-              placeholder={sendShowUsd ? '0.00' : '20,000'}
-              value={sendShowUsd ? sendUsdInput : amount}
-              onChange={(e) => setSendAmount(e.target.value)}
-            />
-          </div>
-          {denom.unit === 'usd' && !denom.rate ? (
-            <p className='qg-helper' role='status'>
-              USD rate unavailable — enter bitcoin instead.
-            </p>
-          ) : null}
-        </section>
-        <DestinationField
-          label='Arkade address'
-          disabled={busy}
-          value={address}
-          placeholder='Payment address'
-          onChange={(e) => setAddress(e.target.value)}
-          scanLabel='Scan address'
-          onScan={() => navigate('scan-send')}
-        />
-        <p className='qg-available'>
-          {moneyText(Math.max(0, Math.min(snapshot?.balance ?? 0, status.periodRemaining)))} available within your
-          rolling limit
-        </p>
-        <p className='qg-helper'>
-          Up to {moneyText(status.txCap)} per payment. You will see the network fee before approving.
-        </p>
-      </QgScreen>
-    )
-  else if (view === 'review' && quote && status && record)
-    content = (
-      <QgScreen
-        title={resumingPayment ? 'Resume payment' : 'Review payment'}
-        back={busy ? undefined : () => navigate(resumingPayment ? 'home' : 'send')}
-        footer={
-          <QgPrimary
-            label={
-              busy
-                ? 'Completing payment…'
-                : resumingPayment
-                  ? 'Continue payment'
-                  : `Approve ${moneyText(quote.amountSats)}`
-            }
-            loading={busy}
-            onClick={() =>
-              void run(async () => {
-                const result = await sendVaultVtxo(
-                  record.enrollment,
-                  status,
-                  quote,
-                  guardianRenewalSpendUnlocker(record.descriptor),
-                )
-                setLastTx(result.txid)
-                setView('success')
-                setAddress('')
-                setAmount('')
-                setSendUsdInput('')
-                setQuote(null)
-                setResumingPayment(false)
-                await refresh()
-              })
-            }
-          />
-        }
-      >
-        <ReviewAmount value={moneyHero(quote.amountSats)} label='You are sending'>
-          {resumingPayment ? <p>Continue the original payment from its last saved step.</p> : null}
-        </ReviewAmount>
-        <div className='qg-details'>
-          <div>
-            <span>To</span>
-            <strong className='light-address'>{quote.destAddress}</strong>
-          </div>
-          <div>
-            <span>Network fee</span>
-            <strong>{moneyText(quote.feeSats)}</strong>
-          </div>
-          <div>
-            <span>Total</span>
-            <strong>{moneyText(quote.amountSats + quote.feeSats)}</strong>
-          </div>
-        </div>
-        <p className='qg-helper'>Approve with your passkey to send this payment.</p>
-      </QgScreen>
-    )
-  else if (view === 'success')
-    content = (
-      <QgScreen variant='success' footer={<QgPrimary label='Done' disabled={busy} onClick={() => navigate('home')} />}>
-        <PaymentResult state='sent' title='Payment sent'>
-          <TransactionReference
-            txid={lastTx}
-            explorer={status ? vaultTransactionExplorer(lastTx, 'arkade', status.network) : null}
-          />
-        </PaymentResult>
-      </QgScreen>
     )
   else if (view === 'savings' && record)
     content = (
@@ -1776,7 +1476,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         <QgSecondary label='Cancel' onClick={() => renewalApproval.current?.(false)} />
       </QgScreen>
     )
-  return (
+  const walletContent = (
     <WalletHelpContext.Provider
       value={{
         light: true,
@@ -1788,7 +1488,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
     >
       <div ref={root} className={`light-app ${homeStyles.surface}`} data-testid='vault-light' {...intent}>
         {content}
-        {record && !renewalReview && (view === 'home' || view === 'savings') ? (
+        {record && !renewalReview && view === 'savings' ? (
           <VaultLauncher
             disabled={busy}
             account={view === 'savings' ? 'savings' : 'spend'}
@@ -1840,5 +1540,34 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
         ) : null}
       </div>
     </WalletHelpContext.Provider>
+  )
+  return record && status && !['unlock', 'setup', 'backup', 'auto-backup', 'emergency', 'restore'].includes(view) ? (
+    <VaultProvider
+      key={`${record.descriptor.vaultId}:${record.enrollment.credId}`}
+      lightSession={{
+        record,
+        status,
+        watchedSavingsSats: watched ? (savings?.balance ?? null) : 0,
+        onSavings: () => {
+          void openSavings()
+        },
+        onSecurity: () => navigate('security'),
+        onSettings: () => {
+          setSettingsReturn('home')
+          navigate('settings')
+        },
+        onRecovery: () => {
+          setSecuritySection('backup')
+          setView('security')
+        },
+        onLock: () => {
+          void lock()
+        },
+      }}
+    >
+      {walletContent}
+    </VaultProvider>
+  ) : (
+    walletContent
   )
 }

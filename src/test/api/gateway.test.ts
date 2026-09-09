@@ -59,6 +59,42 @@ function expectLocalNoStore(result: ReturnType<typeof gatewayResponse>) {
 }
 
 describe('same-origin authorizer gateway', () => {
+  it.each(['/api/v1/enroll/session', '/api/v1/light/enroll/start', '/api/v1/status'])(
+    'keeps %s available with Light-only enrollment',
+    async (url) => {
+      vi.stubEnv('AUTHORIZER_ORIGIN', 'https://guardian.example')
+      vi.stubEnv('VAULT_RELEASE_NETWORK', 'mutinynet')
+      vi.stubEnv('VAULT_LIGHT_ONLY_ENROLLMENT', 'true')
+      const fetchMock = vi.fn().mockResolvedValue(new Response('{}'))
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        const result = gatewayResponse()
+        await gatewayHandler(gatewayRequest({ method: 'POST', url }), result.response)
+        expect(result.response.statusCode).toBe(200)
+        expect(fetchMock).toHaveBeenCalledOnce()
+      } finally {
+        vi.unstubAllEnvs()
+        vi.unstubAllGlobals()
+      }
+    },
+  )
+  it.each(['start', 'propose', 'finish'])('blocks %s enrollment before forwarding when Light-only', async (phase) => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://guardian.example')
+    vi.stubEnv('VAULT_LIGHT_ONLY_ENROLLMENT', 'true')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const result = gatewayResponse()
+      await gatewayHandler(gatewayRequest({ method: 'POST', url: `/api/v1/enroll/${phase}` }), result.response)
+      expect(result.response.statusCode).toBe(403)
+      expect(String(result.body())).toContain('Please choose Light')
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it.each([
     ['default', defaultDeployment],
     ['mainnet', mainnetDeployment],

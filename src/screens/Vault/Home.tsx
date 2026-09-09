@@ -1,18 +1,16 @@
 import PaymentNotice from './qg/PaymentNotice'
-import { useContext, useEffect, useState } from 'react'
+import PaymentArrivalBanners from './PaymentArrivals'
+import { useContext, useEffect, type ReactNode } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
-import ConnectorSetup from './ConnectorSetup'
-import ConnectorDeposit from './ConnectorDeposit'
 import AccountHome from './AccountHome'
 import VaultHistory from './History'
 import PendingPayment from './qg/PendingPayment'
 
-export default function VaultHome() {
+export default function VaultHome({ children }: { children?: ReactNode }) {
   const {
     account,
-    status,
     spendingBitcoin,
     balancesLoaded,
     boardingAddress,
@@ -23,6 +21,9 @@ export default function VaultHome() {
     boardingError,
     pendingPayments = [],
     openPendingPayment,
+    arrivals = [],
+    dismissArrival,
+    openArrival,
     navigate,
     openSendScan,
     openRecover,
@@ -42,15 +43,6 @@ export default function VaultHome() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  const [setupView, setSetupView] = useState<'home' | 'setup' | 'deposit'>('home')
-  if (status && setupView === 'setup')
-    return (
-      <ConnectorSetup status={status} onBack={() => setSetupView('home')} onDeposit={() => setSetupView('deposit')} />
-    )
-  if (status && setupView === 'deposit')
-    return (
-      <ConnectorDeposit status={status} onBack={() => setSetupView('setup')} onAddress={() => setSetupView('home')} />
-    )
   const spending = account === 'spend'
   const position = spending ? positions.spending : positions.savings
 
@@ -97,6 +89,7 @@ export default function VaultHome() {
         ) : null
       }
     >
+      {children}
       {spending && boardingError ? <PaymentNotice message={boardingError} /> : null}
       {spending && spendingBitcoin?.error ? <PaymentNotice message={spendingBitcoin.error} /> : null}
       {spending
@@ -116,6 +109,12 @@ export default function VaultHome() {
           ))
         : null}
       {error && (pendingPayments.length > 0 || error !== balanceError) ? <PaymentNotice message={error} /> : null}
+
+      <PaymentArrivalBanners
+        arrivals={arrivals}
+        onOpen={(arrival) => openArrival(arrival.key)}
+        onDismiss={dismissArrival}
+      />
 
       {!spending ? (
         <button

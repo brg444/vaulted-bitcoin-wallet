@@ -1,3 +1,4 @@
+import { LEDGER_NATIVE_TEMPLATE } from '../../../lib/vault/program/ledgerNativeKeys'
 import QgGuidance from './QgGuidance'
 import { PROGRAM_CSV } from '../../../lib/vault/program/constants'
 import './guidance.css'
@@ -14,7 +15,10 @@ export default function RecoveryExplanation({
 }) {
   return (
     <QgGuidance title='Keys, waiting periods, and service availability'>
-      <p>These paths recover Savings. Starting a new recovery requires approval from the recovery services.</p>
+      <p>
+        These paths recover Savings. Starting a new recovery requires approval from{' '}
+        {templateVersion === LEDGER_NATIVE_TEMPLATE ? 'the Guardian' : 'the recovery services'}.
+      </p>
       <dl>
         <dt>Passkey access lost</dt>
         <dd>
@@ -42,7 +46,18 @@ export default function RecoveryExplanation({
         The app checks for recovery activity while open. Continuous monitoring and guaranteed notifications are
         unavailable.
       </p>
-      <p>Spending and incoming deposits have separate recovery rules.</p>
+      {templateVersion === LEDGER_NATIVE_TEMPLATE ? (
+        <p>
+          Emergency Spending exit uses the offline recovery tool and seed backups.
+          {advanced
+            ? ' It requires both the hardware wallet and separate recovery wallet seeds.'
+            : ' It requires the hardware wallet seed and your recovered phone key.'}
+          The offline computer can access every account under each seed you enter. Keep your recovery package updated
+          after payments and move remaining funds to new seeds after using this emergency path.
+        </p>
+      ) : (
+        <p>Spending and incoming deposits have separate recovery rules.</p>
+      )}
     </QgGuidance>
   )
 }

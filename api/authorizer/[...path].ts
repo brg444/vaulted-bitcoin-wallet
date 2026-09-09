@@ -216,8 +216,7 @@ export function publicAuthorizerPath(url = ''): string {
     ) {
       const vaultId = params.get('vaultId')
       return (
-        `/v1/vtxo/${route}/${phase}` +
-        (phase === 'info' && vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : '')
+        `/v1/vtxo/${route}/${phase}` + (phase === 'info' && vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : '')
       )
     }
     if (route === 'vtxo-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
@@ -325,6 +324,10 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
     localResponse(res)
     res.statusCode = 404
     res.end()
+    return
+  }
+  if (process.env.VAULT_LIGHT_ONLY_ENROLLMENT === 'true' && /^\/v1\/enroll\/(start|propose|finish)$/.test(pathOnly)) {
+    jsonError(res, 403, 'Standard and Advanced setup is temporarily unavailable. Please choose Light.')
     return
   }
   if (!sameOriginAllowed(req.headers)) {

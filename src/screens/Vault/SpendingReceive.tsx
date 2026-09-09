@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ArrowDownLeft, Bitcoin, Share2, Zap } from 'lucide-react'
 import QrCode from '../../components/QrCode'
 import { useToast } from '../../components/Toast'
@@ -14,6 +14,7 @@ export default function SpendingReceive(props: {
   bitcoinAddress?: string
   onClose: () => void
   onInvoice: () => void
+  arrivals?: ReactNode
 }) {
   return <ReceiveContent key={`${props.status.network}:${props.status.vaultId}`} {...props} />
 }
@@ -24,6 +25,7 @@ function ReceiveContent({
   bitcoinAddress,
   onClose,
   onInvoice,
+  arrivals,
 }: Parameters<typeof SpendingReceive>[0]) {
   const { toast } = useToast()
   const [address, setAddress] = useState<Address | undefined>(() => {
@@ -118,6 +120,7 @@ function ReceiveContent({
         />
       }
     >
+      {arrivals}
       <ReceiveMethods
         activeId={method}
         onChange={setMethod}

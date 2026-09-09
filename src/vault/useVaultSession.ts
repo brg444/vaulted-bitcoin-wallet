@@ -10,6 +10,7 @@ import {
   saveEnrollment,
   saveSelectedVaultId,
   setSessionLocked,
+  loadStagedEnrollment,
 } from '../lib/vault/enrollmentStore'
 import { humanizeVaultError } from '../lib/vault/humanize'
 import { loadAddressPin, pinFromEnrolledStatus, saveAddressPin, type AddressPin } from '../lib/vault/pin'
@@ -20,7 +21,16 @@ import {
   unlockLocalEnrollment,
 } from '../lib/vault/signIn'
 import { planReady, setupSpendingPolicy, type VaultSetupPlan } from '../lib/vault/setupPlan'
-import { enrollWithPasskey, type EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
+import {
+  beginTenantEnrollment,
+  completeLedgerTenantEnrollment,
+  enrollWithPasskey,
+  finishTenantEnrollment,
+  type EnrollmentSecrets,
+} from '../lib/vault/tenantEnrollment'
+import type { LedgerSavingsRegistration } from '../lib/vault/ledgerClient'
+import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
+import { canonicalLedgerValue } from '../lib/vault/program/ledgerEnrollment'
 import {
   connectorPinFromVerifiedStatus,
   saveConnectorEnrollmentPin,
@@ -97,15 +107,55 @@ export function useVaultSession({
   setScreen,
   setStatus,
   setup,
-  status,
 }: VaultSessionOptions) {
+  const acceptEnrollment = useCallback(
+    async (result: { enrollment: EnrollmentSecrets; status: VaultStatus }) => {
+      setEnrollment(result.enrollment)
+      saveEnrollment(result.enrollment)
+      saveSelectedVaultId(result.enrollment.vaultId)
+      setStatus(result.status)
+      const enrolledPin = pinFromEnrolledStatus(result.status)
+      setAddressPin(enrolledPin)
+      bestEffortBrowserWrite(() => saveAddressPin(enrolledPin))
+      sealPlan()
+      try {
+        const kit = kitFromFacts({
+          enrollment: result.enrollment,
+          status: result.status,
+          hardwarePub: setup.hardwarePub,
+          recoveryPub: setup.recoveryPub || result.status.recoveryPub,
+        })
+        if (!kit) throw new Error('vault service did not return the committed Recovery Kit facts')
+        saveLocalKit(kit)
+        await pushMapBackup(kit.descriptor.vaultId, kit)
+      } catch {
+        // Enrollment already saved the server-proposed kit locally. Remote
+        // backup remains best effort and never replaces that committed map.
+      }
+      try {
+        setStatus(await enablePasskeyLogin(result.enrollment))
+      } catch {
+        try {
+          setStatus(await enablePasskeyLogin(result.enrollment))
+        } catch {
+          reportError(
+            'This device has the vault, but sign-in after a restart is not on yet. Open Settings, tap Allow other devices, and approve Face ID. Do not clear this browser until that succeeds.',
+          )
+        }
+      }
+      await setupSpendingRenewals(result.status, result.enrollment)
+      setScreen('created')
+    },
+    [setEnrollment, setStatus, setAddressPin, sealPlan, setup, reportError, setScreen],
+  )
+
   const enroll = useCallback(
     async (token = '') => {
       if (!planReady(setup)) {
         reportError('Finish setup first.')
         return
       }
-      if (!setup.connector) {
+      if (!setup.connector && !setup.ledger) {
         reportError('Add a supported public wallet descriptor before creating this vault.')
         setScreen('hardware')
         return
@@ -114,7 +164,7 @@ export function useVaultSession({
       reportError('')
       setScreen('creating')
       try {
-        const result = await enrollWithPasskey(token, {
+        const roles = {
           protectionTier: setup.protectionTier,
           hardwarePub: setup.hardwarePub,
           ...(setup.recoveryPub ? { recoveryPub: setup.recoveryPub } : {}),
@@ -128,43 +178,29 @@ export function useVaultSession({
                 },
               }
             : {}),
+          ...(setup.ledger ? { ledger: setup.ledger } : {}),
           spendingPolicy: setupSpendingPolicy(setup),
-        })
-        setEnrollment(result.enrollment)
-        saveEnrollment(result.enrollment)
-        saveSelectedVaultId(result.enrollment.vaultId)
-        setStatus(result.status)
-        const enrolledPin = pinFromEnrolledStatus(result.status)
-        setAddressPin(enrolledPin)
-        bestEffortBrowserWrite(() => saveAddressPin(enrolledPin))
-        sealPlan()
-        try {
-          const kit = kitFromFacts({
-            enrollment: result.enrollment,
-            status: result.status,
-            hardwarePub: setup.hardwarePub,
-            recoveryPub: setup.recoveryPub || result.status.recoveryPub,
-          })
-          if (!kit) throw new Error('vault service did not return the committed Recovery Kit facts')
-          saveLocalKit(kit)
-          await pushMapBackup(kit.descriptor.vaultId, kit)
-        } catch {
-          // Enrollment already saved the server-proposed kit locally. Remote
-          // backup remains best effort and never replaces that committed map.
         }
-        try {
-          setStatus(await enablePasskeyLogin(result.enrollment))
-        } catch {
-          try {
-            setStatus(await enablePasskeyLogin(result.enrollment))
-          } catch {
-            reportError(
-              'This device has the vault, but sign-in after a restart is not on yet. Open Settings, tap Allow other devices, and approve Face ID. Do not clear this browser until that succeeds.',
+        if (setup.ledger) {
+          const staged = loadStagedEnrollment()
+          if (staged?.ledgerSavingsDraft) {
+            const context = staged.ledgerSavingsDraft.contract.context
+            if (
+              canonicalLedgerValue(context.hardware) !== canonicalLedgerValue(setup.ledger.hardware) ||
+              canonicalLedgerValue(context.recovery) !== canonicalLedgerValue(setup.ledger.recovery) ||
+              canonicalLedgerValue(staged.spendingPolicy) !== canonicalLedgerValue(roles.spendingPolicy)
             )
-          }
+              throw new Error('Finish or cancel the Ledger setup already in progress.')
+            if (staged.ledgerSavings && staged.inviteToken) {
+              await acceptEnrollment(await finishTenantEnrollment(staged.inviteToken))
+              return
+            }
+          } else await beginTenantEnrollment(token, roles)
+          setScreen('ledger-register')
+          return
         }
-        await setupSpendingRenewals(result.status, result.enrollment)
-        setScreen('created')
+        const result = await enrollWithPasskey(token, roles)
+        await acceptEnrollment(result)
       } catch (error) {
         reportError(humanizeVaultError(error))
         setScreen('problem')
@@ -172,7 +208,23 @@ export function useVaultSession({
         setBusy(false)
       }
     },
-    [reportError, sealPlan, setAddressPin, setBusy, setEnrollment, setScreen, setStatus, setup, status],
+    [reportError, setBusy, setScreen, setup, acceptEnrollment],
+  )
+
+  const completeLedgerEnrollment = useCallback(
+    async (registration: LedgerSavingsRegistration) => {
+      setBusy(true)
+      reportError('')
+      try {
+        await acceptEnrollment(await completeLedgerTenantEnrollment(registration))
+      } catch (error) {
+        reportError(humanizeVaultError(error))
+        throw error
+      } finally {
+        setBusy(false)
+      }
+    },
+    [acceptEnrollment, reportError, setBusy],
   )
 
   const enableOtherDevices = useCallback(async () => {
@@ -211,7 +263,8 @@ export function useVaultSession({
         bestEffortBrowserWrite(() => saveEnrollment(unlocked.enrollment))
         bestEffortBrowserWrite(() => saveSelectedVaultId(unlocked.enrollment.vaultId))
         bestEffortBrowserWrite(() => setSessionLocked(false))
-        if (isConnectorTemplate(live.templateVersion)) await setupSpendingRenewals(live, unlocked.enrollment)
+        if (isConnectorTemplate(live.templateVersion) || live.templateVersion === LEDGER_NATIVE_TEMPLATE)
+          await setupSpendingRenewals(live, unlocked.enrollment)
         void restoreMap(unlocked.enrollment, live, setup)
         return
       }
@@ -293,5 +346,5 @@ export function useVaultSession({
     [reportError, setBusy, setEnrollment, setAddressPin, setStatus, setLocked, setScreen],
   )
 
-  return { enableOtherDevices, enroll, signIn, restoreRecoveryArchive }
+  return { enableOtherDevices, enroll, completeLedgerEnrollment, signIn, restoreRecoveryArchive }
 }

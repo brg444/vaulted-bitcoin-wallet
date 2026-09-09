@@ -1,0 +1,10 @@
+[
+  {
+    "tier": "standard",
+    "result": "ValueError: and_v is not a valid descriptor function"
+  },
+  {
+    "tier": "advanced",
+    "result": "ValueError: and_v is not a valid descriptor function"
+  }
+]

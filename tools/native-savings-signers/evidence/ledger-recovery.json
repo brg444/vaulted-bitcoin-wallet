@@ -1,0 +1,787 @@
+[
+  {
+    "tier": "standard-phone-pending",
+    "registered": true,
+    "walletId": "70ff3ab1027f1b7bab8132d21a1d2a2a4eafcee769bea1b63acd63db28dc709c",
+    "addresses": {
+      "0": "tb1peynfe6nzgwz8nvm4zzs8yadd2xk62c6t08xlyxs5ahz0hpsmhvks7hwjsl"
+    },
+    "payments": [
+      {
+        "label": "clawback",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "e20d5d6b2f3bfea38f900f330663141aee7a67242426bc9467fa2919430f11ea",
+            "signature": "7bca6d9e8df60c5b5da11d823ef4961778b6f33418ee56293bb23db642fd64d7084039163c370b633e0c7123c9b305c9d746731e7910f9dc2f2a6eba07985043"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted phone wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      },
+      {
+        "label": "cancel",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "129526dc3b3ee161359b387a32a409d158f119e8262ad7d9c6751a2c94d1f14d",
+            "signature": "ef89c7fa042c7e7b8224bafbda845d15567febddcb16795b6a1859f18cf9d4b069143c9c75a639d2bfa7c063ddd3edc15292e3694de1c5c3488f56f990f9b285"
+          }
+        ],
+        "screens": [
+          "Transaction signed",
+          "Bitcoin Testnet | app is ready",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted phone wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted phone wait",
+      "Wallet policy (1/2) | tr(@0/**,{{and_ | v(v:pk(@1/<4;5>/*),ol | der(144)),and_",
+      "Wallet policy (2/2) | v(v:pk(@2/<6;7>/*),pk( | @3/<6;7>/*))},pk(@2/< | 8;9>/*)})",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4Y | HzLY9LF3fKpKSf6zSw | H6ukzWLEmDfvCsM",
+      "Key @0,...my (2/3) | Wu9oQSkQy3q8L7A5 | Zn8AbjV6HCFZFDmN | dtJBFaFKnMXW2SqgY",
+      "Key @0,...my (3/3) | QjK4xXUn9uQV",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @3, theirs (1/3) | tpubD6NzVbkrYhZ4X | 3McLW3GvFavsNUUX | gxWMxqLmsVC7PLm",
+      "Key @3, theirs (2/3) | CsTFVwDFxa75nbhsK | uLvFTHYDJh1Nv4Qtw | P6pgL9NWQmL32o9i",
+      "Key @3, theirs (3/3) | BzmzQ52rtuZFB",
+      "Register account",
+      "Account registered",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted phone wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction",
+      "Transaction signed",
+      "Bitcoin Testnet | app is ready",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted phone wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "standard-phone-quarantine",
+    "registered": true,
+    "walletId": "08206ccba3c24a5ee794b1a9513df59956e5078fa97ce517a6ea34a9ca3f938b",
+    "addresses": {
+      "0": "tb1peee4typ2t0ptrdcnwtgx7p5yad8tl0mymkdqsrju8y07tatka2ys785lew"
+    },
+    "payments": [
+      {
+        "label": "release",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "4fa4e5ca44d37933bca48a2beceb6dd401b1ab24ae4d96f3316857688d0d96d3",
+            "signature": "1a55275ef21f78ec003b9a5843534fb9aa0675d9e96f2a25ec1bd1c34eea388f53c699259f5d8df276a86f28313212a915f5daaa9f811ceff3f3c61caff56f58"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted phone safe",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Review account | to register",
+      "Account name | Vaulted phone safe",
+      "Wallet policy | tr(@0/**,pk(@1/<10;1 | 1>/*))",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4Y | pkn3uwdQofdzZFFCs | xb8YQdrQDsJaUtZyBF",
+      "Key @0,...my (2/3) | YaBrJimqqxPnKpXtfd | 29mEN7qaRbnHi2Edn | PLrNn3C7CfPs4KRQ4",
+      "Key @0,...my (3/3) | eiBfKKq",
+      "Key @1, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @1, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @1, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Register account",
+      "Account registered",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted phone safe",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "standard-hardware-pending",
+    "registered": true,
+    "walletId": "6fef0faa6346767d1650c88802d232372a856a2da5d5292d50b76f510ee9c385",
+    "addresses": {
+      "0": "tb1p34khm9xpd32ua3l8l5j5cs3zxen26xvjtpga5v2m0rqzg73mmuxq3unh0e"
+    },
+    "payments": [
+      {
+        "label": "claim",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "5d6e676126250989078f1282fbd520edae143a43bc409ec17e121575b9612026",
+            "signature": "956ee57621d8c17196d357e358f495f809bb6ae324acb075958a7934d819ae0da36211aa3a4a5cf9b0f21482bbb84ceb88f2365724c8e2be81158f59c8f6c6d1"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted hardware  | wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted hardware  | wait",
+      "Wallet policy (1/2) | tr(@0/**,{{and_ | v(v:pk(@2/<4;5>/*),ol | der(6)),and_",
+      "Wallet policy (2/2) | v(v:pk(@1/<6;7>/*),pk( | @3/<10;11>/*))},pk(@1 | /<8;9>/*)})",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4Y | QikL6pKRzQPxfoPe2 | 1jfHdjSk7KkWRdS5vy",
+      "Key @0,...my (2/3) | LxsENzedi8kd31PGLaJ | rPNHKomf7jSsaGLyfK | sCz2ZU8xDzsenLasZFs",
+      "Key @0,...my (3/3) | BeW",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @3, theirs (1/3) | tpubD6NzVbkrYhZ4X | 3McLW3GvFavsNUUX | gxWMxqLmsVC7PLm",
+      "Key @3, theirs (2/3) | CsTFVwDFxa75nbhsK | uLvFTHYDJh1Nv4Qtw | P6pgL9NWQmL32o9i",
+      "Key @3, theirs (3/3) | BzmzQ52rtuZFB",
+      "Register account",
+      "Account registered",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted hardware  | wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "advanced-phone-pending",
+    "registered": true,
+    "walletId": "e6a5e0b85666bab21d639e75c2f7eba6553ee87fb9430702314f11694f25b215",
+    "addresses": {
+      "0": "tb1pew8hsksjdaymsvmrn9jsrn6qs2mjcsxvx8y5sl0m30ywc0kkjukszfskvq"
+    },
+    "payments": [
+      {
+        "label": "clawback",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "e20d5d6b2f3bfea38f900f330663141aee7a67242426bc9467fa2919430f11ea",
+            "signature": "8c066cc4d3671d8a58062726ca5175dfeb8a0be71526ff4cca9fa0e923e343d139e32d2861fa2ddc66afb5bc87151fb885241537f5e865e92270b8c1dde021c0"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted phone wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      },
+      {
+        "label": "cancel",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "129526dc3b3ee161359b387a32a409d158f119e8262ad7d9c6751a2c94d1f14d",
+            "signature": "79c3c4bd21bf16012d9fa7a658977f6ad1bf1049fe218eec700f4e3593628b02e3b20968f903c5474d1204f0829d24e092775bd30790fcbb4ae655a5663343f3"
+          }
+        ],
+        "screens": [
+          "Transaction signed",
+          "Bitcoin Testnet | app is ready",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted phone wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted phone wait",
+      "Wallet policy (1/3) | tr(@0/**,{{and_ | v(v:pk(@1/<4;5>/*),ol | der(144)),and_",
+      "Wallet policy (2/3) | v(v:pk(@2/<6;7>/*),pk( | @4/<6;7>/*))},{and_ | v(v:pk(@3/<6;7>/*),pk(",
+      "Wallet policy (3/3) | @4/<8;9>/*)),and_ | v(v:pk(@2/<8;9>/*),pk( | @3/<8;9>/*))}})",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4W | kZCuoekMi464pLhTJ | NMvwZudLenJtcM1m",
+      "Key @0,...my (2/3) | Y6V8aK8gQfNuHJrPR | bLqgCWXwqpvSviRu | Qtr4FvQ2qgAg9KiuR",
+      "Key @0,...my (3/3) | H9ZBrm4jN2h",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @3, theirs (1/3) | [8bc48cf1/86'/1'/0']tp | ubDDTHqfwm4Bx8W | yxfyJFFPNKuza1UVBJf",
+      "Key @3, theirs (2/3) | RTXu8eJfTYUWyxpyP | v91gE4HLtCLKTT7a2 | QpJXrtYaNppGGPBh",
+      "Key @3, theirs (3/3) | MYLtXddBVi7NNKeEF | LQRskKYk",
+      "Key @4, theirs (1/3) | tpubD6NzVbkrYhZ4Y | SEoNM54rLbLNE4mg | ZgAq5ivHwBccNfoKaij",
+      "Key @4, theirs (2/3) | S83TYtc7rrF111K2YG7 | mo29nD4K4UuBJxPq | Li9F66nENYZWmRUz",
+      "Key @4, theirs (3/3) | mkL4AXY4",
+      "Register account",
+      "Account registered",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted phone wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction",
+      "Transaction signed",
+      "Bitcoin Testnet | app is ready",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted phone wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "advanced-phone-quarantine",
+    "registered": true,
+    "walletId": "91c35c6fbb83b31d69528f89bceb9102232134c3f00e8b1053bfb93ab90f129c",
+    "addresses": {
+      "0": "tb1p053msemq8p6hsvsalwz0xhl0g07skw7swgenmz7hdrfmgynf6ytq2peewe"
+    },
+    "payments": [
+      {
+        "label": "release",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "4fa4e5ca44d37933bca48a2beceb6dd401b1ab24ae4d96f3316857688d0d96d3",
+            "signature": "75a79e8a2c4aeda71a8f4ac385761244217744145bc7d1a9dd54ae30b2417a4b048391fe9e0edba4d15677e637412712fc9e80528141edd7a95db6436672a95a"
+          }
+        ],
+        "screens": [
+          "Bitcoin Testnet | app is ready",
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted phone safe",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted phone safe",
+      "Wallet policy | tr(@0/**,and_ | v(v:pk(@1/<10;11>/*), | pk(@2/<10;11>/*)))",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4Y | moumpzujkyEW34yX | 77DUKXbsxe6BdpMW",
+      "Key @0,...my (2/3) | JQDPfDE2y19KS7PkeY | euYKNf5MTppvv4Lkt | s1BMpiZYq2hLHs9jt1Y",
+      "Key @0,...my (3/3) | uiAY4izv",
+      "Key @1, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @1, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @1, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @2, theirs (1/3) | [8bc48cf1/86'/1'/0']tp | ubDDTHqfwm4Bx8W | yxfyJFFPNKuza1UVBJf",
+      "Key @2, theirs (2/3) | RTXu8eJfTYUWyxpyP | v91gE4HLtCLKTT7a2 | QpJXrtYaNppGGPBh",
+      "Key @2, theirs (3/3) | MYLtXddBVi7NNKeEF | LQRskKYk",
+      "Register account",
+      "Account registered",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted phone safe",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "advanced-hardware-pending",
+    "registered": true,
+    "walletId": "c377cb01f8fef1381e23879ac4d7662c2183530c055ee29f0da2d11ece89b9d8",
+    "addresses": {
+      "0": "tb1ph85j33f6v3t8urf2ng958cllfj969jcwqhy0urzqh4cejwajrahsttqlvr"
+    },
+    "payments": [
+      {
+        "label": "claim",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "5d6e676126250989078f1282fbd520edae143a43bc409ec17e121575b9612026",
+            "signature": "a794cd7c9810320e11d16abf5e2e9276968dfb83c32f7ed033c7d2594163e12178b0b1a991cd81c338e35d90d76926910bb5fdc921f9739f5509305a6a9028ea"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted hardware  | wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted hardware  | wait",
+      "Wallet policy (1/3) | tr(@0/**,{{and_ | v(v:pk(@2/<4;5>/*),ol | der(6)),and_",
+      "Wallet policy (2/3) | v(v:pk(@1/<6;7>/*),pk( | @4/<10;11>/*))},{and_ | v(v:pk(@3/<6;7>/*),pk(",
+      "Wallet policy (3/3) | @4/<12;13>/*)),and_ | v(v:pk(@1/<8;9>/*),pk( | @3/<8;9>/*))}})",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4X | uTnoVo7vhaiBpKwrk | EzrKizRDa6YHAXM1Sn",
+      "Key @0,...my (2/3) | JeoK1yhgEvhXDEGxZc | HXLozKBbREiceBFv4 | RA9dD1F7rvZJqs8Gwd",
+      "Key @0,...my (3/3) | UqLdnb",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @3, theirs (1/3) | [8bc48cf1/86'/1'/0']tp | ubDDTHqfwm4Bx8W | yxfyJFFPNKuza1UVBJf",
+      "Key @3, theirs (2/3) | RTXu8eJfTYUWyxpyP | v91gE4HLtCLKTT7a2 | QpJXrtYaNppGGPBh",
+      "Key @3, theirs (3/3) | MYLtXddBVi7NNKeEF | LQRskKYk",
+      "Key @4, theirs (1/3) | tpubD6NzVbkrYhZ4Y | SEoNM54rLbLNE4mg | ZgAq5ivHwBccNfoKaij",
+      "Key @4, theirs (2/3) | S83TYtc7rrF111K2YG7 | mo29nD4K4UuBJxPq | Li9F66nENYZWmRUz",
+      "Key @4, theirs (3/3) | mkL4AXY4",
+      "Register account",
+      "Account registered",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted hardware  | wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "advanced-recovery-pending",
+    "registered": true,
+    "walletId": "9c036a9dcc62317aeebb61e1dca8314487168ab30b98a2b762161ea280d7c49a",
+    "addresses": {
+      "0": "tb1php4lv0xhjj7y5c5y9p9hdy4pl58tvr6tl9q48vq37sddp2m0v8eq49huuh"
+    },
+    "payments": [
+      {
+        "label": "clawback",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "e20d5d6b2f3bfea38f900f330663141aee7a67242426bc9467fa2919430f11ea",
+            "signature": "2b83bda167e5bab1c54e338a95951135a9a753f2e49c928dbcc864bb457056acf8a9eb59453784007bc74fcbdc77c83da7f06719ba2b856df813ca7a421307e8"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted recovery wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      },
+      {
+        "label": "cancel",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "129526dc3b3ee161359b387a32a409d158f119e8262ad7d9c6751a2c94d1f14d",
+            "signature": "13bfdf01e93a4a0d6f0a7fd7243b77a80cf9f41508f7b008adaaad7bcfdd6ef71171ccb0183e780d9d4d31038cc2ed3aa561ab667647330a17caa97cd3f544e9"
+          }
+        ],
+        "screens": [
+          "Transaction signed",
+          "Bitcoin Testnet | app is ready",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted recovery wait",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted recovery wait",
+      "Wallet policy (1/3) | tr(@0/**,{{and_ | v(v:pk(@3/<4;5>/*),ol | der(288)),and_",
+      "Wallet policy (2/3) | v(v:pk(@1/<6;7>/*),pk( | @4/<14;15>/*))},{and_ | v(v:pk(@2/<6;7>/*),pk(",
+      "Wallet policy (3/3) | @4/<16;17>/*)),and_ | v(v:pk(@1/<8;9>/*),pk( | @2/<8;9>/*))}})",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4X | 9eCgHiBNmUGxJQo5c | 37xerw9ofobBfsqtBo",
+      "Key @0,...my (2/3) | F5cgU6iq1NPva5n3kf | wwy5qRCumLT5Nkv | DW391TztR63ChLVfA",
+      "Key @0,...my (3/3) | arsSdvHTQ",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Key @3, theirs (1/3) | [8bc48cf1/86'/1'/0']tp | ubDDTHqfwm4Bx8W | yxfyJFFPNKuza1UVBJf",
+      "Key @3, theirs (2/3) | RTXu8eJfTYUWyxpyP | v91gE4HLtCLKTT7a2 | QpJXrtYaNppGGPBh",
+      "Key @3, theirs (3/3) | MYLtXddBVi7NNKeEF | LQRskKYk",
+      "Key @4, theirs (1/3) | tpubD6NzVbkrYhZ4Y | SEoNM54rLbLNE4mg | ZgAq5ivHwBccNfoKaij",
+      "Key @4, theirs (2/3) | S83TYtc7rrF111K2YG7 | mo29nD4K4UuBJxPq | Li9F66nENYZWmRUz",
+      "Key @4, theirs (3/3) | mkL4AXY4",
+      "Register account",
+      "Account registered",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted recovery wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction",
+      "Transaction signed",
+      "Bitcoin Testnet | app is ready",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted recovery wait",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "advanced-recovery-quarantine",
+    "registered": true,
+    "walletId": "7e3562b55437798d2156dc4c4c25dedd9dbe7335a44ac09b1d96c024f5c3e767",
+    "addresses": {
+      "0": "tb1ppnt5e2f8kg3n2ps8qz3n7ck0wqyhv6zzw29wsh4zrsx66z9j2zzqdzdnc4"
+    },
+    "payments": [
+      {
+        "label": "release",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "4fa4e5ca44d37933bca48a2beceb6dd401b1ab24ae4d96f3316857688d0d96d3",
+            "signature": "58a478ca933ea9839531eb81625579fa523c73a324350362aa24436cbdc53c5b2cdbf7a62609ae94518647e44aa2189b1ad03af7b32a5ca3f3bab725cb5810eb"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted recovery safe",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+          "To (2/2) | sd",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Review account | to register",
+      "Account name | Vaulted recovery safe",
+      "Wallet policy | tr(@0/**,and_ | v(v:pk(@1/<10;11>/*), | pk(@2/<10;11>/*)))",
+      "Review co-signer | public keys",
+      "Key @0,...my (1/3) | tpubD6NzVbkrYhZ4W | zYUD5R1opUMmXk9R | fzM7u5BwoR5z3X1Qx",
+      "Key @0,...my (2/3) | yQ89vMCNCaGVSX43 | mJWN9pLVR5AwaCEa | EpWF48fsMNBnc3h8",
+      "Key @0,...my (3/3) | ndLjCsb7sZ1sa",
+      "Key @1, theirs (1/3) | [2cee93bd/86'/1'/0']tp | ubDCTFBBxwHN52YU | jjnZgvXAFhR9NsS4Ry",
+      "Key @1, theirs (2/3) | 2LBSTBf4YNjiuyosPp | 5MCEuuFZXLwvn3Pm | At7E6gFM3UsPH8LJ7H",
+      "Key @1, theirs (3/3) | mdNvzSBYwd1vLzYpj | CH1BbZ",
+      "Key @2, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @2, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @2, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Register account",
+      "Account registered",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted recovery safe",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1pehf30gyfapngexs | 8a6f9y07djz723j8rgdc | 3dl2t3j0752l5tl4sfzhz",
+      "To (2/2) | sd",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  },
+  {
+    "tier": "standard-hardware-normal",
+    "registered": true,
+    "walletId": "7d7f85a1fadb48941fd79ec805e9728b31edad906aec5dad5146b31beb411411",
+    "registrationReused": true,
+    "caseSet": "hardware-initiation",
+    "addresses": {
+      "0": "tb1p9kk4mm4q47zn0rtkjtkhtted78ghy34eruhwj4yg7shuzjga5dwqk9hu7f",
+      "1": "tb1pcm00gpyvea9pemwl97x0wr50tw2glcueynslvc605uxzvs4t7xjsaf2sm4"
+    },
+    "payments": [
+      {
+        "label": "initiate-receive",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "4cf94ad0e54e45540b9ba10391ef60e2a853c4227908e1a826a54438c56c0949",
+            "signature": "1ea159799f168c2152f287c7b72de04b39a7028ba999811edfb19aa7ac6eae8b8e3e4514e38d4fc41ab3c8953a6187a563cba5f150ec084d7640b2f48d753528"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted Savings",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1p34khm9xpd32ua | 3l8l5j5cs3zxen26xvjtp | ga5v2m0rqzg73mmux",
+          "To (2/2) | q3unh0e",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      },
+      {
+        "label": "initiate-change",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "2ee780c30a1b9e153c73554e1fb171149da782107382ebbbaddf8745c96e992a",
+            "signature": "d1e68f8fde8682e95719baf7d6ed040b5ad81e03d135c48702a246004e3f6df5ea4dbf795d7634def5efc46abb6468b5ffbaaabe125d3770e76adcc9c5688ca6"
+          }
+        ],
+        "screens": [
+          "Transaction signed",
+          "Bitcoin Testnet | app is ready",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted Savings",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1p34khm9xpd32ua | 3l8l5j5cs3zxen26xvjtp | ga5v2m0rqzg73mmux",
+          "To (2/2) | q3unh0e",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted Savings",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1p34khm9xpd32ua | 3l8l5j5cs3zxen26xvjtp | ga5v2m0rqzg73mmux",
+      "To (2/2) | q3unh0e",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction",
+      "Transaction signed",
+      "Bitcoin Testnet | app is ready",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted Savings",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1p34khm9xpd32ua | 3l8l5j5cs3zxen26xvjtp | ga5v2m0rqzg73mmux",
+      "To (2/2) | q3unh0e",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction",
+      "Transaction signed"
+    ]
+  },
+  {
+    "tier": "advanced-hardware-normal",
+    "registered": true,
+    "walletId": "7b044a3c4ee2f79b1fdbbd5c083773dd6b27747ae0966bd0a759e027574fa8ca",
+    "registrationReused": true,
+    "caseSet": "hardware-initiation",
+    "addresses": {
+      "0": "tb1pfgknklhm585nr3mjnawdfqmwt4wth85xkt4uppa3wzngrukjzldsmk7h7p",
+      "1": "tb1p2uw9getcj6tu8f9g0sd3tnu06a67hrgjk6dcdjsu0cw7g4x6ssvs92t9wz"
+    },
+    "payments": [
+      {
+        "label": "initiate-receive",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "4cf94ad0e54e45540b9ba10391ef60e2a853c4227908e1a826a54438c56c0949",
+            "signature": "254733fea7ede511fa9592507a82f5faec1d204c100ae26b9eb3319f170f55b46d6927f4f5b02d6f7d8c67588a50ed384f893d67e9922c86241b02a9c05a3313"
+          }
+        ],
+        "screens": [
+          "Loading transaction",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted Savings",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1ph85j33f6v3t8urf2 | ng958cllfj969jcwqhy0 | urzqh4cejwajrahsttql",
+          "To (2/2) | vr",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      },
+      {
+        "label": "initiate-change",
+        "signatures": [
+          {
+            "index": 0,
+            "pubkey": "2ee780c30a1b9e153c73554e1fb171149da782107382ebbbaddf8745c96e992a",
+            "signature": "3926b63679ab87ad41e9df3a85d1dd317f169d241917bce59a56c13595cc77f9725949906852cc164cb3bb1b90d70bacc430b3647e5781dd393106f1cc3f2228"
+          }
+        ],
+        "screens": [
+          "Transaction signed",
+          "Bitcoin Testnet | app is ready",
+          "Review transaction | to send Bitcoin",
+          "From | Vaulted Savings",
+          "Amount | 0.00099 TEST",
+          "To (1/2) | tb1ph85j33f6v3t8urf2 | ng958cllfj969jcwqhy0 | urzqh4cejwajrahsttql",
+          "To (2/2) | vr",
+          "Fees | 0.00001 TEST",
+          "Sign transaction",
+          "Loading transaction"
+        ]
+      }
+    ],
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading",
+      "Bitcoin Testnet | app is ready",
+      "Loading transaction",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted Savings",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1ph85j33f6v3t8urf2 | ng958cllfj969jcwqhy0 | urzqh4cejwajrahsttql",
+      "To (2/2) | vr",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction",
+      "Transaction signed",
+      "Bitcoin Testnet | app is ready",
+      "Review transaction | to send Bitcoin",
+      "From | Vaulted Savings",
+      "Amount | 0.00099 TEST",
+      "To (1/2) | tb1ph85j33f6v3t8urf2 | ng958cllfj969jcwqhy0 | urzqh4cejwajrahsttql",
+      "To (2/2) | vr",
+      "Fees | 0.00001 TEST",
+      "Sign transaction",
+      "Loading transaction"
+    ]
+  }
+]

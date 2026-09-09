@@ -9,7 +9,8 @@ import {
   type VaultHistoryItem,
 } from '../lib/vault/history'
 import { loadAddressPin, requireStatusMatchesPin, type AddressPin } from '../lib/vault/pin'
-import { fetchVaultStatus } from '../lib/vault/status'
+import { lightStatusMatchesDescriptor } from '../lib/vault/light/status'
+import { fetchVaultStatusUnpinned, fetchVaultStatus } from '../lib/vault/status'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
 import {
@@ -21,6 +22,9 @@ import {
 } from '../lib/vault/vtxo/walletWorker'
 import { reconcilePersistedVtxoSpend } from '../lib/vault/vtxo/spend'
 import { vaultAccountPositions } from './balances'
+import { fetchLedgerSavingsSnapshot } from '../lib/vault/ledgerSavingsWallet'
+import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
+import { ledgerEnrollmentFromStatus } from '../lib/vault/program/ledgerRecoveryDescriptor'
 
 interface VaultBalancesOptions {
   addressPin: AddressPin | null
@@ -136,6 +140,10 @@ export function useVaultBalances({
   const [balanceError, setBalanceError] = useState('')
   const [balancesLoaded, setBalancesLoaded] = useState(() => Boolean(loadBalanceSnapshot(refreshVaultId)))
   const [refreshingBalance, setRefreshingBalance] = useState(false)
+  // True only after a refresh fetched every source for the active vault
+  // without error in this session. Cached snapshots set balancesLoaded but
+  // never this: arrival detection must wait for fresh evidence.
+  const [snapshotFresh, setSnapshotFresh] = useState(false)
   const hasSnapshotRef = useRef(balancesLoaded)
   const spendingReadyRef = useRef(balancesLoaded)
 
@@ -145,6 +153,7 @@ export function useVaultBalances({
     refreshVersion.current += 1
     setSnapshot(cachedSnapshot || EMPTY_BALANCES)
     setBalancesLoaded(Boolean(cachedSnapshot))
+    setSnapshotFresh(false)
     hasSnapshotRef.current = Boolean(cachedSnapshot)
     spendingReadyRef.current = Boolean(cachedSnapshot)
     setBalanceError('')
@@ -197,6 +206,7 @@ export function useVaultBalances({
     async (vaultId?: string) => {
       const version = ++refreshVersion.current
       setRefreshingBalance(true)
+      setSnapshotFresh(false)
       try {
         const id = String(
           vaultId ||
@@ -214,11 +224,19 @@ export function useVaultBalances({
           clearSnapshotRetry()
           return
         }
+        const lightDescriptor =
+          statusRef.current?.protectionTier === 'light' ? statusRef.current.lightDescriptor : undefined
         const memoryPin = addressPinRef.current
-        const pin = memoryPin?.vaultId === id ? memoryPin : loadAddressPin(localStorage, id)
+        const pin = lightDescriptor ? null : memoryPin?.vaultId === id ? memoryPin : loadAddressPin(localStorage, id)
         const savingsAddress = pin?.savingsAddress || ''
-        const fetchedStatus = await fetchVaultStatus(undefined, id)
-        const liveStatus = pin ? requireStatusMatchesPin(fetchedStatus, pin) : fetchedStatus
+        const fetchedStatus = lightDescriptor
+          ? await fetchVaultStatusUnpinned(undefined, id)
+          : await fetchVaultStatus(undefined, id)
+        const liveStatus = lightDescriptor
+          ? lightStatusMatchesDescriptor(fetchedStatus, lightDescriptor)
+          : pin
+            ? requireStatusMatchesPin(fetchedStatus, pin)
+            : fetchedStatus
         const spendingAddress = liveStatus?.spendingArkAddress || ''
         const boardingAddress = liveStatus?.vtxoBoardingAddress || ''
         if (!savingsAddress && !spendingAddress && !boardingAddress) {
@@ -227,6 +245,7 @@ export function useVaultBalances({
           setSnapshot(EMPTY_BALANCES)
           saveBalanceSnapshot(id, EMPTY_BALANCES)
           setBalancesLoaded(true)
+          setSnapshotFresh(true)
           hasSnapshotRef.current = true
           setBalanceError('')
           clearSnapshotRetry()
@@ -243,18 +262,23 @@ export function useVaultBalances({
         let spending = emptySpending
         let boarding = emptyBoarding
         let spendingError: unknown
-        const savingsTask = savingsAddress
-          ? Promise.all([fetchAddressUtxos(savingsAddress), fetchAddressTxs(savingsAddress)]).then(
-              ([utxos, transactions]) => {
-                const balance = savingsUtxoBalance(utxos, transactions, savingsAddress)
-                savings = {
-                  balance: balance.total,
-                  spendable: balance.spendable,
-                  history: historyFromTxs(transactions, savingsAddress, 'savings'),
-                }
-              },
-            )
-          : Promise.resolve()
+        const savingsTask =
+          liveStatus.templateVersion === LEDGER_NATIVE_TEMPLATE
+            ? fetchLedgerSavingsSnapshot(ledgerEnrollmentFromStatus(liveStatus).savings).then((snapshot) => {
+                savings = { balance: snapshot.totalSats, spendable: snapshot.availableSats, history: snapshot.history }
+              })
+            : savingsAddress
+              ? Promise.all([fetchAddressUtxos(savingsAddress), fetchAddressTxs(savingsAddress)]).then(
+                  ([utxos, transactions]) => {
+                    const balance = savingsUtxoBalance(utxos, transactions, savingsAddress)
+                    savings = {
+                      balance: balance.total,
+                      spendable: balance.spendable,
+                      history: historyFromTxs(transactions, savingsAddress, 'savings'),
+                    }
+                  },
+                )
+              : Promise.resolve()
         const spendingTask =
           spendingAddress && liveStatus.enrolled
             ? fetchVaultWalletVtxoSnapshot(liveStatus)
@@ -317,6 +341,7 @@ export function useVaultBalances({
         setSnapshot(nextSnapshot)
         saveBalanceSnapshot(id, nextSnapshot)
         setBalancesLoaded(true)
+        setSnapshotFresh(true)
         hasSnapshotRef.current = true
         spendingReadyRef.current = true
         setBalanceError('')
@@ -409,6 +434,7 @@ export function useVaultBalances({
     balanceError,
     boardingError: snapshot.boardingError || '',
     balancesLoaded,
+    snapshotFresh,
     history,
     positions,
     refreshBalance,

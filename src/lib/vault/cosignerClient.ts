@@ -4,6 +4,14 @@ import { fetchPublicStatus, fetchVaultStatus, type PublicAuthorizerStatus } from
 import type { VaultStatus, VaultStatusWire } from './types'
 import type { SpendingPolicy } from './spendingPolicy'
 import type { ProtectionTier } from './protectionTier'
+import type { LedgerAccountOrigin } from './program/ledgerNativeKeys'
+import type { LedgerSavingsRegistration } from './ledgerClient'
+import type { LedgerPhoneSeedBackup } from './ledgerPhoneBackup'
+
+export interface LedgerSavingsAccessBackup {
+  registration: LedgerSavingsRegistration
+  phoneSeedBackup: LedgerPhoneSeedBackup
+}
 
 const enrollmentHeader = (token: string) => ({ 'X-Vault-Enrollment-Token': token })
 
@@ -33,6 +41,12 @@ export interface VaultEnrollStartRequest {
 }
 
 export interface VaultEnrollmentRequest {
+  ledgerSavings?: {
+    templateVersion: 'phone-ledger-guardian-savings-v1'
+    phone: LedgerAccountOrigin
+    hardware: LedgerAccountOrigin
+    recovery?: LedgerAccountOrigin
+  }
   handle: string
   userHandle: string
   clientDataJSON: string
@@ -89,6 +103,7 @@ export interface VaultSessionAssertion {
 }
 
 export interface VaultRecoveryBindingRequest {
+  ledgerSavings?: LedgerSavingsAccessBackup
   vaultId: string
   envelopeNonce: string
   envelopeCiphertext: string
@@ -110,6 +125,7 @@ export interface VaultRecoverEnvelopeRequest extends VaultSessionAssertion {
 }
 
 export interface VaultRecoverEnvelopeResponse extends VaultRecoveryBindingResponse {
+  ledgerSavings?: LedgerSavingsAccessBackup
   envelopeNonce: string
   envelopeCiphertext: string
   bindingDirectSig: string
@@ -117,6 +133,12 @@ export interface VaultRecoverEnvelopeResponse extends VaultRecoveryBindingRespon
 }
 
 export interface VaultTransitionRequest extends VaultSessionAssertion {
+  ledgerSavings?: {
+    claimant: 'phone' | 'hardware' | 'recovery'
+    remainingUser?: 'phone' | 'hardware' | 'recovery'
+    change: 0 | 1
+  }
+  phoneAuthorization?: { digest: string; signature: string }
   vaultId: string
   purpose: string
   psbt: string

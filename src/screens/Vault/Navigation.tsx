@@ -25,14 +25,27 @@ const ACCOUNTS: { id: VaultAccount; label: string; testId: string; icon: ReactNo
 ]
 
 export default function VaultNavigation() {
-  const { account, balancesLoaded, navigate, positions, setAccount, balanceUnit, fiatDisplayRate } =
-    useContext(VaultContext)
+  const {
+    account,
+    balancesLoaded,
+    navigate,
+    positions,
+    setAccount,
+    balanceUnit,
+    fiatDisplayRate,
+    watchedSavingsTotalSats,
+  } = useContext(VaultContext)
   return (
     <VaultLauncher
       account={account}
       balances={{
         spending: balancesLoaded ? positions.spending.totalSats : null,
-        savings: balancesLoaded ? positions.savings.totalSats : null,
+        savings:
+          watchedSavingsTotalSats !== undefined
+            ? watchedSavingsTotalSats
+            : balancesLoaded
+              ? positions.savings.totalSats
+              : null,
       }}
       denomination={{ unit: balanceUnit ?? 'sats', rate: fiatDisplayRate ?? null }}
       onAccount={setAccount}

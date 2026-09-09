@@ -215,7 +215,7 @@ export default function VaultHardware() {
             <div className='qg-guidance-body'>
               <p>
                 <a
-                  href='https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/ledger-guide.md'
+                  href='https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/ledger-connector-guide.md'
                   target='_blank'
                   rel='noopener noreferrer'
                 >

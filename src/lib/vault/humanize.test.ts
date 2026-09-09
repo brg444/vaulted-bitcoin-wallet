@@ -165,3 +165,49 @@ describe('humanizeVaultError', () => {
     ).toMatch(/Spending could not start/)
   })
 })
+
+describe('Ledger enrollment errors', () => {
+  it.each([
+    [
+      'Finish or cancel the Ledger setup already in progress.',
+      'Finish or cancel the Ledger setup already in progress.',
+    ],
+    [
+      'Ledger Savings enrollment is not available on this deployment yet.',
+      'This Guardian does not support Ledger Savings setup yet. Your passkey has not been created.',
+    ],
+    [
+      'Spending recovery key does not match the selected Ledger account',
+      'The selected Ledger account does not match the recovery key. Import the intended public account again.',
+    ],
+    [
+      'Ledger recovery account does not match the selected protection',
+      'The selected protection does not match your Ledger accounts. Review your hardware and recovery accounts.',
+    ],
+    [
+      'Guardian changed the selected Ledger Savings enrollment',
+      'The returned vault does not match your selected Ledger setup. Setup has not completed.',
+    ],
+    [
+      'Ledger enrollment changed while completing setup',
+      'The returned vault does not match your saved Ledger setup. Keep this browser data and retry the original setup.',
+    ],
+    [
+      'Staged Ledger enrollment changed',
+      'The saved Ledger setup could not be verified. Keep this browser data and review the original setup.',
+    ],
+    [
+      'Ledger registration does not match this Savings wallet. Register the original policy again.',
+      'The Ledger registration does not match this vault. Register the original Savings policy again.',
+    ],
+  ])('keeps the known enrollment condition actionable: %s', (message, expected) => {
+    expect(humanizeVaultError(new Error(message))).toBe(expected)
+  })
+
+  it('does not expose arbitrary Ledger error details', () => {
+    expect(humanizeVaultError(new Error('Ledger internal detail: 012345'))).toBe('Something went wrong. Try again.')
+    expect(humanizeVaultError(new Error('Staged Ledger enrollment changed: opaque server detail'))).toBe(
+      'Something went wrong. Try again.',
+    )
+  })
+})

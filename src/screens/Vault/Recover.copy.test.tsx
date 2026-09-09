@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../components/Toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('../../lib/clipboard', () => ({ copyToClipboard: mocks.copy }))
 vi.mock('../../lib/vault/esplora', () => ({
+  fetchTipHeight: vi.fn().mockResolvedValue(1000),
+  fetchTxHex: vi.fn(),
   broadcastTx: mocks.broadcast,
   fetchFeeEstimates: mocks.fees,
   fetchAddressUtxos: mocks.utxos,

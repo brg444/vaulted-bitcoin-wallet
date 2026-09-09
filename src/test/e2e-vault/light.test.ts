@@ -1,3 +1,4 @@
+import { copyArkadeReceiveAddress } from './fixtures/receive'
 import { expect, test } from './fixtures/passkey'
 import AxeBuilder from '@axe-core/playwright'
 import { readFile } from 'node:fs/promises'
@@ -55,7 +56,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await expect(page.getByText('Recovery secret', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible({ timeout: 45000 })
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
-  await expect(page.getByText('50,000 sats remaining in your limit')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
   await page.getByRole('button', { name: 'Savings', exact: true }).click()
   await expect(page.getByText('Watch only', { exact: true })).toBeVisible()
@@ -66,8 +67,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await page.getByRole('button', { name: 'Spending', exact: true }).click()
   await page.screenshot({ path: '/tmp/vaulted-light-refined-home.png', fullPage: true })
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
-  await expect(page.locator('.light-address')).toHaveText(/^tark1/)
-  const originalAddress = (await page.locator('.light-address').innerText()).trim()
+  const originalAddress = await copyArkadeReceiveAddress(page)
   await page.screenshot({ path: '/tmp/vaulted-light-receive-mobile.png', fullPage: true })
   await page.setViewportSize({ width: 320, height: 640 })
   expect(await page.locator('.light-app').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
@@ -110,7 +110,7 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await page.getByRole('button', { name: 'Restore with passkey', exact: true }).click()
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
-  await expect(page.locator('.light-address')).toHaveText(originalAddress)
+  expect(await copyArkadeReceiveAddress(page)).toBe(originalAddress)
   // Exercise the downloaded encrypted file independently of cloud discovery.
   await page.evaluate(() => localStorage.clear())
   await page.reload()
@@ -122,9 +122,9 @@ test('Light enrolls through the Go runtime with a real PRF passkey and automatic
   await page.locator('input[type="file"]').setInputFiles(path!)
   await page.getByRole('button', { name: 'Verify file and unlock', exact: true }).click()
   await expect(page.getByTestId('vault-balance').filter({ hasText: '₿0' })).toBeVisible({ timeout: 30000 })
-  await expect(page.getByText('50,000 sats remaining in your limit')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
-  await expect(page.locator('.light-address')).toHaveText(originalAddress)
+  expect(await copyArkadeReceiveAddress(page)).toBe(originalAddress)
   // The same exported file opens in the independent companion with every
   // Vaulted/Operator API blocked; only the local assets and passkey are used.
   await page.getByRole('button', { name: 'Go back', exact: true }).click()

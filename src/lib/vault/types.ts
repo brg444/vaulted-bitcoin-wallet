@@ -2,6 +2,11 @@ import type { LightDescriptor, LightPolicy } from './light/contract'
 import type { VaultNetwork } from './constants'
 import type { SpendingPolicy } from './spendingPolicy'
 import type { ProtectionTier } from './protectionTier'
+import type { LedgerSavingsContract } from './ledgerSavings'
+
+export interface LedgerSavingsStatus extends LedgerSavingsContract {
+  descriptorHash: string
+}
 
 // Exact JSON object emitted by GET /v1/status?vault=... . Keep normalized
 // compatibility aliases out of this type; they belong to VaultStatus below.
@@ -15,6 +20,7 @@ export interface ConnectorEnrollmentIdentity {
 }
 
 export interface VaultStatusWire {
+  ledgerSavings?: LedgerSavingsStatus
   connectorEnrollment?: ConnectorEnrollmentIdentity
   lightDescriptor?: LightDescriptor
   lightDescriptorHash?: string
@@ -69,6 +75,7 @@ export interface VaultStatusWire {
 // Wallet domain view. recoveryPub is a normalized compatibility alias and is
 // never represented as a server wire field.
 export interface VaultStatus {
+  ledgerSavings?: LedgerSavingsStatus
   connectorEnrollment?: ConnectorEnrollmentIdentity
   lightDescriptor?: LightDescriptor
   lightDescriptorHash?: string

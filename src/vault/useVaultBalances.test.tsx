@@ -1,8 +1,9 @@
+import { lightTestStatus, lightTestEnrollment } from '../lib/vault/light/testdata/helpers'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAddressTxs, fetchAddressUtxos } from '../lib/vault/esplora'
 import { pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
-import { fetchVaultStatus } from '../lib/vault/status'
+import { fetchVaultStatus, fetchVaultStatusUnpinned } from '../lib/vault/status'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../lib/vault/spendingPolicy'
@@ -19,7 +20,7 @@ vi.mock('../lib/vault/esplora', () => ({
   fetchAddressTxs: vi.fn(),
   fetchAddressUtxos: vi.fn(),
 }))
-vi.mock('../lib/vault/status', () => ({ fetchVaultStatus: vi.fn() }))
+vi.mock('../lib/vault/status', () => ({ fetchVaultStatus: vi.fn(), fetchVaultStatusUnpinned: vi.fn() }))
 vi.mock('../lib/vault/vtxo/spend', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/vault/vtxo/spend')>()),
   reconcilePersistedVtxoSpend: vi.fn().mockResolvedValue({ kind: 'none' }),
@@ -199,6 +200,21 @@ describe('useVaultBalances', () => {
     expect(result.current.balancesLoaded).toBe(true)
     expect(result.current.positions.spending.availableSats).toBe(42_000)
     expect(result.current.positions.savings.totalSats).toBe(9_000)
+  })
+
+  it('reports fresh snapshot readiness only after a successful refresh', async () => {
+    saveBalanceSnapshot(STATUS.vaultId, {
+      boardingBalance: 0,
+      history: [],
+      savingsSats: 9_000,
+      savingsSpendableSats: 9_000,
+      vtxoSpendingSats: 42_000,
+    })
+    const { result } = setupHook(true)
+    expect(result.current.balancesLoaded).toBe(true)
+    expect(result.current.snapshotFresh).toBe(false)
+    await act(async () => result.current.refreshBalance())
+    expect(result.current.snapshotFresh).toBe(true)
   })
 
   it('replaces the cached snapshot after a successful refresh', async () => {
@@ -458,4 +474,29 @@ it('keeps the last known Savings funds when Esplora fails', async () => {
   await act(async () => result.current.refreshBalance())
   expect(result.current.positions.savings.totalSats).toBe(9000)
   expect(loadBalanceSnapshot(STATUS.vaultId)?.savingsSats).toBe(9000)
+})
+
+it('refreshes Light Spending from its saved descriptor without a protected Savings pin', async () => {
+  const record = await lightTestEnrollment()
+  const status = lightTestStatus(record.descriptor) as VaultStatus
+  vi.mocked(fetchVaultStatusUnpinned).mockResolvedValue(status)
+  mockedSnapshot.mockResolvedValue({ balance: 12000, pendingBalance: 2000, history: [] })
+  const { result, setStatus } = setupHook(false, status, true, record.enrollment, false)
+  await waitFor(() => expect(result.current.positions.spending.totalSats).toBe(14000))
+  expect(setStatus).toHaveBeenCalledWith(status)
+  expect(mockedStatus).not.toHaveBeenCalled()
+  expect(mockedUtxos).not.toHaveBeenCalled()
+  expect(result.current.positions.savings.totalSats).toBe(0)
+})
+
+it('rejects changed Light signing facts before reading balances or replacing the session', async () => {
+  const record = await lightTestEnrollment()
+  const status = lightTestStatus(record.descriptor) as VaultStatus
+  vi.mocked(fetchVaultStatusUnpinned).mockResolvedValue({ ...status, spendingArkAddress: 'tark1changed' })
+  const { result, setStatus } = setupHook(false, status, true, record.enrollment, false)
+  await act(async () => result.current.refreshBalance(status.vaultId))
+  expect(result.current.snapshotFresh).toBe(false)
+  expect(setStatus).not.toHaveBeenCalled()
+  expect(mockedSnapshot).not.toHaveBeenCalled()
+  expect(mockedUtxos).not.toHaveBeenCalled()
 })

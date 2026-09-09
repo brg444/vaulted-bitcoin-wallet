@@ -1,3 +1,4 @@
+import { lightTestStatus } from '../../lib/vault/light/testdata/helpers'
 import { test, expect } from './fixtures/passkey'
 import { openLight } from './fixtures/light-ui'
 
@@ -20,17 +21,17 @@ test('@ux-denomination Light keeps balances, history, navigation and send on one
   await expect(page.getByTestId('account-spend')).toContainText('$14.00')
   await page.getByRole('button', { name: 'Close navigation', exact: true }).click()
   await received.click()
-  await expect(page.getByRole('heading', { name: 'Confirmed' })).toBeVisible()
-  await expect(page.getByText('Received · $12.00', { exact: true })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Received status' })).toBeVisible()
+  await expect(page.locator('.qg-transaction-amount')).toContainText('$12.00')
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await page.getByRole('button', { name: 'Send', exact: true }).click()
-  const amount = page.locator('#light-send-amount')
+  const amount = page.locator('#qg-send-amount')
   await expect(page.locator('.qg-denomination')).toHaveText('$')
   await amount.fill('1.23')
-  await page.getByRole('textbox', { name: 'Arkade address' }).fill('synthetic-destination')
+  await page.getByRole('textbox', { name: 'To', exact: true }).fill(lightTestStatus().spendingArkAddress!)
   await page.getByRole('button', { name: 'Review payment' }).click()
   await expect(page.locator('.qg-details > div').filter({ hasText: 'Total' })).toContainText('$1.25')
-  await expect(page.getByRole('button', { name: 'Approve $1.23' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Approve payment', exact: true })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'Unlock with passkey', exact: true }).click()
   await expect(balance).toHaveText('$14.00')
@@ -45,7 +46,7 @@ test('@ux-denomination external unit changes preserve an entered 331-sat payment
   void authorizer
   await openLight(page, false)
   await page.getByRole('button', { name: 'Send', exact: true }).click()
-  const amount = page.locator('#light-send-amount')
+  const amount = page.locator('#qg-send-amount')
   await amount.fill('331')
   await page.evaluate(() => {
     localStorage.setItem('arkade-vault-balance-unit', 'usd')

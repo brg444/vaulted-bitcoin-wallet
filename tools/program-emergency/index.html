@@ -163,6 +163,13 @@
         <button class="sign-control" id="save-psbt">Download PSBT for your signer</button>
         <label>Signed PSBT file<input class="sign-control" id="signed-file" type="file" accept=".psbt,.txt" /></label>
         <button class="sign-control" id="sign-phone">Sign with original passkey</button>
+        <label id="ledger-role-label" hidden>Ledger account<select id="ledger-role"></select></label>
+        <button class="sign-control" id="sign-ledger" hidden>Sign with Ledger over USB</button>
+        <div id="offline-spending" hidden>
+          <p>Emergency Spending recovery requires the Ledger seed on a trusted offline computer. This exposes every account protected by that seed; retire the seed after recovery. The original key threshold still applies.</p>
+          <button class="sign-control" id="save-offline-spending">Export offline Spending request</button>
+          <p><a href="./offline-sign.html" target="_blank" rel="noopener noreferrer">Open the offline signer</a>, disconnect its computer, sign the exported request, then import the resulting PSBT here.</p>
+        </div>
         <details>
           <summary>Copy or paste a PSBT</summary>
           <label>PSBT for your signing device<textarea id="psbt" readonly rows="4"></textarea></label>

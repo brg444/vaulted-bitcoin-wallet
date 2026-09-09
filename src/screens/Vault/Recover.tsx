@@ -18,7 +18,8 @@ import {
   finalizeGuardianExit,
   requiredGuardianExitSigners,
 } from '../../lib/vault/program/guardianExit'
-import { inspectRecoveryKit, parseRecoveryKit } from '../../lib/vault/program/kit'
+import { inspectRecoveryKit, parseRecoveryKit, isLedgerRecoveryKit } from '../../lib/vault/program/kit'
+import LedgerRecovery from './LedgerRecovery'
 import { planClaim, planClawback, planInitiate } from '../../lib/vault/program/recoverFlow'
 import { buildGuardianExitPsbt } from '../../lib/vault/program/spend'
 import { findMatureBoardingInputs } from '../../lib/vault/vtxo/boardingRecovery'
@@ -203,6 +204,9 @@ export default function VaultRecover() {
       setLocalError(err instanceof Error ? err.message : 'No Recovery Kit yet')
     }
   }
+
+  if (view === 'lost' && currentKit && isLedgerRecoveryKit(currentKit) && status)
+    return <LedgerRecovery kit={currentKit} status={status} back={() => setView('kit')} />
 
   if (view === 'lost' && psbtOut && preparedAction && !cancelSigners.length)
     return (

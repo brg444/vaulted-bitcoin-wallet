@@ -1,3 +1,4 @@
+import { lightTestStatus } from '../../lib/vault/light/testdata/helpers'
 import { expectWalletLayout } from './fixtures/layout'
 import { test, expect } from './fixtures/passkey'
 import { openLight } from './fixtures/light-ui'
@@ -9,7 +10,7 @@ async function launcher(page: Page, name: string) {
   await page.getByRole('button', { name, exact: true }).click()
 }
 
-test('Light resumes its saved payment through review and returns to the same home notice', async ({
+test('@ux-shared Light resumes its saved payment through review and returns to the same home notice', async ({
   page,
   authorizer,
 }) => {
@@ -17,23 +18,26 @@ test('Light resumes its saved payment through review and returns to the same hom
   await page.setViewportSize({ width: 320, height: 667 })
   await openLight(page, false, false, undefined, {
     amountSats: 1000,
-    destAddress: 'tark1-saved-destination',
+    destAddress: lightTestStatus().spendingArkAddress!,
     feeSats: 20,
   })
   await expect(page.getByRole('region', { name: 'Pending payment' })).toContainText('₿1,000')
-  await page.getByRole('button', { name: 'Resume pending payment' }).click()
+  await page.getByRole('button', { name: 'Resume payment', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Resume payment' })).toBeVisible()
-  await expect(page.getByText('tark1-saved-destination')).toBeVisible()
+  await page.getByRole('button', { name: 'Reveal', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Payment details' }).locator('strong').first()).toContainText(
+    lightTestStatus().spendingArkAddress!,
+  )
   await expect(page.getByRole('button', { name: /^Edit/ })).toHaveCount(0)
   await expectWalletLayout(page)
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Resume pending payment' })).toBeVisible()
-  await page.getByRole('button', { name: 'Resume pending payment' }).click()
+  await expect(page.getByRole('button', { name: 'Resume payment', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Resume payment', exact: true }).click()
   await page.getByRole('button', { name: 'Continue payment' }).click()
   await expect(page.getByRole('heading', { name: 'Payment sent', exact: true })).toBeVisible()
 })
 
-test('@polish Light balance, history, settings and payment navigation stay accessible', async ({
+test('@ux-shared @polish Light balance, history, settings and payment navigation stay accessible', async ({
   page,
   authorizer,
 }, testInfo) => {
@@ -54,7 +58,7 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await expect(page.getByTestId('vault-balance')).toContainText('14')
   await page.getByTestId('vault-balance').click()
   await page.getByTestId(`vault-tx-${'ab'.repeat(32)}`).click()
-  await expect(page.getByRole('heading', { name: 'Confirmed' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Received status' })).toBeVisible()
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await launcher(page, 'Settings')
   await expect(page.getByTestId('settings-theme')).toBeVisible()
@@ -74,24 +78,27 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await expect(page).toHaveScreenshot('light-home-dark.png', { animations: 'disabled' })
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Review payment' })).toBeInViewport({ ratio: 1 })
-  await page.getByRole('textbox', { name: 'Arkade address' }).fill('draft address')
-  await page.getByRole('button', { name: 'Scan address', exact: true }).click()
+  await page.getByRole('textbox', { name: 'To', exact: true }).fill(lightTestStatus().spendingArkAddress!)
+  await page.getByRole('button', { name: 'Scan destination', exact: true }).click()
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Arkade address' })).toHaveValue('draft address')
-  await page.getByRole('spinbutton', { name: 'Amount, in sats' }).fill('1000')
+  await expect(page.getByRole('textbox', { name: 'To', exact: true })).toHaveValue(
+    lightTestStatus().spendingArkAddress!,
+  )
+  await page.locator('#qg-send-amount').fill('1000')
   await expectWalletLayout(page, true)
   await expect(page).toHaveScreenshot('light-send.png', { animations: 'disabled' })
   await page.getByRole('button', { name: 'Review payment' }).click()
-  await expect(page.locator('.qg-details > div').filter({ hasText: 'Total' })).toHaveText('Total1,020 sats')
-  await expect(page.getByRole('button', { name: 'Approve 1,000 sats' })).toBeInViewport({ ratio: 1 })
+  await expect(page.locator('.qg-details > div').filter({ hasText: 'Total' })).toHaveText('Total₿1,020')
+  await expect(page.getByRole('button', { name: 'Approve payment' })).toBeInViewport({ ratio: 1 })
   await expectWalletLayout(page, true)
   await expect(page).toHaveScreenshot('light-review.png', { animations: 'disabled' })
-  await page.getByRole('button', { name: 'Approve 1,000 sats' }).click()
+  await page.getByRole('button', { name: 'Approve payment' }).click()
   await expect(page.getByRole('heading', { name: 'Payment sent', exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: 'Done', exact: true }).click()
 
   await page.getByRole('button', { name: 'Receive', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Copy receiving address' })).toBeInViewport({ ratio: 1 })
+  await expect(page.getByTestId('receive-arkade-address')).toBeVisible()
+  await expect(page.getByTestId('receive-share')).toBeInViewport({ ratio: 1 })
   await page.getByRole('button', { name: 'Go back', exact: true }).click()
   await launcher(page, 'Savings')
   await expect(page.getByText('Watch only', { exact: true })).toBeVisible()
@@ -113,7 +120,7 @@ test('@polish Light balance, history, settings and payment navigation stay acces
   await expect(page.getByTestId('vault-balance')).toHaveCount(0)
 })
 
-test('Light watched Savings stays readable at 320px and returns to its account from Settings', async ({
+test('@ux-shared Light watched Savings stays readable at 320px and returns to its account from Settings', async ({
   page,
   authorizer,
 }) => {

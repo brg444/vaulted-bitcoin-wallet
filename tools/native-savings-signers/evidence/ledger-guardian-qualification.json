@@ -1,0 +1,72 @@
+{
+  "contract": "phone-ledger-guardian-savings-v1",
+  "recordedDate": "2026-09-09",
+  "status": "candidate capability qualified; enrollment disabled; RC unchanged",
+  "runtimeCommit": "48e35f2",
+  "recoveryCompanionCommit": "7773d19",
+  "companionChange": "integration documentation only; executable and wallet submodule pin unchanged",
+  "ledger": {
+    "sourceCommit": "2c7956fe566bd7f6f690288130033441fabc5f10",
+    "app": "Bitcoin Test 2.4.2",
+    "elfSha256": "db1608c935989d39fda91054bfff5e02460d6cfc79d21ca0646a7dc5a6ec03b9",
+    "speculos": "0.27.0",
+    "physicalDeviceQualified": false
+  },
+  "evidence": {
+    "normalSimulatorPayments": 4,
+    "normalFullVsize": 169,
+    "normalPartialVsize": 212,
+    "recoverySimulatorPolicies": 10,
+    "recoverySimulatorPayments": 15,
+    "coreFundedPaths": 37,
+    "coreRecoveryReplacements": 10,
+    "walletRuntimeRecoveryVectors": 14,
+    "runtimeDerivationMutationsRejected": 112,
+    "recoveryHardwareInitiationPayments": 4
+  },
+  "checks": {
+    "integratedWalletTestsPassed": 348,
+    "additionalRecoveryBuilderTestsPassed": 67,
+    "phoneBackupTestsIncludedInIntegrated": 23,
+    "typescript": "passed",
+    "eslint": "passed",
+    "mainnetBuild": "passed",
+    "officialClientChromiumTransportFixture": "passed",
+    "runtimeFullSuite": "passed",
+    "runtimeFocusedRaceSuites": "passed",
+    "recoveryReplacementFailureRestartLostResponseAndLateCompletion": "passed",
+    "writingStyle": "passed"
+  },
+  "limits": [
+    "Simulator transactions use synthetic parents and disposable fixture keys.",
+    "Core validates scripts and replacements with public fixture signing secrets, separately from service authorization.",
+    "The named Guardian capability requires future authenticated enrollment and durable operation wiring.",
+    "The current Spending exit tree is incompatible with the tested Ledger policy format.",
+    "Physical Ledger review, complete package restore and integrated funded service recovery remain release gates."
+  ],
+  "sha256": {
+    "src/lib/vault/program/ledgerNativeKeys.ts": "c897da12adfe493b24d5c9b02dbe850507e2ec7b1961a2c74785dfb561fc9145",
+    "src/lib/vault/program/ledgerNativePolicy.ts": "a32b3930c6b25109e288fb2f5639b2e680c7ed8f3c79a9ed2392588de06f7a8d",
+    "src/lib/vault/program/ledgerNativeFamily.ts": "cf1c1f02b80724762ed7ce8665245615a9d96a53d8540268fadced80290beefa",
+    "src/lib/vault/ledgerSavings.ts": "d3515829f4d0ca1f3d50f32239f6694221f3b04ffef04624761bf8a06e3bdd99",
+    "src/lib/vault/ledgerClient.ts": "6f8f05bac517bd587b1b9befc0371eefab94ce583d9b737723e793a5239b7b47",
+    "src/lib/vault/ledgerRecovery.ts": "32f9177453fc5bc600157d1311b4bf301e876489b04e46c693896176538ed3f6",
+    "src/lib/vault/ledgerPhoneBackup.ts": "20c0c8b6900466c37d35ba062755b7f7a0368b9d840e68a0001d0a4c9256cafb",
+    "src/lib/vault/program/ledger-key-vectors.json": "34c30d64fc0facd4a172e53d61d75983b5f15afadc7d0f665cb20a60e8d5a84b",
+    "src/lib/vault/program/ledger-family-vectors.json": "5dd692720ef47174f6b2ad7e6e9c09def0ea3197d4ac7d7534a9c0e7ff0e47e5",
+    "src/lib/vault/program/ledger-recovery-vectors.json": "ce9857af7d4255b09175e06272eab5cf34a6b28d035d8d7881200d2929ff3569",
+    "tools/native-savings-signers/evidence/ledger-candidate-inputs.json": "a6149fb3941309872420666d0370dd5dad8ff1e9ccd7778bc5ca04499326241f",
+    "tools/native-savings-signers/evidence/ledger-candidate.json": "ca0952ae8c57657232295e49a77b1f7a4387c4f4f5422c0e6829aa2da72e710f",
+    "tools/native-savings-signers/evidence/ledger-candidate-verification.json": "bd93f737fbb3a474b5c8bf2b3a7cb3594fce47ead1f96983ef75feaa7e9aa973",
+    "tools/native-savings-signers/evidence/ledger-recovery-inputs.json": "58c436ae291624c5f3d464340325c42a28dbcf05e04961d787a55399b773542c",
+    "tools/native-savings-signers/evidence/ledger-recovery.json": "09e37d494d286cc792464f9654bd70fe6523550f5f7c71fe4523d372e22cef08",
+    "tools/native-savings-signers/evidence/ledger-recovery-verification.json": "f3622dfc3af20007942d2f37ad91262ffbd0d26f39b3729faecaa8eb252c2616",
+    "tools/native-savings-signers/evidence/ledger-recovery-core.json": "1b413ce8f84aca880bc3f7feb564ac9bf503ae9d1e7f6604e0035f9f1588e306",
+    "tools/native-savings-signers/evidence/ledger-client-browser.json": "28e9d91d1d116c4b2d569773d9da017dc122bb2a12426482db08e29cb1fa5006",
+    "tools/native-savings-signers/evidence/ledger-recovery-hardware-initiation.json": "dc6afaad2e017e695a5be4e1a49e697477df1d7e420c313506bb5672b3056df5",
+    "tools/native-savings-signers/evidence/ledger-recovery-run-provenance.json": "99d9847aeb9a8980444718bf06e283d71315257d1e0e5bae3f2312ae008b3f96",
+    "tools/native-savings-signers/ledger-recovery-candidate.mjs": "70d8e4fcefa4c694ae71dd1ccbf433f511121586e5ddf68b83c550651943be71",
+    "tools/native-savings-signers/ledger-recovery.py": "cae57ba0ea58c9a12ba075aced77fdfca161af827ba39236a0c650afb5435507",
+    "tools/native-savings-signers/verify-ledger-recovery.mjs": "2aeb9f9695fbaca3441a80ba4aff07b575d509f1508e172bf994ad5ebfbdbdb0"
+  }
+}

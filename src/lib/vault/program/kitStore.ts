@@ -1,4 +1,4 @@
-import { buildRecoveryKit, parseRecoveryKit, type RecoveryKit } from './kit'
+import { parseRecoveryKit, type RecoveryKit } from './kit'
 
 export const LOCAL_KIT_STORE = 'arkade-vault-v2:kit'
 
@@ -9,7 +9,7 @@ export function localKitStoreKey(vaultId: string): string {
 }
 
 export function saveLocalKit(kit: RecoveryKit, storage: Storage = localStorage): RecoveryKit {
-  const built = buildRecoveryKit(kit.descriptor)
+  const built = parseRecoveryKit(kit)
   storage.setItem(localKitStoreKey(built.descriptor.vaultId), JSON.stringify(built))
   return built
 }

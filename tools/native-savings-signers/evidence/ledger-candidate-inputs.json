@@ -1,0 +1,67 @@
+[
+  {
+    "tier": "standard",
+    "template": "tr(@0/**,{{and_v(v:pk(@1/**),pk(@2/**)),and_v(v:pk(@1/<2;3>/*),pk(@3/<0;1>/*))},and_v(v:pk(@2/<2;3>/*),pk(@3/<2;3>/*))})",
+    "keys": [
+      "tpubD6NzVbkrYhZ4XYQDu93xDqgR3sk6HAgvwk6gC68csN13rx4icqfV5HtKXHCo889vXeDoakYeW5WN35GR5BATLuFeffA3CSrteCYdevqtoWF",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "tpubD6NzVbkrYhZ4X3McLW3GvFavsNUUXgxWMxqLmsVC7PLmCsTFVwDFxa75nbhsKuLvFTHYDJh1Nv4QtwP6pgL9NWQmL32o9iBzmzQ52rtuZFB"
+    ],
+    "receive": "tb1p9kk4mm4q47zn0rtkjtkhtted78ghy34eruhwj4yg7shuzjga5dwqk9hu7f",
+    "change": "tb1pcm00gpyvea9pemwl97x0wr50tw2glcueynslvc605uxzvs4t7xjsaf2sm4",
+    "hardware": "dc8d2f9eff0c4f4dbde070a48e330efc908b62a766568d91e658f284b324b878",
+    "payments": [
+      {
+        "full": false,
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 20000,
+        "fee": 1000,
+        "psbt": "cHNidP8BAIkCAAAAAYRiQLu4/HvIuviksbHHExXBvjZqAvSlGSeF0+COgnQ/AAAAAAD/////AiBOAAAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+uYNAEAAAAAACJRIMbe9ASMz0oc7d8vjPcOj1uUj+OZJOH2Y0+nDCZCq/GlAAAAAAABAF4CAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYwAAAAD/////AaCGAQAAAAAAIlEgLa1d7qCvhTeNdpLtda8t8dFyRrkfLulUiPQvwUkdo1wAAAAAAQEroIYBAAAAAAAiUSAtrV3uoK+FN412ku11ry3x0XJGuR8u6VSI9C/BSR2jXEEUYdiga4i3Hj8XexddbUBp7mXYHYp9WzXY8ofrJ0dKhzOHJZaWyJxGY+xEsoLHX1XcJTJ8Qtcq16NMm21Tjyx70EBvs/AeI6VDRWQho5wroewZidIiIStv7so5G3jY4i6nKVXi637u7eJgO0n5Y059xpowAMBfe+b98D+8/PYr1xVpYhXA1xE7dr+W0oUqmt5WIB2FsjFtXeRV/xV69dPsW9xP8OMO5VpIqMCu0I+QEYhDm8xoUNfgzIQVD74kElXQokX7kVUqPSLT/bXYTfwsKUuMTsXYXa3Qkoo8xQ3NSUwfGgNeRSBh2KBriLcePxd7F11tQGnuZdgdin1bNdjyh+snR0qHM60g3I0vnv8MT0294HCkjjMO/JCLYqdmVo2R5ljyhLMkuHiswCEW3I0vnv8MT0294HCkjjMO/JCLYqdmVo2R5ljyhLMkuHg5AYcllpbInEZj7ESygsdfVdwlMnxC1yrXo0ybbVOPLHvQ9azC/VYAAIABAACAAAAAgAAAAAAAAAAAARcg1xE7dr+W0oUqmt5WIB2FsjFtXeRV/xV69dPsW9xP8OMAAAEFIHYAe+hICftbqTj988crTyZqbqPCbjhz/nGNKLjhLWxrAQbVAsBEIHDvYVYWDRytea7ykCLNoRZ3uClUSiUmW6uQQl5bFWs1rSAhLqKFalzxEOZqK+nXNTFHk/28s4iyuPE/K2remC569awCwEQgLqwyHlFE578ajIV+v+5n3jCKH0CguJk7nJimLeIQWFKtIHYO3FCi+DMwDSFSQCW0v3KroAtZqvpMup4r1rYk0/rCrAHARCAu54DDChueFTxzVU4fsXEUnaeCEHOC67ut34dFyW6ZKq0gVBoHxPPrD4fK/prcoyzfJzsOlzWJaXoDFU3RSn8IsGisIQchLqKFalzxEOZqK+nXNTFHk/28s4iyuPE/K2remC569TkBPmFRChj97lojGghimsVOyUEYz+y8RyXUOSCXol7+a9n1rML9VgAAgAEAAIAAAACAAQAAAAAAAAAA",
+        "parent": "020000000100000000000000000000000000000000000000000000000000000000000000006300000000ffffffff01a0860100000000002251202dad5deea0af85378d7692ed75af2df1d17246b91f2ee95488f42fc1491da35c00000000"
+      },
+      {
+        "full": true,
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000,
+        "psbt": "cHNidP8BAF4CAAAAAYRiQLu4/HvIuviksbHHExXBvjZqAvSlGSeF0+COgnQ/AAAAAAD/////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSAtrV3uoK+FN412ku11ry3x0XJGuR8u6VSI9C/BSR2jXAAAAAABASughgEAAAAAACJRIC2tXe6gr4U3jXaS7XWvLfHRcka5Hy7pVIj0L8FJHaNcQRRh2KBriLcePxd7F11tQGnuZdgdin1bNdjyh+snR0qHM4cllpbInEZj7ESygsdfVdwlMnxC1yrXo0ybbVOPLHvQQJUKPiv8t30Hij7qudBE7sYEtYEavSgNnr4pfiFLqNm747q1VHFPbRuTkZjIfnO4ekaH0R+/+rohkpZvBeDi0tpiFcDXETt2v5bShSqa3lYgHYWyMW1d5FX/FXr10+xb3E/w4w7lWkiowK7Qj5ARiEObzGhQ1+DMhBUPviQSVdCiRfuRVSo9ItP9tdhN/CwpS4xOxdhdrdCSijzFDc1JTB8aA15FIGHYoGuItx4/F3sXXW1Aae5l2B2KfVs12PKH6ydHSoczrSDcjS+e/wxPTb3gcKSOMw78kItip2ZWjZHmWPKEsyS4eKzAIRbcjS+e/wxPTb3gcKSOMw78kItip2ZWjZHmWPKEsyS4eDkBhyWWlsicRmPsRLKCx19V3CUyfELXKtejTJttU48se9D1rML9VgAAgAEAAIAAAACAAAAAAAAAAAABFyDXETt2v5bShSqa3lYgHYWyMW1d5FX/FXr10+xb3E/w4wAA",
+        "parent": "020000000100000000000000000000000000000000000000000000000000000000000000006300000000ffffffff01a0860100000000002251202dad5deea0af85378d7692ed75af2df1d17246b91f2ee95488f42fc1491da35c00000000"
+      }
+    ],
+    "recoveryScope": "complete native recovery family; runtime integration and funded lifecycle qualification remain required"
+  },
+  {
+    "tier": "advanced",
+    "template": "tr(@0/**,{{and_v(v:pk(@1/**),pk(@2/**)),and_v(v:pk(@1/<2;3>/*),pk(@3/<0;1>/*))},{and_v(v:pk(@2/<2;3>/*),pk(@3/<2;3>/*)),and_v(v:pk(@4/**),pk(@3/<4;5>/*))}})",
+    "keys": [
+      "tpubD6NzVbkrYhZ4XQfD2GRdEuw2RK2pQhugMfHGxQaoUFA8KS1nLk2Ds7vwfHwNpnBnrr4souxBGb96fzGzv8jNCfVx1YJiceZq1an1pNtknUe",
+      "[2cee93bd/86'/1'/0']tpubDCTFBBxwHN52YUjjnZgvXAFhR9NsS4Ry2LBSTBf4YNjiuyosPp5MCEuuFZXLwvn3PmAt7E6gFM3UsPH8LJ7HmdNvzSBYwd1vLzYpjCH1BbZ",
+      "[f5acc2fd/86'/1'/0']tpubDDKYE6BREvDsSWMazgHoyQWiJwYaDDYPbCFjYxN3HFXJP5fokeiK4hwK5tTLBNEDBwrDXn8cQ4v9b2xdW62Xr5yxoQdMu1v6c7UDXYVH27U",
+      "tpubD6NzVbkrYhZ4YSEoNM54rLbLNE4mgZgAq5ivHwBccNfoKaijS83TYtc7rrF111K2YG7mo29nD4K4UuBJxPqLi9F66nENYZWmRUzmkL4AXY4",
+      "[8bc48cf1/86'/1'/0']tpubDDTHqfwm4Bx8WyxfyJFFPNKuza1UVBJfRTXu8eJfTYUWyxpyPv91gE4HLtCLKTT7a2QpJXrtYaNppGGPBhMYLtXddBVi7NNKeEFLQRskKYk"
+    ],
+    "receive": "tb1pfgknklhm585nr3mjnawdfqmwt4wth85xkt4uppa3wzngrukjzldsmk7h7p",
+    "change": "tb1p2uw9getcj6tu8f9g0sd3tnu06a67hrgjk6dcdjsu0cw7g4x6ssvs92t9wz",
+    "hardware": "dc8d2f9eff0c4f4dbde070a48e330efc908b62a766568d91e658f284b324b878",
+    "payments": [
+      {
+        "full": false,
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 20000,
+        "fee": 1000,
+        "psbt": "cHNidP8BAIkCAAAAAb0g73wO/Ss2koBszP3BuliAyT8iqaIW5wj/au9UNDAxAAAAAAD/////AiBOAAAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+uYNAEAAAAAACJRIFccVGV4lpfDpKh8GxXPj9d1640StpuGyhx+HeRU2oQZAAAAAAABAF4CAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYwAAAAD/////AaCGAQAAAAAAIlEgSi07fvuh6THHcp9c1INuXVy7noay68CHsXCmgfLSF9sAAAAAAQEroIYBAAAAAAAiUSBKLTt++6HpMcdyn1zUg25dXLuehrLrwIexcKaB8tIX20EUYdiga4i3Hj8XexddbUBp7mXYHYp9WzXY8ofrJ0dKhzOHJZaWyJxGY+xEsoLHX1XcJTJ8Qtcq16NMm21Tjyx70EAENIvZeMbK4LEXFgdInl73Z+f/S7txEfl5uqe6UGT0xrEsRxBd6xKilJVfwkmL4SNN3gBBXzQmd9AcKyQHtt34YhXAdFafyN/LFfrvlmcsQ05GDM1N1R6+Fj2yK6KWr6QIKqY8phKyDU1XXpVN6a8t3LCQGmccDIj6WAe7CwqepEKUogodaB6LE2DRaDxtbwGwcNbltyaEpzaPmgG2MsbWkkVgRSBh2KBriLcePxd7F11tQGnuZdgdin1bNdjyh+snR0qHM60g3I0vnv8MT0294HCkjjMO/JCLYqdmVo2R5ljyhLMkuHiswCEW3I0vnv8MT0294HCkjjMO/JCLYqdmVo2R5ljyhLMkuHg5AYcllpbInEZj7ESygsdfVdwlMnxC1yrXo0ybbVOPLHvQ9azC/VYAAIABAACAAAAAgAAAAAAAAAAAARcgdFafyN/LFfrvlmcsQ05GDM1N1R6+Fj2yK6KWr6QIKqYAAAEFIAlpqk/DJOozlLN0Mz5jjL1IJKul15J7X/v8HLHt/leuAQb9HAECwEQgcO9hVhYNHK15rvKQIs2hFne4KVRKJSZbq5BCXlsVazWtICEuooVqXPEQ5mor6dc1MUeT/byziLK48T8rat6YLnr1rALARCAurDIeUUTnvxqMhX6/7mfeMIofQKC4mTucmKYt4hBYUq0g/OMoSiQE175DnQAo2VuBRxrhBiiHe69gYIKluLQNLUWsAsBEIC7ngMMKG54VPHNVTh+xcRSdp4IQc4Lru63fh0XJbpkqrSBtTLxydez5csAK+tpK1oHkMcsFxQ7vsu56vpaVqFpLJ6wCwEQgTg8BzH6eT+RDgL9BDPnuE06djEn57BfPB28JrTcwtUytIFw+5E4lzGkM2CONS8bXz+nODJD9JELQRV+RW1lllMaTrCEHIS6ihWpc8RDmaivp1zUxR5P9vLOIsrjxPytq3pguevU5AT5hUQoY/e5aIxoIYprFTslBGM/svEcl1Dkgl6Je/mvZ9azC/VYAAIABAACAAAAAgAEAAAAAAAAAAA==",
+        "parent": "020000000100000000000000000000000000000000000000000000000000000000000000006300000000ffffffff01a0860100000000002251204a2d3b7efba1e931c7729f5cd4836e5d5cbb9e86b2ebc087b170a681f2d217db00000000"
+      },
+      {
+        "full": true,
+        "recipient": "tb1pehf30gyfapngexs8a6f9y07djz723j8rgdc3dl2t3j0752l5tl4sfzhzsd",
+        "amount": 99000,
+        "fee": 1000,
+        "psbt": "cHNidP8BAF4CAAAAAb0g73wO/Ss2koBszP3BuliAyT8iqaIW5wj/au9UNDAxAAAAAAD/////AbiCAQAAAAAAIlEgzdMXoInoZoyaB+6SUj/NkLyoyONDcRb9S4yf6iv0X+sAAAAAAAEAXgIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABjAAAAAP////8BoIYBAAAAAAAiUSBKLTt++6HpMcdyn1zUg25dXLuehrLrwIexcKaB8tIX2wAAAAABASughgEAAAAAACJRIEotO377oekxx3KfXNSDbl1cu56GsuvAh7FwpoHy0hfbQRRh2KBriLcePxd7F11tQGnuZdgdin1bNdjyh+snR0qHM4cllpbInEZj7ESygsdfVdwlMnxC1yrXo0ybbVOPLHvQQO4EqsPmKpFYZVT3dLdcp8C6BesujYl7bAgXpHjLdDpnawdjMIGzt50KnCl6cAKhYP//cH6eyLMuhmTEI99b55xiFcB0Vp/I38sV+u+WZyxDTkYMzU3VHr4WPbIropavpAgqpjymErINTVdelU3pry3csJAaZxwMiPpYB7sLCp6kQpSiCh1oHosTYNFoPG1vAbBw1uW3JoSnNo+aAbYyxtaSRWBFIGHYoGuItx4/F3sXXW1Aae5l2B2KfVs12PKH6ydHSoczrSDcjS+e/wxPTb3gcKSOMw78kItip2ZWjZHmWPKEsyS4eKzAIRbcjS+e/wxPTb3gcKSOMw78kItip2ZWjZHmWPKEsyS4eDkBhyWWlsicRmPsRLKCx19V3CUyfELXKtejTJttU48se9D1rML9VgAAgAEAAIAAAACAAAAAAAAAAAABFyB0Vp/I38sV+u+WZyxDTkYMzU3VHr4WPbIropavpAgqpgAA",
+        "parent": "020000000100000000000000000000000000000000000000000000000000000000000000006300000000ffffffff01a0860100000000002251204a2d3b7efba1e931c7729f5cd4836e5d5cbb9e86b2ebc087b170a681f2d217db00000000"
+      }
+    ],
+    "recoveryScope": "complete native recovery family; runtime integration and funded lifecycle qualification remain required"
+  }
+]

@@ -1,3 +1,4 @@
+import { lightTestEnrollment, lightTestStatus } from '../lib/vault/light/testdata/helpers'
 import { Address, OutScript, TEST_NETWORK } from '@scure/btc-signer'
 const bitcoinDestination = Address(TEST_NETWORK).encode(OutScript.decode(hex.decode('0014' + '43'.repeat(20))))
 import { ArkAddress } from '@arkade-os/sdk'
@@ -18,6 +19,7 @@ import VaultHardware from '../screens/Vault/onboard/Hardware'
 import { CONNECTOR_TEST_DESCRIPTOR, CONNECTOR_TEST_PUB } from '../test/e2e-vault/fixtures/connector'
 
 const mocks = vi.hoisted(() => ({
+  authorizeRenewals: vi.fn(async () => null),
   bitcoinSend: vi.fn(),
   signerOutputs: vi.fn(),
   availableSats: 20000,
@@ -42,6 +44,8 @@ const mocks = vi.hoisted(() => ({
     scalar: new Uint8Array(32).fill(8),
   })),
 }))
+
+vi.mock('../lib/vault/light/guardianDelegation', () => ({ authorizeGuardianRenewals: mocks.authorizeRenewals }))
 
 vi.mock('../lib/vault/spendingBitcoinFunding', async (original) => ({
   ...(await original<typeof import('../lib/vault/spendingBitcoinFunding')>()),
@@ -295,6 +299,145 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       validUntil: 4_000_000_000,
       refundLocktime: 4_000_000_100,
     })
+  })
+
+  it('uses shared Bitcoin review and keeps Light Savings watch-only', async () => {
+    const record = await lightTestEnrollment()
+    const onSavings = vi.fn()
+    const bound = lightTestStatus(record.descriptor) as VaultStatus
+    mocks.bitcoinSend.mockImplementation(async (enrollment, status, _outputs, approve) => {
+      expect(enrollment).toEqual(record.enrollment)
+      expect(status.vaultId).toBe(record.descriptor.vaultId)
+      expect(status.protectionTier).toBe('light')
+      return (await approve({ feeSats: 400 }))
+        ? { state: 'submitted', commitmentTxid: 'ab'.repeat(32) }
+        : { state: 'cancelled' }
+    })
+    render(
+      <VaultProvider
+        lightSession={{
+          record,
+          status: bound,
+          watchedSavingsSats: 1234,
+          onSavings,
+          onSecurity: vi.fn(),
+          onSettings: vi.fn(),
+          onRecovery: vi.fn(),
+          onLock: vi.fn(),
+        }}
+      >
+        <Probe />
+      </VaultProvider>,
+    )
+    fireEvent.click(screen.getByText('Show Savings'))
+    expect(onSavings).toHaveBeenCalledOnce()
+    expect(screen.getByTestId('account')).toHaveTextContent('spend')
+    fireEvent.click(screen.getByText('Set Bitcoin draft'))
+    fireEvent.click(screen.getByText('Review'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
+    expect(mocks.bitcoinSend).toHaveBeenCalledOnce()
+  })
+
+  async function renderLight() {
+    const record = await lightTestEnrollment()
+    const bound = lightTestStatus(record.descriptor) as VaultStatus
+    render(
+      <VaultProvider
+        lightSession={{
+          record,
+          status: bound,
+          watchedSavingsSats: 1234,
+          onSavings: vi.fn(),
+          onSecurity: vi.fn(),
+          onSettings: vi.fn(),
+          onRecovery: vi.fn(),
+          onLock: vi.fn(),
+        }}
+      >
+        <Probe />
+      </VaultProvider>,
+    )
+    return { record, bound }
+  }
+
+  it.each(['paid', 'fee changed', 'cancelled'])(
+    'preserves Light authorization in shared Arkade Review: %s',
+    async (outcome) => {
+      const { record, bound } = await renderLight()
+      mocks.authorizeRenewals.mockClear()
+      mocks.reserve.mockResolvedValue({ ...reviewed, feeSats: outcome === 'fee changed' ? 500 : 0 })
+      mocks.send.mockResolvedValue({ txid: '55'.repeat(32), feeSats: 0 })
+      if (outcome === 'cancelled') mocks.unlockSpend.mockRejectedValueOnce(new Error('Passkey cancelled'))
+      fireEvent.click(screen.getByText('Set draft'))
+      await act(async () => fireEvent.click(screen.getByText('Review')))
+      expect(mocks.unlockSpend).not.toHaveBeenCalled()
+      await act(async () => fireEvent.click(screen.getByText('Approve')))
+      if (outcome === 'cancelled') {
+        expect(mocks.authorizeRenewals).not.toHaveBeenCalled()
+        expect(mocks.reserve).not.toHaveBeenCalled()
+        expect(mocks.send).not.toHaveBeenCalled()
+      } else {
+        expect(mocks.authorizeRenewals).toHaveBeenCalledExactlyOnceWith(record.descriptor, expect.any(Uint8Array))
+        expect(mocks.unlockSpend).toHaveBeenCalledOnce()
+        if (outcome === 'fee changed') {
+          expect(screen.getByTestId('screen')).toHaveTextContent('review')
+          expect(screen.getByTestId('fee')).toHaveTextContent('500')
+          expect(mocks.send).not.toHaveBeenCalled()
+        } else {
+          expect(mocks.send).toHaveBeenCalledWith(record.enrollment, bound, expect.any(Object), expect.any(Function))
+          expect(screen.getByTestId('screen')).toHaveTextContent('success')
+        }
+      }
+    },
+  )
+
+  it('quotes and funds Light Lightning through shared Review with its own renewal ceremony', async () => {
+    mocks.lightningEnabled.mockReturnValue(true)
+    vi.spyOn(Date, 'now').mockReturnValue((MUTINYNET_INVOICE_TIMESTAMP + 1) * 1000)
+    const { record, bound } = await renderLight()
+    const funding = { ...reviewed, amountSats: 2125, feeSats: 50 }
+    mocks.reserve.mockResolvedValue(funding)
+    mocks.send.mockImplementation(async (enrollment, status, quote, unlock) => {
+      expect(enrollment).toEqual(record.enrollment)
+      expect(status).toEqual(bound)
+      expect(quote).toEqual(funding)
+      const ceremony = unlock(enrollment, status, quote.bundleDigest)
+      try {
+        await ceremony.unlock()
+      } finally {
+        ceremony.dispose()
+      }
+      return { txid: '55'.repeat(32), feeSats: 50 }
+    })
+    mocks.authorizeRenewals.mockClear()
+    fireEvent.click(screen.getByText('Set Lightning draft'))
+    await act(async () => fireEvent.click(screen.getByText('Review')))
+    expect(screen.getByTestId('screen')).toHaveTextContent('review')
+    expect(screen.getByTestId('fee')).toHaveTextContent('75')
+    expect(mocks.send).not.toHaveBeenCalled()
+    await act(async () => fireEvent.click(screen.getByText('Approve')))
+    expect(screen.getByTestId('screen')).toHaveTextContent('success')
+    expect(screen.getByTestId('kind')).toHaveTextContent('lightning')
+    expect(mocks.authorizeRenewals).toHaveBeenCalledOnce()
+    expect(mocks.recordLightningFunding).toHaveBeenCalledOnce()
+  })
+
+  it('cancels Light Bitcoin review when opening watch-only Savings', async () => {
+    await renderLight()
+    let approved: boolean | undefined
+    mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, _outputs, approve) => {
+      approved = await approve({ feeSats: 400 })
+      return { state: 'cancelled' }
+    })
+    fireEvent.click(screen.getByText('Set Bitcoin draft'))
+    fireEvent.click(screen.getByText('Review'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    fireEvent.click(screen.getByText('Show Savings'))
+    await waitFor(() => expect(approved).toBe(false))
+    expect(screen.getByTestId('account')).toHaveTextContent('spend')
+    expect(mocks.send).not.toHaveBeenCalled()
   })
 
   it('reviews and completes a Bitcoin payment through the canonical send route with one confirmation', async () => {
@@ -706,7 +849,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       }),
     )
     expect(mocks.recordLightningFunding).toHaveBeenCalledWith(expect.any(Object), '44'.repeat(32), '55'.repeat(32))
-    expect(mocks.send).toHaveBeenCalledWith(expect.any(Object), status, lightningFunding)
+    expect(mocks.send).toHaveBeenCalledWith(expect.any(Object), status, lightningFunding, undefined)
     expect(mocks.sdkWallet.mock.calls[0]?.[3]).toBeUndefined()
   })
 
