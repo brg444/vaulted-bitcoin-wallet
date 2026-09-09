@@ -1,3 +1,4 @@
+import { importLightningAddressReceipts } from '../lnurl'
 import { reconcileVaultLightningReceives } from '../lightningReceiveClaim'
 import { LIGHT_PROFILE } from '../light/contract'
 import { requireLightStatus } from '../light/status'
@@ -318,6 +319,11 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
     })
     swapManager = activeSwapManager
     const maintainLightning = async () => {
+      try {
+        await importLightningAddressReceipts({ status, repository: swapRepository, contracts: manager })
+      } catch (error) {
+        consoleError(error, 'Lightning address reconciliation')
+      }
       try {
         await reconcileVaultLightningReceives({ status, repository: swapRepository, contracts: manager })
       } catch (error) {

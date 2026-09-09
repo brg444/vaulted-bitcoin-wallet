@@ -1,14 +1,19 @@
+import { vaultExitRepository } from './vtxo/exitRepository'
+import { importLightningAddressReceipts, validateLightningAddress, LNURL_ORIGIN } from './lnurl'
 import 'fake-indexeddb/auto'
 import { p2tr } from '@scure/btc-signer'
 import { scalarSecret, compressedFromScalar } from './program/fixtures'
 import { prepareLightningRecovery, validateLightningRecoveryPackage } from './recovery/lightningRecovery'
 import {
   ArkAddress,
+  ChainTxType,
+  createExitChainResolver,
   Transaction,
   VHTLC,
   getNetwork,
   InMemoryContractRepository,
   type OnchainProvider,
+  type IndexerProvider,
 } from '@arkade-os/sdk'
 import {
   InMemoryAssetSwapRepository,
@@ -479,4 +484,128 @@ it('persists the exact invoice total alongside the lower card estimate', async (
   expect(receiveProfile(r).estimatedPaySats).toBe(1004)
   expect(receiveProfile(r).quote.from_amount).toBe(1006)
   expect(receiveProfile((await h.repository.getRfqSwap(r.rfqId))!).quote.from_amount).toBe(1006)
+})
+
+describe('Lightning address receipt import', () => {
+  it.each(['light', 'standard', 'advanced'] as const)(
+    'imports %s receipts into the existing recovery journal without trusting remote settlement',
+    async (tier) => {
+      const h = await harness(true, () => {}, tier)
+      const r = await h.request()
+      vi.useRealTimers()
+      const p = receiveProfile(r)
+      const id = 'v' + '12'.repeat(8)
+      const address = {
+        id,
+        address: `${id}@ln.getvaulted.xyz`,
+        active: true,
+        readToken: 'ab'.repeat(32),
+        maxFeeSats: 25,
+        lnurl: bech32
+          .encode('lnurl', bech32.toWords(new TextEncoder().encode(`${LNURL_ORIGIN}/.well-known/lnurlp/${id}`)), 1023)
+          .toUpperCase(),
+        binding: {
+          vaultId: h.status.vaultId,
+          network: h.status.network,
+          templateVersion: h.status.templateVersion,
+          protectionTier: h.status.protectionTier,
+          policyVersion: h.status.policyVersion,
+          descriptorHash: 'cd'.repeat(32),
+          spendingPolicyDigest: h.status.spendingPolicyDigest,
+          spendingAddress: h.status.spendingArkAddress,
+          spendingScript: h.status.spendingArkScript,
+          claimPublicKey: h.status.phoneBip340Pub,
+        },
+      }
+      const store = new Map<string, string>()
+      store.set(`vaulted:lnurl:v1:mainnet:${h.status.vaultId}`, JSON.stringify(address))
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          store.set(key, value)
+        },
+      })
+      const target = new InMemoryAssetSwapRepository()
+      const receipts = [
+        {
+          sequence: 1,
+          swapId: r.rfqId,
+          invoice: p.invoice,
+          preimage: (r.profile.hashlock as { preimageHex: string }).preimageHex,
+          preimageHash: (r.profile.hashlock as { paymentHash: string }).paymentHash,
+          lockupAddress: r.lockupAddress,
+          recovery: { quote: p.quote, claimDelay: unilateralClaimDelay(605184), invoiceExpiresAt: p.invoiceExpiresAt },
+          settled: true,
+        },
+      ]
+      const recoveryBase = lightningRecoveryFixture({ advanced: tier === 'advanced', light: tier === 'light' })
+      const funding = new Transaction({ version: 3 })
+      const parent = p2tr(hex.decode(compressedFromScalar(21)).slice(1))
+      funding.addInput({
+        txid: '01'.repeat(32),
+        index: 0,
+        witnessUtxo: { script: parent.script, amount: 1000n },
+        tapInternalKey: parent.tapInternalKey,
+      })
+      funding.addOutput({ amount: 1000n, script: ArkAddress.decode(r.lockupAddress).pkScript })
+      funding.sign(scalarSecret(21))
+      const coin = {
+        txid: funding.id,
+        vout: 0,
+        value: 1000,
+        script: hex.encode(ArkAddress.decode(r.lockupAddress).pkScript),
+        isSpent: true,
+        spentBy: 'historical-claim',
+        createdAt: new Date().toISOString(),
+      }
+      const graph = {
+        info: recoveryBase.entry.exit!.info,
+        coin: packExitArchive(coin),
+        chain: [
+          { txid: '01'.repeat(32), type: ChainTxType.COMMITMENT, spends: [], expiresAt: '0' },
+          { txid: funding.id, type: ChainTxType.TREE, spends: ['01'.repeat(32)], expiresAt: '1789000000' },
+        ],
+        transactions: { [funding.id]: base64.encode(funding.toPSBT()) },
+      }
+      Object.assign(receipts[0], { graphs: { funding: true } })
+      const fetcher = vi.fn(
+        async (url: string) => new Response(JSON.stringify(url.includes('/recovery/') ? graph : { receipts })),
+      )
+      vi.stubGlobal('fetch', fetcher)
+      const input = {
+        status: h.status,
+        repository: target,
+        contracts: h.contracts as unknown as import('@arkade-os/sdk').IContractManager,
+      }
+      await importLightningAddressReceipts(input)
+      const saved = await target.getRfqSwap(r.rfqId)
+      expect(saved?.state).toBe('pending')
+      expect(saved?.profile.hashlock).toEqual(r.profile.hashlock)
+      expect(saved?.profile['lnurlGraph:funding']).toEqual({ txid: funding.id, vout: 0 })
+      const cache = vaultExitRepository(h.status.vaultId, 'mainnet')
+      try {
+        const resolver = createExitChainResolver({
+          repository: cache,
+          indexer: emptyIndexer() as unknown as IndexerProvider,
+        })
+        expect(await resolver.getVirtualTxs([funding.id])).toEqual([graph.transactions[funding.id]])
+        await cache.clear()
+      } finally {
+        await cache[Symbol.asyncDispose]()
+      }
+      expect(fetcher).toHaveBeenCalledWith(
+        expect.stringContaining(LNURL_ORIGIN),
+        expect.objectContaining({ credentials: 'omit', redirect: 'error' }),
+      )
+      await importLightningAddressReceipts(input)
+      expect(await target.getAllRfqSwaps()).toHaveLength(1)
+      expect(fetcher.mock.calls.filter(([url]) => url.includes('/recovery/'))).toHaveLength(2)
+      receipts[0].preimage = '00'.repeat(32)
+      await expect(importLightningAddressReceipts(input)).rejects.toThrow('Invalid Lightning address recovery record')
+      expect((await target.getAllRfqSwaps())[0].profile.hashlock).toEqual(r.profile.hashlock)
+      expect(() => validateLightningAddress({ ...address, lnurl: 'LNURL1WRONG' } as never, h.status)).toThrow(
+        'does not match',
+      )
+    },
+  )
 })

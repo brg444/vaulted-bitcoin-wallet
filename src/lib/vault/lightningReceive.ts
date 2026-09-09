@@ -225,6 +225,59 @@ export function validateReceiveRecord(
   return script
 }
 
+export function createVaultLightningReceiveRecord(input: {
+  status: VaultStatus
+  quote: RfqQuote
+  script: InstanceType<typeof VHTLC.ScriptV2>
+  preimage: Uint8Array
+  payDeadline: number
+  estimatedPaySats: number
+  now: number
+}) {
+  const { status, quote, script, preimage, payDeadline, estimatedPaySats, now } = input
+  const pins = networkPins(status.network)
+  const address = script.address(pins.arkHrp, hex.decode(pins.operatorSignerPub).slice(1)).encode()
+  const paymentHash = paymentHashOf(preimage)
+  const rfqId = quote.rfq_id
+  const invoice = String(quote.profile?.invoice ?? '')
+  return createRfqSwapRecord(
+    {
+      kind: 'lightning_receive',
+      lockupAddress: address,
+      amount: quote.to_amount,
+      profile: {
+        signer: { signingDescriptor: `tr(${status.phoneBip340Pub!.slice(2)})` },
+        hashlock: { paymentHash, preimageHex: hex.encode(preimage) },
+        expectedAmount: quote.to_amount,
+        payoutAddress: status.spendingArkAddress!,
+        vaultLightningReceive: {
+          version: 1,
+          network: pins.sdkNetwork,
+          vaultId: status.vaultId,
+          invoice,
+          invoiceExpiresAt: payDeadline,
+          quote,
+          payoutAddress: status.spendingArkAddress!,
+          estimatedPaySats,
+          phonePub: status.phoneBip340Pub!,
+        } satisfies VaultLightningReceiveProfile,
+      },
+    },
+    {
+      kind: 'lightning_receive',
+      rfqId,
+      state: 'pending',
+      lockupPkScript: script.pkScript,
+      lockup: { script, address },
+      paymentHash,
+      refundLocktime: quote.refund_locktime!,
+      expectedAmount: quote.to_amount,
+      createdAt: now,
+      updatedAt: now,
+    },
+  )
+}
+
 /** All public invoice fields are returned only after contract and secret readback. */
 export async function requestVaultLightningReceive(input: {
   status: VaultStatus
@@ -264,7 +317,7 @@ export async function requestVaultLightningReceive(input: {
   const request = lightningReceiveRequest({
     rfqId,
     paymentHash,
-    payoutAddress: status.spendingArkAddress,
+    payoutAddress: status.spendingArkAddress!,
     payoutPubkey: toXOnly(hex.decode(status.phoneBip340Pub)),
     amount: input.amountSats,
     amountSide: 'to',
@@ -283,7 +336,7 @@ export async function requestVaultLightningReceive(input: {
   const script = deriveVaultLightningReceive({
     quote,
     paymentHash,
-    payoutAddress: status.spendingArkAddress,
+    payoutAddress: status.spendingArkAddress!,
     phonePub: status.phoneBip340Pub,
     network: status.network!,
     claimDelay: unilateralClaimDelay(Number(info.unilateralExitDelay)),
@@ -298,42 +351,7 @@ export async function requestVaultLightningReceive(input: {
   assertReceivable({ quote, payDeadline, now })
   const address = script.address(pins.arkHrp, hex.decode(pins.operatorSignerPub).slice(1)).encode()
   await registerLockupContract(input.contracts, script, address)
-  const record = createRfqSwapRecord(
-    {
-      kind: 'lightning_receive',
-      lockupAddress: address,
-      amount: quote.to_amount,
-      profile: {
-        signer: { signingDescriptor: `tr(${status.phoneBip340Pub.slice(2)})` },
-        hashlock: { paymentHash, preimageHex: hex.encode(preimage) },
-        expectedAmount: quote.to_amount,
-        payoutAddress: status.spendingArkAddress,
-        vaultLightningReceive: {
-          version: 1,
-          network: pins.sdkNetwork,
-          vaultId: status.vaultId,
-          invoice,
-          invoiceExpiresAt: payDeadline,
-          quote,
-          payoutAddress: status.spendingArkAddress,
-          estimatedPaySats: plan.maxPaySats,
-          phonePub: status.phoneBip340Pub,
-        } satisfies VaultLightningReceiveProfile,
-      },
-    },
-    {
-      kind: 'lightning_receive',
-      rfqId,
-      state: 'pending',
-      lockupPkScript: script.pkScript,
-      lockup: { script, address },
-      paymentHash,
-      refundLocktime: quote.refund_locktime!,
-      expectedAmount: quote.to_amount,
-      createdAt: now,
-      updatedAt: now,
-    },
-  )
+  const record = createVaultLightningReceiveRecord({ status, quote, script, preimage, payDeadline, estimatedPaySats: plan.maxPaySats, now })
   await input.repository.saveRfqSwap(record)
   const persisted = await input.repository.getRfqSwap(rfqId)
   if (!persisted || JSON.stringify(persisted) !== JSON.stringify(record))

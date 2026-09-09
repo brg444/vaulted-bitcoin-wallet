@@ -1,3 +1,5 @@
+import LightningAddress from './LightningAddress'
+import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import { useEffect, useRef, useState } from 'react'
 import { RestArkProvider, RestEmulatorProvider } from '@arkade-os/sdk'
 import type { RfqSwapRecord } from '@arkade-os/swap'
@@ -184,6 +186,7 @@ export default function LightningReceive({
       }
     >
       <div className='qg-stack qg-invoice'>
+        {!current && lightningAddressEnabled() ? <LightningAddress key={status.vaultId} status={status} /> : null}
         {current ? (
           <>
             <div className='qg-receive-copy qg-invoice-summary'>

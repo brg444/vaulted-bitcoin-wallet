@@ -228,6 +228,7 @@ export function publicAuthorizerPath(url = ''): string {
       return `/v1/light/renew/${phase}`
     if (route === 'light-backup' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
       return `/v1/light/backup/${phase}`
+    if (route === 'lnurl' && new Set(['challenge', 'register', 'revoke']).has(phase)) return `/v1/lnurl/${phase}`
     if (route === 'recovery-archive' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
       return `/v1/recovery-archive/${phase}`
     if (route === 'light-enroll' && new Set(['start', 'propose', 'finish']).has(phase))

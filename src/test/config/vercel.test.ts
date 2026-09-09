@@ -142,6 +142,7 @@ describe('Vercel worker caching', () => {
     expect(connectSrc).toEqual([
       'connect-src',
       "'self'",
+      'https://ln.getvaulted.xyz',
       'https://emulator.arkade.computer',
       'https://arkade.computer',
       'https://mempool.arkade.sh',
@@ -150,7 +151,11 @@ describe('Vercel worker caching', () => {
       'wss://nostr.arkade.sh',
     ])
     expect(csp).not.toContain('mutinynet')
-    expect(csp).not.toContain('getvaulted')
+    expect(csp).not.toContain('app.getvaulted.xyz')
+    expect(config.rewrites).toContainEqual({
+      source: '/v1/lnurl/:phase',
+      destination: '/api/gateway?route=lnurl&phase=:phase',
+    })
     expect(JSON.stringify(config)).not.toContain('mutinynet')
   })
 
