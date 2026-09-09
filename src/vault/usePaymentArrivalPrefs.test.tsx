@@ -79,9 +79,12 @@ describe('arrival delivery preferences', () => {
     await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['quiet']))
     expect(mockedHaptic).not.toHaveBeenCalled()
 
+    // A later payment folds the visible banner into one summary so two
+    // notices never stack, with a single haptic pulse for the summary.
     rerender({ rows: [stored, row({ txid: 'quiet' }), row({ txid: 'loud' })], delivery: ENABLED })
-    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['quiet', 'loud']))
-    expect(mockedHaptic).toHaveBeenCalled()
+    await waitFor(() => expect(result.current.catchUp).toMatchObject({ count: 2 }))
+    expect(result.current.arrivals).toEqual([])
+    expect(mockedHaptic).toHaveBeenCalledTimes(1)
   })
 
   it('drops a pending claim announcement when banners are disabled mid-flight', async () => {

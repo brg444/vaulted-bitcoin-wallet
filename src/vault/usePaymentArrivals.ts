@@ -21,6 +21,7 @@ export interface PaymentCatchUp {
   count: number
   totalSats: number
   keys: string[]
+  items: PaymentArrival[]
 }
 
 export function summarizeArrivals(arrivals: readonly PaymentArrival[]): PaymentCatchUp {
@@ -29,6 +30,7 @@ export function summarizeArrivals(arrivals: readonly PaymentArrival[]): PaymentC
     count: arrivals.length,
     totalSats: arrivals.reduce((total, arrival) => total + (arrival.item.displayAmount ?? arrival.item.amount), 0),
     keys,
+    items: [...arrivals],
   }
 }
 
@@ -99,11 +101,20 @@ export function detectPaymentArrivals(
 
 export function seedArrivalBaseline(rows: readonly VaultHistoryItem[], scope: PaymentScope): Map<string, boolean> {
   const seeded = loadArrivalBaseline(scope)
-  const outgoingTxids = outgoingReferences(rows)
-  for (const row of rows) {
-    const key = paymentIdentityForItem(row, scope).key
-    if (seeded.has(key)) continue
-    seeded.set(key, isArrivalCandidate(row, outgoingTxids))
+  // A stored baseline is trusted evidence of what this scope already
+  // observed: keys absent from it stay absent, so genuinely new available
+  // receipts flow to detection as fresh catch-up. With no stored baseline
+  // this is a first sync (or cleared data) and everything present seeds
+  // quietly instead. Staged hydration of the very first snapshot therefore
+  // stays quiet only through its first run; later runs detect normally.
+  const trusted = seeded.size > 0
+  if (!trusted) {
+    const outgoingTxids = outgoingReferences(rows)
+    for (const row of rows) {
+      const key = paymentIdentityForItem(row, scope).key
+      if (seeded.has(key)) continue
+      seeded.set(key, isArrivalCandidate(row, outgoingTxids))
+    }
   }
   return seeded
 }
@@ -136,6 +147,10 @@ export function usePaymentArrivals(
 } {
   const [arrivals, setArrivals] = useState<PaymentArrival[]>([])
   const [catchUp, setCatchUp] = useState<PaymentCatchUp | null>(null)
+  const arrivalsRef = useRef<PaymentArrival[]>([])
+  arrivalsRef.current = arrivals
+  const catchUpRef = useRef<PaymentCatchUp | null>(null)
+  catchUpRef.current = catchUp
   const seenRef = useRef<Map<string, boolean> | null>(null)
   const pendingRef = useRef<PaymentArrival[]>([])
   const pausedRef = useRef(paused)
@@ -164,6 +179,32 @@ export function usePaymentArrivals(
     pendingRef.current = []
     setArrivals([])
     setCatchUp(null)
+  }
+
+  /**
+   * Present accepted arrivals with at most one notice visible. A lone fresh
+   * payment banners alone only when nothing is already showing; otherwise
+   * every accepted arrival folds into a single catch-up summary together
+   * with previously visible notices, so successive batches never overwrite
+   * an undismissed summary and never stack a burst alongside it.
+   */
+  const presentAccepted = (accepted: PaymentArrival[], haptics: boolean) => {
+    const visible = arrivalsRef.current
+    const prior = catchUpRef.current
+    if (!prior && accepted.length === 1 && visible.length === 0) {
+      if (haptics) hapticSubtle()
+      setArrivals((current) => {
+        const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
+        for (const arrival of accepted) queued.set(arrival.key, arrival)
+        return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
+      })
+      return
+    }
+    const pool = new Map<string, PaymentArrival>()
+    for (const arrival of [...(prior?.items ?? []), ...visible, ...accepted]) pool.set(arrival.key, arrival)
+    if (haptics) hapticSubtle()
+    setCatchUp(summarizeArrivals([...pool.values()]))
+    setArrivals([])
   }
 
   useEffect(() => {
@@ -213,17 +254,7 @@ export function usePaymentArrivals(
           pendingRef.current = [...queued.values()]
           return
         }
-        if (accepted.length === 1) {
-          if (live.hapticsEnabled) hapticSubtle()
-          setArrivals((current) => {
-            const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
-            for (const arrival of accepted) queued.set(arrival.key, arrival)
-            return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
-          })
-          return
-        }
-        if (live.hapticsEnabled) hapticSubtle()
-        setCatchUp(summarizeArrivals(accepted))
+        presentAccepted(accepted, live.hapticsEnabled)
       })
       .catch(() => {
         // Delivery storage failure suppresses an optional banner; payment
@@ -241,19 +272,10 @@ export function usePaymentArrivals(
     }
     const flushed = pendingRef.current
     pendingRef.current = []
-    // Buffered arrivals flush as one summary when several landed while
-    // approval was in flight, so unlocking never produces a burst either.
-    if (flushed.length === 1) {
-      if (deliveryRef.current.hapticsEnabled) hapticSubtle()
-      setArrivals((current) => {
-        const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
-        for (const arrival of flushed) queued.set(arrival.key, arrival)
-        return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
-      })
-      return
-    }
-    if (deliveryRef.current.hapticsEnabled) hapticSubtle()
-    setCatchUp(summarizeArrivals(flushed))
+    // Buffered arrivals flush through the same at-most-one-notice rule, so
+    // unlocking after several landed while approval was in flight produces
+    // one summary rather than a burst.
+    presentAccepted(flushed, deliveryRef.current.hapticsEnabled)
   }, [paused])
 
   // Disabling banners invalidates pending and visible notices immediately,

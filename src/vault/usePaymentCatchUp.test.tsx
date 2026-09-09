@@ -6,9 +6,6 @@ import type { VaultHistoryItem } from '../lib/vault/history'
 import { usePaymentArrivals } from './usePaymentArrivals'
 
 vi.mock('../lib/haptics', () => ({ hapticSubtle: vi.fn() }))
-vi.mock('../lib/vault/arrivalDelivery', () => ({
-  claimArrivalDelivery: vi.fn(async (keys: readonly string[]) => [...keys]),
-}))
 
 const mockedHaptic = vi.mocked(hapticSubtle)
 
@@ -37,7 +34,7 @@ describe('reconnect catch-up summary', () => {
       rows: [stored, row({ txid: 'new-a', amount: 5_000 }), row({ txid: 'new-b', amount: 7_000 })],
     })
     await waitFor(() =>
-      expect(result.current.catchUp).toEqual({
+      expect(result.current.catchUp).toMatchObject({
         count: 2,
         totalSats: 12_000,
         keys: [
@@ -96,20 +93,48 @@ describe('reconnect catch-up summary', () => {
     expect(result.current.arrivals).toEqual([])
   })
 
-  it('announces across at most one tab when both observe the same catch-up', async () => {
+  it('summarizes payments that complete while away across an actual remount', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-4b' }
+    const pending = (txid: string) => row({ txid, confirmed: false })
+    const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
+      initialProps: { rows: [pending('away-a'), pending('away-b')] },
+    })
+    await waitFor(() => expect(first.result.current.catchUp).toBeNull())
+    first.unmount()
+
+    const second = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
+      initialProps: { rows: [row({ txid: 'away-a', amount: 5_000 }), row({ txid: 'away-b', amount: 5_000 })] },
+    })
+    await waitFor(() => expect(second.result.current.catchUp).toMatchObject({ count: 2, totalSats: 10_000 }))
+    expect(second.result.current.arrivals).toEqual([])
+    second.unmount()
+  })
+
+  it('announces across exactly one tab with simultaneous real arbitration', async () => {
     const scope = { network: 'mutinynet', vaultId: 'vault-catchup-5' }
     const stored = row({ txid: 'stored' })
+    const fresh = [stored, row({ txid: 'tab-a' }), row({ txid: 'tab-b' })]
+    // Both tabs mount before either detects, then observe the same rows.
     const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
       initialProps: { rows: [stored] },
     })
-    first.rerender({ rows: [stored, row({ txid: 'tab-a' }), row({ txid: 'tab-b' })] })
-    await waitFor(() => expect(first.result.current.catchUp?.count).toBe(2))
-
     const second = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
-      initialProps: { rows: [stored, row({ txid: 'tab-a' }), row({ txid: 'tab-b' })] },
+      initialProps: { rows: [stored] },
     })
+    await waitFor(() => expect(first.result.current.catchUp).toBeNull())
     await waitFor(() => expect(second.result.current.catchUp).toBeNull())
-    expect(second.result.current.arrivals).toEqual([])
+    first.rerender({ rows: fresh })
+    second.rerender({ rows: fresh })
+    await waitFor(() => {
+      const summaries = [first.result.current.catchUp, second.result.current.catchUp].filter(Boolean)
+      expect(summaries).toHaveLength(1)
+    })
+    const winner = first.result.current.catchUp ? first : second
+    const loser = winner === first ? second : first
+    expect(winner.result.current.catchUp).toMatchObject({ count: 2 })
+    expect(winner.result.current.arrivals).toEqual([])
+    expect(loser.result.current.catchUp).toBeNull()
+    expect(loser.result.current.arrivals).toEqual([])
     first.unmount()
     second.unmount()
   })
@@ -195,5 +220,92 @@ describe('reconnect catch-up summary', () => {
     await waitFor(() => expect(result.current.catchUp?.count).toBe(2))
     expect(result.current.arrivals).toEqual([])
     expect(mockedHaptic).toHaveBeenCalledTimes(1)
+  })
+
+  it('catches up rows that arrived while not ready once trusted evidence exists', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-11' }
+    const stored = row({ txid: 'stored' })
+    const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
+      initialProps: { rows: [stored] },
+    })
+    await waitFor(() => expect(first.result.current.catchUp).toBeNull())
+    first.unmount()
+
+    const rows = [stored, row({ txid: 'while-away-a' }), row({ txid: 'while-away-b' })]
+    const second = renderHook(
+      ({ rows: current, ready }) => usePaymentArrivals(current, scope, false, ready, new Set(), ENABLED),
+      { initialProps: { rows, ready: false as boolean } },
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(second.result.current.catchUp).toBeNull()
+    expect(second.result.current.arrivals).toEqual([])
+    second.rerender({ rows, ready: true })
+    await waitFor(() => expect(second.result.current.catchUp).toMatchObject({ count: 2 }))
+    expect(second.result.current.arrivals).toEqual([])
+    second.unmount()
+  })
+
+  it('drops a disabled summary claim and still announces a later payment', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-12' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows, delivery }) => usePaymentArrivals(rows, scope, false, true, new Set(), delivery),
+      { initialProps: { rows: [stored], delivery: ENABLED } },
+    )
+    rerender({ rows: [stored, row({ txid: 'held-a' }), row({ txid: 'held-b' })], delivery: NO_BANNERS })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    rerender({ rows: [stored, row({ txid: 'held-a' }), row({ txid: 'held-b' })], delivery: ENABLED })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    rerender({
+      rows: [stored, row({ txid: 'held-a' }), row({ txid: 'held-b' }), row({ txid: 'after' })],
+      delivery: ENABLED,
+    })
+    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['after']))
+    expect(result.current.catchUp).toBeNull()
+  })
+
+  it('merges later batches into an undismissed summary without side bursts', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-13' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [stored] } },
+    )
+    rerender({ rows: [stored, row({ txid: 'm-a', amount: 1_000 }), row({ txid: 'm-b', amount: 2_000 })] })
+    await waitFor(() => expect(result.current.catchUp).toMatchObject({ count: 2, totalSats: 3_000 }))
+    rerender({
+      rows: [
+        stored,
+        row({ txid: 'm-a', amount: 1_000 }),
+        row({ txid: 'm-b', amount: 2_000 }),
+        row({ txid: 'm-c', amount: 4_000 }),
+      ],
+    })
+    await waitFor(() => expect(result.current.catchUp).toMatchObject({ count: 3, totalSats: 7_000 }))
+    expect(result.current.arrivals).toEqual([])
+  })
+
+  it('absorbs visible individuals into a later summary batch', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-14' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [stored] } },
+    )
+    rerender({ rows: [stored, row({ txid: 'solo', amount: 1_000 })] })
+    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['solo']))
+    expect(result.current.catchUp).toBeNull()
+    rerender({
+      rows: [
+        stored,
+        row({ txid: 'solo', amount: 1_000 }),
+        row({ txid: 'pair-a', amount: 2_000 }),
+        row({ txid: 'pair-b', amount: 3_000 }),
+      ],
+    })
+    await waitFor(() => expect(result.current.catchUp).toMatchObject({ count: 3, totalSats: 6_000 }))
+    expect(result.current.arrivals).toEqual([])
   })
 })

@@ -7,9 +7,11 @@ import type { PaymentScope } from './payments'
  * resume their state, genuinely new available keys banner once, and a first
  * observation with no stored baseline seeds quietly. Entries grant nothing;
  * they carry payment keys only, and clearing local data reseeds quietly from
- * whatever history loads first.
+ * whatever history loads first. The cap stays above the loaded-activity
+ * bound so truncation can only evict rows that already left the visible
+ * history window.
  */
-const MAX_BASELINE_ENTRIES = 200
+const MAX_BASELINE_ENTRIES = 500
 
 function baselineKey(scope: PaymentScope): string {
   return `vaulted:payment-arrivals:${scope.network || 'unknown'}:${scope.vaultId || 'unknown'}`

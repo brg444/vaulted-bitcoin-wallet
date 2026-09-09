@@ -10,7 +10,7 @@ describe('catch-up banner', () => {
     const onDismiss = vi.fn()
     render(
       <CatchUpBanner
-        catchUp={{ count: 3, totalSats: 21_500, keys: ['a', 'b', 'c'] }}
+        catchUp={{ count: 3, totalSats: 21_500, keys: ['a', 'b', 'c'], items: [] }}
         onOpenActivity={onOpenActivity}
         onDismiss={onDismiss}
       />,
