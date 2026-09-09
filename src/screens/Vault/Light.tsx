@@ -530,7 +530,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               type='number'
               min='330'
               value={policy.txRecipientCapSats}
-              onChange={(e) => setPolicy({ ...policy, txRecipientCapSats: Number(e.target.value) })}
+              disabled={!available || busy}
+              onChange={(e) => {
+                const value = Number(e.target.value)
+                setPolicy((current) => ({ ...current, txRecipientCapSats: value }))
+              }}
             />
           </label>
           <label className='qg-field'>
@@ -540,7 +544,11 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
               type='number'
               min='330'
               value={policy.periodAllowanceSats}
-              onChange={(e) => setPolicy({ ...policy, periodAllowanceSats: Number(e.target.value) })}
+              disabled={!available || busy}
+              onChange={(e) => {
+                const value = Number(e.target.value)
+                setPolicy((current) => ({ ...current, periodAllowanceSats: value }))
+              }}
             />
           </label>
           {mode === 'token' ? (
