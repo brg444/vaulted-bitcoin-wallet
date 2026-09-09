@@ -1,0 +1,199 @@
+import { IDBFactory } from 'fake-indexeddb'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderHook, act, waitFor } from '@testing-library/react'
+import { hapticSubtle } from '../lib/haptics'
+import type { VaultHistoryItem } from '../lib/vault/history'
+import { usePaymentArrivals } from './usePaymentArrivals'
+
+vi.mock('../lib/haptics', () => ({ hapticSubtle: vi.fn() }))
+vi.mock('../lib/vault/arrivalDelivery', () => ({
+  claimArrivalDelivery: vi.fn(async (keys: readonly string[]) => [...keys]),
+}))
+
+const mockedHaptic = vi.mocked(hapticSubtle)
+
+function row(partial: Partial<VaultHistoryItem> & { txid: string }): VaultHistoryItem {
+  return { type: 'received', amount: 12_000, confirmed: true, account: 'spend', ...partial }
+}
+
+const ENABLED = { bannersEnabled: true, hapticsEnabled: true }
+const NO_BANNERS = { bannersEnabled: false, hapticsEnabled: true }
+
+describe('reconnect catch-up summary', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    vi.clearAllMocks()
+  })
+
+  it('collapses several newly verified payments into one summary instead of a burst', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-1' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [stored] } },
+    )
+    rerender({
+      rows: [stored, row({ txid: 'new-a', amount: 5_000 }), row({ txid: 'new-b', amount: 7_000 })],
+    })
+    await waitFor(() =>
+      expect(result.current.catchUp).toEqual({
+        count: 2,
+        totalSats: 12_000,
+        keys: [
+          'tx:mutinynet:vault-catchup-1:spend:new-a:received',
+          'tx:mutinynet:vault-catchup-1:spend:new-b:received',
+        ],
+      }),
+    )
+    expect(result.current.arrivals).toEqual([])
+    expect(mockedHaptic).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a single fresh payment as one individual banner', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-2' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [stored] } },
+    )
+    rerender({ rows: [stored, row({ txid: 'lone' })] })
+    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['lone']))
+    expect(result.current.catchUp).toBeNull()
+  })
+
+  it('stays quiet on first sync and reload without a trusted baseline', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-3' }
+    const history = [row({ txid: 'old-a' }), row({ txid: 'old-b' }), row({ txid: 'old-c' })]
+    const { result, unmount } = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true), {
+      initialProps: { rows: history },
+    })
+    await waitFor(() => expect(result.current.catchUp).toBeNull())
+    expect(result.current.arrivals).toEqual([])
+    unmount()
+
+    window.localStorage.clear()
+    const reloaded = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true), {
+      initialProps: { rows: [] as VaultHistoryItem[] },
+    })
+    reloaded.rerender({ rows: history })
+    await waitFor(() => expect(reloaded.result.current.catchUp).toBeNull())
+    expect(reloaded.result.current.arrivals).toEqual([])
+    reloaded.unmount()
+  })
+
+  it('summarizes payments that complete while away and counts equal amounts separately', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-4' }
+    const pending = (txid: string) => row({ txid, confirmed: false })
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [pending('away-a'), pending('away-b')] } },
+    )
+    await waitFor(() => expect(result.current.catchUp).toBeNull())
+    rerender({ rows: [row({ txid: 'away-a', amount: 5_000 }), row({ txid: 'away-b', amount: 5_000 })] })
+    await waitFor(() => expect(result.current.catchUp?.count).toBe(2))
+    expect(result.current.catchUp).toMatchObject({ count: 2, totalSats: 10_000 })
+    expect(result.current.arrivals).toEqual([])
+  })
+
+  it('announces across at most one tab when both observe the same catch-up', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-5' }
+    const stored = row({ txid: 'stored' })
+    const first = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
+      initialProps: { rows: [stored] },
+    })
+    first.rerender({ rows: [stored, row({ txid: 'tab-a' }), row({ txid: 'tab-b' })] })
+    await waitFor(() => expect(first.result.current.catchUp?.count).toBe(2))
+
+    const second = renderHook(({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED), {
+      initialProps: { rows: [stored, row({ txid: 'tab-a' }), row({ txid: 'tab-b' })] },
+    })
+    await waitFor(() => expect(second.result.current.catchUp).toBeNull())
+    expect(second.result.current.arrivals).toEqual([])
+    first.unmount()
+    second.unmount()
+  })
+
+  it('clears the summary on scope switch without replaying', async () => {
+    const first = { network: 'mutinynet', vaultId: 'vault-catchup-6a' }
+    const second = { network: 'mutinynet', vaultId: 'vault-catchup-6b' }
+    const { result, rerender } = renderHook(
+      ({ rows, scope }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [row({ txid: 'stored' })], scope: first } },
+    )
+    rerender({ rows: [row({ txid: 'stored' }), row({ txid: 'x' }), row({ txid: 'y' })], scope: first })
+    await waitFor(() => expect(result.current.catchUp?.count).toBe(2))
+    rerender({ rows: [row({ txid: 'other' })], scope: second })
+    await waitFor(() => expect(result.current.catchUp).toBeNull())
+    expect(result.current.arrivals).toEqual([])
+  })
+
+  it('ignores stale re-presented snapshots and excluded older pagination', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-7' }
+    const older = row({ txid: 'older-page', account: 'savings', blockTime: 100 })
+    const excluded = new Set(['savings:older-page:received'])
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, excluded, ENABLED),
+      { initialProps: { rows: [row({ txid: 'stored' }), older] } },
+    )
+    await waitFor(() => expect(result.current.catchUp).toBeNull())
+    // Same snapshot again plus the excluded older page: still nothing.
+    rerender({ rows: [row({ txid: 'stored' }), older] })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    expect(result.current.arrivals).toEqual([])
+  })
+
+  it('suppresses the summary while delivery is disabled and never replays it', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-8' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows, delivery }) => usePaymentArrivals(rows, scope, false, true, new Set(), delivery),
+      { initialProps: { rows: [stored], delivery: NO_BANNERS } },
+    )
+    rerender({ rows: [stored, row({ txid: 'off-a' }), row({ txid: 'off-b' })], delivery: NO_BANNERS })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    expect(result.current.arrivals).toEqual([])
+    rerender({ rows: [stored, row({ txid: 'off-a' }), row({ txid: 'off-b' })], delivery: ENABLED })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    expect(result.current.arrivals).toEqual([])
+  })
+
+  it('dismisses the summary without replay on later snapshots', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-9' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [stored] } },
+    )
+    const rows = [stored, row({ txid: 'd-a' }), row({ txid: 'd-b' })]
+    rerender({ rows })
+    await waitFor(() => expect(result.current.catchUp?.count).toBe(2))
+    act(() => {
+      result.current.dismissCatchUp()
+    })
+    expect(result.current.catchUp).toBeNull()
+    rerender({ rows })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(result.current.catchUp).toBeNull()
+    expect(result.current.arrivals).toEqual([])
+  })
+
+  it('flushes several approval-buffered arrivals as one summary on unlock', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-catchup-10' }
+    const stored = row({ txid: 'stored' })
+    const { result, rerender } = renderHook(
+      ({ rows, paused }) => usePaymentArrivals(rows, scope, paused, true, new Set(), ENABLED),
+      { initialProps: { rows: [stored], paused: true } },
+    )
+    rerender({ rows: [stored, row({ txid: 'buf-a' }), row({ txid: 'buf-b' })], paused: true })
+    await waitFor(() => expect(result.current.catchUp).toBeNull())
+    expect(result.current.arrivals).toEqual([])
+    rerender({ rows: [stored, row({ txid: 'buf-a' }), row({ txid: 'buf-b' })], paused: false })
+    await waitFor(() => expect(result.current.catchUp?.count).toBe(2))
+    expect(result.current.arrivals).toEqual([])
+    expect(mockedHaptic).toHaveBeenCalledTimes(1)
+  })
+})

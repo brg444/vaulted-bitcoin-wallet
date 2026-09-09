@@ -11,6 +11,28 @@ export interface PaymentArrival {
 }
 
 /**
+ * One accessible catch-up notice for newly verified incoming payments that
+ * landed together, such as after reconnect or reopen. A single summary
+ * replaces a burst of individual banners; one fresh payment still banners
+ * alone. The summary links to full Activity and never replays: its keys are
+ * claimed and marked seen like any delivered arrival.
+ */
+export interface PaymentCatchUp {
+  count: number
+  totalSats: number
+  keys: string[]
+}
+
+export function summarizeArrivals(arrivals: readonly PaymentArrival[]): PaymentCatchUp {
+  const keys = arrivals.map((arrival) => arrival.key)
+  return {
+    count: arrivals.length,
+    totalSats: arrivals.reduce((total, arrival) => total + (arrival.item.displayAmount ?? arrival.item.amount), 0),
+    keys,
+  }
+}
+
+/**
  * Edge detection for incoming payments. A payment banners once: either it is
  * first observed with funds already available, or it transitions from an
  * incomplete row to a verified available one. Only rows with verified
@@ -23,7 +45,8 @@ export interface PaymentArrival {
  * queued, so a cold load cannot turn stored rows into new-payment alerts.
  * Presented payments persist as device-local receipts, so a reload or a
  * staged hydration replays nothing. Clearing local data reseeds quietly from
- * whatever history loads first.
+ * whatever history loads first. Several newly verified payments in one
+ * observation collapse into a single catch-up summary instead of a burst.
  */
 /** True when a row can banner: a complete receipt of verified external funds. */
 function isArrivalCandidate(row: VaultHistoryItem, outgoingTxids: ReadonlySet<string>): boolean {
@@ -106,10 +129,13 @@ export function usePaymentArrivals(
   delivery: ArrivalDeliveryPrefs = DEFAULT_DELIVERY,
 ): {
   arrivals: PaymentArrival[]
+  catchUp: PaymentCatchUp | null
   dismissArrival: (key: string) => void
+  dismissCatchUp: () => void
   openArrivalKey: (key: string) => VaultHistoryItem | null
 } {
   const [arrivals, setArrivals] = useState<PaymentArrival[]>([])
+  const [catchUp, setCatchUp] = useState<PaymentCatchUp | null>(null)
   const seenRef = useRef<Map<string, boolean> | null>(null)
   const pendingRef = useRef<PaymentArrival[]>([])
   const pausedRef = useRef(paused)
@@ -137,6 +163,7 @@ export function usePaymentArrivals(
     seenRef.current = null
     pendingRef.current = []
     setArrivals([])
+    setCatchUp(null)
   }
 
   useEffect(() => {
@@ -186,12 +213,17 @@ export function usePaymentArrivals(
           pendingRef.current = [...queued.values()]
           return
         }
+        if (accepted.length === 1) {
+          if (live.hapticsEnabled) hapticSubtle()
+          setArrivals((current) => {
+            const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
+            for (const arrival of accepted) queued.set(arrival.key, arrival)
+            return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
+          })
+          return
+        }
         if (live.hapticsEnabled) hapticSubtle()
-        setArrivals((current) => {
-          const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
-          for (const arrival of accepted) queued.set(arrival.key, arrival)
-          return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
-        })
+        setCatchUp(summarizeArrivals(accepted))
       })
       .catch(() => {
         // Delivery storage failure suppresses an optional banner; payment
@@ -209,12 +241,19 @@ export function usePaymentArrivals(
     }
     const flushed = pendingRef.current
     pendingRef.current = []
+    // Buffered arrivals flush as one summary when several landed while
+    // approval was in flight, so unlocking never produces a burst either.
+    if (flushed.length === 1) {
+      if (deliveryRef.current.hapticsEnabled) hapticSubtle()
+      setArrivals((current) => {
+        const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
+        for (const arrival of flushed) queued.set(arrival.key, arrival)
+        return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
+      })
+      return
+    }
     if (deliveryRef.current.hapticsEnabled) hapticSubtle()
-    setArrivals((current) => {
-      const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
-      for (const arrival of flushed) queued.set(arrival.key, arrival)
-      return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
-    })
+    setCatchUp(summarizeArrivals(flushed))
   }, [paused])
 
   // Disabling banners invalidates pending and visible notices immediately,
@@ -226,7 +265,12 @@ export function usePaymentArrivals(
     deliveryGenRef.current += 1
     pendingRef.current = []
     setArrivals([])
+    setCatchUp(null)
   }, [bannersOn])
+
+  const dismissCatchUp = useCallback(() => {
+    setCatchUp(null)
+  }, [])
 
   const dismissArrival = useCallback((key: string) => {
     pendingRef.current = pendingRef.current.filter((arrival) => arrival.key !== key)
@@ -241,5 +285,5 @@ export function usePaymentArrivals(
     [arrivals],
   )
 
-  return { arrivals, dismissArrival, openArrivalKey }
+  return { arrivals, catchUp, dismissArrival, dismissCatchUp, openArrivalKey }
 }

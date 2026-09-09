@@ -1,5 +1,6 @@
 import PaymentNotice from './qg/PaymentNotice'
 import PaymentArrivalBanners from './PaymentArrivals'
+import CatchUpBanner from './CatchUpBanner'
 import { useContext, useEffect } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
@@ -23,6 +24,8 @@ export default function VaultHome() {
     arrivals = [],
     dismissArrival,
     openArrival,
+    catchUp,
+    dismissCatchUp,
     navigate,
     openSendScan,
     openRecover,
@@ -112,6 +115,9 @@ export default function VaultHome() {
         onOpen={(arrival) => openArrival(arrival.key)}
         onDismiss={dismissArrival}
       />
+      {catchUp ? (
+        <CatchUpBanner catchUp={catchUp} onOpenActivity={() => navigate('activity')} onDismiss={dismissCatchUp} />
+      ) : null}
 
       {!spending ? (
         <button
