@@ -27,7 +27,9 @@ describe('Vercel worker caching', () => {
     expect(connectSrc).toEqual([
       'connect-src',
       "'self'",
-      'https://mutinynet.arkade.sh',
+      'https://arkade.computer',
+      'https://mempool.arkade.sh',
+      'wss://mempool.arkade.sh',
       'https://blockchain.info',
       'wss://nostr.arkade.sh',
     ])
@@ -131,6 +133,8 @@ describe('Vercel worker caching', () => {
     expect(config.buildCommand).toBe('pnpm build:mainnet')
     expect(config.env).toEqual({
       VAULT_RELEASE_NETWORK: 'mainnet',
+      VAULT_LIGHT_ONLY_ENROLLMENT: 'true',
+      VITE_VAULT_LIGHT_ONLY_ENROLLMENT: 'true',
       VITE_VAULT_RELEASE_NETWORK: 'mainnet',
       VITE_VAULT_LIGHTNING_SEND: 'true',
     })
@@ -152,11 +156,11 @@ describe('Vercel worker caching', () => {
     expect(JSON.stringify(config)).not.toContain('mutinynet')
   })
 
-  it('does not put mainnet origins or the production wallet host in the Mutinynet deployment', () => {
-    const config = readFileSync('vercel.json', 'utf8')
-    expect(config).toContain('mutinynet')
-    expect(config).not.toContain('arkade.computer')
-    expect(config).not.toContain('app.getvaulted.xyz')
-    expect(config).not.toContain('mempool.space')
+  it('deploys the canonical config with the qualified mainnet restrictions', () => {
+    const config = JSON.parse(readFileSync('vercel.json', 'utf8'))
+    expect(config).toEqual(JSON.parse(readFileSync('vercel.mainnet.json', 'utf8')))
+    expect(JSON.stringify(config)).not.toContain('mutinynet')
+    expect(config.env.VAULT_LIGHT_ONLY_ENROLLMENT).toBe('true')
+    expect(config.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT).toBe('true')
   })
 })
