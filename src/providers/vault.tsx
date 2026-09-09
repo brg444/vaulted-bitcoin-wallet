@@ -407,22 +407,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [liveNetwork],
   )
   const reportError = useCallback((message: string) => setError(message), [])
-  const {
-    balanceError,
-    balancesLoaded,
-    snapshotFresh,
-    history,
-    positions,
-    refreshBalance,
-    refreshingBalance,
-  } = useVaultBalances({
-    addressPin,
-    enrollment,
-    initialStatusChecked,
-    locked,
-    setStatus,
-    status,
-  })
+  const { balanceError, balancesLoaded, snapshotFresh, history, positions, refreshBalance, refreshingBalance } =
+    useVaultBalances({
+      addressPin,
+      enrollment,
+      initialStatusChecked,
+      locked,
+      setStatus,
+      status,
+    })
   const spendingAvailableSats = positions.spending.availableSats
   const savingsAvailableSats = positions.savings.availableSats
   const dailyLimit = status?.enrolled ? (status.periodAllowance ?? setup.dailyLimitSats) : setup.dailyLimitSats
