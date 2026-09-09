@@ -190,14 +190,6 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
   const [balanceRefreshes, setBalanceRefreshes] = useState(0)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const receiveSession = useRef({ record, vaultId: status?.vaultId })
-  receiveSession.current = { record, vaultId: status?.vaultId }
-  useEffect(
-    () => () => {
-      receiveSession.current = { record: null, vaultId: undefined }
-    },
-    [],
-  )
   const busyRef = useRef(false)
   const root = useRef<HTMLDivElement>(null)
   const file = useRef<HTMLInputElement>(null)
@@ -1141,23 +1133,7 @@ export default function VaultLight({ onExit }: { onExit: () => void }) {
       </AccountHome>
     )
   else if (view === 'receive-lightning' && status && record)
-    content = (
-      <LightningReceive
-        status={status}
-        refreshBalance={refresh}
-        onBack={() => navigate('receive')}
-        backupRecoveryArchive={async () => {
-          const session = cloudSession.current ?? (await openLightCloudBackup(record, authorizeRenewals))
-          const archive = await captureCurrent(record, status)
-          const saved = await syncLightCloudBackup(session, archive)
-          if (receiveSession.current.record !== record || receiveSession.current.vaultId !== status.vaultId)
-            throw new Error('Wallet session changed during Lightning backup.')
-          cloudSession.current = session
-          setCloudSavedAt(saved.createdAt)
-          setCloudError('')
-        }}
-      />
-    )
+    content = <LightningReceive status={status} refreshBalance={refresh} onBack={() => navigate('receive')} />
   else if (view === 'receive' && status)
     content = (
       <QgScreen

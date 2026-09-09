@@ -38,16 +38,8 @@ function AddressRow({
 }
 
 export default function VaultReceive() {
-  const {
-    account,
-    boardingAddress,
-    navigate,
-    savingsAddress,
-    spendingArkAddress,
-    status,
-    backupRecoveryArchive,
-    refreshBalance,
-  } = useContext(VaultContext)
+  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status, refreshBalance } =
+    useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
@@ -86,14 +78,7 @@ export default function VaultReceive() {
   }
 
   if (view === 'lightning' && spending && status)
-    return (
-      <LightningReceive
-        status={status}
-        backupRecoveryArchive={backupRecoveryArchive}
-        refreshBalance={refreshBalance}
-        onBack={() => setView('receive')}
-      />
-    )
+    return <LightningReceive status={status} refreshBalance={refreshBalance} onBack={() => setView('receive')} />
 
   if (view === 'setup' && status)
     return <ConnectorSetup status={status} onBack={() => setView('receive')} onDeposit={() => setView('deposit')} />

@@ -8,7 +8,6 @@ import { vaultLightningReceivePlan, vaultLightningSolverProfile } from '../../li
 import {
   requestVaultLightningReceive,
   approveVaultLightningReceive,
-  recordVaultLightningReceiveBackup,
   receiveProfile,
 } from '../../lib/vault/lightningReceive'
 import { reconcileVaultLightningReceives } from '../../lib/vault/lightningReceiveClaim'
@@ -23,24 +22,22 @@ import QgScreen, { QgPrimary } from './qg/QgScreen'
 export default function LightningReceive({
   onBack,
   status,
-  backupRecoveryArchive,
   refreshBalance,
 }: {
   onBack: () => void
   status: VaultStatus
-  backupRecoveryArchive: () => Promise<void>
   refreshBalance: () => Promise<void>
 }) {
-  const actions = useRef({ status, backupRecoveryArchive, refreshBalance })
-  actions.current = { status, backupRecoveryArchive, refreshBalance }
+  const actions = useRef({ status, refreshBalance })
+  actions.current = { status, refreshBalance }
   const vaultId = status.vaultId
   const [amount, setAmount] = useState('')
   const [record, setRecord] = useState<RfqSwapRecord>()
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(true)
+  const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(Math.floor(Date.now() / 1000))
   const [copied, setCopied] = useState(false)
-  const [progress, setProgress] = useState('Loading saved invoice…')
+  const [progress, setProgress] = useState('')
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -50,7 +47,7 @@ export default function LightningReceive({
   }, [])
   const current = record ? receiveProfile(record) : undefined
   const rfqId = record?.rfqId
-  const approved = !!current?.invoiceBackedUpAt
+  const approved = !!current && current.approvedPaySats === current.quote.from_amount
   const paid = record?.state === 'settled'
   const expired = current ? now >= current.invoiceExpiresAt : false
   const profile = vaultLightningSolverProfile(status?.network)
@@ -62,33 +59,11 @@ export default function LightningReceive({
   }
 
   useEffect(() => {
-    const { status } = actions.current
-    let stopped = false
     setRecord(undefined)
+    setAmount('')
     setError('')
-    setBusy(true)
-    const restore = async () => {
-      try {
-        const saved = await withVaultLightningLifecycleLock(status.vaultId, () =>
-          withVaultWalletState(
-            status,
-            async ({ swapRepository }) =>
-              (await swapRepository.getAllRfqSwaps())
-                .filter((r) => r.kind === 'lightning_receive')
-                .sort((a, b) => b.createdAt - a.createdAt)[0],
-          ),
-        )
-        if (saved && !stopped) setRecord(saved)
-      } catch (e) {
-        if (!stopped) setError(e instanceof Error ? e.message : 'Could not restore the Lightning invoice.')
-      } finally {
-        if (!stopped) setBusy(false)
-      }
-    }
-    void restore()
-    return () => {
-      stopped = true
-    }
+    setCopied(false)
+    setBusy(false)
   }, [vaultId])
 
   useEffect(() => {
@@ -149,6 +124,7 @@ export default function LightningReceive({
           const outstanding = (await swapRepository.getAllRfqSwaps()).find(
             (r) =>
               r.kind === 'lightning_receive' &&
+              r.amount === Number(amount) &&
               r.state !== 'settled' &&
               r.state !== 'refunded' &&
               Math.floor(Date.now() / 1000) < receiveProfile(r).invoiceExpiresAt,
@@ -185,15 +161,9 @@ export default function LightningReceive({
     setError('')
     setProgress('Saving invoice…')
     try {
-      await withVaultLightningLifecycleLock(status.vaultId, () =>
-        withVaultWalletState(status, ({ swapRepository }) =>
-          approveVaultLightningReceive(swapRepository, record.rfqId, current.quote.from_amount),
-        ),
-      )
-      await backupRecoveryArchive()
       const saved = await withVaultLightningLifecycleLock(status.vaultId, () =>
         withVaultWalletState(status, ({ swapRepository }) =>
-          recordVaultLightningReceiveBackup(swapRepository, record.rfqId),
+          approveVaultLightningReceive(swapRepository, record.rfqId, current.quote.from_amount),
         ),
       )
       if (mounted.current && actions.current.status.vaultId === status.vaultId) {
@@ -289,18 +259,11 @@ export default function LightningReceive({
                 </div>
               ) : null}
             </section>
-            {!paid && !expired && !approved ? (
-              <div className='qg-prose'>
-                {current.quote.from_amount > current.estimatedPaySats ? (
-                  <p className='qg-copy'>
-                    The fee is {(current.quote.from_amount - current.estimatedPaySats).toLocaleString()} sats above the
-                    advertised estimate.
-                  </p>
-                ) : null}
-                <p className='qg-helper'>
-                  Your passkey may be requested to save recovery data before you share this invoice.
-                </p>
-              </div>
+            {!paid && !expired && !approved && current.quote.from_amount > current.estimatedPaySats ? (
+              <p className='qg-copy'>
+                The fee is {(current.quote.from_amount - current.estimatedPaySats).toLocaleString()} sats above the
+                advertised estimate.
+              </p>
             ) : null}
           </>
         ) : (

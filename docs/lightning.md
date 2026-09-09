@@ -91,23 +91,16 @@ VHTLC layouts, and accepts only the layout whose address exactly matches the
 quote. It binds the payout to the enrolled Spending script and checks the
 Operator and Emulator signing keys. The Emulator endpoint comes from the
 network pins; the enrollment’s cosigner identifier can be a URN and is never
-used as an HTTP address. Recovery data is stored and read back
-before the quote is displayed; the encrypted backup must succeed before an
-approved invoice can be shared. Failed backup attempts keep the invoice hidden,
-including during subsequent status refreshes.
+used as an HTTP address. The invoice, secret, and contract are stored and read
+back from local IndexedDB before the quote is displayed. Exact fee approval
+is also saved locally before the QR code or copy action becomes available.
+Creating, sharing, and reopening an invoice require no cloud upload or passkey
+prompt. A failed local write keeps the invoice hidden.
 
-Creating or reopening an invoice does not start passkey authentication or a
-cloud upload. Fee confirmation saves the approved invoice to the encrypted
-backup once, then records successful backup locally. Reopening that invoice
-reuses the confirmation. A failed upload never enables sharing; older records
-without a completed-backup marker require confirmation again. The first share
-can still request a passkey when the backup session is closed.
-
-The amount, fee review, and invoice screens show separate receive amounts,
-sender fees, and sender totals. Progress labels distinguish connecting,
-requesting an invoice, and saving recovery data. After invoice expiry the user
-can request another invoice while the earlier payment remains in the journal
-for reconciliation and recovery.
+Receive Lightning always opens to an empty amount prompt. A request can reuse
+an active invoice for that exact amount; earlier payments remain in the journal
+for reconciliation and recovery. The current screen displays a receipt when
+payment arrives, but reopening Receive Lightning does not restore that receipt.
 
 ## Incoming claims and recovery
 
@@ -180,11 +173,15 @@ Validation of this implementation passed with Node 24:
 
 An unfunded live quote probe completed in about 4.2 seconds and returned 1,007
 sats paid for 1,000 sats received. This measures the probe's quote flow, not
-invoice sharing or a funded payment. The screen now runs independent service
-checks concurrently and removes full recovery uploads from invoice creation
-and reopening. Backup remains required before sharing. Explicit backup requests now complete
-their cloud upload even when a background activity refresh arrives during
-capture, and reject if the wallet session changes.
+invoice sharing or a funded payment. The screen runs independent service
+checks concurrently. Invoice creation and fee confirmation use local storage;
+full recovery uploads are outside the invoice flow.
+
+The wallet's existing background recovery capture continues on wallet activity,
+focus, and periodic refresh. Funded transaction paths are saved locally, and
+an existing cloud session can synchronize recovery data. The local invoice
+record survives reloads but does not provide a separate copy if browser storage
+or the device is lost.
 
 Kukks' merged [wallet LNURL integration](https://github.com/arkade-os/wallet/pull/559)
 keeps the session and invoice listener at wallet level, so changing screens
@@ -201,9 +198,9 @@ Vaulted service design is in the offline-receive review worktree's
 `lnurl-server/docs/vaulted-offline-receive.md`. The funded recovery restrictions
 above still apply.
 
-Validation for this follow-up passed on Node 24: 181 unit-test files and 1,546
-tests, with one existing test skipped; type checking, lint, and formatting also
-passed. Browser checks exercised amount entry, fee review, approval, and reload
-at 320, 390, and 1,280 pixels in both themes with a synthetic, unpayable invoice.
-Creation and reload made no backup calls; approval made one. No horizontal
-overflow or page errors were observed.
+Validation of local invoice storage and receive entry passed on Node 24: 65
+focused tests across seven files, including funded incoming recovery fixtures
+for both layouts and all wallet tiers; type checking and lint also passed.
+The previous full regression run passed 1,546 tests. Browser verification uses
+real IndexedDB and a synthetic invoice at phone and desktop widths in both
+themes, checks for passkey requests, and reloads pending and completed payments.
