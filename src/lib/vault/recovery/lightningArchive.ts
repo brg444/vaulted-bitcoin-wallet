@@ -232,8 +232,6 @@ function retainedRecord(local: RfqSwapRecord, incoming: RfqSwapRecord): RfqSwapR
       b = receiveProfile(incoming)
     if (a.claim && b.claim && a.claim.txid !== b.claim.txid) throw new Error('Conflicting Lightning receive claim')
     if (isRfqSwapTerminal(local.state) || (a.claim && !b.claim)) return local
-    if (a.approvedPaySats && !b.approvedPaySats) return local
-    if (b.approvedPaySats && !a.approvedPaySats) return incoming
     return local.updatedAt >= incoming.updatedAt ? local : incoming
   }
   const a = storedLightningProfile(local).fundingProof,

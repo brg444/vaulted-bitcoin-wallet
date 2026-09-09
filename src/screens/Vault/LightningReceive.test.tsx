@@ -8,7 +8,6 @@ import { networkPins } from '../../lib/vault/networkPins'
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
-  approve: vi.fn(),
   list: vi.fn(),
   read: vi.fn(),
   backup: vi.fn(),
@@ -17,7 +16,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../lib/vault/lightningReceive', async (original) => ({
   ...(await original<typeof import('../../lib/vault/lightningReceive')>()),
   requestVaultLightningReceive: mocks.request,
-  approveVaultLightningReceive: mocks.approve,
 }))
 vi.mock('../../lib/vault/lightningReceiveClaim', () => ({ reconcileVaultLightningReceives: mocks.reconcile }))
 vi.mock('../../lib/vault/lightning', () => ({
@@ -100,10 +98,6 @@ beforeEach(() => {
   mocks.read.mockResolvedValue(undefined)
   mocks.backup.mockRejectedValue(new Error('Cloud backup is unavailable'))
   mocks.request.mockResolvedValue(record())
-  mocks.approve.mockImplementation(async () => {
-    const r = record()
-    return { ...r, profile: { vaultLightningReceive: { ...r.profile.vaultLightningReceive, approvedPaySats: 1004 } } }
-  })
   vi.spyOn(RestEmulatorProvider.prototype, 'getInfo').mockResolvedValue({
     signerPubkey: networkPins('mainnet').emulatorSignerPub,
   } as never)
@@ -130,46 +124,37 @@ describe('Lightning receive screen', () => {
     expect(mocks.request).not.toHaveBeenCalled()
     expect(mocks.backup).not.toHaveBeenCalled()
   })
-  it('requests and reviews an invoice without starting authentication or backup', async () => {
-    show()
-    await create()
-    await screen.findByRole('button', { name: 'Confirm fee and show invoice' })
-    expect(mocks.request).toHaveBeenCalledOnce()
-    expect(mocks.backup).not.toHaveBeenCalled()
-    expect(mocks.approve).not.toHaveBeenCalled()
-    expect(screen.queryByTestId('invoice-qr')).toBeNull()
-  })
-  it('shares after local fee approval even when cloud backup is unavailable', async () => {
-    const approved = await mocks.approve()
-    mocks.approve.mockClear()
-    let finish!: (value: typeof approved) => void
-    mocks.approve.mockReturnValue(
+  it('shows the invoice and exact fee together after the local record is saved', async () => {
+    const saved = record()
+    let finish!: (value: typeof saved) => void
+    mocks.request.mockReturnValue(
       new Promise((resolve) => {
         finish = resolve
       }),
     )
     show()
     await create()
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Confirm fee and show invoice' }))
-    expect(screen.getByRole('button', { name: 'Saving invoice…' })).toBeDisabled()
     expect(screen.queryByTestId('invoice-qr')).toBeNull()
-    await act(async () => finish(approved))
+    await act(async () => finish(saved))
     expect(await screen.findByTestId('invoice-qr')).toHaveTextContent('lightning:lnbc-fixture')
-    expect(mocks.approve).toHaveBeenCalledOnce()
+    expect(screen.getByText('1,004 sats')).toBeTruthy()
+    expect(screen.getByText('4 sats')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Copy invoice' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /Confirm fee/ })).toBeNull()
+    expect(mocks.request).toHaveBeenCalledOnce()
     expect(mocks.backup).not.toHaveBeenCalled()
   })
-  it('keeps the QR hidden if local fee approval cannot be saved', async () => {
-    mocks.approve.mockRejectedValue(new Error('disk full'))
+  it('keeps the QR hidden if the invoice cannot be saved locally', async () => {
+    mocks.request.mockRejectedValue(new Error('disk full'))
     show()
     await create()
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Confirm fee and show invoice' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('disk full')
     expect(screen.queryByTestId('invoice-qr')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Copy invoice' })).toBeNull()
     expect(mocks.backup).not.toHaveBeenCalled()
   })
   it('reuses an active invoice for the requested amount without a cloud backup marker or authentication', async () => {
-    mocks.list.mockResolvedValue([await mocks.approve()])
+    mocks.list.mockResolvedValue([record()])
     show()
     await create()
     await screen.findByTestId('invoice-qr')
@@ -183,21 +168,21 @@ describe('Lightning receive screen', () => {
     await waitFor(() => expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ amountSats: 2000 })))
     expect(await mocks.list()).toHaveLength(1)
   })
-  it('shows the exact sender total and fee above the estimate before approval', async () => {
+  it('shows a fee above the estimate on the same page as the invoice', async () => {
     const r = record()
     r.profile.vaultLightningReceive.quote.from_amount = 1006
     mocks.request.mockResolvedValue(r)
     show()
     await create()
-    await screen.findByRole('button', { name: 'Confirm fee and show invoice' })
+    await screen.findByTestId('invoice-qr')
     expect(screen.getByText('1,006 sats')).toBeTruthy()
     expect(screen.getByText('6 sats')).toBeTruthy()
     expect(screen.getByText(/2 sats above/)).toBeTruthy()
-    expect(screen.queryByTestId('invoice-qr')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Copy invoice' })).toBeEnabled()
   })
   it('shows a new receipt during polling but returns to amount entry when reopened', async () => {
     const timer = vi.spyOn(globalThis, 'setInterval')
-    const pending = await mocks.approve()
+    const pending = record()
     mocks.list.mockResolvedValue([pending])
     mocks.read.mockResolvedValue(pending)
     const first = show()
@@ -225,7 +210,7 @@ describe('Lightning receive screen', () => {
     mocks.list.mockResolvedValue([expired])
     show()
     await create()
-    await screen.findByRole('button', { name: 'Confirm fee and show invoice' })
+    await screen.findByTestId('invoice-qr')
     expect(mocks.request).toHaveBeenCalledOnce()
     expect(await mocks.list()).toEqual([expired])
     expect(mocks.backup).not.toHaveBeenCalled()

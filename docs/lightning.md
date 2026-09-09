@@ -71,7 +71,7 @@ production activation. A qualification build can also set
 visible only for that wallet. The flag scopes availability without changing the
 wallet's contract or recovery rules.
 
-## Receive and fee confirmation
+## Receive and invoice fees
 
 The wallet asks the bundled solver for the exact amount the recipient wants in
 Spending. The signed card currently advertises a 500–50,000 sat receive range.
@@ -81,8 +81,8 @@ an additional routing fee.
 
 The card supplies an estimate, while the returned quote supplies the exact
 invoice amount. Vaulted displays the amount received, payer total, fee, and any
-excess above that estimate. The user must select **Confirm fee and show invoice**
-before the QR code or copy action becomes available. Invoice validation still
+excess above that estimate on the invoice page alongside the QR code and copy
+action. There is no separate fee-confirmation screen. Invoice validation still
 rejects changed amounts, payment hashes, networks, destinations, expired
 invoices, and insufficient claim windows.
 
@@ -92,8 +92,7 @@ quote. It binds the payout to the enrolled Spending script and checks the
 Operator and Emulator signing keys. The Emulator endpoint comes from the
 network pins; the enrollment’s cosigner identifier can be a URN and is never
 used as an HTTP address. The invoice, secret, and contract are stored and read
-back from local IndexedDB before the quote is displayed. Exact fee approval
-is also saved locally before the QR code or copy action becomes available.
+back from local IndexedDB before the invoice and its exact fee are displayed.
 Creating, sharing, and reopening an invoice require no cloud upload or passkey
 prompt. A failed local write keeps the invoice hidden.
 
@@ -174,7 +173,7 @@ Validation of this implementation passed with Node 24:
 An unfunded live quote probe completed in about 4.2 seconds and returned 1,007
 sats paid for 1,000 sats received. This measures the probe's quote flow, not
 invoice sharing or a funded payment. The screen runs independent service
-checks concurrently. Invoice creation and fee confirmation use local storage;
+checks concurrently. Invoice creation uses local storage;
 full recovery uploads are outside the invoice flow.
 
 The wallet's existing background recovery capture continues on wallet activity,
@@ -198,9 +197,10 @@ Vaulted service design is in the offline-receive review worktree's
 `lnurl-server/docs/vaulted-offline-receive.md`. The funded recovery restrictions
 above still apply.
 
-Validation of local invoice storage and receive entry passed on Node 24: 65
-focused tests across seven files, including funded incoming recovery fixtures
-for both layouts and all wallet tiers; type checking and lint also passed.
-The previous full regression run passed 1,546 tests. Browser verification uses
-real IndexedDB and a synthetic invoice at phone and desktop widths in both
-themes, checks for passkey requests, and reloads pending and completed payments.
+Local invoice storage and receive entry were validated with 65 focused tests;
+the previous full regression run passed 1,546 tests. Inline fee display is
+covered by receive-screen, invoice-validation, and recovery-journal tests.
+Browser verification uses real IndexedDB and a synthetic invoice at phone and
+desktop widths in both themes, checks that the QR and exact fee appear together
+without another confirmation step or passkey request, and reloads pending and
+completed payments.

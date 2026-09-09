@@ -28,12 +28,7 @@ import {
   vaultLightningReceivePlan,
   vaultLightningReceiveEnabled,
 } from './lightningConfig'
-import {
-  requestVaultLightningReceive,
-  approveVaultLightningReceive,
-  receiveProfile,
-  validateReceiveRecord,
-} from './lightningReceive'
+import { requestVaultLightningReceive, receiveProfile, validateReceiveRecord } from './lightningReceive'
 import {
   createVaultLightningObserver,
   refreshVaultLightningObserver,
@@ -469,7 +464,7 @@ it.each(['light', 'standard', 'advanced'] as const)(
   60000,
 )
 
-it('requires an exact, durable fee approval for a quote above the card estimate', async () => {
+it('persists the exact invoice total alongside the lower card estimate', async () => {
   const h = await harness(true, (q) => {
     q.from_amount = 1006
   })
@@ -481,12 +476,7 @@ it('requires an exact, durable fee approval for a quote above the card estimate'
     return q
   }
   const r = await h.request()
-  expect(receiveProfile(r).approvedPaySats).toBeUndefined()
   expect(receiveProfile(r).estimatedPaySats).toBe(1004)
-  await expect(approveVaultLightningReceive(h.repository, r.rfqId, 1004, NOW)).rejects.toThrow('changed or expired')
-  const approved = await approveVaultLightningReceive(h.repository, r.rfqId, 1006, NOW)
-  expect(receiveProfile(approved).approvedPaySats).toBe(1006)
-  await expect(approveVaultLightningReceive(h.repository, r.rfqId, 1006, NOW + 300)).rejects.toThrow(
-    'changed or expired',
-  )
+  expect(receiveProfile(r).quote.from_amount).toBe(1006)
+  expect(receiveProfile((await h.repository.getRfqSwap(r.rfqId))!).quote.from_amount).toBe(1006)
 })

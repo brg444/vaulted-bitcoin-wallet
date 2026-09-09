@@ -42,7 +42,6 @@ export interface VaultLightningReceiveProfile {
   quote: RfqQuote
   payoutAddress: string
   estimatedPaySats: number
-  approvedPaySats?: number
   phonePub: string
   /** Kept before submission, so a lost response resumes the same claim. */
   claim?: { txid: string; arkTx: string; checkpoints: string[] }
@@ -74,7 +73,6 @@ export function receiveProfile(record: RfqSwapRecord): VaultLightningReceiveProf
     p.quote.from_amount < p.quote.to_amount ||
     p.quote.to_amount !== record.amount ||
     !whole(p.quote.refund_locktime) ||
-    (p.approvedPaySats !== undefined && p.approvedPaySats !== p.quote.from_amount) ||
     typeof p.payoutAddress !== 'string' ||
     !p.payoutAddress
   ) {
@@ -178,7 +176,6 @@ export function validateReceiveRecord(
   })
   if (
     !whole(p.estimatedPaySats) ||
-    (p.approvedPaySats !== undefined && p.approvedPaySats !== p.quote.from_amount) ||
     p.quote.rfq_id !== record.rfqId ||
     p.quote.pair !== 'lightning:BTC->arkade:BTC' ||
     hex.encode(actualScript.pkScript) !== contract.script ||
@@ -342,31 +339,4 @@ export async function requestVaultLightningReceive(input: {
   if (!persisted || JSON.stringify(persisted) !== JSON.stringify(record))
     throw new Error('Lightning invoice recovery data was not durably stored.')
   return persisted
-}
-
-/** Caller holds the per-vault lifecycle lock and has displayed this exact total. */
-export async function approveVaultLightningReceive(
-  repository: AssetSwapRepository,
-  rfqId: string,
-  paySats: number,
-  now = Math.floor(Date.now() / 1000),
-) {
-  const record = await repository.getRfqSwap(rfqId)
-  if (!record) throw new Error('Lightning quote is no longer available.')
-  const p = receiveProfile(record)
-  if (
-    record.state === 'settled' ||
-    record.state === 'refunded' ||
-    now >= p.invoiceExpiresAt ||
-    p.quote.from_amount !== paySats
-  ) {
-    throw new Error('Lightning quote changed or expired. Review a new invoice.')
-  }
-  p.approvedPaySats = paySats
-  record.updatedAt = now
-  await repository.saveRfqSwap(record)
-  const saved = await repository.getRfqSwap(rfqId)
-  if (!saved || receiveProfile(saved).approvedPaySats !== paySats)
-    throw new Error('Lightning fee approval was not durably stored.')
-  return saved
 }

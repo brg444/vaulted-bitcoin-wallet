@@ -5,11 +5,7 @@ import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
 import { discoverVaultLightningSolver, withVaultLightningTransport } from '../../lib/vault/lightning'
 import { vaultLightningReceivePlan, vaultLightningSolverProfile } from '../../lib/vault/lightningConfig'
-import {
-  requestVaultLightningReceive,
-  approveVaultLightningReceive,
-  receiveProfile,
-} from '../../lib/vault/lightningReceive'
+import { requestVaultLightningReceive, receiveProfile } from '../../lib/vault/lightningReceive'
 import { reconcileVaultLightningReceives } from '../../lib/vault/lightningReceiveClaim'
 import { withVaultLightningLifecycleLock } from '../../lib/vault/lightningLock'
 import { withVaultWalletState } from '../../lib/vault/vtxo/walletWorker'
@@ -47,7 +43,6 @@ export default function LightningReceive({
   }, [])
   const current = record ? receiveProfile(record) : undefined
   const rfqId = record?.rfqId
-  const approved = !!current && current.approvedPaySats === current.quote.from_amount
   const paid = record?.state === 'settled'
   const expired = current ? now >= current.invoiceExpiresAt : false
   const profile = vaultLightningSolverProfile(status?.network)
@@ -155,27 +150,6 @@ export default function LightningReceive({
       if (mounted.current && actions.current.status.vaultId === status.vaultId) setBusy(false)
     }
   }
-  const approve = async () => {
-    if (!status || !current || !record || busy) return
-    setBusy(true)
-    setError('')
-    setProgress('Saving invoice…')
-    try {
-      const saved = await withVaultLightningLifecycleLock(status.vaultId, () =>
-        withVaultWalletState(status, ({ swapRepository }) =>
-          approveVaultLightningReceive(swapRepository, record.rfqId, current.quote.from_amount),
-        ),
-      )
-      if (mounted.current && actions.current.status.vaultId === status.vaultId) {
-        setRecord(saved)
-      }
-    } catch (e) {
-      if (mounted.current && actions.current.status.vaultId === status.vaultId)
-        setError(e instanceof Error ? e.message : 'Could not confirm this invoice.')
-    } finally {
-      if (mounted.current && actions.current.status.vaultId === status.vaultId) setBusy(false)
-    }
-  }
   const another = () => {
     setRecord(undefined)
     setAmount('')
@@ -187,13 +161,7 @@ export default function LightningReceive({
       title='Receive Lightning'
       dismiss={onBack}
       footer={
-        current && !paid && !expired && !approved ? (
-          <QgPrimary
-            label={busy ? progress : 'Confirm fee and show invoice'}
-            loading={busy}
-            onClick={() => void approve()}
-          />
-        ) : current && !paid && !expired ? (
+        current && !paid && !expired ? (
           <QgPrimary
             label={copied ? 'Copied' : 'Copy invoice'}
             disabled={busy}
@@ -227,12 +195,10 @@ export default function LightningReceive({
                   ? `${record!.amount?.toLocaleString()} sats received in Spending.`
                   : expired
                     ? 'This invoice has expired. Any payment already in progress is still being checked.'
-                    : approved
-                      ? 'Ready to receive. Keep Vaulted open until the payment arrives.'
-                      : 'Review the fee before sharing your invoice.'}
+                    : 'Ready to receive. Keep Vaulted open until the payment arrives.'}
               </p>
             </div>
-            {!paid && !expired && approved ? (
+            {!paid && !expired ? (
               <div className='qg-receive'>
                 <div className='qg-qr' role='img' aria-label='Lightning invoice QR code'>
                   <QrCode large value={`lightning:${current.invoice}`} />
@@ -252,14 +218,14 @@ export default function LightningReceive({
                 <span>Sender total</span>
                 <strong>{current.quote.from_amount.toLocaleString()} sats</strong>
               </div>
-              {!paid && !expired && approved ? (
+              {!paid && !expired ? (
                 <div>
                   <span>Expires in</span>
                   <strong>{Math.max(1, Math.ceil((current.invoiceExpiresAt - now) / 60))} min</strong>
                 </div>
               ) : null}
             </section>
-            {!paid && !expired && !approved && current.quote.from_amount > current.estimatedPaySats ? (
+            {!paid && !expired && current.quote.from_amount > current.estimatedPaySats ? (
               <p className='qg-copy'>
                 The fee is {(current.quote.from_amount - current.estimatedPaySats).toLocaleString()} sats above the
                 advertised estimate.
