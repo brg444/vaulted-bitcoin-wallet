@@ -186,17 +186,18 @@ export default function LightningReceive({
       <div className='qg-stack qg-invoice'>
         {current ? (
           <>
-            <div className='qg-receive-copy'>
+            <div className='qg-receive-copy qg-invoice-summary'>
+              <p className='qg-invoice-label'>You receive</p>
               <h1 style={amountSizeStyle(prettyAmount(record!.amount!))}>
                 <QgAmount value={prettyAmount(record!.amount!)} />
               </h1>
-              <p className='qg-copy' role='status' aria-live='polite'>
-                {paid
-                  ? `${record!.amount?.toLocaleString()} sats received in Spending.`
-                  : expired
-                    ? 'This invoice has expired. Any payment already in progress is still being checked.'
-                    : 'Ready to receive. Keep Vaulted open until the payment arrives.'}
-              </p>
+              {paid || expired ? (
+                <p className='qg-copy' role='status' aria-live='polite'>
+                  {paid
+                    ? `${record!.amount?.toLocaleString()} sats received in Spending.`
+                    : 'This invoice has expired. Any payment already in progress is still being checked.'}
+                </p>
+              ) : null}
             </div>
             <section className='qg-invoice-fee' aria-label='Sender fee'>
               <div>
@@ -218,10 +219,6 @@ export default function LightningReceive({
               </div>
             ) : null}
             <section className='qg-details' aria-label='Invoice details'>
-              <div>
-                <span>You receive</span>
-                <strong>{record!.amount?.toLocaleString()} sats</strong>
-              </div>
               <div>
                 <span>Sender total</span>
                 <strong>{current.quote.from_amount.toLocaleString()} sats</strong>

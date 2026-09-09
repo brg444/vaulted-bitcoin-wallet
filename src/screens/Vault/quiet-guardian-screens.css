@@ -1827,6 +1827,17 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
   gap: var(--qg-space-16);
 }
 
+.qg-invoice-label {
+  margin: 0;
+  color: var(--qg-muted);
+  font-size: var(--qg-body);
+}
+
+.qg-invoice-summary h1 {
+  margin: var(--qg-space-4) 0 0;
+  font-size: clamp(32px, 8vw, 40px);
+}
+
 .qg-invoice .qg-receive .qg-qr {
   width: min(270px, 72dvh, 100%);
   margin-block: 0;
@@ -1834,8 +1845,7 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 
 .qg-invoice-fee {
   padding: var(--qg-space-12) var(--qg-space-16);
-  border: 1px solid var(--qg-orange);
-  border-left-width: 4px;
+  border: 1px solid color-mix(in srgb, var(--qg-orange) 40%, transparent);
   border-radius: var(--qg-field-radius);
   background: var(--qg-orange-soft);
   color: var(--qg-ink);
@@ -1850,13 +1860,14 @@ html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface
 }
 
 .qg-invoice-fee strong {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: var(--qg-weight-strong);
   font-variant-numeric: tabular-nums;
 }
 
 .qg-invoice-fee p {
-  margin: var(--qg-space-8) 0 0;
+  margin: var(--qg-space-4) 0 0;
+  color: var(--qg-muted);
   font-size: var(--qg-caption);
   line-height: 1.5;
 }
