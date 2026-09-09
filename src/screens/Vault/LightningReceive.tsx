@@ -183,7 +183,7 @@ export default function LightningReceive({
         )
       }
     >
-      <div className='qg-stack'>
+      <div className='qg-stack qg-invoice'>
         {current ? (
           <>
             <div className='qg-receive-copy'>
@@ -198,6 +198,18 @@ export default function LightningReceive({
                     : 'Ready to receive. Keep Vaulted open until the payment arrives.'}
               </p>
             </div>
+            <section className='qg-invoice-fee' aria-label='Sender fee'>
+              <div>
+                <span>Fee paid by sender</span>
+                <strong>{(current.quote.from_amount - record!.amount!).toLocaleString()} sats</strong>
+              </div>
+              {!paid && !expired && current.quote.from_amount > current.estimatedPaySats ? (
+                <p>
+                  {(current.quote.from_amount - current.estimatedPaySats).toLocaleString()} sats above the advertised
+                  estimate.
+                </p>
+              ) : null}
+            </section>
             {!paid && !expired ? (
               <div className='qg-receive'>
                 <div className='qg-qr' role='img' aria-label='Lightning invoice QR code'>
@@ -211,10 +223,6 @@ export default function LightningReceive({
                 <strong>{record!.amount?.toLocaleString()} sats</strong>
               </div>
               <div>
-                <span>Fee paid by sender</span>
-                <strong>{(current.quote.from_amount - record!.amount!).toLocaleString()} sats</strong>
-              </div>
-              <div>
                 <span>Sender total</span>
                 <strong>{current.quote.from_amount.toLocaleString()} sats</strong>
               </div>
@@ -225,12 +233,6 @@ export default function LightningReceive({
                 </div>
               ) : null}
             </section>
-            {!paid && !expired && current.quote.from_amount > current.estimatedPaySats ? (
-              <p className='qg-copy'>
-                The fee is {(current.quote.from_amount - current.estimatedPaySats).toLocaleString()} sats above the
-                advertised estimate.
-              </p>
-            ) : null}
           </>
         ) : (
           <>
