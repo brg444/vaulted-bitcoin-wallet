@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAddressTxs, fetchAddressUtxos, fetchOlderAddressTxs } from '../lib/vault/esplora'
-import { pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
+import { pinFromEnrolledStatus, saveAddressPin, loadAddressPin } from '../lib/vault/pin'
 import { fetchVaultStatus } from '../lib/vault/status'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
@@ -677,5 +677,203 @@ describe('older activity scope safety', () => {
       await result.current.refreshBalance()
     })
     expect(result.current.history.map((item) => item.txid).sort()).toEqual(['older-a', 'recent-a'])
+  })
+})
+
+describe('older activity request generations', () => {
+  const STATUS_B: VaultStatus = { ...STATUS, vaultId: 'vault-b' }
+  const STATUS_NET: VaultStatus = { ...STATUS, network: 'mainnet' }
+
+  function savingsTx(txid: string, blockTime: number) {
+    return {
+      txid,
+      vin: [],
+      vout: [{ scriptpubkey_address: 'tb1psavings', value: 1_000 }],
+      status: { confirmed: true, block_time: blockTime },
+    }
+  }
+
+  function seedSnapshot(vaultId: string, txids: { txid: string; blockTime: number }[]) {
+    saveBalanceSnapshot(vaultId, {
+      boardingBalance: 0,
+      history: txids.map(({ txid, blockTime }) => ({
+        txid,
+        type: 'received' as const,
+        amount: 1_000,
+        confirmed: true,
+        blockTime,
+        account: 'savings' as const,
+      })),
+      savingsSats: 1_000,
+      savingsSpendableSats: 1_000,
+      vtxoSpendingSats: 0,
+    })
+  }
+
+  function setupScoped(status: VaultStatus, locked: boolean, pinStatus: VaultStatus = status) {
+    saveAddressPin(pinFromEnrolledStatus(pinStatus))
+    const setStatus = vi.fn()
+    return renderHook(
+      ({ currentStatus, currentLocked }: { currentStatus: VaultStatus; currentLocked: boolean }) =>
+        useVaultBalances({
+          addressPin:
+            currentStatus.vaultId === pinStatus.vaultId ? loadAddressPin(localStorage, pinStatus.vaultId) : null,
+          enrollment: null,
+          initialStatusChecked: true,
+          locked: currentLocked,
+          setStatus,
+          status: currentStatus,
+        }),
+      { initialProps: { currentStatus: status, currentLocked: locked } },
+    )
+  }
+
+  function deferredOlder() {
+    let resolve!: (value: { transactions: { txid: string }[]; exhausted: boolean }) => void
+    let reject!: (reason: unknown) => void
+    mockedOlderTxs.mockImplementationOnce(
+      () =>
+        new Promise((accept, deny) => {
+          resolve = accept as never
+          reject = deny
+        }),
+    )
+    return {
+      resolve: (transactions: { txid: string }[], exhausted: boolean) => resolve({ transactions, exhausted }),
+      reject: (reason: unknown) => reject(reason),
+    }
+  }
+
+  it('discards a locked-then-unlocked flight without touching state', async () => {
+    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
+    mockedTxs.mockResolvedValue([savingsTx('recent-a', 200)])
+    const flight = deferredOlder()
+    const { result, rerender } = setupScoped(STATUS, true)
+    expect(result.current.history.map((item) => item.txid)).toEqual(['recent-a'])
+    let pending!: Promise<{ added: number; exhausted: boolean }>
+    act(() => {
+      pending = result.current.loadOlderActivity()
+    })
+    rerender({ currentStatus: STATUS, currentLocked: false })
+    rerender({ currentStatus: STATUS, currentLocked: true })
+    let outcome!: { added: number; exhausted: boolean }
+    await act(async () => {
+      flight.resolve([savingsTx('older-a', 100)], false)
+      outcome = await pending
+    })
+    expect(outcome).toEqual({ added: 0, exhausted: false })
+    expect(result.current.history.map((item) => item.txid)).toEqual(['recent-a'])
+    expect(result.current.olderActivity.status).toBe('idle')
+    // The new generation loads independently afterward.
+    mockedOlderTxs.mockResolvedValue({ transactions: [savingsTx('older-a', 100)], exhausted: true })
+    const { result: fresh } = setupScoped(STATUS, true)
+    await act(async () => {
+      outcome = await fresh.current.loadOlderActivity()
+    })
+    expect(outcome).toEqual({ added: 1, exhausted: true })
+    expect(fresh.current.history.map((item) => item.txid).sort()).toEqual(['older-a', 'recent-a'])
+  })
+
+  it('discards an A-B-A flight and lets the returning scope load again', async () => {
+    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('vault-b', [{ txid: 'recent-b', blockTime: 200 }])
+    saveAddressPin(pinFromEnrolledStatus(STATUS_B))
+    const flight = deferredOlder()
+    const { result, rerender } = setupScoped(STATUS, true)
+    let pending!: Promise<{ added: number; exhausted: boolean }>
+    act(() => {
+      pending = result.current.loadOlderActivity()
+    })
+    rerender({ currentStatus: STATUS_B, currentLocked: true })
+    expect(result.current.history.map((item) => item.txid)).toEqual(['recent-b'])
+    rerender({ currentStatus: STATUS, currentLocked: true })
+    let outcome!: { added: number; exhausted: boolean }
+    await act(async () => {
+      flight.resolve([savingsTx('older-a', 100)], false)
+      outcome = await pending
+    })
+    expect(outcome).toEqual({ added: 0, exhausted: false })
+    expect(result.current.history.map((item) => item.txid)).toEqual(['recent-a'])
+    expect(loadBalanceSnapshot('vault-a')?.history.map((item) => item.txid)).toEqual(['recent-a'])
+    mockedOlderTxs.mockResolvedValue({ transactions: [savingsTx('older-a', 100)], exhausted: true })
+    await act(async () => {
+      outcome = await result.current.loadOlderActivity()
+    })
+    expect(outcome).toEqual({ added: 1, exhausted: true })
+  })
+
+  it('keeps scope errors off the new scope after a vault change', async () => {
+    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('vault-b', [{ txid: 'recent-b', blockTime: 200 }])
+    saveAddressPin(pinFromEnrolledStatus(STATUS_B))
+    const flight = deferredOlder()
+    const { result, rerender } = setupScoped(STATUS, true)
+    let pending!: Promise<{ added: number; exhausted: boolean }>
+    act(() => {
+      pending = result.current.loadOlderActivity()
+    })
+    rerender({ currentStatus: STATUS_B, currentLocked: true })
+    let outcome!: { added: number; exhausted: boolean }
+    await act(async () => {
+      flight.reject(new Error('offline'))
+      outcome = await pending
+    })
+    expect(outcome).toEqual({ added: 0, exhausted: false })
+    expect(result.current.olderActivity.status).toBe('idle')
+  })
+
+  it('discards a stale failure after a network change', async () => {
+    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
+    const flight = deferredOlder()
+    const { result, rerender } = setupScoped(STATUS, true)
+    let pending!: Promise<{ added: number; exhausted: boolean }>
+    act(() => {
+      pending = result.current.loadOlderActivity()
+    })
+    rerender({ currentStatus: STATUS_NET, currentLocked: true })
+    let outcome!: { added: number; exhausted: boolean }
+    await act(async () => {
+      flight.reject(new Error('offline'))
+      outcome = await pending
+    })
+    expect(outcome).toEqual({ added: 0, exhausted: false })
+    expect(result.current.olderActivity.status).toBe('idle')
+  })
+
+  it('keeps a newer flight alive when an older finally lands first', async () => {
+    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('vault-b', [{ txid: 'recent-b', blockTime: 200 }])
+    saveAddressPin(pinFromEnrolledStatus(STATUS_B))
+    const first = deferredOlder()
+    const { result, rerender } = setupScoped(STATUS, true)
+    let stale!: Promise<{ added: number; exhausted: boolean }>
+    act(() => {
+      stale = result.current.loadOlderActivity()
+    })
+    rerender({ currentStatus: STATUS_B, currentLocked: true })
+    const second = deferredOlder()
+    let fresh!: Promise<{ added: number; exhausted: boolean }>
+    act(() => {
+      fresh = result.current.loadOlderActivity()
+    })
+    // The older finally must not release the newer flight: no new fetch starts.
+    let staleOutcome!: { added: number; exhausted: boolean }
+    await act(async () => {
+      first.resolve([savingsTx('older-a', 100)], false)
+      staleOutcome = await stale
+    })
+    expect(staleOutcome).toEqual({ added: 0, exhausted: false })
+    expect(mockedOlderTxs).toHaveBeenCalledTimes(2)
+    let shared!: Promise<{ added: number; exhausted: boolean }>
+    act(() => {
+      shared = result.current.loadOlderActivity()
+    })
+    expect(mockedOlderTxs).toHaveBeenCalledTimes(2)
+    await act(async () => {
+      await expect(shared).resolves.toEqual({ added: 0, exhausted: false })
+      second.resolve([savingsTx('older-b', 100)], true)
+      await expect(fresh).resolves.toEqual({ added: 1, exhausted: true })
+    })
+    expect(result.current.history.map((item) => item.txid).sort()).toEqual(['older-b', 'recent-b'])
   })
 })

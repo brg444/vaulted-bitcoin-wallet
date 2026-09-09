@@ -170,14 +170,12 @@ export function useVaultBalances({
   const statusRef = useRef(status)
   const addressPinRef = useRef(addressPin)
   const enrollmentRef = useRef(enrollment)
-  const lockedRef = useRef(locked)
   const retryTimerRef = useRef(0)
   const retryAttemptRef = useRef(0)
   const refreshBalanceRef = useRef<(vaultId?: string) => Promise<void>>(async () => undefined)
   statusRef.current = status
   addressPinRef.current = addressPin
   enrollmentRef.current = enrollment
-  lockedRef.current = locked
 
   const refreshVaultId = status?.vaultId || enrollment?.vaultId || addressPin?.vaultId || ''
   const [hydratedVaultId, setHydratedVaultId] = useState(refreshVaultId)
@@ -197,7 +195,11 @@ export function useVaultBalances({
   // observation excludes them so old receipts never banner as new.
   const [olderHistory, setOlderHistory] = useState<VaultHistoryItem[]>([])
   const olderHistoryRef = useRef<VaultHistoryItem[]>([])
-  const olderLoadingRef = useRef(false)
+  // Older-page request generation. Every vault, network, or lock transition
+  // and unmount invalidates pending flights; stale callbacks mutate nothing.
+  const generationRef = useRef(0)
+  const olderFlightRef = useRef<{ token: number; generation: number } | null>(null)
+  const flightTokenRef = useRef(0)
   const hasSnapshotRef = useRef(balancesLoaded)
   const spendingReadyRef = useRef(balancesLoaded)
   const snapshotRef = useRef(snapshot)
@@ -207,6 +209,7 @@ export function useVaultBalances({
     const cachedSnapshot = loadBalanceSnapshot(refreshVaultId)
     setHydratedVaultId(refreshVaultId)
     refreshVersion.current += 1
+    generationRef.current += 1
     setSnapshot(cachedSnapshot || EMPTY_BALANCES)
     setBalancesLoaded(Boolean(cachedSnapshot))
     setSnapshotFresh(false)
@@ -416,19 +419,40 @@ export function useVaultBalances({
   )
   refreshBalanceRef.current = refreshBalance
 
+  // Invalidate older-page flights on vault, network, or lock transitions and
+  // on unmount. A-B-A returns carry a new generation, so an earlier scope
+  // can never accept a response from before its own generation.
+  const generationScope = `${refreshVaultId}:${status?.network || ''}:${locked}`
+  useEffect(() => {
+    generationRef.current += 1
+    // The new scope starts with a fresh older-load state; stale flights stay
+    // mute and never write here themselves.
+    setOlderActivity({ status: 'idle', error: '' })
+  }, [generationScope])
+  useEffect(
+    () => () => {
+      generationRef.current += 1
+    },
+    [],
+  )
+
   /**
    * One more Esplora window of older Savings records. Only the Savings
    * address supports this: SDK activity, journals, and local records are
    * already complete, and boarding history is transient. Balances never
    * change here; this extends loaded history only, bounded overall.
    *
-   * The response binds to the requesting vault and network: a switch or lock
-   * while the request is pending discards the result without touching the
-   * new scope. Concurrent calls share one flight. The merged result is
-   * computed before any state update, so state updaters stay pure.
+   * Each flight binds to the current request generation. Vault, network, or
+   * lock transitions and unmount invalidate pending flights, whose stale
+   * success, error, and finally callbacks leave current state untouched. A
+   * new scope starts its own flight independently. Concurrent calls within
+   * one generation share a single flight. The merged result is computed
+   * before any state update, so state updaters stay pure.
    */
   const loadOlderActivity = useCallback(async (): Promise<OlderActivityResult> => {
-    if (olderLoadingRef.current) return { added: 0, exhausted: false }
+    const generation = generationRef.current
+    const liveFlight = olderFlightRef.current
+    if (liveFlight && liveFlight.generation === generation) return { added: 0, exhausted: false }
     const requestId = String(
       statusRef.current?.vaultId || enrollmentRef.current?.vaultId || addressPinRef.current?.vaultId || '',
     ).trim()
@@ -442,21 +466,20 @@ export function useVaultBalances({
       setOlderActivity({ status: 'exhausted', error: '' })
       return { added: 0, exhausted: true }
     }
-    olderLoadingRef.current = true
+    const token = (flightTokenRef.current += 1)
+    olderFlightRef.current = { token, generation }
     setOlderActivity({ status: 'loading', error: '' })
+    // A stale flight resolves against its own generation: vault, network, or
+    // lock changes and unmount invalidate it, and its success, error, and
+    // finally callbacks leave current state untouched.
+    const stale = () => generation !== generationRef.current
     try {
       const { transactions, exhausted } = await fetchOlderAddressTxs(savingsAddress, cursor)
+      if (stale()) return { added: 0, exhausted: false }
       const currentId = String(
         statusRef.current?.vaultId || enrollmentRef.current?.vaultId || addressPinRef.current?.vaultId || '',
       ).trim()
       if (currentId !== requestId || (statusRef.current && statusRef.current.network !== requestNetwork)) {
-        // A vault switch already reset this scope; leave the new scope alone.
-        setOlderActivity({ status: 'idle', error: '' })
-        return { added: 0, exhausted: false }
-      }
-      if (lockedRef.current) {
-        // A lock discards the pending page without touching loaded history.
-        setOlderActivity({ status: 'idle', error: '' })
         return { added: 0, exhausted: false }
       }
       const fresh = historyFromTxs(transactions, savingsAddress, 'savings')
@@ -480,6 +503,7 @@ export function useVaultBalances({
       setOlderActivity({ status: done ? 'exhausted' : 'idle', error: '' })
       return { added: unseen.length, exhausted: done }
     } catch (error) {
+      if (stale()) return { added: 0, exhausted: false }
       const currentId = String(
         statusRef.current?.vaultId || enrollmentRef.current?.vaultId || addressPinRef.current?.vaultId || '',
       ).trim()
@@ -490,7 +514,9 @@ export function useVaultBalances({
       setOlderActivity({ status: 'error', error: 'Could not load older activity. Try again.' })
       return { added: 0, exhausted: false }
     } finally {
-      olderLoadingRef.current = false
+      // Release only this flight: an older finally must never clear a newer
+      // scope's in-flight request.
+      if (olderFlightRef.current?.token === token) olderFlightRef.current = null
     }
   }, [])
 

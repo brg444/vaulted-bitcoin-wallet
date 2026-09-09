@@ -474,6 +474,39 @@ html.palette-dark .qg-mark-imprint {
   color: var(--qg-muted);
 }
 
+.qg-activity-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: var(--qg-space-16) 0;
+}
+.qg-activity-filters label {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 120px;
+  min-width: 0;
+  color: var(--qg-muted);
+  font-size: var(--qg-body);
+  line-height: 1.4;
+}
+.qg-activity-filters select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--qg-line);
+  border-radius: var(--qg-field-radius);
+  background: var(--qg-paper);
+  color: var(--qg-ink);
+  font: inherit;
+}
+[data-testid='vault-activity'] .vault-history-amt {
+  max-width: 45%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 html.palette-dark .qg-footer-error,
 html.palette-dark .qg-footer .qg-footer-error,
 html.palette-dark [data-testid='vault-app'] .vault-error-message .shadow-surface {
