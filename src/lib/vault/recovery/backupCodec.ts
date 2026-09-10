@@ -102,6 +102,7 @@ export function recoveryStatusFacts(status: VaultStatus): VaultStatus {
     'vtxoBoardingExitDelayUnit',
     'connectorEnrollment',
     'ledgerSavings',
+    'spendingDescriptor',
   ] as const
   return JSON.parse(
     JSON.stringify({

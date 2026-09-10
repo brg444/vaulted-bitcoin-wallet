@@ -1,3 +1,4 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from '../spendingEnrollment'
 import { LIGHT_PROFILE, LightScript } from '../light/contract'
 import { requireLightStatus } from '../light/status'
 import { unlockLightOwnerKey } from '../light/keyBackup'
@@ -706,6 +707,9 @@ export function vaultPolicyV1ScriptFromStatus(status: VaultStatus): VaultPolicyV
   const pins = requireEnrolledSpendingStatus(status)
   const address = ArkAddress.decode(String(status.spendingArkAddress || ''))
   if (address.hrp !== pins.arkHrp) throw new Error('spending Ark address does not match this network')
+  const spendingOnly = status.templateVersion === SPENDING_ONLY_TEMPLATE
+  if (spendingOnly) requireSpendingEnrollmentStatus(status)
+  else if (status.protectionTier === 'light') throw new Error('Light requires its shared Spending enrollment')
   const params: VaultPolicyV1Params = {
     userPub: xOnly(status.phoneBip340Pub, 'phone pubkey'),
     vtxoVaultCosignerPub: xOnly(status.vtxoVaultCosignerPub, 'VTXO VaultCosigner pubkey'),
@@ -715,7 +719,9 @@ export function vaultPolicyV1ScriptFromStatus(status: VaultStatus): VaultPolicyV
     exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
     network: pins.network,
     exitDevicePub: xOnly(status.phoneBip340Pub, 'phone pubkey'),
-    exitHardwarePub: xOnly(status.externalOwnerWalletPub, 'hardware pubkey'),
+    ...(spendingOnly
+      ? { exitMode: 'device' as const }
+      : { exitHardwarePub: xOnly(status.externalOwnerWalletPub, 'hardware pubkey') }),
     ...(status.recoveryKeyPub || status.recoveryPub
       ? { exitRecoveryPub: xOnly(status.recoveryKeyPub || status.recoveryPub, 'recovery pubkey') }
       : {}),

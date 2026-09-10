@@ -20,6 +20,7 @@ import type { ProtectionTier } from './protectionTier'
 import type { LedgerSavingsKeyContext, LedgerAccountOrigin } from './program/ledgerNativeKeys'
 
 type ExpectedVaultStatusWire = {
+  spendingDescriptor?: import('./spendingEnrollment').SpendingEnrollmentDescriptor
   ledgerSavings?: { context: LedgerSavingsKeyContext; spendingPolicy: SpendingPolicy; descriptorHash: string }
   connectorEnrollment?: {
     connectorType: 'p2wpkh' | 'p2tr'

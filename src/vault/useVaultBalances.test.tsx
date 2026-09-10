@@ -1,4 +1,4 @@
-import { lightTestStatus, lightTestEnrollment } from '../lib/vault/light/testdata/helpers'
+import { sharedSpendingStatus, sharedSpendingEnrollment } from '../lib/vault/vtxo/testdata/sharedSpending'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAddressTxs, fetchAddressUtxos, fetchOlderAddressTxs } from '../lib/vault/esplora'
@@ -614,29 +614,59 @@ it('keeps the last known Savings funds when Esplora fails', async () => {
   expect(loadBalanceSnapshot(STATUS.vaultId)?.savingsSats).toBe(9000)
 })
 
-it('refreshes Light Spending from its saved descriptor without a protected Savings pin', async () => {
-  const record = await lightTestEnrollment()
-  const status = lightTestStatus(record.descriptor) as VaultStatus
-  vi.mocked(fetchVaultStatusUnpinned).mockResolvedValue(status)
+it('refreshes fresh Light Spending through the same pinned status and worker as protected Spending', async () => {
+  const status = sharedSpendingStatus()
+  mockedStatus.mockResolvedValue(status)
   mockedSnapshot.mockResolvedValue({ balance: 12000, pendingBalance: 2000, history: [] })
-  const { result, setStatus } = setupHook(false, status, true, record.enrollment, false)
+  const { result, setStatus } = setupHook(false, status, true, sharedSpendingEnrollment())
   await waitFor(() => expect(result.current.positions.spending.totalSats).toBe(14000))
   expect(setStatus).toHaveBeenCalledWith(status)
-  expect(mockedStatus).not.toHaveBeenCalled()
+  expect(mockedStatus).toHaveBeenCalledWith(undefined, status.vaultId)
+  expect(fetchVaultStatusUnpinned).not.toHaveBeenCalled()
+  expect(mockedSnapshot).toHaveBeenCalledWith(status)
   expect(mockedUtxos).not.toHaveBeenCalled()
   expect(result.current.positions.savings.totalSats).toBe(0)
 })
 
-it('rejects changed Light signing facts before reading balances or replacing the session', async () => {
-  const record = await lightTestEnrollment()
-  const status = lightTestStatus(record.descriptor) as VaultStatus
-  vi.mocked(fetchVaultStatusUnpinned).mockResolvedValue({ ...status, spendingArkAddress: 'tark1changed' })
-  const { result, setStatus } = setupHook(false, status, true, record.enrollment, false)
+it('rejects changed Light signing facts against its common pin before reading balances', async () => {
+  const status = sharedSpendingStatus()
+  mockedStatus.mockResolvedValue({ ...status, spendingArkAddress: 'tark1changed' })
+  const { result, setStatus } = setupHook(false, status, true, sharedSpendingEnrollment())
   await act(async () => result.current.refreshBalance(status.vaultId))
   expect(result.current.snapshotFresh).toBe(false)
   expect(setStatus).not.toHaveBeenCalled()
   expect(mockedSnapshot).not.toHaveBeenCalled()
   expect(mockedUtxos).not.toHaveBeenCalled()
+})
+
+it('keeps watched Savings scoped to the selected address when an earlier request finishes late', async () => {
+  const status = sharedSpendingStatus()
+  mockedStatus.mockResolvedValue(status)
+  const old = deferred<Awaited<ReturnType<typeof fetchAddressUtxos>>>()
+  mockedUtxos.mockImplementation(async (address) =>
+    address === 'tb1pfirst' ? old.promise : [{ txid: 'new', vout: 0, value: 8000, status: { confirmed: true } }],
+  )
+  const pin = saveAddressPin(pinFromEnrolledStatus(status))
+  const setStatus = vi.fn()
+  const enrollment = sharedSpendingEnrollment()
+  const { result, rerender } = renderHook(
+    ({ address }) =>
+      useVaultBalances({
+        addressPin: pin,
+        enrollment,
+        initialStatusChecked: true,
+        locked: false,
+        setStatus,
+        status,
+        watchedSavingsAddress: address,
+      }),
+    { initialProps: { address: 'tb1pfirst' } },
+  )
+  await waitFor(() => expect(mockedUtxos).toHaveBeenCalledWith('tb1pfirst'))
+  rerender({ address: 'tb1psecond' })
+  await waitFor(() => expect(result.current.positions.savings.totalSats).toBe(8000))
+  await act(async () => old.resolve([{ txid: 'old', vout: 0, value: 999999, status: { confirmed: true } }]))
+  expect(result.current.positions.savings.totalSats).toBe(8000)
 })
 
 describe('older activity scope safety', () => {

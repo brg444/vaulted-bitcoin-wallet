@@ -1,3 +1,4 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus, spendingEnrollmentHash } from './spendingEnrollment'
 import { bech32, hex } from '@scure/base'
 import {
   createExitChainResolver,
@@ -89,7 +90,10 @@ export function validateLightningAddress(value: LightningAddress, status: VaultS
     .encode('lnurl', bech32.toWords(new TextEncoder().encode(`${LNURL_ORIGIN}/.well-known/lnurlp/${name}`)), 1023)
     .toUpperCase()
   const b = value.binding
-  const descriptor = status.lightDescriptorHash ?? status.connectorEnrollment?.descriptorHash
+  const descriptor =
+    status.templateVersion === SPENDING_ONLY_TEMPLATE
+      ? spendingEnrollmentHash(requireSpendingEnrollmentStatus(status))
+      : (status.lightDescriptorHash ?? status.connectorEnrollment?.descriptorHash)
   if (
     !/^v[0-9a-f]{16}$/.test(value.id) ||
     (name !== value.id && !validLightningName(name)) ||

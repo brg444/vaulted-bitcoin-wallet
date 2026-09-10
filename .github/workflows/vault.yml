@@ -96,13 +96,13 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: corepack pnpm exec playwright install chromium webkit
       - name: Vault Playwright
-        run: corepack pnpm test:e2e ${{ inputs.refresh_snapshots && '--update-snapshots' || '' }}
+        run: corepack pnpm test:e2e ${{ inputs.refresh_snapshots && '--update-snapshots=all' || '' }}
         env:
           CI: true
           VAULT_UPDATE_SNAPSHOTS: ${{ inputs.refresh_snapshots && '1' || '0' }}
 
       - name: Lightning and denomination UX in Chromium and Safari
-        run: corepack pnpm test:ux
+        run: corepack pnpm test:ux ${{ inputs.refresh_snapshots && '--update-snapshots=all' || '' }}
 
       - name: Browser failure screenshots
         if: failure()

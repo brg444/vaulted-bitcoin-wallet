@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { readdirSync, existsSync, unlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 
@@ -8,6 +8,9 @@ const require = createRequire(import.meta.url)
 const viteRequire = createRequire(require.resolve('vite/package.json'))
 const { build } = viteRequire('esbuild')
 const tests = readdirSync('src/test/e2e-vault').filter((name) => name.endsWith('.test.ts'))
+if (existsSync('.vault-browser-tests'))
+  for (const name of readdirSync('.vault-browser-tests'))
+    if (name.endsWith('.test.ts') && !tests.includes(name)) unlinkSync(resolve('.vault-browser-tests', name))
 for (const name of ['globalSetup.ts', ...tests]) {
   await build({
     entryPoints: [resolve(`src/test/e2e-vault/${name}`)],

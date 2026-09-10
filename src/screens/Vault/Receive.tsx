@@ -138,7 +138,7 @@ export default function VaultReceive() {
         />
         <span className='qg-protected'>
           {spending ? <ShieldCheck /> : <KeyRound />}
-          {spending ? 'Spending limits' : 'Two-key Savings'}
+          {spending ? 'Spending limits' : status?.protectionTier === 'light' ? 'Watch-only Savings' : 'Two-key Savings'}
         </span>
         {request ? (
           <div className='qg-qr' role='img' aria-label='Payment request QR code'>

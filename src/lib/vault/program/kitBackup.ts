@@ -1,3 +1,5 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from '../spendingEnrollment'
+import { buildSpendingRecoveryDescriptor } from './spendingRecoveryDescriptor'
 import { isConnectorTemplate } from './connector'
 import { vaultCosignerClient } from '../cosignerClient'
 import { beginPasskeySession } from '../signIn'
@@ -47,6 +49,22 @@ export function kitFromFacts(input: {
   hardwarePub?: string
   recoveryPub?: string
 }): RecoveryKit | null {
+  if (input.status?.templateVersion === SPENDING_ONLY_TEMPLATE) {
+    try {
+      const d = requireSpendingEnrollmentStatus(input.status)
+      if (
+        (input.enrollment?.phoneBip340Pub && input.enrollment.phoneBip340Pub !== d.phonePub) ||
+        (input.enrollment?.phoneDirectP256 && input.enrollment.phoneDirectP256 !== d.phoneDirectP256) ||
+        input.hardwarePub ||
+        input.recoveryPub
+      )
+        return null
+      return buildRecoveryKit(buildSpendingRecoveryDescriptor(d))
+    } catch {
+      return null
+    }
+  }
+
   if (input.status?.templateVersion === LEDGER_NATIVE_TEMPLATE) {
     try {
       const descriptor = buildLedgerRecoveryDescriptor(ledgerEnrollmentFromStatus(input.status))

@@ -14,7 +14,7 @@ import { hex } from '@scure/base'
 import { Address, OutScript } from '@scure/btc-signer'
 import { scriptHexFromAddress, vaultAddressNetwork } from './bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
-import { consoleLog } from '../logs'
+import { consoleError, consoleLog } from '../logs'
 import { ensureVaultWalletWorker } from './vtxo/walletWorker'
 import { BitcoinPaymentError, bitcoinPaymentRejected } from './bitcoinPaymentError'
 import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
@@ -447,6 +447,7 @@ export async function sendSpendingToBitcoin(
         )
       return receipt
     } catch (error) {
+      consoleError(error, 'Bitcoin payment lifecycle')
       if (error instanceof BitcoinPaymentError) throw error
       const saved = readSpendingBitcoin(status)
       if (saved) {

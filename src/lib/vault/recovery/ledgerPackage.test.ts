@@ -1,3 +1,4 @@
+import { requireSavingsRecoveryKit, parseRecoveryKit, inspectRecoveryKit } from '../program/kit'
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -5,7 +6,6 @@ import { ledgerRecoveryFixture, ledgerFixturePRF, ledgerFixtureSeed } from './te
 import { buildRecoveryHeader, decryptRecoveryBackup, recoveryBackupKey, validateRecoveryHeader } from './backupCodec'
 import { createPortableRecoveryPackage, parsePortableRecoveryPackage, portableRecoverySource } from './portable'
 import { restoreVaultRecoveryFile } from './restore'
-import { parseRecoveryKit, inspectRecoveryKit } from '../program/kit'
 import { validateLedgerSavingsEnrollmentDescriptor } from '../program/ledgerRecoveryDescriptor'
 import { loadEnrollment } from '../enrollmentStore'
 import { loadLocalKit } from '../program/kitStore'
@@ -81,7 +81,9 @@ describe('Ledger Savings complete recovery package', () => {
         f.header.enrollment.ledgerSavings!.registration.walletId = '00'.repeat(32)
       },
       (f: typeof file) => {
-        f.header.enrollment.ledgerSavings!.registration.changeAddress = file.header.kit.descriptor.savings.address
+        f.header.enrollment.ledgerSavings!.registration.changeAddress = requireSavingsRecoveryKit(
+          file.header.kit,
+        ).descriptor.savings.address
       },
       (f: typeof file) => {
         f.header.enrollment.ledgerSavings!.phoneSeedBackup.contextDigest = '00'.repeat(32)

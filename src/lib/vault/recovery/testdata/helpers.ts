@@ -7,7 +7,10 @@ import { hex, base64 } from '@scure/base'
 import type { VaultStatus, BoardingDescriptor } from '../../types'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../../spendingPolicy'
 import { buildVaultProgramDescriptor, type VaultProgramDescriptor } from '../../program/descriptor'
-import { buildRecoveryKit } from '../../program/kit'
+import { sharedSpendingStatus } from '../../vtxo/testdata/sharedSpending'
+import { buildSpendingRecoveryDescriptor } from '../../program/spendingRecoveryDescriptor'
+import { vaultPolicyV1ScriptFromStatus } from '../../vtxo/spend'
+import { buildRecoveryKit, type RecoveryKit } from '../../program/kit'
 import { PROGRAM_FIXTURE, compressedFromScalar, scalarSecret } from '../../program/fixtures'
 import { networkPins } from '../../networkPins'
 import { VaultPolicyV1Script } from '../../vtxo/script'
@@ -124,25 +127,6 @@ export function recoveryFixture(
     vtxoBoardingExitDelay: pins.boardExitDelay,
     vtxoBoardingExitDelayUnit: 'seconds',
   })
-  const tx = new Transaction({ version: 3 })
-  const root = p2tr(hex.decode(compressedFromScalar(21)).slice(1), undefined, getNetwork(pins.sdkNetwork))
-  tx.addInput({
-    txid: '01'.repeat(32),
-    index: 0,
-    witnessUtxo: { script: root.script, amount: 40_000n },
-    tapInternalKey: root.tapInternalKey,
-  })
-  tx.addOutput({ amount: 40_000n, script: spending.pkScript })
-  tx.addOutput({ amount: 0n, script: hex.decode('51024e73') })
-  tx.sign(scalarSecret(21))
-  const coin = {
-    txid: tx.id,
-    vout: 0,
-    value: 40_000,
-    script: hex.encode(spending.pkScript),
-    isSpent: false,
-    createdAt: '2026-09-06T00:00:00Z',
-  }
   status.vtxoBoardingDescriptorHash = hashBoardingEnrollmentDescriptor({
     schema: 'arkade-vault/enrollment-with-board-v1',
     vaultId: status.vaultId,
@@ -185,8 +169,38 @@ export function recoveryFixture(
       descriptorHash: preview.compositeHash,
     }
   }
+  return { ...recoveryArchiveFixture(kit, status, spending), board }
+}
+
+export function sharedSpendingRecoveryFixture() {
+  const status = sharedSpendingStatus()
+  const kit = buildRecoveryKit(buildSpendingRecoveryDescriptor(status.spendingDescriptor))
+  return recoveryArchiveFixture(kit, status, vaultPolicyV1ScriptFromStatus(status))
+}
+
+function recoveryArchiveFixture<K extends RecoveryKit>(kit: K, status: VaultStatus, spending: VaultPolicyV1Script) {
+  const pins = networkPins(status.network)
+  const tx = new Transaction({ version: 3 })
+  const root = p2tr(hex.decode(compressedFromScalar(21)).slice(1), undefined, getNetwork(pins.sdkNetwork))
+  tx.addInput({
+    txid: '01'.repeat(32),
+    index: 0,
+    witnessUtxo: { script: root.script, amount: 40_000n },
+    tapInternalKey: root.tapInternalKey,
+  })
+  tx.addOutput({ amount: 40_000n, script: spending.pkScript })
+  tx.addOutput({ amount: 0n, script: hex.decode('51024e73') })
+  tx.sign(scalarSecret(21))
+  const coin = {
+    txid: tx.id,
+    vout: 0,
+    value: 40_000,
+    script: hex.encode(spending.pkScript),
+    isSpent: false,
+    createdAt: '2026-09-06T00:00:00Z',
+  }
   const binding = vaultRecoveryBinding(kit, status)
-  const archive: VaultRecoveryArchive = {
+  const archive: VaultRecoveryArchive<K> = {
     name: 'vaulted-program-recovery-data',
     version: 1,
     kit,
@@ -227,7 +241,7 @@ export function recoveryFixture(
       transactions: { [tx.id]: base64.encode(tx.toPSBT()) },
     },
   }
-  return { archive, kit, status, spending, board, tx, coin }
+  return { archive, kit, status, spending, tx, coin }
 }
 
 /** Synthetic linked, signed boarding evidence; test scalars never leave fixtures. */

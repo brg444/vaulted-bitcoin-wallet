@@ -1,3 +1,4 @@
+import type { WatchedSavingsAddress } from '../lib/vault/watchSavings'
 import type { LedgerSavingsView } from './useLedgerSavings'
 import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
@@ -58,6 +59,8 @@ export interface VaultSpend {
 }
 
 export interface VaultContextProps {
+  watchedSavings?: WatchedSavingsAddress | null
+  updateWatchedSavings?: (address: string, label: string) => void
   watchedSavingsTotalSats?: number | null
   ledgerPayment: LedgerSavingsView | null
   completeLedgerPayment: (candidateId: string, signedPsbt: string) => Promise<void>
@@ -65,7 +68,7 @@ export interface VaultContextProps {
   connectLedgerKey: (role: 'hardware' | 'recovery') => Promise<void>
   applyLedgerRecovery: (raw: string) => void
   completeLedgerEnrollment: (registration: LedgerSavingsRegistration) => Promise<void>
-  acceptDesign: (tier?: 'standard' | 'advanced') => void
+  acceptDesign: (tier?: 'light' | 'standard' | 'advanced') => void
   account: VaultAccount
   spendingRenewals?: SpendingRenewalJournal | null
   spendingBitcoin?: { operation: BitcoinPaymentJournal | null; error: string }

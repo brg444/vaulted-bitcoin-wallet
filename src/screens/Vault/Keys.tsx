@@ -82,7 +82,8 @@ export default function VaultKeys() {
   const hardwarePub = status?.externalOwnerWalletPub || setup.hardwarePub
   const recoveryPub = status?.recoveryPub || setup.recoveryPub
   const hasRecovery = Boolean(recoveryPub)
-  const addressCovered = Boolean(savingsAddress && spendingArkAddress)
+  const light = status?.protectionTier === 'light'
+  const addressCovered = Boolean(spendingArkAddress && (light ? status.vtxoBoardingAddress : savingsAddress))
   const readiness = useVaultReadiness()
   const protectionTier = status?.protectionTier || setup.protectionTier
   const limit = status?.periodAllowance || setup.dailyLimitSats
@@ -124,8 +125,14 @@ export default function VaultKeys() {
     >
       {view === 'overview' ? (
         <SecurityOverview
-          title={protectionTier === 'advanced' ? 'Advanced vault' : 'Standard vault'}
-          description={hasRecovery ? 'Passkey, hardware and recovery key' : 'Passkey + hardware wallet'}
+          title={light ? 'Light wallet' : protectionTier === 'advanced' ? 'Advanced vault' : 'Standard vault'}
+          description={
+            light
+              ? 'Passkey payments · watch-only Savings'
+              : hasRecovery
+                ? 'Passkey, hardware and recovery key'
+                : 'Passkey + hardware wallet'
+          }
           notice={!vaultReady ? 'Check keys and service access' : 'Vault service available'}
           attention={!vaultReady}
           access={{
@@ -155,7 +162,11 @@ export default function VaultKeys() {
             {isConnectorTemplate(status?.templateVersion) ? (
               <HubRow title='Savings signer setup' onClick={() => setSelectedView('signer')} />
             ) : null}
-            <HubRow title='I lost a key' onClick={() => openRecover('lost', 'keys')} testId='security-lost' />
+            <HubRow
+              title={light ? 'Recover Spending' : 'I lost a key'}
+              onClick={() => openRecover('lost', 'keys')}
+              testId='security-lost'
+            />
           </HubGroup>
         </SecurityOverview>
       ) : view === 'keys' ? (
@@ -166,12 +177,14 @@ export default function VaultKeys() {
               title='Your passkey'
               status={!phoneCovered ? 'Needed' : devicesCovered ? 'Ready' : 'This device only'}
             />
-            <HubRow
-              icon={<ShieldCheck />}
-              title='Hardware wallet'
-              detail='Independent approval for Savings'
-              status='Savings approval'
-            />
+            {!light ? (
+              <HubRow
+                icon={<ShieldCheck />}
+                title='Hardware wallet'
+                detail='Independent approval for Savings'
+                status='Savings approval'
+              />
+            ) : null}
             {hasRecovery ? (
               <HubRow
                 icon={<FileKey />}
@@ -186,15 +199,24 @@ export default function VaultKeys() {
               {busy ? 'Waiting for passkey…' : 'Use on another device'}
             </button>
           ) : null}
-          <QgGuidance title='Key details'>
-            <p>Hardware wallet: {shortKey(hardwarePub)}</p>
-            {hasRecovery ? <p>Recovery key: {shortKey(recoveryPub)}</p> : null}
-          </QgGuidance>
-          <RecoveryExplanation
-            advanced={protectionTier === 'advanced'}
-            mainnet={status?.network === 'mainnet'}
-            templateVersion={status?.templateVersion}
-          />
+          {!light ? (
+            <QgGuidance title='Key details'>
+              <p>Hardware wallet: {shortKey(hardwarePub)}</p>
+              {hasRecovery ? <p>Recovery key: {shortKey(recoveryPub)}</p> : null}
+            </QgGuidance>
+          ) : null}
+          {light ? (
+            <p className='qg-copy'>
+              Keep a recovery package and access to your original passkey. Your saved device key can recover Spending
+              and pending Bitcoin deposits after their waiting periods.
+            </p>
+          ) : (
+            <RecoveryExplanation
+              advanced={protectionTier === 'advanced'}
+              mainnet={status?.network === 'mainnet'}
+              templateVersion={status?.templateVersion}
+            />
+          )}
           {!addressCovered && status?.enrolled ? (
             <p className='qg-copy'>Vault addresses are not restored on this device. Sign in again to restore them.</p>
           ) : null}

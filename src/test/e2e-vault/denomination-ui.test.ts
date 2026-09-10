@@ -1,4 +1,4 @@
-import { lightTestStatus } from '../../lib/vault/light/testdata/helpers'
+import { sharedSpendingStatus as lightTestStatus } from '../../lib/vault/vtxo/testdata/sharedSpending'
 import { test, expect } from './fixtures/passkey'
 import { openLight } from './fixtures/light-ui'
 
@@ -41,7 +41,6 @@ test('@ux-denomination Light keeps balances, history, navigation and send on one
   await expect(page.locator('.qg-details > div').filter({ hasText: 'Total' })).toContainText('$1.25')
   await expect(page.getByRole('button', { name: 'Approve payment', exact: true })).toBeVisible()
   await page.reload()
-  await page.getByRole('button', { name: 'Unlock with passkey', exact: true }).click()
   await expect(balance).toHaveText('$14.00')
   await expect(received).toContainText('$12.00')
   await balance.click()

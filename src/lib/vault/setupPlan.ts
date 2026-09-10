@@ -136,7 +136,9 @@ export function sameRole(a: string, b: string): boolean {
 
 export function planReady(plan: VaultSetupPlan): boolean {
   if (!plan.acceptedDesign) return false
-  if (!plan.hardwarePub) return false
+  if (plan.protectionTier === 'light') {
+    if (plan.hardwarePub || plan.recoveryPub || plan.connector || plan.ledger) return false
+  } else if (!plan.hardwarePub) return false
   if (plan.recoveryPub && sameRole(plan.hardwarePub, plan.recoveryPub)) return false
   try {
     requireProtectionTierMatchesRecovery(plan.protectionTier, plan.recoveryPub)
@@ -167,7 +169,9 @@ export function loadSetupPlan(storage: Storage = localStorage): VaultSetupPlan |
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
   if (
-    (parsed.protectionTier !== 'standard' && parsed.protectionTier !== 'advanced') ||
+    (parsed.protectionTier !== 'light' &&
+      parsed.protectionTier !== 'standard' &&
+      parsed.protectionTier !== 'advanced') ||
     !Number.isSafeInteger(parsed.txCapSats) ||
     !Number.isSafeInteger(parsed.dailyLimitSats) ||
     !Number.isSafeInteger(parsed.absoluteFeeCapSats) ||
@@ -175,6 +179,11 @@ export function loadSetupPlan(storage: Storage = localStorage): VaultSetupPlan |
   ) {
     return null
   }
+  if (
+    parsed.protectionTier === 'light' &&
+    (parsed.hardwarePub || parsed.recoveryPub || parsed.connector || parsed.ledger)
+  )
+    return null
   const connector = validSetupConnector(parsed.connector)
   if (Object.hasOwn(parsed, 'connector') && (!connector || parsed.hardwarePub !== connector.connectorPub)) return null
   let ledger: VaultSetupLedger | undefined

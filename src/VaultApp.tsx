@@ -1,8 +1,6 @@
 import { spendingScreens } from './screens/Vault/SpendingScreens'
 import VaultLedgerPayment from './screens/Vault/LedgerPayment'
-import VaultLight from './screens/Vault/Light'
-import { loadLightEnrollment } from './lib/vault/light/enrollment'
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef } from 'react'
 import { VaultContext } from './vault/context'
 import './screens/Vault/vault.css'
 import './screens/Vault/vault-system.css'
@@ -36,15 +34,6 @@ import { useIntentPress } from './screens/Vault/qg/useIntentPress'
 import { useScreenMotion } from './screens/Vault/qg/useScreenMotion'
 
 export default function VaultApp() {
-  const [lightActive, setLightActive] = useState(() => {
-    try {
-      // A setup preference is not a wallet. Resume unfinished setup only after
-      // the user chooses Light, leaving existing vault sign-in accessible.
-      return localStorage.getItem('vaulted:active-setup') === 'light' && Boolean(loadLightEnrollment())
-    } catch {
-      return false
-    }
-  })
   const { screen, account, ledgerAvailable, setup } = useContext(VaultContext)
   const root = useRef<HTMLDivElement>(null)
   const scope = `${screen}:${account}`
@@ -63,14 +52,7 @@ export default function VaultApp() {
     unlock: <VaultUnlock />,
     handoff: <VaultHandoff />,
     'ledger-sign': <VaultLedgerPayment />,
-    design: (
-      <VaultDesign
-        onChooseLight={() => {
-          localStorage.setItem('vaulted:active-setup', 'light')
-          setLightActive(true)
-        }}
-      />
-    ),
+    design: <VaultDesign />,
     hardware: ledgerAvailable ? <LedgerHardware /> : <VaultHardware />,
     'ledger-register': <LedgerEnrollmentRegistration />,
     recovery: setup.ledger ? <LedgerRecoveryKey /> : <VaultRecovery />,
@@ -88,26 +70,11 @@ export default function VaultApp() {
     signin: <VaultSignIn />,
   }
   const page = pages[screen] || <VaultWelcome />
-  const className = [
-    'page',
-    `vault-screen-${lightActive ? 'light' : screen}`,
-    !lightActive && launcher ? 'has-vault-navigation' : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const className = ['page', `vault-screen-${screen}`, launcher ? 'has-vault-navigation' : ''].filter(Boolean).join(' ')
   return (
     <div ref={root} className={className} data-testid='vault-app' {...intentPress}>
-      {lightActive ? (
-        <VaultLight
-          onExit={() => {
-            localStorage.removeItem('vaulted:active-setup')
-            setLightActive(false)
-          }}
-        />
-      ) : (
-        page
-      )}
-      {!lightActive && launcher ? <VaultNavigation /> : null}
+      {page}
+      {launcher ? <VaultNavigation /> : null}
     </div>
   )
 }

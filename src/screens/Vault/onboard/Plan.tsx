@@ -11,6 +11,7 @@ function shortPub(pub: string) {
 export default function VaultPlan() {
   const { finishPlan, navigate, networkLabel, setup } = useContext(VaultContext)
   const [consented, setConsented] = useState(false)
+  const light = setup.protectionTier === 'light'
   const advanced = setup.protectionTier === 'advanced'
 
   return (
@@ -39,15 +40,17 @@ export default function VaultPlan() {
         </div>
         <div>
           <span>Protection</span>
-          <strong>{advanced ? 'Advanced' : 'Standard'}</strong>
+          <strong>{light ? 'Light' : advanced ? 'Advanced' : 'Standard'}</strong>
         </div>
-        <div>
-          <span>Hardware key</span>
-          <strong>{shortPub(setup.hardwarePub)}</strong>
-        </div>
+        {!light ? (
+          <div>
+            <span>Hardware key</span>
+            <strong>{shortPub(setup.hardwarePub)}</strong>
+          </div>
+        ) : null}
         <div>
           <span>Recovery</span>
-          <strong>{advanced ? shortPub(setup.recoveryPub) : 'One remaining key'}</strong>
+          <strong>{light ? 'Saved device key' : advanced ? shortPub(setup.recoveryPub) : 'One remaining key'}</strong>
         </div>
         <div>
           <span>Per payment</span>
@@ -58,15 +61,22 @@ export default function VaultPlan() {
           <strong>{prettyNumber(setup.dailyLimitSats, 0)} sats</strong>
         </div>
       </section>
-      <p className='qg-copy'>Check the key identifiers against your saved public keys.</p>
-      <p className='qg-copy'>
-        {advanced
-          ? 'The separate recovery key can recover Savings if both normal keys are lost.'
-          : 'If both normal keys are lost, Standard has no separate recovery key.'}{' '}
-        {setup.ledger
-          ? 'Starting delayed recovery requires the Guardian. A compromised user key together with a compromised Guardian can bypass the recovery delay; the Guardian cannot spend alone.'
-          : 'Starting delayed recovery requires the recovery services.'}
-      </p>
+      {!light ? <p className='qg-copy'>Check the key identifiers against your saved public keys.</p> : null}
+      {light ? (
+        <p className='qg-copy'>
+          Your passkey authorizes Spending payments. Keep your recovery backup to recover Spending and pending Bitcoin
+          deposits. Savings is available to watch an address held in another wallet.
+        </p>
+      ) : (
+        <p className='qg-copy'>
+          {advanced
+            ? 'The separate recovery key can recover Savings if both normal keys are lost.'
+            : 'If both normal keys are lost, Standard has no separate recovery key.'}{' '}
+          {setup.ledger
+            ? 'Starting delayed recovery requires the Guardian. A compromised user key together with a compromised Guardian can bypass the recovery delay; the Guardian cannot spend alone.'
+            : 'Starting delayed recovery requires the recovery services.'}
+        </p>
+      )}
       {setup.ledger ? (
         <p className='qg-copy'>
           Emergency Spending exit requires entering your Ledger seed backup into the offline recovery tool.{' '}

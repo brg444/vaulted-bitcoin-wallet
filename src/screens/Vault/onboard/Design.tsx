@@ -2,15 +2,15 @@ import { useContext } from 'react'
 import { VaultContext } from '../../../vault/context'
 import QgScreen from '../qg/QgScreen'
 
-export default function VaultDesign({ onChooseLight }: { onChooseLight?: () => void }) {
+export default function VaultDesign() {
   const lightOnly = import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true'
   const { acceptDesign, lightAvailable, navigate } = useContext(VaultContext)
   return (
     <QgScreen title='Choose your Vault' stepLabel='1 of 6' back={() => navigate('welcome')}>
       <h1>Choose your protection</h1>
       <div className='qg-setup-options' aria-label='Choose your setup'>
-        {lightAvailable && onChooseLight ? (
-          <button type='button' onClick={onChooseLight}>
+        {lightAvailable ? (
+          <button type='button' onClick={() => acceptDesign('light')}>
             <strong>Light</strong>
             <small>Passkey payments. Watch Savings held in another wallet.</small>
           </button>

@@ -1,3 +1,4 @@
+import type { SpendingEnrollmentDescriptor } from './spendingEnrollment'
 import type { LightDescriptor, LightPolicy } from './light/contract'
 import type { VaultNetwork } from './constants'
 import type { SpendingPolicy } from './spendingPolicy'
@@ -20,6 +21,7 @@ export interface ConnectorEnrollmentIdentity {
 }
 
 export interface VaultStatusWire {
+  spendingDescriptor?: SpendingEnrollmentDescriptor
   ledgerSavings?: LedgerSavingsStatus
   connectorEnrollment?: ConnectorEnrollmentIdentity
   lightDescriptor?: LightDescriptor
@@ -75,6 +77,7 @@ export interface VaultStatusWire {
 // Wallet domain view. recoveryPub is a normalized compatibility alias and is
 // never represented as a server wire field.
 export interface VaultStatus {
+  spendingDescriptor?: SpendingEnrollmentDescriptor
   ledgerSavings?: LedgerSavingsStatus
   connectorEnrollment?: ConnectorEnrollmentIdentity
   lightDescriptor?: LightDescriptor

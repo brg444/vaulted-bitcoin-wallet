@@ -1,3 +1,4 @@
+import WatchedSavings from './WatchedSavings'
 import PaymentNotice from './qg/PaymentNotice'
 import PaymentArrivalBanners from './PaymentArrivals'
 import CatchUpBanner from './CatchUpBanner'
@@ -12,6 +13,7 @@ import PendingPayment from './qg/PendingPayment'
 export default function VaultHome({ children }: { children?: ReactNode }) {
   const {
     account,
+    status,
     spendingBitcoin,
     balancesLoaded,
     boardingAddress,
@@ -48,6 +50,8 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
 
   const spending = account === 'spend'
   const position = spending ? positions.spending : positions.savings
+
+  if (!spending && status?.protectionTier === 'light') return <WatchedSavings />
 
   return (
     <AccountHome

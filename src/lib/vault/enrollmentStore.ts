@@ -93,6 +93,7 @@ export function findStoredEnrollment(storage: Storage = localStorage): Enrollmen
 }
 
 export type StagedEnrollment = EnrollmentSecrets & {
+  spendingDescriptor?: import('./spendingEnrollment').SpendingEnrollmentDescriptor
   ledgerSavingsDraft?: Omit<LedgerSavingsEnrollmentSecrets, 'registration'>
   ledgerSavingsDescriptor?: LedgerSavingsEnrollmentDescriptor
   handle: string

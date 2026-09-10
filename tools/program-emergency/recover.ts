@@ -20,6 +20,9 @@ import {
   buildRecoveryKit,
   parseRecoveryKit,
   isLedgerRecoveryKit,
+  isSpendingRecoveryKit,
+  requireSavingsRecoveryKit,
+  type SpendingRecoveryKit,
   type LedgerRecoveryKit,
   type RecoveryKit,
 } from '../../src/lib/vault/program/kit'
@@ -41,6 +44,7 @@ import { unlockLightWithPasskey } from '../../src/lib/vault/light/passkey'
 import { unlockPhoneBip340, unlockVaultPhoneKeys } from '../../src/lib/vault/savingsSpend'
 import { connectLedgerSavings } from '../../src/lib/vault/ledgerClient'
 import { signLedgerSavingsRecoveryWithDevice } from '../../src/lib/vault/program/ledgerRecoveryDevice'
+import { SPENDING_RECOVERY_SCHEMA } from '../../src/lib/vault/program/spendingRecoveryDescriptor'
 import { LEDGER_RECOVERY_SCHEMA } from '../../src/lib/vault/program/ledgerRecoveryDescriptor'
 import { validateLedgerOfflineRequest } from '../../src/lib/vault/vtxo/ledgerOfflineRequest'
 import { ledgerRecoveryFeeWallet, type LedgerRecoveryFeeRequest } from '../../src/lib/vault/vtxo/ledgerRecoveryFee'
@@ -109,7 +113,7 @@ type Source = {
   full?: VaultRecoveryFile | ReadableRecoverySource
   light?: LightRecoveryFile
   publicKit?: PublicKit
-  ledgerKit?: LedgerRecoveryKit
+  ledgerKit?: LedgerRecoveryKit | SpendingRecoveryKit
   originalKit?: unknown
 }
 type Prepared =
@@ -185,7 +189,7 @@ function kit(): RecoveryKit {
   if (source.full) return parseRecoveryKit(source.full.header.kit)
   if (source.ledgerKit) return parseRecoveryKit(source.ledgerKit)
   const d = source.full?.header.kit.descriptor || source.publicKit?.descriptor
-  if (!d) throw new Error('This path needs the saved Savings descriptor')
+  if (!d) throw new Error('This path needs the saved wallet descriptor')
   return buildRecoveryKit(d)
 }
 function network() {
@@ -196,11 +200,14 @@ function network() {
 }
 function keys() {
   if (source.light) return [{ role: 'phone', publicKey: `02${source.light.descriptor.ownerPub}` }]
-  const k = kit().descriptor.keys
+  const saved = kit()
+  const k = saved.descriptor.keys
+  if (isSpendingRecoveryKit(saved)) return [{ role: 'phone', publicKey: k.phoneBip340 }]
+  const protectedKeys = requireSavingsRecoveryKit(saved).descriptor.keys
   return [
     { role: 'phone', publicKey: k.phoneBip340 },
-    { role: 'hardware', publicKey: k.hardware },
-    ...(k.recovery ? [{ role: 'recovery', publicKey: k.recovery }] : []),
+    { role: 'hardware', publicKey: protectedKeys.hardware },
+    ...(protectedKeys.recovery ? [{ role: 'recovery', publicKey: protectedKeys.recovery }] : []),
   ]
 }
 function feeLimits() {
@@ -274,7 +281,7 @@ function review() {
   if (source.full || source.light) options.push({ value: 'spending', label: 'Spending — unilateral Bitcoin exit' })
   if (source.full || source.publicKit?.boarding)
     options.push({ value: 'boarding', label: 'Boarding — phone recovery after its delay' })
-  if (k) {
+  if (k && !isSpendingRecoveryKit(k)) {
     if (!isConnectorTemplate(k.descriptor.templateVersion))
       options.push({ value: 'savings-admin', label: 'Savings — phone and hardware' })
     if (k.descriptor.schema === LEDGER_RECOVERY_SCHEMA)
@@ -321,13 +328,13 @@ function paintCoins() {
   let script: string | undefined
   if (program === 'boarding')
     script = source.full?.header.status.vtxoBoardingDescriptor?.script || source.publicKit?.boarding?.script
-  else if (program === 'savings-admin') script = kit().descriptor.savings.script
+  else if (program === 'savings-admin') script = requireSavingsRecoveryKit(kit()).descriptor.savings.script
   else if (program === 'savings-admin-change') {
     const saved = kit()
     if (isLedgerRecoveryKit(saved)) script = saved.descriptor.savingsChange.script
   } else if (program.startsWith('pending-') || program.startsWith('quarantine:')) {
     const [path, role] = program.split(':')
-    const d = kit().descriptor
+    const d = requireSavingsRecoveryKit(kit()).descriptor
     script = (path === 'quarantine' ? d.quarantine : d.pending)[`savings-${role}` as keyof typeof d.pending]?.script
   }
   select(
@@ -343,7 +350,7 @@ function programChanged() {
   const program = value('program')
   el('requirements').textContent =
     program === 'spending'
-      ? `Required: ${source.light ? 'your owner key' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
+      ? `Required: ${source.light || source.full?.header.kit.protectionTier === 'light' ? 'the wallet key unlocked by your original passkey' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
       : program === 'connector'
         ? 'This finishes the saved payment using its retained service approvals and the required hardware signature.'
         : 'Use the keys and waiting conditions in this saved account. Review the signing request before approving.'
@@ -770,7 +777,7 @@ async function prepare() {
           : { program }
     ) as SavingsRecoveryPath
     let file = prepareSavingsRecovery({
-      kit: kit(),
+      kit: requireSavingsRecoveryKit(kit()),
       path,
       parentHex: d.coin.parentHex,
       vout: d.coin.vout,
@@ -835,10 +842,14 @@ el('scan').onclick = () =>
   void run(async () => {
     const k = kit()
     const trees = [
-      k.descriptor.savings,
-      ...(isLedgerRecoveryKit(k) ? [k.descriptor.savingsChange] : []),
-      ...Object.values(k.descriptor.pending),
-      ...Object.values(k.descriptor.quarantine),
+      ...(isSpendingRecoveryKit(k)
+        ? []
+        : [
+            k.descriptor.savings,
+            ...(isLedgerRecoveryKit(k) ? [k.descriptor.savingsChange] : []),
+            ...Object.values(k.descriptor.pending),
+            ...Object.values(k.descriptor.quarantine),
+          ]),
       ...(source.full
         ? [source.full.header.status.vtxoBoardingDescriptor!]
         : source.publicKit?.boarding
@@ -943,10 +954,12 @@ async function load(data: unknown) {
   else if (x.name === 'vaulted-light-recovery') source.light = validateLightRecoveryFile(data)
   else if (
     x.name === 'arkade-recovery-kit' &&
-    (data as { descriptor?: { schema?: string } }).descriptor?.schema === LEDGER_RECOVERY_SCHEMA
+    [LEDGER_RECOVERY_SCHEMA, SPENDING_RECOVERY_SCHEMA].includes(
+      (data as { descriptor?: { schema?: string } }).descriptor?.schema || '',
+    )
   ) {
     const saved = parseRecoveryKit(data)
-    if (!isLedgerRecoveryKit(saved)) throw new Error('Unsupported Ledger recovery kit')
+    if (!isLedgerRecoveryKit(saved) && !isSpendingRecoveryKit(saved)) throw new Error('Unsupported wallet recovery kit')
     source.ledgerKit = saved
   } else {
     source.publicKit = parsePublicKit(data)
@@ -965,7 +978,7 @@ function validateSource() {
   if (source.publicKit) source.publicKit = parsePublicKit(source.originalKit || source.publicKit)
   if (source.ledgerKit) {
     const saved = parseRecoveryKit(source.ledgerKit)
-    if (!isLedgerRecoveryKit(saved)) throw new Error('Unsupported Ledger recovery kit')
+    if (!isLedgerRecoveryKit(saved) && !isSpendingRecoveryKit(saved)) throw new Error('Unsupported wallet recovery kit')
     source.ledgerKit = saved
   }
   network()

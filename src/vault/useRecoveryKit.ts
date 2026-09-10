@@ -1,3 +1,4 @@
+import { isSpendingRecoveryKit } from '../lib/vault/program/kit'
 import { useCallback, useEffect, useState } from 'react'
 import { fetchAddressUtxos } from '../lib/vault/esplora'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
@@ -109,7 +110,7 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
     setInitiateAlerts([])
     setInitiateAlert('')
     const kit = status?.enrolled ? selectLiveKit({ status, stored: id ? loadLocalKit(id) : null }) : null
-    if (!kit) return
+    if (!kit || isSpendingRecoveryKit(kit)) return
     let cancelled = false
     const poll = async () => {
       try {

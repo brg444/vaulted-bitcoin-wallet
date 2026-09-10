@@ -1,14 +1,12 @@
-import { isVaultBitcoinAddress } from '../bitcoin'
-import { fetchAddressStats, fetchAddressTxs } from '../esplora'
-import { historyFromTxs } from '../history'
-import type { VaultNetwork } from '../constants'
+import { isVaultBitcoinAddress } from './bitcoin'
+import type { VaultNetwork } from './constants'
 
 export interface WatchedSavingsAddress {
   address: string
   network: VaultNetwork
   label: string
 }
-const PREFIX = 'vaulted-light:watch-savings:'
+const PREFIX = 'vaulted:watch-savings:'
 export function validateWatchedSavingsAddress(value: unknown, network: VaultNetwork): WatchedSavingsAddress {
   if (!value || typeof value !== 'object') throw new Error('Savings address required')
   const rec = value as WatchedSavingsAddress
@@ -31,11 +29,4 @@ export function saveWatchedSavings(vaultId: string, value: WatchedSavingsAddress
   const valid = validateWatchedSavingsAddress(value, network)
   localStorage.setItem(PREFIX + vaultId, JSON.stringify(valid))
   return valid
-}
-export async function fetchWatchedSavings(value: WatchedSavingsAddress, network: VaultNetwork) {
-  const valid = validateWatchedSavingsAddress(value, network)
-  const [stats, txs] = await Promise.all([fetchAddressStats(valid.address), fetchAddressTxs(valid.address)])
-  if (![stats.funded, stats.spent].every((v) => Number.isSafeInteger(v) && v >= 0) || stats.spent > stats.funded)
-    throw new Error('Savings balance response invalid')
-  return { balance: stats.funded - stats.spent, history: historyFromTxs(txs, valid.address, 'savings') }
 }

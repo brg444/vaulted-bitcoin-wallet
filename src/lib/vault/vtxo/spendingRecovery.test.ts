@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Transaction, OnchainWallet, SingleKey, type OnchainProvider } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import { scalarSecret } from '../program/fixtures'
-import { recoveryFixture } from '../recovery/testdata/helpers'
+import { recoveryFixture, sharedSpendingRecoveryFixture } from '../recovery/testdata/helpers'
 import {
   prepareVaultSpendingRecovery,
   validateSpendingRecoveryPackage,
@@ -25,6 +25,25 @@ function onchain() {
 }
 
 describe('current SDK Spending recovery with required signer sets', () => {
+  it('prepares the shared Light exit with the phone alone and no Guardian or Operator', async () => {
+    const { archive } = sharedSpendingRecoveryFixture()
+    const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Services unavailable'))
+    try {
+      const sign = vi.fn(async ({ psbt, requiredKeys }) => {
+        expect(requiredKeys.map((key: { role: string }) => key.role)).toEqual(['phone'])
+        const tx = Transaction.fromPSBT(hex.decode(psbt))
+        tx.sign(new Uint8Array(32).fill(7))
+        return hex.encode(tx.toPSBT())
+      })
+      const file = await prepareVaultSpendingRecovery(archive, archive.status.vtxoBoardingAddress!, sign, onchain())
+      expect(sign).toHaveBeenCalled()
+      expect(validateSpendingRecoveryPackage(JSON.parse(JSON.stringify(file)))).toBeTruthy()
+      expect(network).not.toHaveBeenCalled()
+    } finally {
+      network.mockRestore()
+    }
+  })
+
   it('unrolls a saved parent with a real SDK fee child and resumes without rebroadcasting', async () => {
     const { archive, tx: parent } = recoveryFixture(false)
     const confirmed = new Set(['01'.repeat(32)])

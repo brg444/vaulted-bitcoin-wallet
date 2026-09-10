@@ -24,14 +24,15 @@ recovery application separately; the JSON package contains data, not a runtime.
 | Recovery package | An updated copy outside this device, containing transaction paths and the protected backup. |
 | Recovery application | The matching independent companion, with its release verification information. |
 | Your passkey | Access through its provider and the exact enrollment website needed to use it. |
-| Your hardware key | The signing device or compatible software and its own backup. |
+| Your hardware key | For Standard or Advanced, the signing device or compatible software and its own backup. |
 | Your recovery key | A separate key if you chose Advanced; it is required for Advanced Spending exit when the phone is lost. |
 
 **Check a recovery package** opens a file without signing or broadcasting.
 It reports the Spending paths and amount found in that file. It cannot prove
 coverage of later activity, access to signing keys or current Bitcoin eligibility.
-The separate public Recovery Kit records Savings scripts and rules; it cannot
-replace a missing Spending transaction graph.
+The separate public Recovery Kit records enrolled scripts and rules, including
+Savings for protected modes; it cannot replace a missing Spending transaction
+graph.
 
 Automatic capture runs while the wallet is available. Encrypted cloud updates
 require an active backup session and a working connection. Local storage and
@@ -77,6 +78,7 @@ a missing Spending transaction graph.
 | Account or saved state             | Independent recovery path                                              |
 | ---------------------------------- | ---------------------------------------------------------------------- |
 | Legacy normal Savings              | Phone and hardware keys, with no recovery waiting period               |
+| Light Spending                     | Phone key after the committed Spending delay                           |
 | Standard Spending                  | Phone and hardware keys after the committed Spending delay             |
 | Advanced Spending                  | Hardware and separate recovery keys after the committed Spending delay |
 | Boarding deposit                   | Phone key after the boarding delay                                     |

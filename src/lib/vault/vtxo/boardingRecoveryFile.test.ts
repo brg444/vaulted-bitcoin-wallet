@@ -1,3 +1,4 @@
+import { requireSavingsRecoveryKit } from '../program/kit'
 import { describe, expect, it, vi } from 'vitest'
 import { Transaction, type OnchainProvider } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
@@ -104,7 +105,7 @@ describe('standalone named boarding recovery', () => {
             source.descriptor.operatorPub = source.descriptor.boardingPub
           },
           (source) => {
-            source.descriptor.recoveryPhonePub = source.kit.descriptor.keys.hardware
+            source.descriptor.recoveryPhonePub = requireSavingsRecoveryKit(source.kit).descriptor.keys.hardware
           },
           (source) => {
             source.descriptor.script = '5120' + '00'.repeat(32)

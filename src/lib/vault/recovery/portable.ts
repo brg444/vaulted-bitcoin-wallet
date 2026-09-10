@@ -10,8 +10,7 @@ import {
   type VaultRecoveryFile,
 } from './backupCodec'
 import { validateVaultRecoveryArchive, type VaultRecoveryArchive } from '../vtxo/recoveryArchive'
-import { buildRecoveryKit, parseRecoveryKit, isLedgerRecoveryKit } from '../program/kit'
-import { buildVaultProgramDescriptor } from '../program/descriptor'
+import { parseRecoveryKit } from '../program/kit'
 import { validateSpendingPolicy } from '../spendingPolicy'
 import { normalizeRecoveryChain } from './exitArchive'
 
@@ -141,28 +140,7 @@ export async function createPortableRecoveryPackage(file: VaultRecoveryFile, key
   const valid = validateVaultRecoveryFile(file)
   const d = valid.header.kit.descriptor
   const policy = validateSpendingPolicy(valid.header.status.spendingPolicy, d.network)
-  const kit = isLedgerRecoveryKit(valid.header.kit)
-    ? parseRecoveryKit(valid.header.kit)
-    : buildRecoveryKit(
-        buildVaultProgramDescriptor({
-          vaultId: d.vaultId,
-          network: d.network,
-          templateVersion: d.templateVersion,
-          connectorType: d.connectorType,
-          protectionTier: d.protectionTier,
-          spendingPolicy: policy,
-          phonePub: d.keys.phoneBip340,
-          hardwarePub: d.keys.hardware,
-          recoveryPub: d.keys.recovery,
-          phoneDirectP256: d.keys.phoneDirectP256,
-          vaultCosignerBase: d.keys.vaultCosignerBase,
-          arkadeCosignerBase: d.keys.arkadeCosignerBase,
-          arkadeCosigner: {
-            origin: valid.header.kit.descriptor.arkadeCosigner.origin,
-            version: valid.header.kit.descriptor.arkadeCosigner.version,
-          },
-        }),
-      )
+  const kit = parseRecoveryKit(valid.header.kit)
   const status = recoveryStatusFacts(valid.header.status)
   status.spendingPolicy = policy
   if (status.vtxoBoardingDescriptor) {

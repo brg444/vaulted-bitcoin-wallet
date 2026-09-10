@@ -1,3 +1,4 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from './spendingEnrollment'
 import { requireSupportedVaultNetwork } from './constants'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, encodeUtf8 } from './hex'
@@ -111,14 +112,17 @@ function requireAddressPinFields(value: unknown): AddressPinFields {
   ) {
     throw new Error('program pin spending policy does not match its digest')
   }
+  const tier = requireProtectionTier(fields.protectionTier)
+  if (tier === 'light' && (fields.savingsAddress !== '' || fields.savingsScript !== ''))
+    throw new Error('Light cannot pin protected Savings')
   return {
     vaultId: requiredText(fields.vaultId, 'vaultId'),
     network,
     protectionTier: requireProtectionTier(fields.protectionTier),
     spendingPolicyCanonical: policyCanonical,
     spendingPolicyDigest: policyDigest,
-    savingsAddress: requiredText(fields.savingsAddress, 'savingsAddress'),
-    savingsScript: requiredText(fields.savingsScript, 'savingsScript'),
+    savingsAddress: tier === 'light' ? '' : requiredText(fields.savingsAddress, 'savingsAddress'),
+    savingsScript: tier === 'light' ? '' : requiredText(fields.savingsScript, 'savingsScript'),
     vtxoVaultCosignerPub: requiredText(fields.vtxoVaultCosignerPub, 'vtxoVaultCosignerPub'),
     vtxoExitDelay: requiredDelay(fields.vtxoExitDelay, 'vtxoExitDelay'),
     vtxoExitDelayUnit: requiredText(fields.vtxoExitDelayUnit, 'vtxoExitDelayUnit'),
@@ -149,6 +153,8 @@ export function addressPinHash(input: AddressPinFields): string {
 
 export function pinFieldsFromStatus(status: VaultStatus): AddressPinFields {
   if (!status?.enrolled) throw new Error('authorizer is not enrolled')
+  if (status.templateVersion === SPENDING_ONLY_TEMPLATE || status.protectionTier === 'light')
+    requireSpendingEnrollmentStatus(status)
   const network = requireSupportedVaultNetwork(status.network)
   const selected = validateSpendingPolicy(status.spendingPolicy, network)
   const digest = spendingPolicyDigest(selected, network)

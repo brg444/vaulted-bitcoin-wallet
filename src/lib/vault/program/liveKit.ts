@@ -1,7 +1,8 @@
+import { isSpendingRecoveryKit, isLedgerRecoveryKit, type RecoveryKit } from './kit'
+import { requireSpendingEnrollmentStatus, spendingEnrollmentHash } from '../spendingEnrollment'
 import { SAVINGS_TEMPLATE } from './constants'
 import { sameBip340Key } from '../setupPlan'
 import type { VaultStatus } from '../types'
-import { isLedgerRecoveryKit, type RecoveryKit } from './kit'
 import { LEDGER_NATIVE_TEMPLATE } from './ledgerNativeKeys'
 import {
   buildLedgerRecoveryDescriptor,
@@ -14,6 +15,13 @@ export function watcherEnabledForTemplate(templateVersion?: string): boolean {
 }
 
 export function kitMatchesLiveVault(kit: RecoveryKit, status: VaultStatus): boolean {
+  if (isSpendingRecoveryKit(kit)) {
+    try {
+      return spendingEnrollmentHash(requireSpendingEnrollmentStatus(status)) === kit.descriptorHash
+    } catch {
+      return false
+    }
+  }
   if (isLedgerRecoveryKit(kit)) {
     try {
       return (

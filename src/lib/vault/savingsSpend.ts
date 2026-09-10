@@ -52,6 +52,7 @@ export function buildSavingsPsbt(input: {
   const stored = loadLocalKit(input.status.vaultId)
   if (!stored) throw new Error('Savings needs the Recovery Kit saved on this device')
   const kit = assertLiveKit(stored, input.status)
+  if (kit.version === 5) throw new Error('This wallet has no protected Savings contract')
   if (kit.version === 4) throw new Error('Use the Ledger Savings approval flow for this vault.')
   if (kit.descriptor.savings.address !== pin.savingsAddress) {
     throw new Error('Savings map does not match the pinned address')

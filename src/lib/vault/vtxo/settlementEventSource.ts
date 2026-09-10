@@ -88,7 +88,7 @@ async function readSseBody(
   const decoder = new TextDecoder()
   let buffer = ''
   const onAbort = () => {
-    void reader.cancel()
+    void reader.cancel().catch(() => undefined)
   }
   signal.addEventListener('abort', onAbort, { once: true })
   try {

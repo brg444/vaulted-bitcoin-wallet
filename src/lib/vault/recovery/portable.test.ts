@@ -1,3 +1,4 @@
+import { requireSavingsRecoveryKit } from '../program/kit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Transaction, type OnchainProvider } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
@@ -111,7 +112,7 @@ describe('portable recovery data', () => {
     } satisfies OnchainProvider
     const prepared = await prepareVaultSpendingRecovery(
       source.archive,
-      file.header.kit.descriptor.savings.address,
+      requireSavingsRecoveryKit(file.header.kit).descriptor.savings.address,
       async ({ psbt, requiredKeys }) => {
         expect(requiredKeys.map((item) => item.role)).toEqual(['hardware', 'recovery'])
         const tx = Transaction.fromPSBT(hex.decode(psbt))

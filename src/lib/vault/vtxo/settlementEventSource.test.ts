@@ -207,6 +207,18 @@ describe('Vault fetch settlement EventSource', () => {
     await sse.cancelled
   })
 
+  it('handles cancellation rejection when the connection is closed', async () => {
+    const cancel = vi.fn(async () => {
+      throw new DOMException('Aborted', 'AbortError')
+    })
+    const body = new ReadableStream<Uint8Array>({ cancel })
+    const factory = createVaultEventSourceFactory((url) => createFetchEventSource(url, async () => new Response(body)))
+    const topic = `${'ef'.repeat(32)}:0`
+    const source = factory(`https://arkade.computer/v1/batch/events?topics=${encodeURIComponent(topic)}`)
+    await waitForVaultSettlementStream(topic, 500)
+    source.close()
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+  })
   it('forwards SSE data lines as settlement messages', async () => {
     const sse = hangingSse()
     const factory = createVaultEventSourceFactory((url) => createFetchEventSource(url, async () => sse.response))

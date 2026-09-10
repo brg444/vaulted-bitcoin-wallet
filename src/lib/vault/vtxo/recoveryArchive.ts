@@ -1,7 +1,8 @@
+import { requireSpendingEnrollmentStatus } from '../spendingEnrollment'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
 import { EsploraProvider, Transaction } from '@arkade-os/sdk'
-import { isLedgerRecoveryKit, parseRecoveryKit, type RecoveryKit } from '../program/kit'
+import { isLedgerRecoveryKit, isSpendingRecoveryKit, parseRecoveryKit, type RecoveryKit } from '../program/kit'
 import { kitFromFacts } from '../program/kitBackup'
 import {
   packExitArchive,
@@ -28,10 +29,10 @@ import {
 } from './boardingJournal'
 import { hashBoardingEnrollmentDescriptor } from '../program/enroll'
 
-export interface VaultRecoveryArchive {
+export interface VaultRecoveryArchive<K extends RecoveryKit = RecoveryKit> {
   name: 'vaulted-program-recovery-data'
   version: 1
-  kit: RecoveryKit
+  kit: K
   status: VaultStatus
   spending: ExitArchive
   boardingTranscripts?: BoardingTranscript[]
@@ -51,6 +52,8 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
   else if (isLedgerRecoveryKit(valid)) {
     if (valid.descriptor.enrollmentDescriptorHash !== status.ledgerSavings?.descriptorHash)
       throw new Error('Ledger recovery enrollment composite changed')
+  } else if (isSpendingRecoveryKit(valid)) {
+    requireSpendingEnrollmentStatus(status)
   } else if (
     hashBoardingEnrollmentDescriptor({
       schema: 'arkade-vault/enrollment-with-board-v1',
@@ -113,6 +116,7 @@ export function validateVaultRecoveryArchive(value: VaultRecoveryArchive) {
 }
 
 function archiveAddresses(kit: RecoveryKit, status: VaultStatus) {
+  if (isSpendingRecoveryKit(kit)) return [requireBoardingStatus(status, kit.descriptor.enrollment.boarding.boardingPub)]
   return [
     kit.descriptor.savings,
     ...(isLedgerRecoveryKit(kit) ? [kit.descriptor.savingsChange] : []),

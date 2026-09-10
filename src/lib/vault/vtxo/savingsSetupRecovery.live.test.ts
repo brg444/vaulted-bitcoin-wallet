@@ -1,3 +1,4 @@
+import { requireSavingsRecoveryKit } from '../program/kit'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, isAbsolute } from 'node:path'
 import { expect, it, vi } from 'vitest'
@@ -49,7 +50,7 @@ it.skipIf(!directory)(
     try {
       const pkg = await prepareVaultSpendingRecovery(
         file.archive,
-        file.archive.kit.descriptor.savings.address,
+        requireSavingsRecoveryKit(file.archive.kit).descriptor.savings.address,
         async ({ psbt, requiredKeys }) => {
           expect(requiredKeys.map((key) => key.role)).toEqual(['phone', 'hardware'])
           const tx = Transaction.fromPSBT(hex.decode(psbt))

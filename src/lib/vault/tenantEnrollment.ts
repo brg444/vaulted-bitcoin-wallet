@@ -1,3 +1,10 @@
+import {
+  validateSpendingEnrollment,
+  spendingEnrollmentHash,
+  requireSpendingEnrollmentStatus,
+  type SpendingEnrollmentDescriptor,
+} from './spendingEnrollment'
+import { buildSpendingRecoveryDescriptor } from './program/spendingRecoveryDescriptor'
 import { DUAL_CONNECTOR_TEMPLATE } from './program/connector'
 import type { LightKeyBackup } from './light/keyBackup'
 import { clearOpenEnrollmentSession, openEnrollmentToken } from './openEnrollmentSession'
@@ -209,7 +216,10 @@ export async function beginTenantEnrollment(
   const connector = roles.connector
   const ledger = roles.ledger
   if (ledger && connector) throw new Error('Choose one Savings signing method')
-  const hardwareXOnly = xOnly(roles.hardwarePub)
+  const spendingOnly = protectionTier === 'light'
+  if (spendingOnly && (roles.hardwarePub || roles.recoveryPub || connector || ledger))
+    throw new Error('Light setup must not contain protected Savings keys')
+  const hardwareXOnly = spendingOnly ? '' : xOnly(roles.hardwarePub)
   const recoveryXOnly = wantRecovery ? xOnly(roles.recoveryPub || '') : ''
   if (wantRecovery && hardwareXOnly === recoveryXOnly) throw new Error('Recovery must be a different key')
   if (connector) {
@@ -318,6 +328,7 @@ export async function beginTenantEnrollment(
   let composite!: { savings: VaultProgramDescriptor; boarding: unknown }
   let connectorVerified: VerifiedConnectorProposal | null = null
   let descriptor!: VaultProgramDescriptor
+  let spendingVerified: SpendingEnrollmentDescriptor | undefined
   let ledgerVerified: LedgerSavingsEnrollmentDescriptor | undefined
   let ledgerSavingsDraft: StagedEnrollment['ledgerSavingsDraft']
   const ledgerSeed = ledger ? generateLedgerPhoneSeed() : undefined
@@ -383,7 +394,19 @@ export async function beginTenantEnrollment(
     if (!ledger) prf.fill(0)
     phoneSecret.fill(0)
     proposed = await vaultCosignerClient.enrollment.propose(token, enrollmentRequest)
-    if (ledger && ledgerSeed && enrollmentNetwork && enrollmentRequest.ledgerSavings) {
+    if (spendingOnly) {
+      spendingVerified = validateSpendingEnrollment(proposed.descriptor)
+      if (
+        spendingEnrollmentHash(spendingVerified) !== proposed.descriptorHash ||
+        spendingVerified.vaultId !== start.vaultId ||
+        spendingVerified.network !== publicStatus.network ||
+        spendingVerified.phonePub !== enrollment.phoneBip340Pub ||
+        spendingVerified.phoneDirectP256 !== enrollment.phoneDirectP256 ||
+        spendingVerified.boarding.boardingPub !== stagedBoard.boardingPub ||
+        spendingVerified.spendingPolicyDigest !== selectedPolicyDigest
+      )
+        throw new Error('Guardian changed the selected Spending enrollment')
+    } else if (ledger && ledgerSeed && enrollmentNetwork && enrollmentRequest.ledgerSavings) {
       ledgerVerified = validateLedgerSavingsEnrollmentDescriptor(proposed.descriptor)
       const context = ledgerVerified.savings.context
       const authority = ledgerVerified.spendingAuthorities
@@ -451,20 +474,36 @@ export async function beginTenantEnrollment(
     phoneSecret.fill(0)
     ledgerSeed?.fill(0)
   }
+  const stagedBase: StagedEnrollment = {
+    ...enrollment,
+    handle: start.handle,
+    userHandle: start.userId,
+    clientDataJSON: bytesToHex(new Uint8Array(att.clientDataJSON)),
+    authenticatorData: bytesToHex(authData),
+    attestationObject: bytesToHex(new Uint8Array(att.attestationObject)),
+    hardwareXOnly,
+    ...(recoveryXOnly ? { recoveryXOnly } : {}),
+    inviteToken: token,
+    descriptorHash: proposed.descriptorHash,
+    boardingPub: stagedBoard.boardingPub,
+    boardingDescriptorHash: proposed.descriptorHash,
+    protectionTier,
+    spendingPolicy: selectedPolicy,
+    spendingPolicyDigest: selectedPolicyDigest,
+  }
+  if (spendingVerified) {
+    saveStagedEnrollment({
+      ...stagedBase,
+      spendingDescriptor: spendingVerified,
+      boardingDescriptor: spendingVerified.boarding,
+    })
+    saveLocalKit(buildRecoveryKit(buildSpendingRecoveryDescriptor(spendingVerified)))
+    return { enrollment, enrollmentToken: token }
+  }
   if (ledgerVerified && ledgerSavingsDraft) {
     const family = buildLedgerNativeFamily(ledgerVerified.savings.context, ledgerVerified.savings.spendingPolicy)
     const staged: StagedEnrollment = {
-      ...enrollment,
-      handle: start.handle,
-      userHandle: start.userId,
-      clientDataJSON: bytesToHex(new Uint8Array(att.clientDataJSON)),
-      authenticatorData: bytesToHex(authData),
-      attestationObject: bytesToHex(new Uint8Array(att.attestationObject)),
-      hardwareXOnly,
-      ...(recoveryXOnly ? { recoveryXOnly } : {}),
-      inviteToken: token,
-      descriptorHash: proposed.descriptorHash,
-      boardingPub: stagedBoard.boardingPub,
+      ...stagedBase,
       boardingDescriptor: ledgerVerified.boarding,
       boardingDescriptorHash: proposed.descriptorHash,
       savingsAddress: family.receive.address,
@@ -512,17 +551,7 @@ export async function beginTenantEnrollment(
     throw new Error('proposed spending policy does not match this setup')
   }
   const staged: StagedEnrollment = {
-    ...enrollment,
-    handle: start.handle,
-    userHandle: start.userId,
-    clientDataJSON: bytesToHex(new Uint8Array(att.clientDataJSON)),
-    authenticatorData: bytesToHex(authData),
-    attestationObject: bytesToHex(new Uint8Array(att.attestationObject)),
-    hardwareXOnly,
-    ...(recoveryXOnly ? { recoveryXOnly } : {}),
-    inviteToken: token,
-    descriptorHash: proposed.descriptorHash,
-    boardingPub: stagedBoard.boardingPub,
+    ...stagedBase,
     boardingDescriptor: composite.boarding,
     boardingDescriptorHash: connectorVerified?.boardingHash ?? proposed.descriptorHash,
     savingsAddress: descriptor.savings.address,
@@ -627,6 +656,13 @@ export async function finishTenantEnrollment(
       throw new Error('Ledger enrollment changed while completing setup')
     validateLedgerSavingsEnrollmentSecrets(staged.ledgerSavings, descriptor.savings)
   }
+  if (
+    staged.protectionTier === 'light' &&
+    (!staged.spendingDescriptor ||
+      spendingEnrollmentHash(staged.spendingDescriptor) !== staged.descriptorHash ||
+      spendingEnrollmentHash(requireSpendingEnrollmentStatus(live)) !== staged.descriptorHash)
+  )
+    throw new Error('Spending enrollment changed while completing setup')
   requireBoardingStatus(live, String(staged.boardingPub || ''))
   if (staged.connectorPub) {
     verifyConnectorStatus(live, connectorPinFromStaged(staged), { boardingPub: String(staged.boardingPub || '') })
@@ -684,6 +720,13 @@ export async function reconcileStagedEnrollment(
       throw new Error('Ledger enrollment changed while completing setup')
     validateLedgerSavingsEnrollmentSecrets(staged.ledgerSavings, descriptor.savings)
   }
+  if (
+    staged.protectionTier === 'light' &&
+    (!staged.spendingDescriptor ||
+      spendingEnrollmentHash(staged.spendingDescriptor) !== staged.descriptorHash ||
+      spendingEnrollmentHash(requireSpendingEnrollmentStatus(live)) !== staged.descriptorHash)
+  )
+    throw new Error('Spending enrollment changed while completing setup')
   requireBoardingStatus(live, String(staged.boardingPub || ''))
   if (staged.connectorPub) {
     verifyConnectorStatus(live, connectorPinFromStaged(staged), { boardingPub: String(staged.boardingPub || '') })

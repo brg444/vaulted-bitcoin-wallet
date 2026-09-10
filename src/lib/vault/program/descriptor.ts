@@ -203,6 +203,7 @@ export function buildVaultProgramDescriptor(input: VaultProgramDescriptorInput):
     input.network,
   )
   const protectionTier = requireProtectionTierMatchesRecovery(input.protectionTier, keys.recovery)
+  if (protectionTier === 'light') throw new Error('Light does not enroll protected Savings')
   const family = buildDescriptorFamily({
     vaultId: input.vaultId,
     phonePub: keys.phoneBip340,

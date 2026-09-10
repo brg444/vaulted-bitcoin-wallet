@@ -10,7 +10,7 @@ for (const width of [320, 375, 1440]) {
     test(`@ux-receive primary Lightning address at ${width}px ${theme}`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: width === 320 ? 667 : 844 })
       await page.goto(
-        `/src/test/e2e-vault/fixtures/receive-primary.html?active${width === 375 ? '&named' : ''}${theme === 'dark' ? '&dark' : ''}`,
+        `/src/test/e2e-vault/fixtures/receive-primary.html?active${width === 375 ? '&named&light' : ''}${theme === 'dark' ? '&dark' : ''}`,
       )
       const address = page.getByRole('region', { name: 'Lightning address', exact: true })
       await expect(
@@ -34,6 +34,9 @@ for (const width of [320, 375, 1440]) {
       await address.getByText('Address options', { exact: true }).click()
       await expect(page.getByRole('img', { name: 'Lightning address QR code', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Share Lightning address' })).toBeVisible()
+      await page.getByRole('button', { name: 'Bitcoin', exact: true }).click()
+      await expect(page.getByTestId('receive-bitcoin-address')).toBeVisible()
+      await page.getByRole('button', { name: 'Lightning', exact: true }).click()
       await page.getByRole('button', { name: 'Create invoice' }).click()
       await expect(page.getByRole('heading', { name: 'Receive Lightning' })).toBeVisible()
     })

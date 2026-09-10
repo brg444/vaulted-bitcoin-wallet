@@ -1,4 +1,9 @@
-import { lightTestEnrollment, lightTestStatus } from '../lib/vault/light/testdata/helpers'
+import {
+  sharedSpendingEnrollment,
+  sharedSpendingDescriptor,
+  sharedSpendingStatus,
+} from '../lib/vault/vtxo/testdata/sharedSpending'
+import { pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
 import { Address, OutScript, TEST_NETWORK } from '@scure/btc-signer'
 const bitcoinDestination = Address(TEST_NETWORK).encode(OutScript.decode(hex.decode('0014' + '43'.repeat(20))))
 import { ArkAddress } from '@arkade-os/sdk'
@@ -232,6 +237,9 @@ function Probe() {
       <button type='button' onClick={vault.approveSend}>
         Approve
       </button>
+      <button type='button' onClick={() => vault.setAccount('spend')}>
+        Show Spending
+      </button>
       <button type='button' onClick={() => vault.setAccount('savings')}>
         Show Savings
       </button>
@@ -306,9 +314,8 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   })
 
   it('uses shared Bitcoin review and keeps Light Savings watch-only', async () => {
-    const record = await lightTestEnrollment()
-    const onSavings = vi.fn()
-    const bound = lightTestStatus(record.descriptor) as VaultStatus
+    const record = { enrollment: sharedSpendingEnrollment(), descriptor: sharedSpendingDescriptor }
+    const bound = sharedSpendingStatus()
     mocks.bitcoinSend.mockImplementation(async (enrollment, status, _outputs, approve) => {
       expect(enrollment).toEqual(record.enrollment)
       expect(status.vaultId).toBe(record.descriptor.vaultId)
@@ -317,25 +324,19 @@ describe('VaultProvider reviewed VTXO reservation', () => {
         ? { state: 'submitted', commitmentTxid: 'ab'.repeat(32) }
         : { state: 'cancelled' }
     })
+    localStorage.setItem(SELECTED_VAULT_STORE, bound.vaultId)
+    localStorage.setItem(`${ENROLL_STORE}:${bound.vaultId}`, JSON.stringify(record.enrollment))
+    saveAddressPin(pinFromEnrolledStatus(bound))
+    mocks.fetchStatus.mockResolvedValue(bound)
     render(
-      <VaultProvider
-        lightSession={{
-          record,
-          status: bound,
-          watchedSavingsSats: 1234,
-          onSavings,
-          onSecurity: vi.fn(),
-          onSettings: vi.fn(),
-          onRecovery: vi.fn(),
-          onLock: vi.fn(),
-        }}
-      >
+      <VaultProvider>
         <Probe />
       </VaultProvider>,
     )
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('home'))
     fireEvent.click(screen.getByText('Show Savings'))
-    expect(onSavings).toHaveBeenCalledOnce()
-    expect(screen.getByTestId('account')).toHaveTextContent('spend')
+    expect(screen.getByTestId('account')).toHaveTextContent('savings')
+    fireEvent.click(screen.getByText('Show Spending'))
     fireEvent.click(screen.getByText('Set Bitcoin draft'))
     fireEvent.click(screen.getByText('Review'))
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
@@ -345,24 +346,18 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   })
 
   async function renderLight() {
-    const record = await lightTestEnrollment()
-    const bound = lightTestStatus(record.descriptor) as VaultStatus
+    const record = { enrollment: sharedSpendingEnrollment(), descriptor: sharedSpendingDescriptor }
+    const bound = sharedSpendingStatus()
+    localStorage.setItem(SELECTED_VAULT_STORE, bound.vaultId)
+    localStorage.setItem(`${ENROLL_STORE}:${bound.vaultId}`, JSON.stringify(record.enrollment))
+    saveAddressPin(pinFromEnrolledStatus(bound))
+    mocks.fetchStatus.mockResolvedValue(bound)
     render(
-      <VaultProvider
-        lightSession={{
-          record,
-          status: bound,
-          watchedSavingsSats: 1234,
-          onSavings: vi.fn(),
-          onSecurity: vi.fn(),
-          onSettings: vi.fn(),
-          onRecovery: vi.fn(),
-          onLock: vi.fn(),
-        }}
-      >
+      <VaultProvider>
         <Probe />
       </VaultProvider>,
     )
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('home'))
     return { record, bound }
   }
 
@@ -383,7 +378,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
         expect(mocks.reserve).not.toHaveBeenCalled()
         expect(mocks.send).not.toHaveBeenCalled()
       } else {
-        expect(mocks.authorizeRenewals).toHaveBeenCalledExactlyOnceWith(record.descriptor, expect.any(Uint8Array))
+        expect(mocks.authorizeRenewals).not.toHaveBeenCalled()
         expect(mocks.unlockSpend).toHaveBeenCalledOnce()
         if (outcome === 'fee changed') {
           expect(screen.getByTestId('screen')).toHaveTextContent('review')
@@ -397,7 +392,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     },
   )
 
-  it('quotes and funds Light Lightning through shared Review with its own renewal ceremony', async () => {
+  it('quotes and funds fresh Light Lightning through the shared Spending authorization', async () => {
     mocks.lightningEnabled.mockReturnValue(true)
     vi.spyOn(Date, 'now').mockReturnValue((MUTINYNET_INVOICE_TIMESTAMP + 1) * 1000)
     const { record, bound } = await renderLight()
@@ -407,12 +402,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       expect(enrollment).toEqual(record.enrollment)
       expect(status).toEqual(bound)
       expect(quote).toEqual(funding)
-      const ceremony = unlock(enrollment, status, quote.bundleDigest)
-      try {
-        await ceremony.unlock()
-      } finally {
-        ceremony.dispose()
-      }
+      expect(unlock).toBeUndefined()
       return { txid: '55'.repeat(32), feeSats: 50 }
     })
     mocks.authorizeRenewals.mockClear()
@@ -424,7 +414,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await act(async () => fireEvent.click(screen.getByText('Approve')))
     expect(screen.getByTestId('screen')).toHaveTextContent('success')
     expect(screen.getByTestId('kind')).toHaveTextContent('lightning')
-    expect(mocks.authorizeRenewals).toHaveBeenCalledOnce()
+    expect(mocks.authorizeRenewals).not.toHaveBeenCalled()
     expect(mocks.recordLightningFunding).toHaveBeenCalledOnce()
   })
 
@@ -440,7 +430,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
     fireEvent.click(screen.getByText('Show Savings'))
     await waitFor(() => expect(approved).toBe(false))
-    expect(screen.getByTestId('account')).toHaveTextContent('spend')
+    expect(screen.getByTestId('account')).toHaveTextContent('savings')
     expect(mocks.send).not.toHaveBeenCalled()
   })
 
@@ -853,7 +843,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       }),
     )
     expect(mocks.recordLightningFunding).toHaveBeenCalledWith(expect.any(Object), '44'.repeat(32), '55'.repeat(32))
-    expect(mocks.send).toHaveBeenCalledWith(expect.any(Object), status, lightningFunding, undefined)
+    expect(mocks.send).toHaveBeenCalledWith(expect.any(Object), status, lightningFunding)
     expect(mocks.sdkWallet.mock.calls[0]?.[3]).toBeUndefined()
   })
 

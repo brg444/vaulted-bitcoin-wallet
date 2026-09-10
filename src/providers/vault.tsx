@@ -1,6 +1,5 @@
-import { guardianRenewalSpendUnlocker } from '../lib/vault/light/delegationCeremony'
-import { lightStatusMatchesDescriptor } from '../lib/vault/light/status'
-import type { LightEnrollment } from '../lib/vault/light/enrollment'
+import { requireSupportedVaultNetwork, DUST_SATS } from '../lib/vault/constants'
+import { loadWatchedSavings, saveWatchedSavings, type WatchedSavingsAddress } from '../lib/vault/watchSavings'
 import { useLedgerSavings } from '../vault/useLedgerSavings'
 import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
@@ -23,7 +22,6 @@ import {
 } from '../lib/vault/connectorWithdrawal'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
-import { DUST_SATS } from '../lib/vault/constants'
 import { reconcileStagedEnrollment, type EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import {
   findStoredEnrollment,
@@ -166,33 +164,14 @@ function initialScreen(): VaultScreen {
   return bootLocked() ? 'unlock' : 'welcome'
 }
 
-export interface LightWalletSession {
-  record: LightEnrollment
-  status: VaultStatus
-  watchedSavingsSats: number | null
-  onSavings: () => void
-  onSecurity: () => void
-  onSettings: () => void
-  onRecovery: () => void
-  onLock: () => void
-}
-
-export function VaultProvider({ children, lightSession }: { children: ReactNode; lightSession?: LightWalletSession }) {
-  const sessionRef = useRef(lightSession)
-  sessionRef.current = lightSession
-  const light = Boolean(lightSession)
-  const initialLightStatus = useMemo(
-    () => (lightSession ? lightStatusMatchesDescriptor(lightSession.status, lightSession.record.descriptor) : null),
-    [],
-  )
-
-  const [screen, setScreen] = useState<VaultScreen>(() => (light ? 'home' : initialScreen()))
+export function VaultProvider({ children }: { children: ReactNode }) {
+  const [screen, setScreen] = useState<VaultScreen>(initialScreen)
   const [recoverEntry, setRecoverEntry] = useState<'kit' | 'lost'>('kit')
   const [recoverExit, setRecoverExit] = useState<VaultScreen>('keys')
   const [setup, setSetup] = useState<VaultSetupPlan>(emptySetupPlan)
-  const [status, setStatus] = useState<VaultStatus | null>(initialLightStatus)
+  const [status, setStatus] = useState<VaultStatus | null>(null)
   const [deployment, setDeployment] = useState<PublicAuthorizerStatus | null>(null)
-  const [enrollment, setEnrollment] = useState<EnrollmentSecrets | null>(() => lightSession?.record.enrollment ?? null)
+  const [enrollment, setEnrollment] = useState<EnrollmentSecrets | null>(null)
   const [error, setError] = useState('')
   const [paymentError, setPaymentError] = useState<BitcoinPaymentError | undefined>()
   const [busy, setBusy] = useState(false)
@@ -214,14 +193,14 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
   const [lastTxKind, setLastTxKind] = useState<'onchain' | 'vtxo' | 'lightning' | ''>('')
   const [selectedTx, setSelectedTx] = useState<VaultHistoryItem | null>(null)
   const [txReturn, setTxReturn] = useState<VaultScreen>('home')
-  const [loaded, setLoaded] = useState(light)
-  const [initialStatusChecked, setInitialStatusChecked] = useState(light)
+  const [loaded, setLoaded] = useState(false)
+  const [initialStatusChecked, setInitialStatusChecked] = useState(false)
   const [account, setAccount] = useState<VaultAccount>('spend')
   const [scanOnSend, setScanOnSend] = useState(false)
   const [pendingConnector, setPendingConnector] = useState<PendingConnector | null>(null)
   const [handoffPsbt, setHandoffPsbt] = useState('')
   const [pendingSavingsHandoff, setPendingSavingsHandoff] = useState<PendingSavingsHandoff | null>(null)
-  const [locked, setLocked] = useState(() => (light ? false : bootLocked()))
+  const [locked, setLocked] = useState(() => bootLocked())
   useEffect(() => {
     if (bitcoinApproval.current && screen !== 'review') {
       bitcoinApproval.current.resolve(false)
@@ -271,7 +250,6 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
   })
 
   useEffect(() => {
-    if (light) return
     let existing: EnrollmentSecrets | null = null
     let existingPin: AddressPin | null = null
     try {
@@ -396,16 +374,6 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
 
   useEffect(() => {
     if (!status) return
-    if (status.protectionTier === 'light') {
-      setSetup((prev) => ({
-        ...prev,
-        txCapSats: status.txCap,
-        dailyLimitSats: status.periodAllowance,
-        absoluteFeeCapSats: status.absoluteFeeCap,
-        feerateCapSatPerV: status.feerateCapSatVb,
-      }))
-      return
-    }
     const protectionTier = status.protectionTier
     if (status.network === 'mutinynet' && account === 'savings') {
       setSpend((prev) => (prev.fee === LIVE_FEE ? prev : { ...prev, fee: LIVE_FEE }))
@@ -443,17 +411,39 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
 
   const spendingArkAddress = status?.spendingArkAddress || ''
   const boardingAddress = status?.vtxoBoardingAddress || ''
-  const savingsAddress = addressPin?.savingsAddress || ''
+  const [watchedSavings, setWatchedSavings] = useState<WatchedSavingsAddress | null>(null)
+  useEffect(() => {
+    if (status?.protectionTier !== 'light') {
+      setWatchedSavings(null)
+      return
+    }
+    try {
+      setWatchedSavings(loadWatchedSavings(status.vaultId, requireSupportedVaultNetwork(status.network)))
+    } catch {
+      setWatchedSavings(null)
+    }
+  }, [status?.vaultId, status?.network, status?.protectionTier])
+  const updateWatchedSavings = useCallback(
+    (address: string, label: string) => {
+      if (status?.protectionTier !== 'light') throw new Error('Watch-only Savings requires a Light wallet')
+      setWatchedSavings(
+        saveWatchedSavings(
+          status.vaultId,
+          { address: address.trim(), label, network: requireSupportedVaultNetwork(status.network) },
+          requireSupportedVaultNetwork(status.network),
+        ),
+      )
+    },
+    [status],
+  )
+  const savingsAddress =
+    status?.protectionTier === 'light' ? watchedSavings?.address || '' : addressPin?.savingsAddress || ''
   const activeNetwork = status?.network || deployment?.network
   const liveNetwork = activeNetwork === 'mutinynet'
   const selectAccount = useCallback(
     (next: VaultAccount) => {
-      if (sessionRef.current && next === 'savings') {
-        setScreen('home')
-        sessionRef.current.onSavings()
-        return
-      }
       setAccount(next)
+      setScreen('home')
       setReviewedVtxoQuote(null)
       setLightningQuote(null)
       setSpend((previous) => ({ ...previous, fee: vaultDraftFee(next, liveNetwork) }))
@@ -474,6 +464,7 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
     olderActivity,
     olderHistory,
   } = useVaultBalances({
+    watchedSavingsAddress: watchedSavings?.address,
     addressPin,
     enrollment,
     initialStatusChecked,
@@ -647,31 +638,34 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
     restoreRecoveryKit,
     signGuardianExitWithDevice,
   } = useRecoveryKit({
-    enrollment: light ? null : enrollment,
-    status: light ? null : status,
+    enrollment,
+    status,
     hardwarePub: setup.hardwarePub,
     recoveryPub: setup.recoveryPub,
     clearError,
   })
 
   const { backupRecoveryArchive, downloadRecoveryArchive, recoveryArchiveStatus, recoveryArchiveError } =
-    useRecoveryArchive(light ? null : enrollment, light ? null : status, locked || light)
+    useRecoveryArchive(enrollment, status, locked)
 
   const acceptDesign = useCallback(
-    (tier?: 'standard' | 'advanced') => {
-      if (import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true') return
+    (tier?: 'light' | 'standard' | 'advanced') => {
+      if (import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true' && tier !== 'light') return
       const draft = setup.complete ? emptySetupPlan() : setup
       const protectionTier = tier || draft.protectionTier
       persist({
         ...draft,
         acceptedDesign: true,
         protectionTier,
+        ...(protectionTier === 'light'
+          ? { hardwarePub: '', recoveryPub: '', connector: undefined, ledger: undefined }
+          : {}),
         ...(protectionTier === 'standard'
           ? { recoveryPub: '', ...(draft.ledger ? { ledger: { hardware: draft.ledger.hardware } } : {}) }
           : {}),
       })
       setError('')
-      setScreen('hardware')
+      setScreen(protectionTier === 'light' ? 'conditions' : 'hardware')
     },
     [persist, setup],
   )
@@ -1167,6 +1161,10 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
       setError('Unlock this vault before sending.')
       return
     }
+    if (account === 'savings' && status.protectionTier === 'light') {
+      setError('Savings is watch-only in this wallet.')
+      return
+    }
     if (isVaultLightningInput(spend.address)) {
       await reviewLightningSpend()
       return
@@ -1330,6 +1328,7 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
   )
 
   const approveSavingsSend = useCallback(async () => {
+    if (status?.protectionTier === 'light') throw new Error('Savings is watch-only in this wallet.')
     if (!status?.enrolled || !enrollment || !savingsAddress) {
       throw new Error('Sign in with the passkey that created this vault.')
     }
@@ -1601,14 +1600,7 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
               throw new Error('Lightning funding target changed after Review.')
             let sent: { txid: string; feeSats: number }
             try {
-              sent = await sendVaultVtxo(
-                enrollment,
-                status,
-                reviewed,
-                status.protectionTier === 'light' && status.lightDescriptor
-                  ? guardianRenewalSpendUnlocker(status.lightDescriptor)
-                  : undefined,
-              )
+              sent = await sendVaultVtxo(enrollment, status, reviewed)
             } catch (err) {
               if (isVtxoReceiptPendingError(err)) {
                 sent = { txid: err.txid, feeSats: err.feeSats }
@@ -1666,11 +1658,7 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
               vtxoSpendIsLivePending(existing) &&
               reviewedVtxoQuoteMatchesDraft(reviewed, spend),
           )
-          const unlockSpend =
-            status.protectionTier === 'light' && status.lightDescriptor
-              ? guardianRenewalSpendUnlocker(status.lightDescriptor)
-              : createVtxoSpendUnlocker
-          const unlocker = unlockSpend(
+          const unlocker = createVtxoSpendUnlocker(
             enrollment,
             status,
             resumePending ? reviewed.bundleDigest : newVtxoSpendChallenge(),
@@ -1752,10 +1740,6 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
   ])
 
   const reset = useCallback(() => {
-    if (sessionRef.current) {
-      sessionRef.current.onLock()
-      return
-    }
     if (status?.vaultId) {
       clearSpendingRenewalReads(status.vaultId)
       void shutdownVaultWalletWorker(status.vaultId)
@@ -1825,7 +1809,9 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
 
   const value = useMemo<VaultContextProps>(
     () => ({
-      watchedSavingsTotalSats: lightSession?.watchedSavingsSats,
+      watchedSavings,
+      updateWatchedSavings,
+      watchedSavingsTotalSats: status?.protectionTier === 'light' ? positions.savings.totalSats : undefined,
       acceptDesign,
       account,
       spendingRenewals,
@@ -1961,11 +1947,6 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
       },
       liveNetwork,
       navigate: (next) => {
-        if (sessionRef.current) {
-          if (next === 'keys') return sessionRef.current.onSecurity()
-          if (next === 'settings') return sessionRef.current.onSettings()
-          if (next === 'recover') return sessionRef.current.onRecovery()
-        }
         setError('')
         if (next === 'home') {
           setScanOnSend(false)
@@ -1974,7 +1955,6 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
         setScreen(next)
       },
       openRecover: (view = 'kit', exit = 'keys') => {
-        if (sessionRef.current) return sessionRef.current.onRecovery()
         setError('')
         setRecoverEntry(view)
         setRecoverExit(exit)
@@ -2019,7 +1999,8 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
       lastSend,
     }),
     [
-      lightSession?.watchedSavingsSats,
+      watchedSavings,
+      updateWatchedSavings,
       acceptDesign,
       account,
       connectLedgerKey,

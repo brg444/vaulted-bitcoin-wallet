@@ -1,34 +1,38 @@
 # Light wallet
 
-Light uses a resident PRF-capable passkey and `vault-light-policy-v1` Spending.
-Its cooperative path requires the owner, policy cosigner, and Arkade Operator;
-its delayed Bitcoin exit requires the owner. Per-payment and rolling limits
-apply to cooperative payments and remain fixed at enrollment.
+Light uses the same Spending enrollment, passkey access, worker, boarding,
+payment, history, backup, and recovery workflows as protected wallets. Its
+`vaulted-spending-v1` enrollment creates the shared `vault-policy-v1` Spending
+contract with an explicit device-only delayed exit. Cooperative payments still
+require the phone, Guardian, and Arkade Operator. Per-payment and rolling limits
+are fixed at enrollment.
 
-New Light setup is available when the Guardian advertises it. Admission follows
-the same open or invitation-based policy as other wallet modes. Disabling new
-Light enrollment does not disable existing wallets.
+New Light wallets receive both a Spending address and a Bitcoin boarding
+address. Lightning addresses and invoices use the same Receive screen and
+service configuration as protected Spending. When an address is configured,
+Receive shows it with a Create invoice action and access to Bitcoin receive.
+The balance denomination applies throughout both account screens and history.
 
-Automatic setup creates an encrypted backup and verifies cloud readback before
-opening the wallet. It requires a passkey eligible for provider backup. A
-supported passkey on another device can restore the same wallet through the
-backup service. Older saved files with a separate recovery code retain their
-existing restoration path.
+Savings remains in navigation as a watch-only Bitcoin account. Adding an
+address enables its balance and transaction history without adding a signing
+key or protected Savings contract. Sending and transfers from that watched
+address are unavailable.
 
-Spending displays available funds, pending activity, payments, and receipts.
-Savings is a watch-only Bitcoin address; its balance does not give Light an
-additional spending key. Both account screens use the shared wallet components.
+Setup uses the common passkey enrollment and encrypted backup workflow.
+Light requires no hardware or separate recovery key. Its public Recovery Kit
+and complete recovery package contain Spending and boarding data. A delayed
+Spending exit requires the phone key; protected Standard and Advanced keep
+their enrolled signing requirements. Bitcoin access, fees, and committed
+waiting periods still apply.
 
-The worker tracks public wallet state. Owner authorization happens during
-bounded passkey operations. Finite [renewal requests](light-delegated-renewal.md)
-can let Guardian renew previously authorized outputs while the browser is
-closed. Each later generation needs another owner authorization.
+The worker captures transaction paths while available. An incomplete capture
+preserves the last complete archive; later payments and renewals need updated
+paths. Save a separate recovery package and matching companion application.
+See [recovery with saved files](emergency-recovery.md) for passkey, signing,
+and freshness requirements.
 
-The wallet captures complete output ancestry and transaction PSBTs. Incomplete
-capture retains the last complete archive. Saved-data recovery can prepare an
-owner-signed exit using that archive without Guardian or Operator access;
-Bitcoin queries, confirmations, fees, and the committed delay still apply.
-
-See [automatic backups](light-automatic-backup.md) and
-[recovery with saved files](emergency-recovery.md) for passkey and freshness
-requirements.
+This enrollment replaces the separate Light application for new wallets.
+Existing `vaulted-light-v1` enrollment files are not migrated by the new setup.
+The older [automatic backup](light-automatic-backup.md) and
+[delegated renewal](light-delegated-renewal.md) documents describe that legacy
+contract and its saved-file support.

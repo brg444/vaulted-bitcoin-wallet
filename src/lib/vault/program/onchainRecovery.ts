@@ -1,3 +1,10 @@
+import {
+  requireSavingsRecoveryKit,
+  isLedgerRecoveryKit,
+  parseRecoveryKit,
+  type RecoveryKit,
+  type SavingsRecoveryKit,
+} from './kit'
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
 import { HDKey } from '@scure/bip32'
@@ -7,7 +14,6 @@ import { requireExactDefaultTapscriptSignatures, tapscriptSignatureRecords } fro
 import { isConnectorTemplate } from './connector'
 import { type Claimant } from './constants'
 import { familyFromDescriptor } from './descriptor'
-import { isLedgerRecoveryKit, parseRecoveryKit, type RecoveryKit } from './kit'
 import {
   ledgerAccountKey,
   ledgerBip32Versions,
@@ -28,7 +34,7 @@ export type SavingsRecoveryPath =
 export interface SavingsRecoveryFile {
   name: 'vaulted-savings-recovery'
   version: 1 | 2
-  kit: RecoveryKit
+  kit: SavingsRecoveryKit
   path: SavingsRecoveryPath
   parentHex: string
   vout: number
@@ -38,7 +44,7 @@ export interface SavingsRecoveryFile {
 }
 
 function pathFacts(kit: RecoveryKit, path: SavingsRecoveryPath) {
-  const d = kit.descriptor
+  const d = requireSavingsRecoveryKit(kit).descriptor
   if (isLedgerRecoveryKit(kit)) {
     const { context, spendingPolicy } = kit.descriptor.ledgerSavings
     const family = ledgerRecoveryFamily({ context, spendingPolicy })
@@ -150,7 +156,7 @@ function pathFacts(kit: RecoveryKit, path: SavingsRecoveryPath) {
 }
 
 function build(input: Omit<SavingsRecoveryFile, 'name' | 'version' | 'psbt'>) {
-  const kit = parseRecoveryKit(input.kit)
+  const kit = requireSavingsRecoveryKit(parseRecoveryKit(input.kit))
   const facts = pathFacts(kit, input.path)
   if (!/^(?:[0-9a-f]{2})+$/.test(input.parentHex) || input.parentHex.length > 8_000_000)
     throw new Error('Canonical parent transaction required')

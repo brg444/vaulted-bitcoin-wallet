@@ -1,9 +1,5 @@
 import { importLightningAddressReceipts } from '../lnurl'
 import { reconcileVaultLightningReceives } from '../lightningReceiveClaim'
-import { LIGHT_PROFILE } from '../light/contract'
-import { requireLightStatus } from '../light/status'
-import { registerLightContractHandler } from '../light/contractHandler'
-import { storeLightWorkerDescriptor } from '../light/workerIdentity'
 import {
   ArkAddress,
   Estimator,
@@ -196,10 +192,6 @@ export async function registerVaultWalletServiceWorker(
 }
 
 export function vaultWalletIdentity(status: VaultStatus) {
-  if (status.templateVersion === LIGHT_PROFILE) {
-    const d = requireLightStatus(status).lightDescriptor!
-    return ReadonlySingleKey.fromPublicKey(hex.decode(`02${d.ownerPub}`))
-  }
   const advertised = status.vtxoBoardingDescriptor?.boardingPub || ''
   const descriptor = requireBoardingStatus(status, advertised)
   return ReadonlySingleKey.fromPublicKey(hex.decode(descriptor.boardingPub))
@@ -254,10 +246,6 @@ export async function shutdownVaultWalletWorker(vaultId: string): Promise<void> 
 
 async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
   registerVaultPolicyV1ContractHandler()
-  if (status.templateVersion === LIGHT_PROFILE) {
-    registerLightContractHandler()
-    await storeLightWorkerDescriptor(requireLightStatus(status).lightDescriptor!)
-  }
   const key = vaultWalletRuntimeKey(status)
   const walletDatabase = vaultWalletDatabase(status.vaultId)
   const walletRepository = new IndexedDBWalletRepository(walletDatabase)
@@ -290,10 +278,7 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
       workerOwnedIdentity: true,
       messageBusTimeoutMs: VAULT_WORKER_STOP_TIMEOUT_MS,
     })
-    if (
-      status.templateVersion !== LIGHT_PROFILE &&
-      (await wallet.getBoardingAddress()) !== status.vtxoBoardingAddress
-    ) {
+    if ((await wallet.getBoardingAddress()) !== status.vtxoBoardingAddress) {
       throw new Error('SDK worker derived a different boarding address')
     }
     const manager = await wallet.getContractManager()
@@ -644,7 +629,7 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
     current.boardingError = undefined
     current.boardingRetryAfter = undefined
   }
-  if (status.templateVersion !== LIGHT_PROFILE && balance.boarding.confirmed > 0) {
+  if (balance.boarding.confirmed > 0) {
     void scheduleVaultBoardingSettlement(current, async () => {
       const params = await vaultBoardingSettleParams(
         boardingUtxos,
@@ -691,16 +676,9 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
     balance: position.availableSats,
     pendingBalance: position.pendingSats,
     commitmentIds: [...commitmentIds],
-    ...(status.templateVersion === LIGHT_PROFILE
-      ? {
-          recoveryVtxos: vtxos
-            .filter((v) => !v.isSpent)
-            .map(({ txid, vout, value, script }) => ({ txid, vout, value, script })),
-        }
-      : {}),
-    boardingBalance: status.templateVersion === LIGHT_PROFILE ? 0 : balance.boarding.total,
-    boardingConfirmedBalance: status.templateVersion === LIGHT_PROFILE ? 0 : balance.boarding.confirmed,
-    boardingError: status.templateVersion === LIGHT_PROFILE ? undefined : current.boardingError,
+    boardingBalance: balance.boarding.total,
+    boardingConfirmedBalance: balance.boarding.confirmed,
+    boardingError: current.boardingError,
     history: [...detectedBoardingHistory, ...activityHistory],
   }
 }

@@ -12,15 +12,17 @@ import '../../../screens/Vault/quiet-guardian-screens.css'
 import VaultReceive from '../../../screens/Vault/Receive'
 import { VaultContext } from '../../../vault/context'
 import { ToastProvider } from '../../../components/Toast'
-import { recoveryFixture } from '../../../lib/vault/recovery/testdata/helpers'
+import { recoveryFixture, sharedSpendingRecoveryFixture } from '../../../lib/vault/recovery/testdata/helpers'
 
-const { status, archive } = recoveryFixture(false, 'mainnet')
+const { status, archive } = new URLSearchParams(location.search).has('light')
+  ? sharedSpendingRecoveryFixture()
+  : recoveryFixture(false, 'mainnet')
 const id = 'v' + '12'.repeat(8)
 const active = new URLSearchParams(location.search).has('active')
 const name = new URLSearchParams(location.search).has('named') ? 'alex' : id
 if (active)
   localStorage.setItem(
-    `vaulted:lnurl:v1:mainnet:${status.vaultId}`,
+    `vaulted:lnurl:v1:${status.network}:${status.vaultId}`,
     JSON.stringify({
       id,
       name,
@@ -41,7 +43,8 @@ if (active)
         templateVersion: status.templateVersion,
         protectionTier: status.protectionTier,
         policyVersion: status.policyVersion,
-        descriptorHash: archive.spending.descriptorHash,
+        descriptorHash:
+          status.protectionTier === 'light' ? status.vtxoBoardingDescriptorHash : archive.spending.descriptorHash,
         spendingPolicyDigest: status.spendingPolicyDigest,
         spendingAddress: status.spendingArkAddress,
         spendingScript: status.spendingArkScript,
@@ -49,7 +52,7 @@ if (active)
       },
     }),
   )
-else localStorage.removeItem(`vaulted:lnurl:v1:mainnet:${status.vaultId}`)
+else localStorage.removeItem(`vaulted:lnurl:v1:${status.network}:${status.vaultId}`)
 const params = new URLSearchParams(location.search)
 document.documentElement.classList.toggle('palette-dark', params.has('dark'))
 function ReceiveFixture() {

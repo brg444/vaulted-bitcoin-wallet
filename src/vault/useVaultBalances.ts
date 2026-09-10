@@ -16,8 +16,7 @@ import {
   type VaultHistoryItem,
 } from '../lib/vault/history'
 import { loadAddressPin, requireStatusMatchesPin, type AddressPin } from '../lib/vault/pin'
-import { lightStatusMatchesDescriptor } from '../lib/vault/light/status'
-import { fetchVaultStatusUnpinned, fetchVaultStatus } from '../lib/vault/status'
+import { fetchVaultStatus } from '../lib/vault/status'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
 import {
@@ -34,6 +33,7 @@ import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 import { ledgerEnrollmentFromStatus } from '../lib/vault/program/ledgerRecoveryDescriptor'
 
 interface VaultBalancesOptions {
+  watchedSavingsAddress?: string
   addressPin: AddressPin | null
   enrollment: EnrollmentSecrets | null
   initialStatusChecked: boolean
@@ -161,6 +161,7 @@ export function savingsUtxoBalance(
 // UI components consume the persistent SDK worker's balance and activity
 // snapshots; they never own settlement, Operator, or indexer lifecycle.
 export function useVaultBalances({
+  watchedSavingsAddress = '',
   addressPin,
   enrollment,
   initialStatusChecked,
@@ -168,6 +169,8 @@ export function useVaultBalances({
   setStatus,
   status,
 }: VaultBalancesOptions) {
+  const watchedAddressRef = useRef(watchedSavingsAddress)
+  watchedAddressRef.current = watchedSavingsAddress
   const refreshVersion = useRef(0)
   const statusRef = useRef(status)
   const addressPinRef = useRef(addressPin)
@@ -225,6 +228,22 @@ export function useVaultBalances({
     retryAttemptRef.current = 0
     window.clearTimeout(retryTimerRef.current)
   }
+
+  useEffect(() => {
+    refreshVersion.current += 1
+    generationRef.current += 1
+    setOlderHistory([])
+    olderHistoryRef.current = []
+    setOlderActivity({ status: 'idle', error: '' })
+    if (statusRef.current?.protectionTier === 'light') {
+      setSnapshot((current) => ({
+        ...current,
+        savingsSats: 0,
+        savingsSpendableSats: 0,
+        history: current.history.filter((tx) => tx.account !== 'savings'),
+      }))
+    }
+  }, [watchedSavingsAddress])
 
   const { boardingBalance, history, savingsSats, savingsSpendableSats, vtxoSpendingSats, vtxoPendingSats } = snapshot
   const positions = useMemo(
@@ -288,19 +307,12 @@ export function useVaultBalances({
           clearSnapshotRetry()
           return
         }
-        const lightDescriptor =
-          statusRef.current?.protectionTier === 'light' ? statusRef.current.lightDescriptor : undefined
         const memoryPin = addressPinRef.current
-        const pin = lightDescriptor ? null : memoryPin?.vaultId === id ? memoryPin : loadAddressPin(localStorage, id)
-        const savingsAddress = pin?.savingsAddress || ''
-        const fetchedStatus = lightDescriptor
-          ? await fetchVaultStatusUnpinned(undefined, id)
-          : await fetchVaultStatus(undefined, id)
-        const liveStatus = lightDescriptor
-          ? lightStatusMatchesDescriptor(fetchedStatus, lightDescriptor)
-          : pin
-            ? requireStatusMatchesPin(fetchedStatus, pin)
-            : fetchedStatus
+        const pin = memoryPin?.vaultId === id ? memoryPin : loadAddressPin(localStorage, id)
+        const fetchedStatus = await fetchVaultStatus(undefined, id)
+        const liveStatus = pin ? requireStatusMatchesPin(fetchedStatus, pin) : fetchedStatus
+        const savingsAddress =
+          liveStatus.protectionTier === 'light' ? watchedAddressRef.current : pin?.savingsAddress || ''
         const spendingAddress = liveStatus?.spendingArkAddress || ''
         const boardingAddress = liveStatus?.vtxoBoardingAddress || ''
         if (!savingsAddress && !spendingAddress && !boardingAddress) {
@@ -472,7 +484,8 @@ export function useVaultBalances({
     const memoryPin = addressPinRef.current
     const pin =
       memoryPin?.vaultId === requestId ? memoryPin : requestId ? loadAddressPin(localStorage, requestId) : null
-    const savingsAddress = pin?.savingsAddress || ''
+    const savingsAddress =
+      statusRef.current?.protectionTier === 'light' ? watchedAddressRef.current : pin?.savingsAddress || ''
     const cursor = oldestSavingsTxid(snapshotRef.current.history)
     if (!requestId || !savingsAddress || !cursor) {
       setOlderActivity({ status: 'exhausted', error: '' })
@@ -546,7 +559,7 @@ export function useVaultBalances({
   useEffect(() => {
     if (locked || !initialStatusChecked || !refreshVaultId) return
     void refreshBalance(refreshVaultId)
-  }, [initialStatusChecked, locked, refreshBalance, refreshVaultId])
+  }, [initialStatusChecked, locked, refreshBalance, refreshVaultId, watchedSavingsAddress])
 
   useEffect(() => {
     if (locked || !status?.enrolled || !status.spendingArkAddress) return

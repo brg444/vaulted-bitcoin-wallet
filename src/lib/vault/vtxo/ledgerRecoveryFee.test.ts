@@ -1,3 +1,4 @@
+import { requireSavingsRecoveryKit } from '../program/kit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OnchainWallet, ReadonlySingleKey, Transaction, type Identity } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
@@ -127,7 +128,8 @@ describe('offline Ledger /0/0 recovery fee signer', () => {
     if (kind === 'funding parent') request.fundingCoins[0].parentTxHex = request.fundingCoins[0].parentTxHex.slice(2)
     if (kind === 'funding value') request.fundingCoins[0].value++
     if (kind === 'duplicate') request.fundingCoins.push(request.fundingCoins[0])
-    if (kind === 'origin') request.file.archive.kit.descriptor.keys.hardware = '02' + '11'.repeat(32)
+    if (kind === 'origin')
+      requireSavingsRecoveryKit(request.file.archive.kit).descriptor.keys.hardware = '02' + '11'.repeat(32)
     const derive = vi.spyOn(HDKey, 'fromMasterSeed')
     expect(() => signLedgerRecoveryFeeWithSeed(request, seed, psbt)).toThrow()
     expect(derive).not.toHaveBeenCalled()

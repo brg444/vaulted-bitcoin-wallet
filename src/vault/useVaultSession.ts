@@ -155,7 +155,7 @@ export function useVaultSession({
         reportError('Finish setup first.')
         return
       }
-      if (!setup.connector && !setup.ledger) {
+      if (setup.protectionTier !== 'light' && !setup.connector && !setup.ledger) {
         reportError('Add a supported public wallet descriptor before creating this vault.')
         setScreen('hardware')
         return

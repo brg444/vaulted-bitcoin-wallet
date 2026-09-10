@@ -1,3 +1,4 @@
+import { isSpendingRecoveryKit } from '../program/kit'
 import { prepareExitArchivePrevouts, type RecoveryCommitmentReader } from '../recovery/archivePrevouts'
 import { canonicalRecoveryGraph } from '../recovery/graphPackage'
 import { hex } from '@scure/base'
@@ -89,16 +90,21 @@ function sweepFacts(archive: VaultRecoveryArchive, destination: string, psbt: st
     amount: output.amount,
     script: hex.decode(scriptHexFromAddress(destination, archive.status.network)),
   })
-  const keys = archive.kit.descriptor.keys
-  const requiredKeys: Parameters<SpendingRecoverySigner>[0]['requiredKeys'] = keys.recovery
-    ? [
-        { role: 'hardware', publicKey: keys.hardware },
-        { role: 'recovery', publicKey: keys.recovery },
-      ]
-    : [
-        { role: 'phone', publicKey: keys.phoneBip340 },
-        { role: 'hardware', publicKey: keys.hardware },
-      ]
+  let requiredKeys: Parameters<SpendingRecoverySigner>[0]['requiredKeys']
+  if (isSpendingRecoveryKit(archive.kit)) {
+    requiredKeys = [{ role: 'phone', publicKey: archive.kit.descriptor.keys.phoneBip340 }]
+  } else {
+    const keys = archive.kit.descriptor.keys
+    requiredKeys = keys.recovery
+      ? [
+          { role: 'hardware', publicKey: keys.hardware },
+          { role: 'recovery', publicKey: keys.recovery },
+        ]
+      : [
+          { role: 'phone', publicKey: keys.phoneBip340 },
+          { role: 'hardware', publicKey: keys.hardware },
+        ]
+  }
   const signatures = input.tapScriptSig ?? []
   if (signatures.length) expected.updateInput(0, { tapScriptSig: signatures })
   if (hex.encode(tx.toPSBT()) !== hex.encode(expected.toPSBT()))

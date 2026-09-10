@@ -1,3 +1,4 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from './spendingEnrollment'
 import { LIGHT_PROFILE } from './light/contract'
 import { requireLightStatus } from './light/status'
 import { readBounded } from './bounded'
@@ -232,6 +233,7 @@ export function requireStatusIdentity(
   requireReleaseNetwork(status.network)
   if (status.templateVersion === LIGHT_PROFILE) return requireLightStatus(status)
   if (
+    status.templateVersion !== SPENDING_ONLY_TEMPLATE &&
     status.templateVersion !== SAVINGS_TEMPLATE &&
     status.templateVersion !== LEDGER_NATIVE_TEMPLATE &&
     !isConnectorTemplate(status.templateVersion)
@@ -250,7 +252,15 @@ export function requireStatusIdentity(
   ) {
     throw new Error('status spending policy does not match limit fields')
   }
-  if (status.enrolled && (!String(status.savingsAddress || '').trim() || !String(status.savingsScript || '').trim())) {
+  if (status.templateVersion === SPENDING_ONLY_TEMPLATE) {
+    requireSpendingEnrollmentStatus(status as VaultStatus)
+    status = { ...status, savingsAddress: '', savingsScript: '' }
+  } else if (status.protectionTier === 'light') {
+    throw new Error('Light requires its shared Spending enrollment template')
+  } else if (
+    status.enrolled &&
+    (!String(status.savingsAddress || '').trim() || !String(status.savingsScript || '').trim())
+  ) {
     throw new Error('enrolled status is missing the Savings descriptor')
   }
   const recoveryPub = String(status.recoveryPub || '').trim()
