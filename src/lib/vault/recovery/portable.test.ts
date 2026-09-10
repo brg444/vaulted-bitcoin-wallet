@@ -172,7 +172,7 @@ describe('protected package checks', () => {
     const pkg = await createPortableRecoveryPackage(file, key)
     const signing = await import('../savingsSpend')
     const secret = scalarSecret(3)
-    const unlock = vi.spyOn(signing, 'unlockPhoneBip340').mockResolvedValue(secret)
+    const unlock = vi.spyOn(signing, 'unlockVaultPhoneKeys').mockResolvedValue({ spendingPhone: secret })
     vi.stubGlobal('location', { origin: file.header.origin, hostname: file.header.rpId })
     const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('services unavailable'))
     try {
@@ -194,7 +194,9 @@ describe('protected package checks', () => {
     const { file, key } = await fixture()
     const pkg = await createPortableRecoveryPackage(file, key)
     const signing = await import('../savingsSpend')
-    const unlock = vi.spyOn(signing, 'unlockPhoneBip340').mockImplementation(async () => scalarSecret(3))
+    const unlock = vi
+      .spyOn(signing, 'unlockVaultPhoneKeys')
+      .mockImplementation(async () => ({ spendingPhone: scalarSecret(3) }))
     vi.stubGlobal('location', { origin: file.header.origin, hostname: file.header.rpId })
     try {
       const { checkProtectedRecoveryPackage } = await import('./packageCheck')
