@@ -147,11 +147,7 @@ export default function VaultReceive() {
               onDismiss={dismissArrival}
             />
             {catchUp ? (
-              <CatchUpBanner
-                catchUp={catchUp}
-                onOpenActivity={() => navigate('activity')}
-                onDismiss={dismissCatchUp}
-              />
+              <CatchUpBanner catchUp={catchUp} onOpenActivity={() => navigate('activity')} onDismiss={dismissCatchUp} />
             ) : null}
           </>
         }
@@ -179,11 +175,7 @@ export default function VaultReceive() {
           onDismiss={dismissArrival}
         />
         {catchUp ? (
-          <CatchUpBanner
-            catchUp={catchUp}
-            onOpenActivity={() => navigate('activity')}
-            onDismiss={dismissCatchUp}
-          />
+          <CatchUpBanner catchUp={catchUp} onOpenActivity={() => navigate('activity')} onDismiss={dismissCatchUp} />
         ) : null}
         <span className='qg-protected'>
           {spending ? <ShieldCheck /> : <KeyRound />}
