@@ -4,6 +4,13 @@ import { execFileSync } from 'node:child_process'
 import { loadEnv, type Plugin } from 'vite'
 import { configuredReleaseNetwork } from '../src/lib/vault/network'
 
+export function releaseCommit(): string {
+  // Source uploads omit .git; hosted builds receive the exact uploaded revision.
+  const commit = process.env.VERCEL_GIT_COMMIT_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Release requires a full Git commit SHA')
+  return commit
+}
+
 // Both the app and worker must select a network before compiling policy code.
 export function releaseBuild(emitManifest = false): Plugin {
   let network: string | undefined
@@ -59,7 +66,7 @@ export function releaseBuild(emitManifest = false): Plugin {
         fileName: 'release.json',
         source: JSON.stringify({
           network,
-          commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+          commit: releaseCommit(),
           features,
           workerSha256: createHash('sha256').update(worker).digest('hex'),
         }),
