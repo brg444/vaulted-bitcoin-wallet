@@ -120,6 +120,7 @@ vi.mock('../vault/useVaultBalances', () => ({
   useVaultBalances: () => ({
     balanceError: '',
     balancesLoaded: true,
+    snapshotFresh: true,
     history: [],
     positions: {
       spending: { availableSats: mocks.availableSats, pendingSats: 0, totalSats: mocks.availableSats },
@@ -127,6 +128,9 @@ vi.mock('../vault/useVaultBalances', () => ({
     },
     refreshBalance: mocks.refreshBalance,
     refreshingBalance: false,
+    loadOlderActivity: vi.fn().mockResolvedValue({ added: 0, exhausted: true }),
+    olderActivity: { status: 'idle', error: '' },
+    olderHistory: [],
   }),
 }))
 

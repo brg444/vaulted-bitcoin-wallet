@@ -24,6 +24,11 @@ export interface VaultHistoryItem {
   lightningRfqId?: string
 }
 
+/** Stable row key across history layers for dedup, retention, and arrival exclusion. */
+export function olderRowKey(item: Pick<VaultHistoryItem, 'account' | 'txid' | 'type'>): string {
+  return `${item.account}:${item.txid}:${item.type}`
+}
+
 export interface VaultHistoryGroup {
   key: string
   label: string

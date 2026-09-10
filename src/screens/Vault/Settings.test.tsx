@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useEffect } from 'react'
 import { ToastProvider } from '../../components/Toast'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
+import { useNotificationPrefs } from '../../vault/useNotificationPrefs'
 import VaultSettings from './Settings'
 
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.resolve(false) }))
@@ -85,12 +87,75 @@ describe('Vault settings account boundaries', () => {
     const value = renderSettings()
 
     await user.click(screen.getByTestId('settings-signout'))
-    expect(screen.getByRole('heading', { name: 'Sign out of this browser.' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Sign out' })).toBeTruthy()
     const confirm = screen.getByRole('button', { name: 'Sign out' })
     expect(confirm).toBeDisabled()
     await user.click(screen.getByTestId('checkbox'))
     expect(confirm).toBeEnabled()
     await user.click(confirm)
     expect(value.reset).toHaveBeenCalled()
+  })
+
+  it('toggles arrival banners and haptics from Notifications without touching other prefs', async () => {
+    const user = userEvent.setup()
+    localStorage.removeItem('arkade-vault-arrival-banners')
+    localStorage.removeItem('arkade-vault-arrival-haptics')
+    renderSettings()
+
+    expect(screen.getByTestId('settings-notifications')).toHaveTextContent('On')
+    await user.click(screen.getByTestId('settings-notifications'))
+    expect(screen.getByRole('heading', { name: 'Notifications' })).toBeTruthy()
+    const banners = screen.getByTestId('settings-arrival-banners')
+    const haptics = screen.getByTestId('settings-arrival-haptics')
+    expect(banners).toHaveAttribute('aria-checked', 'true')
+    expect(haptics).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(banners)
+    expect(banners).toHaveAttribute('aria-checked', 'false')
+    expect(localStorage.getItem('arkade-vault-arrival-banners')).toBe('0')
+    await user.click(haptics)
+    expect(haptics).toHaveAttribute('aria-checked', 'false')
+    expect(localStorage.getItem('arkade-vault-arrival-haptics')).toBe('0')
+    expect(localStorage.getItem('arkade-vault-haptics')).toBeNull()
+
+    await user.click(banners)
+    expect(localStorage.getItem('arkade-vault-arrival-banners')).toBe('1')
+  })
+
+  it('updates notification subscribers through the real Settings toggle path', async () => {
+    const user = userEvent.setup()
+    localStorage.removeItem('arkade-vault-arrival-banners')
+    const seen: boolean[] = []
+    function PrefsProbe() {
+      const prefs = useNotificationPrefs()
+      useEffect(() => {
+        seen.push(prefs.bannersEnabled)
+      }, [prefs.bannersEnabled])
+      return <span data-testid='prefs-probe'>{prefs.bannersEnabled ? 'on' : 'off'}</span>
+    }
+    const value = {
+      boardingAddress: 'tb1pboardingdestination',
+      busy: false,
+      liveNetwork: true,
+      navigate: vi.fn(),
+      refreshBalance: vi.fn().mockResolvedValue(undefined),
+      reset: vi.fn(),
+      status: null,
+    } as unknown as VaultContextProps
+    render(
+      <ToastProvider>
+        <VaultContext.Provider value={value}>
+          <PrefsProbe />
+          <VaultSettings />
+        </VaultContext.Provider>
+      </ToastProvider>,
+    )
+
+    expect(screen.getByTestId('prefs-probe')).toHaveTextContent('on')
+    await user.click(screen.getByTestId('settings-notifications'))
+    await user.click(screen.getByTestId('settings-arrival-banners'))
+    // No storage event is dispatched: the same-document subscription carries it.
+    expect(screen.getByTestId('prefs-probe')).toHaveTextContent('off')
+    expect(seen).toEqual([true, false])
   })
 })

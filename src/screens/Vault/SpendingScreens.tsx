@@ -1,6 +1,7 @@
 import { useContext, type ReactNode } from 'react'
 import { VaultContext, type VaultScreen } from '../../vault/context'
 import Home from './Home'
+import Activity from './Activity'
 import Receive from './Receive'
 import Send from './Send'
 import Review from './Review'
@@ -10,6 +11,7 @@ import Navigation from './Navigation'
 
 export const spendingScreens = {
   home: <Home />,
+  activity: <Activity />,
   receive: <Receive />,
   send: <Send />,
   review: <Review />,

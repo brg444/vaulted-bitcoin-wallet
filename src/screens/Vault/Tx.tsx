@@ -21,6 +21,7 @@ export default function VaultTx({ denomination }: { denomination?: BalanceDenomi
     selectedTx,
     spendingBitcoin,
     status: vaultStatus,
+    txReturn,
   } = useContext(VaultContext)
   const denom = useBalanceDenomination(denomination)
   const money = { unit: denom.unit, rate: denom.rate }
@@ -54,7 +55,7 @@ export default function VaultTx({ denomination }: { denomination?: BalanceDenomi
   return (
     <QgScreen
       title={lightning ? 'Lightning payment' : bitcoin ? 'Bitcoin payment' : 'Transaction'}
-      dismiss={() => navigate('home')}
+      dismiss={() => navigate(txReturn)}
       footer={
         <>
           <ErrorMessage error={Boolean(error)} text={error} />
@@ -66,7 +67,7 @@ export default function VaultTx({ denomination }: { denomination?: BalanceDenomi
               label='Return to Spending'
             />
           ) : null}
-          <QgSecondary onClick={() => navigate('home')} label='Back to Wallet' />
+          <QgSecondary onClick={() => navigate(txReturn)} label='Back to Wallet' />
         </>
       }
     >

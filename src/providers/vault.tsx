@@ -5,6 +5,7 @@ import { useLedgerSavings } from '../vault/useLedgerSavings'
 import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import { usePaymentArrivals } from '../vault/usePaymentArrivals'
+import { useNotificationPrefs } from '../vault/useNotificationPrefs'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
@@ -35,7 +36,7 @@ import {
 import { loadAddressPin, type AddressPin } from '../lib/vault/pin'
 import { zeroBytes } from '../lib/vault/ceremony/directauth'
 import { broadcastTx, confirmedSpendables, fetchAddressUtxos } from '../lib/vault/esplora'
-import { recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
+import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
 import {
   buildSavingsPsbt,
   finalizeSavingsPsbt,
@@ -212,6 +213,7 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
   const [lastTxid, setLastTxid] = useState('')
   const [lastTxKind, setLastTxKind] = useState<'onchain' | 'vtxo' | 'lightning' | ''>('')
   const [selectedTx, setSelectedTx] = useState<VaultHistoryItem | null>(null)
+  const [txReturn, setTxReturn] = useState<VaultScreen>('home')
   const [loaded, setLoaded] = useState(light)
   const [initialStatusChecked, setInitialStatusChecked] = useState(light)
   const [account, setAccount] = useState<VaultAccount>('spend')
@@ -468,6 +470,9 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
     positions,
     refreshBalance,
     refreshingBalance,
+    loadOlderActivity,
+    olderActivity,
+    olderHistory,
   } = useVaultBalances({
     addressPin,
     enrollment,
@@ -613,11 +618,24 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
     [status?.network, status?.vaultId],
   )
   const arrivalReady = snapshotFresh && Boolean(status?.vaultId) && Boolean(status?.network)
+  // Browsing history loaded beyond the recent window never feeds arrival
+  // observation; those receipts stay visible without bannering as new.
+  const excludedArrivalKeys = useMemo(() => new Set((olderHistory || []).map(olderRowKey)), [olderHistory])
+  // Banner and haptic preferences gate presentation only. Detection,
+  // baseline, and dedup continue while banners are disabled, so toggling
+  // never replays historical payments.
+  const { bannersEnabled, arrivalHapticsEnabled } = useNotificationPrefs()
+  const arrivalDelivery = useMemo(
+    () => ({ bannersEnabled, hapticsEnabled: arrivalHapticsEnabled }),
+    [bannersEnabled, arrivalHapticsEnabled],
+  )
   const { arrivals, dismissArrival, openArrivalKey } = usePaymentArrivals(
     visibleHistory,
     arrivalScope,
     busy || locked,
     arrivalReady,
+    excludedArrivalKeys,
+    arrivalDelivery,
   )
 
   const {
@@ -1874,6 +1892,10 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
       lastTxKind,
       history: recentAccountHistory(visibleHistory, account),
       selectedTx,
+      txReturn,
+      allHistory: visibleHistory,
+      loadOlderActivity,
+      olderActivity,
       arrivals,
       dismissArrival,
       openArrival: (key: string) => {
@@ -1931,6 +1953,7 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
           return
         }
         setSelectedTx(tx)
+        setTxReturn(screen)
         setError('')
         setScreen('tx')
       },
@@ -2059,6 +2082,9 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
       arrivals,
       dismissArrival,
       openArrivalKey,
+      txReturn,
+      loadOlderActivity,
+      olderActivity,
       pendingSavingsHandoff,
       pendingConnector,
       selectedTx,

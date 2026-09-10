@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { VaultHistoryItem } from '../lib/vault/history'
+import { olderRowKey, type VaultHistoryItem } from '../lib/vault/history'
 import { describePayment, paymentIdentityForItem, type PaymentScope } from '../lib/vault/payments'
 import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
 import { claimArrivalDelivery } from '../lib/vault/arrivalDelivery'
@@ -40,10 +40,16 @@ function outgoingReferences(rows: readonly VaultHistoryItem[]): Set<string> {
   return new Set(rows.filter((row) => row.type === 'sent' && !row.txid.startsWith('bitcoin:')).map((row) => row.txid))
 }
 
+/**
+ * Browsing history loaded beyond the recent window never feeds arrival
+ * observation: older receipts are marked seen without bannering, so paging
+ * through history cannot manufacture a new-payment alert.
+ */
 export function detectPaymentArrivals(
   seen: ReadonlyMap<string, boolean>,
   rows: readonly VaultHistoryItem[],
   scope: PaymentScope,
+  excludedKeys: ReadonlySet<string> = EMPTY_EXCLUDED,
 ): { arrivals: PaymentArrival[]; seen: Map<string, boolean> } {
   const next = new Map(seen)
   const arrivals: PaymentArrival[] = []
@@ -54,12 +60,15 @@ export function detectPaymentArrivals(
     const was = next.get(key)
     if (was === undefined) {
       next.set(key, available)
-      if (available) arrivals.push({ key, item: row })
+      if (available && !excludedKeys.has(olderRowKey(row))) arrivals.push({ key, item: row })
       continue
     }
     if (available && !was) {
+      // Record the available transition as seen even while excluded: the
+      // banner stays suppressed, but removing the exclusion later must not
+      // replay the historical receipt as a new arrival.
       next.set(key, true)
-      arrivals.push({ key, item: row })
+      if (!excludedKeys.has(olderRowKey(row))) arrivals.push({ key, item: row })
     }
   }
   return { arrivals, seen: next }
@@ -77,12 +86,24 @@ export function seedArrivalBaseline(rows: readonly VaultHistoryItem[], scope: Pa
 }
 
 const MAX_VISIBLE_ARRIVALS = 3
+const EMPTY_EXCLUDED: ReadonlySet<string> = new Set()
+
+export interface ArrivalDeliveryPrefs {
+  /** In-app banners. Off hides banners while detection and dedup continue. */
+  bannersEnabled: boolean
+  /** Haptic pulse with a banner. Visual and spoken feedback never depend on it. */
+  hapticsEnabled: boolean
+}
+
+const DEFAULT_DELIVERY: ArrivalDeliveryPrefs = { bannersEnabled: true, hapticsEnabled: true }
 
 export function usePaymentArrivals(
   history: readonly VaultHistoryItem[],
   scope: PaymentScope,
   paused: boolean,
   ready: boolean,
+  excludedKeys: ReadonlySet<string> = EMPTY_EXCLUDED,
+  delivery: ArrivalDeliveryPrefs = DEFAULT_DELIVERY,
 ): {
   arrivals: PaymentArrival[]
   dismissArrival: (key: string) => void
@@ -93,8 +114,15 @@ export function usePaymentArrivals(
   const pendingRef = useRef<PaymentArrival[]>([])
   const pausedRef = useRef(paused)
   pausedRef.current = paused
+  const deliveryRef = useRef(delivery)
+  deliveryRef.current = delivery
   const aliveRef = useRef(true)
   const generationRef = useRef(0)
+  // Delivery generation: disabling banners invalidates in-flight
+  // announcements without touching detection baseline. A claim that resolves
+  // after disable-then-re-enable belongs to the older generation and stays
+  // silent, while genuinely new payments announce normally.
+  const deliveryGenRef = useRef(0)
   useEffect(() => {
     aliveRef.current = true
     return () => {
@@ -126,14 +154,30 @@ export function usePaymentArrivals(
         if (!seenRef.current.has(key)) seenRef.current.set(key, available)
       }
     }
-    const { arrivals: fresh, seen } = detectPaymentArrivals(seenRef.current, history, scope)
+    const { arrivals: fresh, seen } = detectPaymentArrivals(seenRef.current, history, scope, excludedKeys)
     seenRef.current = seen
     saveArrivalBaseline(scope, seen, new Set(history.map((row) => paymentIdentityForItem(row, scope).key)))
     if (fresh.length === 0) return
+    if (!delivery.bannersEnabled) {
+      // Delivery disabled hides banners only: baseline and dedup above keep
+      // running, other tabs arbitrate their own announcements, and
+      // re-enabling replays nothing. Pending notices from before the toggle
+      // are dropped with the same guarantee.
+      pendingRef.current = []
+      return
+    }
     const generation = generationRef.current
+    const deliveryGen = deliveryGenRef.current
     void claimArrivalDelivery(fresh.map((arrival) => arrival.key))
       .then((keys) => {
         if (!aliveRef.current || generationRef.current !== generation) return
+        // Read delivery preferences at delivery time: a toggle while the
+        // claim was pending invalidates the announcement. A disable and
+        // re-enable before resolution still drops the old notice because the
+        // delivery generation advanced.
+        if (deliveryGenRef.current !== deliveryGen) return
+        const live = deliveryRef.current
+        if (!live.bannersEnabled) return
         const accepted = fresh.filter((arrival) => keys.includes(arrival.key))
         if (!accepted.length) return
         if (pausedRef.current) {
@@ -142,7 +186,7 @@ export function usePaymentArrivals(
           pendingRef.current = [...queued.values()]
           return
         }
-        hapticSubtle()
+        if (live.hapticsEnabled) hapticSubtle()
         setArrivals((current) => {
           const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
           for (const arrival of accepted) queued.set(arrival.key, arrival)
@@ -155,19 +199,34 @@ export function usePaymentArrivals(
       })
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, ready])
+  }, [history, ready, excludedKeys, delivery.bannersEnabled, delivery.hapticsEnabled])
 
   useEffect(() => {
     if (paused || pendingRef.current.length === 0) return
+    if (!deliveryRef.current.bannersEnabled) {
+      pendingRef.current = []
+      return
+    }
     const flushed = pendingRef.current
     pendingRef.current = []
-    hapticSubtle()
+    if (deliveryRef.current.hapticsEnabled) hapticSubtle()
     setArrivals((current) => {
       const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
       for (const arrival of flushed) queued.set(arrival.key, arrival)
       return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
     })
   }, [paused])
+
+  // Disabling banners invalidates pending and visible notices immediately,
+  // even when no fresh history arrives. Detection, baseline, and dedup above
+  // keep running, so re-enabling replays nothing.
+  const bannersOn = delivery.bannersEnabled
+  useEffect(() => {
+    if (bannersOn) return
+    deliveryGenRef.current += 1
+    pendingRef.current = []
+    setArrivals([])
+  }, [bannersOn])
 
   const dismissArrival = useCallback((key: string) => {
     pendingRef.current = pendingRef.current.filter((arrival) => arrival.key !== key)

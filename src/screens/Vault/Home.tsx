@@ -129,6 +129,9 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
         </button>
       ) : null}
       <VaultHistory />
+      <button type='button' className='qg-text' onClick={() => navigate('activity')}>
+        See all activity
+      </button>
     </AccountHome>
   )
 }

@@ -66,6 +66,33 @@ describe('arrival detection', () => {
     expect(second.arrivals).toHaveLength(1)
   })
 
+  it('never banners an older browsed receipt passed through exclusion', () => {
+    const older = row({ txid: 'older-receipt', account: 'savings', blockTime: 100 })
+    const excluded = new Set(['savings:older-receipt:received'])
+    const skipped = detectPaymentArrivals(new Map(), [older], SCOPE, excluded)
+    expect(skipped.arrivals).toEqual([])
+    expect(skipped.seen.get('tx:mutinynet:vault-1:savings:older-receipt:received')).toBe(true)
+
+    const fresh = row({ txid: 'fresh-receipt', account: 'savings', blockTime: 200 })
+    const bannered = detectPaymentArrivals(skipped.seen, [older, fresh], SCOPE, excluded)
+    expect(bannered.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh-receipt'])
+  })
+
+  it('records an excluded available transition so removing exclusion cannot replay it', () => {
+    const pending = row({ txid: 'late-receipt', account: 'savings', confirmed: false })
+    const excluded = new Set(['savings:late-receipt:received'])
+    const first = detectPaymentArrivals(new Map(), [pending], SCOPE, excluded)
+    expect(first.arrivals).toEqual([])
+
+    const settled = row({ txid: 'late-receipt', account: 'savings', blockTime: 300 })
+    const second = detectPaymentArrivals(first.seen, [settled], SCOPE, excluded)
+    expect(second.arrivals).toEqual([])
+    expect(second.seen.get('tx:mutinynet:vault-1:savings:late-receipt:received')).toBe(true)
+
+    const third = detectPaymentArrivals(second.seen, [settled], SCOPE, new Set())
+    expect(third.arrivals).toEqual([])
+  })
+
   it('suppresses a Savings receipt linked to the wallet’s own outflow', () => {
     // One Bitcoin transaction moving funds from Spending to Savings shows a
     // sent row and a received row with the same reference. The receipt is

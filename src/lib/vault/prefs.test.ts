@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Themes } from '../types'
 import {
   applyVaultTheme,
+  loadArrivalBanners,
+  loadArrivalHaptics,
   loadVaultBalanceUnit,
   loadVaultPrivacyLock,
   loadVaultTheme,
+  saveArrivalBanners,
+  saveArrivalHaptics,
   saveVaultBalanceUnit,
   saveVaultPrivacyLock,
   saveVaultTheme,
@@ -63,5 +67,45 @@ describe('vault prefs', () => {
     expect(loadVaultBalanceUnit()).toBe('usd')
     saveVaultBalanceUnit('sats')
     expect(loadVaultBalanceUnit()).toBe('sats')
+  })
+
+  it('keeps arrival banners and haptics on by default, even when storage is corrupt', () => {
+    window.localStorage.clear()
+    expect(loadArrivalBanners()).toBe(true)
+    expect(loadArrivalHaptics()).toBe(true)
+    window.localStorage.setItem('arkade-vault-arrival-banners', 'yes')
+    window.localStorage.setItem('arkade-vault-arrival-haptics', 'maybe')
+    expect(loadArrivalBanners()).toBe(true)
+    expect(loadArrivalHaptics()).toBe(true)
+  })
+
+  it('persists arrival banner and haptic choices per device', () => {
+    window.localStorage.clear()
+    saveArrivalBanners(false)
+    saveArrivalHaptics(false)
+    expect(loadArrivalBanners()).toBe(false)
+    expect(loadArrivalHaptics()).toBe(false)
+    saveArrivalBanners(true)
+    saveArrivalHaptics(true)
+    expect(loadArrivalBanners()).toBe(true)
+    expect(loadArrivalHaptics()).toBe(true)
+  })
+
+  it('falls back to defaults when arrival preference storage is unavailable', () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    try {
+      expect(loadArrivalBanners()).toBe(true)
+      expect(loadArrivalHaptics()).toBe(true)
+      expect(() => saveArrivalBanners(false)).not.toThrow()
+      expect(() => saveArrivalHaptics(false)).not.toThrow()
+    } finally {
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
   })
 })
