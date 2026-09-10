@@ -69,3 +69,27 @@ test('@ux-denomination external unit changes preserve an entered 331-sat payment
   await expect(page.locator('.qg-denomination')).toHaveText('₿')
   await expect(amount).toHaveValue('331')
 })
+
+test('@ux-receive Light Receive counts the standalone iPhone safe area once', async ({
+  page,
+  authorizer,
+}, testInfo) => {
+  void authorizer
+  await page.setViewportSize({ width: 393, height: 852 })
+  await openLight(page, false)
+  await page.evaluate(() => {
+    document.querySelector<HTMLElement>('[data-testid="vault-app"]')!.style.setProperty('--vault-safe-area-top', '59px')
+  })
+  await page.getByRole('button', { name: 'Receive', exact: true }).click()
+  const app = page.getByTestId('vault-app')
+  const screen = page.locator('.qg-screen')
+  await expect(page.getByRole('heading', { name: 'Receive', exact: true })).toBeVisible()
+  expect(await app.evaluate((el) => getComputedStyle(el).paddingTop)).toBe('0px')
+  const shell = await app.boundingBox(),
+    receive = await screen.boundingBox()
+  expect(Math.abs(receive!.y - shell!.y)).toBeLessThanOrEqual(1)
+  expect(await screen.evaluate((el) => getComputedStyle(el).gridTemplateRows.split(' ')[0])).toBe('111px')
+  const title = await page.getByRole('heading', { name: 'Receive', exact: true }).boundingBox()
+  expect(title!.y - receive!.y).toBeGreaterThanOrEqual(59)
+  await page.screenshot({ path: testInfo.outputPath('receive-safe-area.png') })
+})

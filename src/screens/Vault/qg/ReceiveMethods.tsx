@@ -1,3 +1,4 @@
+import { ArrowRight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { hapticSubtle } from '../../../lib/haptics'
 import type { LightningAddress as Address } from '../../../lib/vault/lnurl'
@@ -72,7 +73,12 @@ export function LightningReceiveMethod({
   return (
     <div className='qg-method-lightning'>
       <LightningAddress status={status} primary onChange={onAddress} />
-      <QgTextButton label='Create invoice' testId='create-invoice' onClick={onInvoice} />
+      <QgTextButton
+        label='Create invoice'
+        testId='create-invoice'
+        onClick={onInvoice}
+        icon={<ArrowRight size={20} />}
+      />
     </div>
   )
 }

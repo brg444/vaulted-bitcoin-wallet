@@ -19,7 +19,10 @@ for (const width of [320, 375, 1440]) {
         }),
       ).toBeVisible()
       await expect(address.getByRole('button', { name: 'Copy address' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Create invoice' })).toBeVisible()
+      const invoice = page.getByRole('button', { name: 'Create invoice' })
+      await expect(invoice).toBeVisible()
+      await expect(invoice.locator('svg.lucide-arrow-right')).toHaveCount(1)
+      expect(await invoice.evaluate((el) => getComputedStyle(el, '::after').content)).toBe('none')
       await expect(page.getByRole('group', { name: 'Receive methods' })).toBeInViewport({ ratio: 1 })
       await expect(page.getByRole('button', { name: 'Create invoice' })).toBeInViewport({ ratio: 1 })
       await page.screenshot({

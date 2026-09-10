@@ -113,11 +113,13 @@ export function QgTextButton({
   onClick,
   testId,
   disabled,
+  icon,
 }: {
   label: string
   onClick: () => void
   testId?: string
   disabled?: boolean
+  icon?: ReactNode
 }) {
   return (
     <button
@@ -132,6 +134,7 @@ export function QgTextButton({
       }}
     >
       {label}
+      {icon ? <span aria-hidden='true'>{icon}</span> : null}
     </button>
   )
 }
