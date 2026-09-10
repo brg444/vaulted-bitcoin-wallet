@@ -65,3 +65,22 @@ for (const width of [320, 390]) {
     })
   }
 }
+
+test('native haptic preference remains usable with reduced motion', async ({ page }) => {
+  await mockEnrollmentAccess(page, 'open')
+  await page.route('**/src/screens/Vault/Welcome.tsx*', (route) =>
+    route.fulfill({ contentType: 'application/javascript', body: fixtureBody() }),
+  )
+  await page.goto('/')
+  await page.getByTestId('settings-haptics').click()
+  const control = page.getByRole('switch', { name: 'Haptic feedback' })
+  await expect(control).toBeVisible()
+  await expect(control).toHaveAttribute('switch', '')
+  await expect(control).toBeChecked()
+  await control.click()
+  await expect(control).not.toBeChecked()
+  await control.click()
+  await expect(control).toBeChecked()
+  expect(await control.evaluate((element) => getComputedStyle(element).appearance)).not.toBe('none')
+  await expectWalletLayout(page)
+})
