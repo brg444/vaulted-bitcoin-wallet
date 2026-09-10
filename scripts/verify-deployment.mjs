@@ -37,6 +37,11 @@ async function releaseResponse(path) {
 }
 const manifest = await (await releaseResponse('/release.json')).json()
 if (manifest.network !== expectedNetwork) throw new Error('Compiled release network mismatch')
+if (expectedNetwork === 'mainnet') {
+  for (const feature of ['lightOnlyEnrollment', 'lightningSend', 'lightningReceive', 'lightningAddress']) {
+    if (manifest.features?.[feature] !== true) throw new Error(`Released wallet feature missing: ${feature}`)
+  }
+}
 const worker = await (await releaseResponse('/vault-wallet-service-worker.mjs')).arrayBuffer()
 if (createHash('sha256').update(new Uint8Array(worker)).digest('hex') !== manifest.workerSha256) {
   throw new Error('Service worker differs from the release manifest')
