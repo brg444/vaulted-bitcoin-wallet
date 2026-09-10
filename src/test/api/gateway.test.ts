@@ -78,22 +78,40 @@ describe('same-origin authorizer gateway', () => {
       }
     },
   )
-  it.each(['start', 'propose', 'finish'])('blocks %s enrollment before forwarding when Light-only', async (phase) => {
-    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://guardian.example')
-    vi.stubEnv('VAULT_LIGHT_ONLY_ENROLLMENT', 'true')
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    try {
-      const result = gatewayResponse()
-      await gatewayHandler(gatewayRequest({ method: 'POST', url: `/api/v1/enroll/${phase}` }), result.response)
-      expect(result.response.statusCode).toBe(403)
-      expect(String(result.body())).toContain('Please choose Light')
-      expect(fetchMock).not.toHaveBeenCalled()
-    } finally {
-      vi.unstubAllEnvs()
-      vi.unstubAllGlobals()
-    }
-  })
+  for (const tier of ['light', 'standard', 'advanced']) {
+    it.each(['start', 'propose', 'finish'])(
+      `forwards shared %s enrollment and preserves Guardian admission for ${tier}`,
+      async (phase) => {
+        vi.stubEnv('AUTHORIZER_ORIGIN', 'https://guardian.example')
+        vi.stubEnv('VAULT_RELEASE_NETWORK', 'mutinynet')
+        vi.stubEnv('VAULT_LIGHT_ONLY_ENROLLMENT', 'true')
+        const status = tier === 'light' ? 200 : 403
+        const payload = JSON.stringify(
+          tier === 'light' ? { vaultId: 'shared-spending' } : { error: 'Please choose Light' },
+        )
+        const requestBody = JSON.stringify({ protectionTier: tier })
+        const fetchMock = vi.fn().mockResolvedValue(new Response(payload, { status }))
+        vi.stubGlobal('fetch', fetchMock)
+        try {
+          const result = gatewayResponse()
+          await gatewayHandler(
+            gatewayRequest({ method: 'POST', url: `/api/v1/enroll/${phase}`, body: requestBody }),
+            result.response,
+          )
+          expect(result.response.statusCode).toBe(status)
+          expect(String(result.body())).toBe(payload)
+          expect(fetchMock).toHaveBeenCalledOnce()
+          const [url, request] = fetchMock.mock.calls[0]
+          expect(url).toBe(`https://guardian.example/v1/enroll/${phase}`)
+          expect(request.method).toBe('POST')
+          expect(Buffer.from(request.body).toString()).toBe(requestBody)
+        } finally {
+          vi.unstubAllEnvs()
+          vi.unstubAllGlobals()
+        }
+      },
+    )
+  }
 
   it.each([
     ['default', defaultDeployment],

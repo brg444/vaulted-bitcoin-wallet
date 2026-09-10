@@ -326,10 +326,7 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
     res.end()
     return
   }
-  if (process.env.VAULT_LIGHT_ONLY_ENROLLMENT === 'true' && /^\/v1\/enroll\/(start|propose|finish)$/.test(pathOnly)) {
-    jsonError(res, 403, 'Standard and Advanced setup is temporarily unavailable. Please choose Light.')
-    return
-  }
+  // Guardian enforces enrollment tiers on the shared endpoints.
   if (!sameOriginAllowed(req.headers)) {
     jsonError(res, 403, 'cross-origin authorizer access denied')
     return
