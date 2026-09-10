@@ -1,11 +1,13 @@
 import {
   createExitChainResolver,
   ChainedTxType,
+  Transaction,
   type VirtualTxRepository,
   type ExitDataSource,
   type IndexerProvider,
   type PageResponse,
 } from '@arkade-os/sdk'
+import { base64, hex } from '@scure/base'
 
 // Request a single public DAG snapshot where supported: separately requested
 // pages can order shared ancestors differently. If a provider returns pagination,
@@ -82,7 +84,32 @@ export function recoveryChainResolver(
       if (key === 'getBranch')
         return async (outpoint: Parameters<VirtualTxRepository['getBranch']>[0]) => {
           const branch = await target.getBranch(outpoint)
-          return branch.some((node) => node.type === ChainedTxType.Commitment) ? branch : []
+          // A truncated SDK page can already contain commitments. Every
+          // noncommitment must have its exact PSBT and all of its parents before
+          // this cache may take precedence over a complete indexer snapshot.
+          if (
+            !branch.length ||
+            branch.length > 4096 ||
+            !branch.some((node) => node.txid === outpoint.txid) ||
+            !branch.some((node) => node.type === ChainedTxType.Commitment)
+          )
+            return []
+          const ids = new Set(branch.map((node) => node.txid))
+          try {
+            for (const node of branch) {
+              if (node.type === ChainedTxType.Commitment) continue
+              if (node.type === ChainedTxType.Unspecified || !node.psbt || node.psbt.length > 1_000_000) return []
+              const tx = Transaction.fromPSBT(base64.decode(node.psbt))
+              if (tx.id !== node.txid || !tx.inputsLength) return []
+              for (let i = 0; i < tx.inputsLength; i++) {
+                const parent = tx.getInput(i).txid
+                if (!parent || !ids.has(hex.encode(parent))) return []
+              }
+            }
+          } catch {
+            return []
+          }
+          return branch
         }
       const value = Reflect.get(target, key)
       return typeof value === 'function' ? value.bind(target) : value
