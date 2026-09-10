@@ -38,6 +38,25 @@ describe('Vault settings account boundaries', () => {
     document.documentElement.classList.remove('palette-dark')
   })
 
+  it('uses a native iPhone switch and persists explicit haptic preference', async () => {
+    localStorage.setItem('arkade-vault-haptics', '1')
+    renderSettings()
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('settings-haptics'))
+    const control = screen.getByRole('switch', { name: 'Haptic feedback' })
+    expect(control.tagName).toBe('INPUT')
+    expect(control).toHaveAttribute('type', 'checkbox')
+    expect(control).toHaveAttribute('switch')
+    expect(control).toBeChecked()
+    await user.click(control)
+    expect(control).not.toBeChecked()
+    expect(localStorage.getItem('arkade-vault-haptics')).toBe('0')
+    await user.click(control)
+    expect(control).toBeChecked()
+    expect(localStorage.getItem('arkade-vault-haptics')).toBe('1')
+    localStorage.removeItem('arkade-vault-haptics')
+  })
+
   it('does not expose test funding controls', () => {
     renderSettings()
     expect(screen.queryByTestId('settings-faucet')).toBeNull()

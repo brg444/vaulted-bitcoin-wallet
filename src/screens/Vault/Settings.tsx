@@ -205,24 +205,28 @@ export default function VaultSettings() {
     return (
       <QgScreen title='Haptics' back={() => setView('menu')}>
         <HubGroup label='This device'>
-          <button
-            type='button'
-            role='switch'
-            aria-checked={haptics}
-            className='vault-hub-row'
-            onClick={() => {
-              const next = !haptics
-              setHaptics(next)
-              saveVaultHaptics(next)
-              if (next) hapticLight()
-            }}
-          >
+          <label className='vault-hub-row'>
             <div className='vault-hub-copy'>
               <p>Haptic feedback</p>
-              <p>Vibration on taps</p>
+              <p>Feedback when you tap. Availability depends on your device.</p>
             </div>
-            <span className={haptics ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
-          </button>
+            <input
+              type='checkbox'
+              {...{ switch: '' }}
+              role='switch'
+              aria-label='Haptic feedback'
+              checked={haptics}
+              style={{ appearance: 'auto', width: 44, height: 28, flexShrink: 0 }}
+              onChange={(event) => {
+                const next = event.currentTarget.checked
+                setHaptics(next)
+                saveVaultHaptics(next)
+                // iPhone uses the native switch's trusted touch. Other
+                // browsers retain the library's vibration path.
+                if (next && typeof navigator.vibrate === 'function') hapticLight()
+              }}
+            />
+          </label>
         </HubGroup>
       </QgScreen>
     )
