@@ -43,7 +43,7 @@ jobs:
             const pack = require('./src/lib/vault/contract-pack.json')
             const programs = pack.programs || {}
             const names = Object.keys(programs).sort()
-            const expected = ['savings-connector-dual-v2', 'savings-connector-v1', 'savings-recovery-v1', 'vault-board-v1', 'vault-policy-v1']
+            const expected = ['phone-ledger-guardian-savings-v1', 'savings-connector-dual-v2', 'savings-connector-v1', 'savings-recovery-v1', 'vault-board-v1', 'vault-policy-v1']
             if (JSON.stringify(names) !== JSON.stringify(expected)) {
               throw new Error('contract pack must contain exactly the current programs')
             }
@@ -53,6 +53,12 @@ jobs:
             }
             if (programs['vault-board-v1'].destination !== 'vault-policy-v1') {
               throw new Error('boarding must settle only to vault-policy-v1')
+            }
+            const light = pack.enrollmentProfiles['vaulted-spending-v1']
+            if (pack.databaseSchemaVersion !== 11 || light.spending !== 'vault-policy-v1' ||
+                light.boarding !== 'vault-board-v1' || light.exitMode !== 'device' ||
+                light.savings !== 'watch-only' || light.hardwareKey !== 'forbidden' || light.recoveryKey !== 'forbidden') {
+              throw new Error('fresh Light must use shared Spending and boarding with device recovery')
             }
           "
       - name: Unit tests
