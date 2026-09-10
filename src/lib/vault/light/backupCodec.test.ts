@@ -10,6 +10,7 @@ import { unlockLightWithPasskey } from './passkey'
 vi.mock('./passkey', () => ({ unlockLightWithPasskey: vi.fn() }))
 import { lightArchiveProviders, assertLightArchiveMatchesVtxos } from './recoveryArchive'
 import type { LightRecoveryFile } from './recovery'
+import { createLightRecoveryPackage, parseLightRecoveryPackage, unwrapLightRecoveryPackage } from './portable'
 
 async function fixture(): Promise<LightRecoveryFile> {
   const record = await lightTestEnrollment()
@@ -53,6 +54,22 @@ async function fixture(): Promise<LightRecoveryFile> {
   }
 }
 describe('automatic Light backup and unilateral exit data', () => {
+  it('exports inspectable paths with an encrypted owner section and accepts legacy encrypted files', async () => {
+    const file = await fixture()
+    const key = await lightBackupKey(testOwner, file)
+    const portable = await createLightRecoveryPackage(file, key)
+    const parsed = parseLightRecoveryPackage(JSON.parse(JSON.stringify(portable)))
+    expect(Object.keys(parsed.archive.transactions)).toEqual(Object.keys(file.archive!.transactions))
+    expect(JSON.stringify(parsed)).not.toContain(hex.encode(testOwner))
+    expect((await decryptLightBackup(unwrapLightRecoveryPackage(parsed), key)).archive).toEqual(file.archive)
+    expect(unwrapLightRecoveryPackage(parsed.backup)).toBe(parsed.backup)
+    const tampered = structuredClone(parsed)
+    const coins = JSON.parse(tampered.archive.coins)
+    coins[0].value++
+    tampered.archive.coins = JSON.stringify(coins)
+    expect(() => parseLightRecoveryPackage(tampered)).toThrow()
+    expect(() => parseLightRecoveryPackage({ ...parsed, ownerSecret: 'forbidden' })).toThrow()
+  })
   it('round trips the complete VTXO paths without a manual recovery secret', async () => {
     const file = await fixture()
     const key = await lightBackupKey(testOwner, file)
@@ -155,4 +172,24 @@ describe('local restore owner ceremony', () => {
     expect(authorize).not.toHaveBeenCalled()
     expect(owner.every((byte) => byte === 0)).toBe(true)
   })
+})
+
+it('checks protected Light contents without the restore or renewal callbacks', async () => {
+  const { IDBFactory } = await import('fake-indexeddb')
+  vi.stubGlobal('indexedDB', new IDBFactory())
+  const file = await fixture()
+  const pkg = await createLightRecoveryPackage(file, await lightBackupKey(testOwner, file))
+  const owner = Uint8Array.from(testOwner)
+  vi.mocked(unlockLightWithPasskey).mockResolvedValueOnce(owner)
+  const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('services unavailable'))
+  try {
+    const { checkProtectedRecoveryPackage } = await import('../recovery/packageCheck')
+    const checked = await checkProtectedRecoveryPackage(pkg, file.descriptor)
+    expect(checked.contents.journalsPresent).toBe(false)
+    expect(owner.every((byte) => byte === 0)).toBe(true)
+    expect(network).not.toHaveBeenCalled()
+  } finally {
+    vi.unstubAllGlobals()
+    network.mockRestore()
+  }
 })

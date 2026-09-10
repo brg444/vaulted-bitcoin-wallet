@@ -13,6 +13,7 @@ import { kitFromFacts } from '../lib/vault/program/kitBackup'
 import { lightBackupScheduler } from '../lib/vault/light/backupScheduler'
 import { subscribeVaultWalletEvents } from '../lib/vault/vtxo/walletWorker'
 import { createPortableRecoveryPackage } from '../lib/vault/recovery/portable'
+import { recordRecoveryFileCopy } from '../lib/vault/recovery/packageCheck'
 
 export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status: VaultStatus | null, locked: boolean) {
   const session = useRef<RecoveryBackupSession | null>(null)
@@ -41,11 +42,13 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     if (requireCloudBackup && context !== contextEpoch.current)
       throw new Error('Wallet session changed during recovery backup')
     if (!requireCloudBackup && !unchanged()) return file
+    await recordRecoveryFileCopy('local', file)
     const active = session.current
     if (active && active.header.binding.vaultId === status.vaultId) {
       await syncRecoveryCloudBackup(active, file)
       if (requireCloudBackup && context !== contextEpoch.current)
         throw new Error('Wallet session changed during recovery backup')
+      await recordRecoveryFileCopy('service', file)
       if (!unchanged()) return file
       setRecoveryArchiveStatus(`Encrypted cloud backup verified ${new Date().toLocaleString()}`)
     } else {
@@ -112,6 +115,7 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault first')
     const file = await captureVaultRecoveryFile(status, enrollment)
+    await recordRecoveryFileCopy('local', file)
     const encode = async (key: CryptoKey) =>
       JSON.stringify(
         format === 'portable' ? await createPortableRecoveryPackage(file, key) : await encryptRecoveryBackup(file, key),

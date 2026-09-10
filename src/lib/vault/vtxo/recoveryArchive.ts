@@ -28,6 +28,7 @@ import {
   type BoardingTranscript,
 } from './boardingJournal'
 import { hashBoardingEnrollmentDescriptor } from '../program/enroll'
+import { loadLifecycleArchive } from '../recovery/lifecycleStore'
 
 export interface VaultRecoveryArchive<K extends RecoveryKit = RecoveryKit> {
   name: 'vaulted-program-recovery-data'
@@ -193,7 +194,9 @@ export async function captureVaultRecoveryArchive(kit: RecoveryKit, status: Vaul
     const previous = await loadVaultRecoveryArchive(savedKit, savedStatus)
     const repository = vaultExitRepository(savedStatus.vaultId, binding.network)
     try {
-      const spending = await captureExitArchive(binding, repository, previous?.spending ?? null)
+      const spending =
+        (await loadLifecycleArchive(vaultWalletDatabase(savedStatus.vaultId), binding)) ??
+        (await captureExitArchive(binding, repository, previous?.spending ?? null))
       const onchain = await captureOnchain(savedKit, savedStatus, previous)
       const boardingTranscripts = mergeBoardingTranscripts(
         savedStatus.vtxoBoardingDescriptor!,

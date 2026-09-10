@@ -1,5 +1,6 @@
 import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from '../spendingEnrollment'
 import { LIGHT_PROFILE, LightScript } from '../light/contract'
+import { retainFinalizationRecovery } from '../recovery/finalization'
 import { requireLightStatus } from '../light/status'
 import { unlockLightOwnerKey } from '../light/keyBackup'
 import {
@@ -2038,6 +2039,7 @@ async function reconcileOnePersistedVtxoSpend(
         status,
         xOnly(info.signerPubkey, 'Operator signer pubkey'),
       )
+      await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
       await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
       persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
       await finalizeVaultOperation(pending.vaultId, pending.operationId, pending.bundleDigest, pending.arkTxid)
@@ -2349,6 +2351,7 @@ async function completeFreshSdkVtxoSpend(
       async finalize({ authorizedCheckpointPsbts }) {
         pending = { ...pending, checkpointPsbts: authorizedCheckpointPsbts }
         await requireCurrentReservationPolicy(operator, status, pending)
+        await retainFinalizationRecovery(status, pending)
         await operator.finalizeTx(pending.arkTxid, authorizedCheckpointPsbts)
         pending = { ...pending, stage: 'operator-finalized', checkpointPsbts: authorizedCheckpointPsbts }
         persistVtxoSpend(pending)
@@ -2386,6 +2389,7 @@ async function continueSameVtxoSpend(
       status,
       xOnly(info.signerPubkey, 'Operator signer pubkey'),
     )
+    await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
     await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
     persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
     return finishOperatorFinalized({ ...pending, stage: 'operator-finalized', checkpointPsbts })
@@ -2410,6 +2414,7 @@ async function continueSameVtxoSpend(
   )
   const checkpointPsbts = pending.checkpointPsbts!
   await requireCurrentReservationPolicy(operator, status, pending)
+  await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
   await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
   persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
   try {

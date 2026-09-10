@@ -2,7 +2,6 @@ import { vaultExitRepository, vaultExitCapture } from './lib/vault/vtxo/exitRepo
 import {
   IndexedDBContractRepository,
   IndexedDBIntentRepository,
-  IndexedDBWalletRepository,
   MessageBus,
   RestArkProvider,
   SingleKey,
@@ -27,6 +26,7 @@ import {
   vaultWalletDatabaseForNamespace,
 } from './lib/vault/vtxo/walletWorkerNames'
 import { vaultArkServer, vaultPolicyV1ScriptFromStatus } from './lib/vault/vtxo/spend'
+import { RecoveryWalletRepository } from './lib/vault/recovery/walletRepository'
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -37,7 +37,7 @@ const pinnedNetwork = workerLocation.searchParams.get('network') || ''
 installVaultSettlementEventSource()
 registerVaultPolicyV1ContractHandler()
 
-const walletRepository = new IndexedDBWalletRepository(vaultWalletDatabaseForNamespace(namespace))
+const walletRepository = new RecoveryWalletRepository(vaultWalletDatabaseForNamespace(namespace))
 const contractRepository = new IndexedDBContractRepository(vaultWalletDatabaseForNamespace(namespace))
 const intentRepository = new IndexedDBIntentRepository(vaultWalletIntentDatabaseForNamespace(namespace))
 
@@ -79,6 +79,8 @@ const bus = new MessageBus(walletRepository, contractRepository, {
       }
       const identity = SingleKey.fromPrivateKey(transient)
       const signingAdapter = createBoardingSigningAdapter(status.vaultId, descriptor)
+      virtualTxRepository ??= vaultExitRepository(active.vaultId, active.network)
+      walletRepository.configureRecovery(status.network, virtualTxRepository, config.arkServer.url)
       const wallet = await Wallet.create({
         identity,
         arkServerUrl: config.arkServer.url,
@@ -113,6 +115,7 @@ const bus = new MessageBus(walletRepository, contractRepository, {
         throw new Error('SDK worker derived a different vault-board-v1 address')
       }
       const manager = await wallet.getContractManager()
+      walletRepository.watchRecoveryScripts((await manager.getContracts()).map((contract) => contract.script))
       for (const contract of (await manager.getContracts()).filter((candidate) => candidate.type === 'default')) {
         if (contract.state !== 'inactive') await manager.setContractState(contract.script, 'inactive')
         if ((contract.watch || 'watched') !== 'retained') {
@@ -138,3 +141,8 @@ const bus = new MessageBus(walletRepository, contractRepository, {
 })
 
 bus.start().catch((error) => console.error('Vault wallet worker failed to start', error))
+
+// Repair persisted recovery evidence without submitting or replaying payments.
+setInterval(() => {
+  void walletRepository.repairRecovery().catch((error) => console.error('Recovery capture pending', error))
+}, 30_000)

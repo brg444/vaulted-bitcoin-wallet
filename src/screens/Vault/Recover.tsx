@@ -31,6 +31,9 @@ import { findMatureBoardingInputs } from '../../lib/vault/vtxo/boardingRecovery'
 import { VaultContext } from '../../vault/context'
 import RecoveryHelp from './RecoveryHelp'
 import { HubGroup, HubRow } from './ui'
+import RecoveryCopies from './RecoveryCopies'
+import { checkProtectedRecoveryPackage } from '../../lib/vault/recovery/packageCheck'
+import { recordRecoveryCopy } from '../../lib/vault/recovery/copyStatus'
 import QgScreen, { QgCheck, QgPrimary, QgSecondary } from './qg/QgScreen'
 import { portableRecoverySource } from '../../lib/vault/recovery/portable'
 import { spendingRecoveryCoverage } from '../../lib/vault/recovery/coverage'
@@ -121,6 +124,9 @@ export default function VaultRecover() {
     setFromKit(false)
   }, [recoverEntry, status?.protectionTier])
   const [pasted, setPasted] = useState('')
+  const [protectedCheck, setProtectedCheck] = useState('')
+  const [checkingPackage, setCheckingPackage] = useState(false)
+  useEffect(() => setProtectedCheck(''), [pasted])
   const fileRead = useRef(0)
   useEffect(
     () => () => {
@@ -204,6 +210,20 @@ export default function VaultRecover() {
       return { error: err instanceof Error ? err.message : 'That file is not a Recovery Kit' }
     }
   }, [kitJson, pasted])
+
+  useEffect(() => {
+    if (!pasted.trim() || !status) return
+    let source
+    try {
+      source = portableRecoverySource(JSON.parse(pasted))
+    } catch {
+      return
+    }
+    if (source.header.binding.vaultId !== status.vaultId || source.header.binding.network !== status.network) return
+    void recordRecoveryCopy(status.vaultId, status.network, 'checked', source.archive.spending).catch(() =>
+      setLocalError('The file was checked, but its check date could not be saved.'),
+    )
+  }, [pasted, status?.vaultId, status?.network])
 
   const saveKit = () => {
     setLocalError('')
@@ -686,9 +706,17 @@ export default function VaultRecover() {
               label='Download recovery package'
               disabled={busy}
               onClick={() =>
-                runBackup(async () =>
-                  downloadJson('Vaulted recovery package.json', await downloadRecoveryArchive('portable')),
-                )
+                runBackup(async () => {
+                  const body = await downloadRecoveryArchive('portable')
+                  downloadJson('Vaulted recovery package.json', body)
+                  const source = portableRecoverySource(JSON.parse(body))
+                  await recordRecoveryCopy(
+                    source.header.binding.vaultId,
+                    source.header.binding.network,
+                    'downloaded',
+                    source.archive.spending,
+                  )
+                })
               }
             />
           ) : backupView === 'kit' ? (
@@ -748,24 +776,27 @@ export default function VaultRecover() {
           <QgSecondary label='More options' onClick={() => setBackupView('more')} />
         </>
       ) : backupView === 'more' ? (
-        <HubGroup>
-          <HubRow
-            title='Wallet details'
-            detail='Public addresses and recovery rules'
-            onClick={() => setBackupView('kit')}
-          />
-          <HubRow title='Recover to Bitcoin' onClick={() => setBackupView('exit')} />
-          <HubRow
-            title={currentKit?.protectionTier === 'light' ? 'Recover Spending' : 'I lost a key'}
-            onClick={() => {
-              setLocalError('')
-              setFromKit(true)
-              setReviewingRecovery(false)
-              if (currentKit?.protectionTier === 'light') setBackupView('exit')
-              else setView('lost')
-            }}
-          />
-        </HubGroup>
+        <>
+          <HubGroup>
+            <HubRow
+              title='Wallet details'
+              detail='Public addresses and recovery rules'
+              onClick={() => setBackupView('kit')}
+            />
+            <HubRow title='Recover to Bitcoin' onClick={() => setBackupView('exit')} />
+            <HubRow
+              title={currentKit?.protectionTier === 'light' ? 'Recover Spending' : 'I lost a key'}
+              onClick={() => {
+                setLocalError('')
+                setFromKit(true)
+                setReviewingRecovery(false)
+                if (currentKit?.protectionTier === 'light') setBackupView('exit')
+                else setView('lost')
+              }}
+            />
+          </HubGroup>
+          {status ? <RecoveryCopies vaultId={status.vaultId} network={status.network} /> : null}
+        </>
       ) : backupView === 'kit' ? (
         <>
           <h1>Your wallet details</h1>
@@ -937,6 +968,44 @@ export default function VaultRecover() {
               {new Date(report.coverage.capturedAt!).toLocaleString()}. This check does not establish coverage of later
               activity or verify access to your signing keys.
             </p>
+          ) : null}
+          {report && 'coverage' in report && pasted.trim() && status ? (
+            <>
+              <QgSecondary
+                label='Check protected contents with passkey'
+                disabled={checkingPackage}
+                onClick={() => {
+                  const revision = fileRead.current
+                  setCheckingPackage(true)
+                  setLocalError('')
+                  void checkProtectedRecoveryPackage(JSON.parse(pasted), status)
+                    .then(({ contents }) => {
+                      if (revision !== fileRead.current) return
+                      setProtectedCheck(
+                        `Original passkey opened this file. It contains ${contents.pendingPayments} unresolved payment records and ${contents.lightningContracts} Lightning contract records${contents.pendingConnector ? ', plus a pending Savings action' : ''}. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals. '}Hardware and recovery keys remain untested. No funds moved.`,
+                      )
+                    })
+                    .catch((err) => {
+                      if (revision === fileRead.current)
+                        setLocalError(err instanceof Error ? err.message : 'Could not check protected contents')
+                    })
+                    .finally(() => setCheckingPackage(false))
+                }}
+              />
+              {protectedCheck ? (
+                <p className='qg-copy' role='status'>
+                  {protectedCheck}
+                </p>
+              ) : null}
+              <p className='qg-copy'>
+                Spending needs{' '}
+                {currentKit?.protectionTier === 'advanced'
+                  ? 'hardware and recovery keys for the lost-phone path'
+                  : 'the original passkey and hardware key'}
+                . Savings recovery follows its enrolled service approvals and waiting periods. A file check leaves
+                Bitcoin eligibility and external key access untested.
+              </p>
+            </>
           ) : null}
           {report && 'trees' in report && pasted.trim() ? (
             <p className='qg-copy'>

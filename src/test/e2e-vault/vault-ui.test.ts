@@ -927,7 +927,7 @@ test('@polish keeps a focused send address between the safe header and footer wh
   expect(field!.y + field!.height).toBeLessThanOrEqual(footer!.y)
 })
 
-test('@polish covers accessible account, send, Security, and Settings states', async ({ page }) => {
+test('@polish covers accessible account, send, Security, and Settings states', async ({ page }, testInfo) => {
   const pending: EsploraUtxo = {
     txid: BOARDING_TXID,
     vout: 0,
@@ -1046,6 +1046,11 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page.getByRole('button', { name: 'Save recovery package', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'More options', exact: true }).click()
   await expect(page.getByRole('button', { name: /^Wallet details/ })).toBeVisible()
+  await page.getByText('Saved copies', { exact: true }).click()
+  await expect(page.getByText('Last file check', { exact: true })).toBeVisible()
+  await expectNoBlockingAxeViolations(page)
+  await page.screenshot({ path: testInfo.outputPath('recovery-copies.png'), fullPage: true })
+  await page.getByText('Saved copies', { exact: true }).click()
   await page.getByRole('button', { name: /I lost a key/ }).click()
   await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)

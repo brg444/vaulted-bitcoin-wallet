@@ -12,7 +12,7 @@ import {
 import { validateVaultRecoveryArchive, type VaultRecoveryArchive } from '../vtxo/recoveryArchive'
 import { parseRecoveryKit } from '../program/kit'
 import { validateSpendingPolicy } from '../spendingPolicy'
-import { normalizeRecoveryChain } from './exitArchive'
+import { normalizeRecoveryChain, type ExitArchive } from './exitArchive'
 
 // Compare JSON values independently of property order, while rejecting extra fields.
 function canonical(value: unknown): string {
@@ -128,6 +128,20 @@ function publicCoins(raw: string): string {
 
 /** Transaction paths are readable without a phone. Operational journals remain encrypted. */
 export const MAX_PORTABLE_RECOVERY_BYTES = 32_000_000
+
+export function publicExitArchive(archive: ExitArchive): ExitArchive {
+  return {
+    version: 1,
+    descriptorHash: archive.descriptorHash,
+    capturedAt: archive.capturedAt,
+    info: publicInfo(archive.info),
+    coins: publicCoins(archive.coins),
+    branches: Object.fromEntries(
+      Object.entries(archive.branches).map(([key, chain]) => [key, normalizeRecoveryChain(chain)]),
+    ),
+    transactions: { ...archive.transactions },
+  }
+}
 
 export interface PortableRecoveryPackage {
   name: 'vaulted-recovery-package'
