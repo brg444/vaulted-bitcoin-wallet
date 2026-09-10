@@ -35,23 +35,26 @@ vi.mock('../../components/QrCode', () => ({
 }))
 
 function renderReceive(account: VaultAccount, connector = false, lightning = false, light = false) {
+  const refreshBalance = vi.fn().mockResolvedValue(undefined)
   const value = {
     account,
-    ...(lightning ? { status: { network: 'mainnet', vaultId: 'fixture-vault' }, refreshBalance: vi.fn() } : {}),
+    ...(lightning ? { status: { network: 'mainnet', vaultId: 'fixture-vault' } } : {}),
     ...(connector ? { status: { templateVersion: DUAL_CONNECTOR_TEMPLATE } } : {}),
     boardingAddress: light ? '' : 'tb1qboarding',
     liveNetwork: true,
     navigate: () => {},
+    refreshBalance,
     savingsAddress: 'tb1qsavings',
     spendingArkAddress: 'tark1spending',
   } as unknown as VaultContextProps
-  return render(
+  const rendered = render(
     <ToastProvider>
       <VaultContext.Provider value={value}>
         <VaultReceive />
       </VaultContext.Provider>
     </ToastProvider>,
   )
+  return { ...rendered, refreshBalance }
 }
 
 function renderReceiveWithoutAddresses(account: VaultAccount) {
@@ -60,6 +63,7 @@ function renderReceiveWithoutAddresses(account: VaultAccount) {
     boardingAddress: '',
     liveNetwork: true,
     navigate: () => {},
+    refreshBalance: vi.fn().mockResolvedValue(undefined),
     savingsAddress: '',
     spendingArkAddress: '',
   } as unknown as VaultContextProps
@@ -167,6 +171,63 @@ describe('Vault receive', () => {
     expect(screen.queryByText(/setup finishes/)).toBeNull()
   })
 
+  it('refreshes while the request screen is open and stops on leave', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    vi.useFakeTimers()
+    try {
+      const { refreshBalance, unmount } = renderReceive('spend')
+      // Immediate refresh on open plus the visible interval.
+      expect(refreshBalance).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(refreshBalance).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(refreshBalance).toHaveBeenCalledTimes(4)
+      unmount()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(refreshBalance).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.useRealTimers()
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'prerender' })
+    }
+  })
+
+  it('skips polling while the document is hidden', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    vi.useFakeTimers()
+    try {
+      const { refreshBalance, unmount } = renderReceive('spend')
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(refreshBalance).not.toHaveBeenCalled()
+      unmount()
+    } finally {
+      vi.useRealTimers()
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'prerender' })
+    }
+  })
+
+  it('never overlaps a slow refresh with the next tick', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    vi.useFakeTimers()
+    try {
+      const { refreshBalance, unmount } = renderReceive('spend')
+      let concurrent = 0
+      let maxConcurrent = 0
+      refreshBalance.mockImplementation(async () => {
+        concurrent += 1
+        maxConcurrent = Math.max(maxConcurrent, concurrent)
+        await new Promise<void>((resolve) => setTimeout(resolve, 12_000))
+        concurrent -= 1
+      })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(maxConcurrent).toBeLessThanOrEqual(1)
+      expect(refreshBalance.mock.calls.length).toBeGreaterThan(1)
+      unmount()
+    } finally {
+      vi.useRealTimers()
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'prerender' })
+    }
+  })
+
   it('shows a configured Lightning address on primary Receive and opens a specific invoice separately', async () => {
     gates.receive = true
     gates.address = true
@@ -233,6 +294,7 @@ describe('Receive arrival and contract changes', () => {
       boardingAddress: 'tb1qboarding',
       liveNetwork: true,
       navigate: () => {},
+      refreshBalance: vi.fn().mockResolvedValue(undefined),
       savingsAddress: 'tb1qsavings',
       spendingArkAddress: 'tark1spending',
       arrivals: [
@@ -266,6 +328,7 @@ it('leaves connector setup when the enrolled contract changes to native Savings'
     status: { templateVersion: DUAL_CONNECTOR_TEMPLATE },
     savingsAddress: 'tb1qsavings',
     navigate: vi.fn(),
+    refreshBalance: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultContextProps
   const wrapper = (current: VaultContextProps) => (
     <ToastProvider>

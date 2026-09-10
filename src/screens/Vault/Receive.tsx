@@ -3,10 +3,11 @@ import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import LightningReceive from './LightningReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
 import PaymentArrivalBanners from './PaymentArrivals'
+import CatchUpBanner from './CatchUpBanner'
 import ConnectorDeposit from './ConnectorDeposit'
 import ConnectorSetup from './ConnectorSetup'
 import { isConnectorTemplate } from '../../lib/vault/program/connector'
-import { useContext, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import { KeyRound, Share2, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import QrCode from '../../components/QrCode'
@@ -40,6 +41,9 @@ function AddressRow({
   )
 }
 
+/** Visible receive polling, matching the Lightning invoice screen cadence. */
+const RECEIVE_POLL_MS = 5000
+
 export default function VaultReceive() {
   const {
     account,
@@ -52,11 +56,40 @@ export default function VaultReceive() {
     arrivals = [],
     dismissArrival,
     openArrival,
+    catchUp,
+    dismissCatchUp,
   } = useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
   const [view, setView] = useState<'receive' | 'setup' | 'deposit' | 'lightning'>('receive')
+  useEffect(() => {
+    // A payment arriving while the request screen is open must surface
+    // without waiting for a worker event, focus change, or manual refresh.
+    // Polling reuses the ordinary balance refresh, so detection, baseline,
+    // and dedup behave exactly as elsewhere. The Lightning invoice screen
+    // polls on its own; skip while it owns the view.
+    if (view !== 'receive') return
+    let stopped = false
+    let inFlight = false
+    const poll = () => {
+      if (stopped || inFlight || document.visibilityState !== 'visible') return
+      inFlight = true
+      void refreshBalance()
+        .catch(() => {
+          // Balance refresh reports through context state.
+        })
+        .finally(() => {
+          inFlight = false
+        })
+    }
+    poll()
+    const timer = window.setInterval(poll, RECEIVE_POLL_MS)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [view, refreshBalance])
   const unified = useMemo(
     () =>
       boardingAddress && spendingArkAddress
@@ -107,11 +140,20 @@ export default function VaultReceive() {
         onClose={() => navigate('home')}
         onInvoice={() => setView('lightning')}
         arrivals={
-          <PaymentArrivalBanners
-            arrivals={arrivals}
-            onOpen={(arrival) => openArrival(arrival.key)}
-            onDismiss={dismissArrival}
-          />
+          <>
+            <PaymentArrivalBanners
+              arrivals={arrivals}
+              onOpen={(arrival) => openArrival(arrival.key)}
+              onDismiss={dismissArrival}
+            />
+            {catchUp ? (
+              <CatchUpBanner
+                catchUp={catchUp}
+                onOpenActivity={() => navigate('activity')}
+                onDismiss={dismissCatchUp}
+              />
+            ) : null}
+          </>
         }
       />
     )
@@ -136,6 +178,13 @@ export default function VaultReceive() {
           onOpen={(arrival) => openArrival(arrival.key)}
           onDismiss={dismissArrival}
         />
+        {catchUp ? (
+          <CatchUpBanner
+            catchUp={catchUp}
+            onOpenActivity={() => navigate('activity')}
+            onDismiss={dismissCatchUp}
+          />
+        ) : null}
         <span className='qg-protected'>
           {spending ? <ShieldCheck /> : <KeyRound />}
           {spending ? 'Spending limits' : status?.protectionTier === 'light' ? 'Watch-only Savings' : 'Two-key Savings'}
