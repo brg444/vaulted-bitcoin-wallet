@@ -1,6 +1,7 @@
 import { serializeExitPackage } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import { openLocalLightBackup, parseLightEncryptedBackup } from '../../src/lib/vault/light/backupCodec'
+import { unwrapLightRecoveryPackage } from '../../src/lib/vault/light/portable'
 import { unlockLightWithPasskey } from '../../src/lib/vault/light/passkey'
 import { unlockLightOwnerKey } from '../../src/lib/vault/light/keyBackup'
 import {
@@ -78,7 +79,7 @@ el<HTMLInputElement>('file').onchange = () =>
     el('exit').hidden = true
     const selected = el<HTMLInputElement>('file').files?.[0]
     if (!selected || selected.size > 32_000_000) throw new Error('Choose a Light recovery file smaller than 32 MB')
-    raw = JSON.parse(await selected.text())
+    raw = unwrapLightRecoveryPackage(JSON.parse(await selected.text()))
     if ((raw as { name?: string }).name === 'vaulted-light-backup') {
       const encrypted = parseLightEncryptedBackup(raw)
       requireReleaseNetwork(encrypted.header.descriptor.network)

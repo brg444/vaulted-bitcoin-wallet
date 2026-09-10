@@ -1,0 +1,10 @@
+{
+  "walletId": "fb96c4a9e8a354b4f26d6f3a1ecca3e703b8d3f3cd003919160687366738ece4",
+  "keys": 4,
+  "calls": [
+    [0, 0, true],
+    [1, 0, false]
+  ],
+  "scope": "Chromium official-client policy serialization and adapter with simulated transport; no physical device",
+  "fixtureTier": "standard"
+}

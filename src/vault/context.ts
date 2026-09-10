@@ -1,6 +1,10 @@
+import type { WatchedSavingsAddress } from '../lib/vault/watchSavings'
+import type { LedgerSavingsView } from './useLedgerSavings'
 import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
+import type { OlderActivityState } from './useVaultBalances'
+import type { PaymentArrival, PaymentCatchUp } from './usePaymentArrivals'
 import { createContext } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { emptySetupPlan, type VaultSetupPlan } from '../lib/vault/setupPlan'
@@ -12,8 +16,10 @@ import {
   type SpendingPolicyCapabilities,
 } from '../lib/vault/spendingPolicy'
 import type { ProtectionTier } from '../lib/vault/protectionTier'
-import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
+import type { VaultBalanceUnit, VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
+import type { VaultRateStatus } from '../lib/vault/useDisplayUnit'
 import { EMPTY_VAULT_POSITIONS, type VaultAccountPositions } from './balances'
+import type { LedgerSavingsRegistration } from '../lib/vault/ledgerClient'
 
 export type VaultAccount = 'spend' | 'savings'
 
@@ -22,6 +28,8 @@ export type VaultScreen =
   | 'unlock'
   | 'design'
   | 'hardware'
+  | 'ledger-register'
+  | 'ledger-sign'
   | 'conditions'
   | 'plan'
   | 'passkey'
@@ -32,6 +40,7 @@ export type VaultScreen =
   | 'problem'
   | 'home'
   | 'receive'
+  | 'activity'
   | 'send'
   | 'review'
   | 'success'
@@ -50,7 +59,16 @@ export interface VaultSpend {
 }
 
 export interface VaultContextProps {
-  acceptDesign: (tier?: 'standard' | 'advanced') => void
+  watchedSavings?: WatchedSavingsAddress | null
+  updateWatchedSavings?: (address: string, label: string) => void
+  watchedSavingsTotalSats?: number | null
+  ledgerPayment: LedgerSavingsView | null
+  completeLedgerPayment: (candidateId: string, signedPsbt: string) => Promise<void>
+  ledgerAvailable: boolean
+  connectLedgerKey: (role: 'hardware' | 'recovery') => Promise<void>
+  applyLedgerRecovery: (raw: string) => void
+  completeLedgerEnrollment: (registration: LedgerSavingsRegistration) => Promise<void>
+  acceptDesign: (tier?: 'light' | 'standard' | 'advanced') => void
   account: VaultAccount
   spendingRenewals?: SpendingRenewalJournal | null
   spendingBitcoin?: { operation: BitcoinPaymentJournal | null; error: string }
@@ -67,6 +85,7 @@ export interface VaultContextProps {
   recoveryArchiveError: string
   backupRecoveryKit: () => Promise<boolean>
   balanceError: string
+  boardingError: string
   balancesLoaded: boolean
   boardingAddress: string
   restoreRecoveryArchive: (raw?: unknown) => Promise<void>
@@ -98,6 +117,9 @@ export interface VaultContextProps {
   fiatDisplayRate: VaultFiatDisplayRate | null
   fiatDisplayEnabled: boolean
   setFiatDisplay: (enabled: boolean) => Promise<VaultFiatDisplayRate | null>
+  balanceUnit: VaultBalanceUnit
+  balanceRateStatus: VaultRateStatus
+  setBalanceUnit: (unit: VaultBalanceUnit) => Promise<VaultFiatDisplayRate | null>
   signIn: () => Promise<void>
   finishPlan: () => void
   hasLocalEnrollment: boolean
@@ -107,6 +129,15 @@ export interface VaultContextProps {
   history: VaultHistoryItem[]
   selectedTx: VaultHistoryItem | null
   openTx: (tx: VaultHistoryItem) => void
+  txReturn: VaultScreen
+  allHistory: VaultHistoryItem[]
+  loadOlderActivity: () => Promise<{ added: number; exhausted: boolean }>
+  olderActivity: OlderActivityState
+  arrivals: PaymentArrival[]
+  dismissArrival: (key: string) => void
+  openArrival: (key: string) => void
+  catchUp: PaymentCatchUp | null
+  dismissCatchUp: () => void
   liveNetwork: boolean
   navigate: (screen: VaultScreen) => void
   openRecover: (view?: 'kit' | 'lost', exit?: VaultScreen) => void
@@ -145,6 +176,12 @@ export interface VaultContextProps {
 export const DEFAULT_SPEND_FEE_SATS = 500
 
 export const VaultContext = createContext<VaultContextProps>({
+  ledgerPayment: null,
+  completeLedgerPayment: async () => {},
+  ledgerAvailable: false,
+  connectLedgerKey: async () => {},
+  applyLedgerRecovery: () => {},
+  completeLedgerEnrollment: async () => {},
   acceptDesign: () => {},
   account: 'spend',
   positions: EMPTY_VAULT_POSITIONS,
@@ -160,6 +197,7 @@ export const VaultContext = createContext<VaultContextProps>({
   recoveryArchiveError: '',
   backupRecoveryKit: async () => false,
   balanceError: '',
+  boardingError: '',
   balancesLoaded: false,
   boardingAddress: '',
   restoreRecoveryArchive: async () => {},
@@ -189,6 +227,9 @@ export const VaultContext = createContext<VaultContextProps>({
   fiatDisplayRate: null,
   fiatDisplayEnabled: false,
   setFiatDisplay: async () => null,
+  balanceUnit: 'sats',
+  balanceRateStatus: 'idle',
+  setBalanceUnit: async () => null,
   signIn: async () => {},
   finishPlan: () => {},
   hasLocalEnrollment: false,
@@ -198,6 +239,15 @@ export const VaultContext = createContext<VaultContextProps>({
   history: [],
   selectedTx: null,
   openTx: () => {},
+  txReturn: 'home',
+  allHistory: [],
+  loadOlderActivity: async () => ({ added: 0, exhausted: true }),
+  olderActivity: { status: 'idle', error: '' },
+  arrivals: [],
+  dismissArrival: () => {},
+  openArrival: () => {},
+  catchUp: null,
+  dismissCatchUp: () => {},
   liveNetwork: false,
   navigate: () => {},
   openRecover: () => {},

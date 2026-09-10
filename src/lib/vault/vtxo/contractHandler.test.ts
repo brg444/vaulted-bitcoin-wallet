@@ -96,3 +96,51 @@ describe('vault-policy-v1 SDK contract handler', () => {
     }).not.toThrow()
   })
 })
+
+it('persists explicit device recovery through the shared Spending handler and fails closed on lost configuration', async () => {
+  const owner = await publicKey(1)
+  const params = {
+    userPub: owner,
+    vtxoVaultCosignerPub: await publicKey(2),
+    arkdServerPub: await publicKey(3),
+    delegatePub: pinnedDelegateXOnly(),
+    exitDelay: VAULT_POLICY_V1_EXIT_DELAY,
+    exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
+    exitDevicePub: owner,
+    exitMode: 'device' as const,
+  }
+  const script = new VaultPolicyV1Script(params)
+  const protectedScript = new VaultPolicyV1Script({
+    ...params,
+    exitMode: 'hardware',
+    exitHardwarePub: await publicKey(5),
+  })
+  expect(script.forfeitScript).toBe(protectedScript.forfeitScript)
+  expect(script.delegateScript).toBe(protectedScript.delegateScript)
+  expect(script.pkScript).not.toEqual(protectedScript.pkScript)
+  const serialized = VaultPolicyV1ContractHandler.serializeParams(script.params)
+  expect(serialized.exitMode).toBe('device')
+  expect(serialized.exitHardwarePub).toBeUndefined()
+  expect(VaultPolicyV1ContractHandler.createScript(serialized).pkScript).toEqual(script.pkScript)
+  const lostMode = { ...serialized }
+  delete lostMode.exitMode
+  expect(() => VaultPolicyV1ContractHandler.createScript(lostMode)).toThrow(/exitHardwarePub/)
+  expect(() => VaultPolicyV1ContractHandler.createScript({ ...serialized, exitMode: 'fallback' })).toThrow(
+    /recovery mode/,
+  )
+  expect(() =>
+    VaultPolicyV1ContractHandler.createScript({ ...serialized, exitHardwarePub: hex.encode(owner) }),
+  ).toThrow(/only the enrolled/)
+  expect(() =>
+    VaultPolicyV1ContractHandler.createScript({ ...serialized, exitRecoveryPub: hex.encode(owner) }),
+  ).toThrow(/only the enrolled/)
+  expect(() =>
+    VaultPolicyV1ContractHandler.createScript({
+      ...serialized,
+      exitDevicePub: hex.encode(params.vtxoVaultCosignerPub),
+    }),
+  ).toThrow(/only the enrolled/)
+  expect(
+    VaultPolicyV1ContractHandler.isGenericallySpendable?.(vaultPolicyV1Contract(script, 'tark1test') as never),
+  ).toBe(false)
+})

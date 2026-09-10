@@ -6,19 +6,22 @@ import { Clipboard, ScanLine, TriangleAlert, Upload } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
-import { prettyAmount, prettyNumber } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { encodePsbtFrames, parsePsbtFrame } from '../../lib/vault/savingsQr'
 import { psbtFile as savingsPsbtFile, psbtHexToBase64, readPsbtFile } from '../../lib/vault/savingsSpend'
 import { VaultContext } from '../../vault/context'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import PsbtQr from './PsbtQr'
 import Scanner from './Scanner'
 import QgScreen, { QgPrimary, QgSecondary, QgTextButton } from './qg/QgScreen'
 
 type HandoffView = 'export' | 'import' | 'paste' | 'ready' | 'problem'
 
-export default function VaultHandoff() {
+export default function VaultHandoff({ denomination }: { denomination?: BalanceDenomination }) {
   const { busy, cancelSavingsHandoff, completeSavingsHandoff, error, handoffPsbt, navigate, spend, status } =
     useContext(VaultContext)
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
   const { toast } = useToast()
   const connector = isConnectorTemplate(status?.templateVersion)
   const payload = useMemo(() => (handoffPsbt ? psbtHexToBase64(handoffPsbt) : ''), [handoffPsbt])
@@ -212,19 +215,19 @@ export default function VaultHandoff() {
           <div>
             <span>Amount</span>
             <strong>
-              <QgAmount value={prettyAmount(spend.amount)} />
+              <QgAmount value={formatMoney(spend.amount, money)} />
             </strong>
           </div>
           <div>
             <span>{connector ? 'Network fee and 240-sat anchor' : 'Network fee'}</span>
             <strong>
-              <QgAmount value={prettyAmount(spend.fee)} />
+              <QgAmount value={formatMoney(spend.fee, money)} />
             </strong>
           </div>
           <div>
             <span>Total</span>
             <strong>
-              <QgAmount value={prettyAmount(spend.amount + spend.fee)} />
+              <QgAmount value={formatMoney(spend.amount + spend.fee, money)} />
             </strong>
           </div>
           <div>
@@ -292,7 +295,7 @@ export default function VaultHandoff() {
           : 'Save the PSBT, sign it with your hardware key, then return the signed file here.'}
       </p>
       <section className='qg-transfer'>
-        <span>₿{prettyNumber(spend.amount, 0)}</span>
+        <span>{formatMoney(spend.amount, money)}</span>
         <strong>{connector ? 'PSBT · awaiting signer' : 'PSBT · unsigned by hardware'}</strong>
       </section>
       {connector ? (
@@ -305,7 +308,7 @@ export default function VaultHandoff() {
           </div>
           <div>
             <span>Signer reserve returned</span>
-            <strong>₿1,000</strong>
+            <strong>{formatMoney(1000, money)}</strong>
           </div>
         </section>
       ) : null}

@@ -19,7 +19,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
         with:
@@ -43,7 +43,7 @@ jobs:
             const pack = require('./src/lib/vault/contract-pack.json')
             const programs = pack.programs || {}
             const names = Object.keys(programs).sort()
-            const expected = ['savings-connector-dual-v2', 'savings-connector-v1', 'savings-recovery-v1', 'vault-board-v1', 'vault-policy-v1']
+            const expected = ['phone-ledger-guardian-savings-v1', 'savings-connector-dual-v2', 'savings-connector-v1', 'savings-recovery-v1', 'vault-board-v1', 'vault-policy-v1']
             if (JSON.stringify(names) !== JSON.stringify(expected)) {
               throw new Error('contract pack must contain exactly the current programs')
             }
@@ -54,9 +54,18 @@ jobs:
             if (programs['vault-board-v1'].destination !== 'vault-policy-v1') {
               throw new Error('boarding must settle only to vault-policy-v1')
             }
+            const light = pack.enrollmentProfiles['vaulted-spending-v1']
+            if (pack.databaseSchemaVersion !== 11 || light.spending !== 'vault-policy-v1' ||
+                light.boarding !== 'vault-board-v1' || light.exitMode !== 'device' ||
+                light.savings !== 'watch-only' || light.hardwareKey !== 'forbidden' || light.recoveryKey !== 'forbidden') {
+              throw new Error('fresh Light must use shared Spending and boarding with device recovery')
+            }
           "
       - name: Unit tests
-        run: corepack pnpm test:unit --maxWorkers=2
+        run: corepack pnpm test:unit --maxWorkers=2 --exclude src/lib/vault/ledgerRecoveryWallet.test.ts --exclude src/lib/vault/recovery/portable.test.ts
+      # Keep expensive complete recovery signatures on one worker to avoid CPU starvation.
+      - name: Recovery signing tests
+        run: corepack pnpm exec vitest run src/lib/vault/ledgerRecoveryWallet.test.ts src/lib/vault/recovery/portable.test.ts --maxWorkers=1
       - name: Reject ambiguous builds
         run: node scripts/verify-release-build.mjs
       - name: Build vault
@@ -72,7 +81,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -96,10 +105,13 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: corepack pnpm exec playwright install chromium webkit
       - name: Vault Playwright
-        run: corepack pnpm test:e2e ${{ inputs.refresh_snapshots && '--update-snapshots' || '' }}
+        run: corepack pnpm test:e2e ${{ inputs.refresh_snapshots && '--update-snapshots=all' || '' }}
         env:
           CI: true
           VAULT_UPDATE_SNAPSHOTS: ${{ inputs.refresh_snapshots && '1' || '0' }}
+
+      - name: Lightning and denomination UX in Chromium and Safari
+        run: corepack pnpm test:ux ${{ inputs.refresh_snapshots && '--update-snapshots=all' || '' }}
 
       - name: Browser failure screenshots
         if: failure()

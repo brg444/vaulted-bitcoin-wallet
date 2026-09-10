@@ -179,7 +179,7 @@ export type InitiateTweaks = {
   recovery?: { vault: string; arkade: string }
 }
 
-export function buildNormal(input: {
+type NormalInput = {
   vaultId: string
   phonePub: string
   hardwarePub: string
@@ -187,7 +187,20 @@ export function buildNormal(input: {
   initiate: InitiateTweaks
   network: string
   templateVersion?: string
-}) {
+}
+
+export function buildNormal(input: NormalInput) {
+  return buildNormalWithKeys(input)
+}
+
+/** Derived-key contracts supply their key plan separately from the legacy tuple. */
+export function buildNormalWithKeys(
+  input: NormalInput,
+  derived?: {
+    internalKey: Uint8Array
+    initiateUserPubs: Partial<Record<Claimant, string>>
+  },
+) {
   const phone = xOnlyFromCompressed(input.phonePub)
   const hardware = xOnlyFromCompressed(input.hardwarePub)
   const recovery = input.recoveryPub ? xOnlyFromCompressed(input.recoveryPub) : undefined
@@ -202,6 +215,13 @@ export function buildNormal(input: {
 
   const admin = checksigScript([phone, hardware])
   const role = { phone, hardware, recovery }
+  if (derived) {
+    if (Object.keys(derived.initiateUserPubs).sort().join() !== [...claimants].sort().join()) {
+      throw new Error('initiate user keys must match the claimants')
+    }
+    for (const claimant of claimants) role[claimant] = xOnlyFromCompressed(derived.initiateUserPubs[claimant]!)
+    requireDistinct([phone, hardware, ...claimants.map((c) => role[c]!), ...tweaks], 'normal derived')
+  }
   const initiate = claimants.map((claimant) => {
     const pair = input.initiate[claimant]!
     const pub = role[claimant]
@@ -210,11 +230,13 @@ export function buildNormal(input: {
   })
   const scripts = [admin, ...initiate]
 
-  const internal = contextInternalKey({
-    vaultId: input.vaultId,
-    claimant: '',
-    templateVersion: input.templateVersion,
-  })
+  const internal =
+    derived?.internalKey ??
+    contextInternalKey({
+      vaultId: input.vaultId,
+      claimant: '',
+      templateVersion: input.templateVersion,
+    })
   const payment = p2tr(internal, tapTreeFromScripts(scripts), vaultAddressNetwork(input.network), true)
   if (!payment.address) throw new Error('normal address required')
   return {

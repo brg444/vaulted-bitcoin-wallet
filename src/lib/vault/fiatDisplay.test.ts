@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { Fiats } from '../types'
-import { approximateFiatLabel, homeBalanceDisplay, satsFromUsd, usdFromSats } from './fiatDisplay'
+import {
+  approximateFiatLabel,
+  formatMoney,
+  homeBalanceDisplay,
+  satsFromUsd,
+  usdFromSats,
+  usdInputFromSats,
+} from './fiatDisplay'
 
 describe('vault fiat display', () => {
   it('formats an approximate display value without changing satoshi amounts', () => {
@@ -19,6 +26,19 @@ describe('vault fiat display', () => {
     expect(satsFromUsd(62.5, 125_000)).toBe(50_000)
     expect(satsFromUsd(0.01, 100_000)).toBe(10)
     expect(satsFromUsd(1, 0)).toBe(0)
+  })
+
+  it('keeps dust conversions exact through decimal arithmetic', () => {
+    // Division-first floating point prices 25 sats at $0.024999999999999998.
+    expect(usdFromSats(25, 100_000)).toBe(0.025)
+    expect(usdInputFromSats(25, { currency: Fiats.USD, pricePerBtc: 100_000 })).toBe('0.03')
+    expect(usdInputFromSats(331, { currency: Fiats.USD, pricePerBtc: 100_000 })).toBe('0.33')
+    expect(formatMoney(25, { unit: 'usd', rate: { currency: Fiats.USD, pricePerBtc: 100_000 } })).toBe('$0.03')
+  })
+
+  it('rounds half-cent values away from a representation artifact', () => {
+    expect(usdInputFromSats(5, { currency: Fiats.USD, pricePerBtc: 100_000 })).toBe('0.01')
+    expect(satsFromUsd(0.03, 100_000)).toBe(30)
   })
 
   it('formats the Home hero as bitcoin or USD using the live display rate', () => {

@@ -5,6 +5,7 @@ import {
   confirmedSpendables,
   ESPLORA_TX_PAGE_SIZE,
   fetchAddressTxs,
+  fetchOlderAddressTxs,
   type EsploraTx,
   type EsploraUtxo,
 } from './esplora'
@@ -90,6 +91,57 @@ describe('fetchAddressTxs', () => {
     expect(fetchMock).toHaveBeenCalledTimes(RECENT_HISTORY_LIMIT / ESPLORA_TX_PAGE_SIZE)
     expect(rows).toHaveLength(RECENT_HISTORY_LIMIT)
     expect(rows.at(-1)?.txid).toBe('page-3-tx-24')
+  })
+})
+
+describe('fetchOlderAddressTxs', () => {
+  it('pages from a known transaction and reports exhaustion honestly', async () => {
+    const full = Array.from({ length: ESPLORA_TX_PAGE_SIZE }, (_, index) => transaction(`older-${index}`))
+    const partial = [transaction('oldest')]
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(full), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(partial), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { transactions, exhausted } = await fetchOlderAddressTxs('tb1psavings', 'cursor-txid')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/esplora/address/tb1psavings/txs/chain/cursor-txid')
+    expect(transactions).toHaveLength(ESPLORA_TX_PAGE_SIZE + 1)
+    expect(exhausted).toBe(true)
+  })
+
+  it('fails retryably when the first older page is unavailable', async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new Error('offline'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchOlderAddressTxs('tb1psavings', 'cursor-txid')).rejects.toThrow('Could not load older activity')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails retryably when a later older page is unavailable', async () => {
+    const full = Array.from({ length: ESPLORA_TX_PAGE_SIZE }, (_, index) => transaction(`older-${index}`))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(full), { status: 200 }))
+      .mockRejectedValueOnce(new Error('offline'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchOlderAddressTxs('tb1psavings', 'cursor-txid', 4)).rejects.toThrow(
+      'Older activity stopped partway',
+    )
+  })
+
+  it('fails retryably when pagination stalls on a repeated cursor', async () => {
+    const full = Array.from({ length: ESPLORA_TX_PAGE_SIZE }, (_, index) => transaction(`older-${index}`))
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response(JSON.stringify(full), { status: 200 })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    // Every page ends on the same transaction, so the cursor never advances.
+    await expect(fetchOlderAddressTxs('tb1psavings', 'cursor-txid', 4)).rejects.toThrow('paging stalled')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
 

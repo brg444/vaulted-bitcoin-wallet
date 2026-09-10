@@ -1,4 +1,4 @@
-import { openLight } from './fixtures/light-ui'
+import { mockVaultBalances, openLight } from './fixtures/light-ui'
 import { expectWalletLayout } from './fixtures/layout'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
@@ -584,7 +584,7 @@ test('renders an exact no-change VTXO send with the resolved time before its rec
     (timestamp) => new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp)),
     sentAt,
   )
-  await expect(sent).toContainText(`Confirmed · ${expectedTime}`)
+  await expect(sent).toContainText(`Sent · ${expectedTime}`)
   const rows = page.locator('[data-testid^="vault-tx-"]')
   await expect(rows.nth(0)).toHaveAttribute('data-testid', `vault-tx-${sendTxid}`)
   await expect(rows.nth(1)).toHaveAttribute('data-testid', `vault-tx-${inputTxid}`)
@@ -649,7 +649,7 @@ test('shows a pending boarding deposit, then replaces it with the confirmed VTXO
 
   await expect(page.getByTestId('vault-balance')).toContainText('49,000')
   await expect(page.getByTestId(`vault-tx-${BOARDING_TXID}`)).toHaveCount(0)
-  await expect(page.getByTestId(`vault-tx-${COMMITMENT_TXID}`)).toContainText('Confirmed')
+  await expect(page.getByTestId(`vault-tx-${COMMITMENT_TXID}`)).toContainText('Received')
 })
 
 test('recovers a missed VTXO update after reconnect and updates the rendered Home balance', async ({
@@ -927,7 +927,7 @@ test('@polish keeps a focused send address between the safe header and footer wh
   expect(field!.y + field!.height).toBeLessThanOrEqual(footer!.y)
 })
 
-test('@polish covers accessible account, send, Security, and Settings states', async ({ page }) => {
+test('@polish covers accessible account, send, Security, and Settings states', async ({ page }, testInfo) => {
   const pending: EsploraUtxo = {
     txid: BOARDING_TXID,
     vout: 0,
@@ -1046,6 +1046,11 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page.getByRole('button', { name: 'Save recovery package', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'More options', exact: true }).click()
   await expect(page.getByRole('button', { name: /^Wallet details/ })).toBeVisible()
+  await page.getByText('Saved copies', { exact: true }).click()
+  await expect(page.getByText('Last file check', { exact: true })).toBeVisible()
+  await expectNoBlockingAxeViolations(page)
+  await page.screenshot({ path: testInfo.outputPath('recovery-copies.png'), fullPage: true })
+  await page.getByText('Saved copies', { exact: true }).click()
   await page.getByRole('button', { name: /I lost a key/ }).click()
   await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
@@ -1114,7 +1119,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await page.getByRole('button', { name: /Received ₿80,000/ }).click()
   await expect(page.getByRole('heading', { name: 'Transaction' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
-  await expect(page.getByRole('img', { name: 'Confirmed status' })).toHaveClass(/lucide-circle-check/)
+  await expect(page.getByRole('img', { name: 'Received status' })).toHaveClass(/lucide-circle-check/)
   await page.getByText('View transaction', { exact: true }).click()
   await expect(page.getByText(VTXO_TXID, { exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'View on Arkade Space' })).toHaveAttribute(
@@ -1285,7 +1290,7 @@ test.describe('interaction quality', () => {
     await openVault(page)
     const tab = page.getByRole('button', { name: 'Open navigation' })
     const start = (await tab.boundingBox())!
-    expect(start.width).toBeGreaterThanOrEqual(56)
+    expect(start.width).toBeGreaterThanOrEqual(44)
     const x = start.x + 8
     const y = start.y + 10
     await page.mouse.move(x, y)
@@ -1560,18 +1565,7 @@ for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
             confirmed: true,
             blockTime: 1788739200 - (state === 'long' && i >= 10 ? 86400 : 0),
           }))
-    await page.route('**/src/screens/Vault/Home.tsx*', async (route) => {
-      if (new URL(route.request().url()).searchParams.has('parity-original')) return route.continue()
-      await route.fulfill({
-        contentType: 'application/javascript',
-        body: "export { default } from '/src/test/e2e-vault/fixtures/home-parity.tsx'",
-      })
-    })
-    await page.addInitScript((data) => Reflect.set(window, '__vaultHomeParity', data), {
-      balance,
-      pendingBalance,
-      history,
-    })
+    await mockVaultBalances(page, { balance, pendingBalance, history })
     await openVault(page)
     const light = await context.newPage()
     await light.addInitScript(() => {
@@ -1633,11 +1627,11 @@ for (const state of ['empty', 'funded', 'pending', 'long'] as const) {
           await expect(target.getByTestId('vault-app')).toHaveScreenshot(`home-parity-${state}-${width}-${theme}.png`, {
             animations: 'disabled',
           })
-          const trigger = await target.getByRole('button', { name: 'Open navigation', exact: true }).boundingBox()
-          // The amount column must stay clear of the launcher at any vertical position.
-          for (const amount of await target.locator('.vault-history-amt').all()) {
-            const box = await amount.boundingBox()
-            expect(box!.x + box!.width).toBeLessThanOrEqual(trigger!.x - 7)
+          const actions = await target.locator('.qg-actions').boundingBox()
+          // Activity uses the full content width beneath the movable glass tab.
+          for (const row of await target.locator('.vault-history-row').all()) {
+            const box = await row.boundingBox()
+            expect(box!.x + box!.width).toBeCloseTo(actions!.x + actions!.width, 0)
           }
         }
         // Capture the visible wallet frame, so long history does not resize the
@@ -1716,17 +1710,11 @@ for (const mode of ['standard', 'light'] as const) {
         )
       }
     }
-    for (const [label, heading] of mode === 'standard'
-      ? [
-          ['Keys and access', 'Keys and access'],
-          ['Spending limits', 'Spending limits'],
-          ['Renewal', 'Automatic renewal'],
-        ]
-      : [
-          ['Keys and access', 'Keys and access'],
-          ['Spending limits', 'Spending limits'],
-          ['Renewal', 'Renewal'],
-        ]) {
+    for (const [label, heading] of [
+      ['Keys and access', 'Keys and access'],
+      ['Spending limits', 'Spending limits'],
+      ['Renewal', 'Automatic renewal'],
+    ]) {
       await tiles.filter({ hasText: label }).click()
       await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible()
       await page.getByRole('button', { name: 'Go back', exact: true }).click()
@@ -1834,7 +1822,7 @@ test('@polish Bitcoin payment review and pending status show exact outputs', asy
   await expect(page.getByRole('heading', { name: 'Recent' })).toBeVisible()
   await expect(page.getByText('Bitcoin payment from Spending')).toHaveCount(0)
   await expect(page.getByText(/available ·.*pending/)).toHaveCount(0)
-  const payment = page.getByRole('button', { name: /Bitcoin payment ₿1,400.*Pending/ })
+  const payment = page.getByRole('button', { name: /Bitcoin payment ₿1,400.*Sent · Awaiting confirmation/ })
   await expect(payment).toBeVisible()
   await expect(page.getByTestId('vault-balance')).toContainText('25,859')
   await expectWalletLayout(page)
@@ -1864,7 +1852,9 @@ test('@polish Bitcoin eligibility notice keeps diagnostics collapsed and preserv
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('bitcoin-payment-view', { detail: 5 })))
   await expect(page.locator('.qg-payment-notice[role=status]')).toContainText('Expected availability')
   await expect(page.locator('.qg-payment-notice')).toContainText('Nothing was sent or queued')
-  await expect(page.getByRole('button', { name: /Bitcoin payment.*Pending/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Bitcoin payment ₿1,400.*Sent · Awaiting confirmation/ })).toHaveCount(
+    0,
+  )
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
   await expect(page.locator('.qg-payment-notice pre')).not.toBeVisible()
   await expectWalletLayout(page)
@@ -1879,11 +1869,13 @@ test('@polish Bitcoin eligibility notice keeps diagnostics collapsed and preserv
   await page.screenshot({ path: testInfo.outputPath('bitcoin-details-dark.png'), fullPage: true })
   await page.getByRole('button', { name: 'Dismiss message' }).click()
   await expect(page.locator('.qg-payment-notice')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /Bitcoin payment.*Pending/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Bitcoin payment ₿1,400.*Sent · Awaiting confirmation/ })).toHaveCount(
+    0,
+  )
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('bitcoin-payment-view', { detail: 7 })))
-  await expect(page.getByRole('button', { name: /Bitcoin payment.*Pending/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Bitcoin payment ₿1,400.*Sent · Awaiting confirmation/ })).toBeVisible()
   await page.getByRole('button', { name: 'Dismiss message' }).click()
-  await expect(page.getByRole('button', { name: /Bitcoin payment.*Pending/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Bitcoin payment ₿1,400.*Sent · Awaiting confirmation/ })).toBeVisible()
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('bitcoin-payment-view', { detail: 9 })))
   await expect(page.locator('.qg-footer .qg-payment-notice')).toBeVisible()
   await expect(page.locator('.qg-payment-notice p')).toHaveCSS('text-align', 'left')

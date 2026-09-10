@@ -11,6 +11,7 @@ import {
   subscribeVaultLightningObserver,
   vaultBoardingSettleParams,
   vaultWalletRuntimeKey,
+  type VaultBoardingSettlementRuntime,
 } from './walletWorker'
 import { vaultWalletUpdaterTag, vaultWalletWorkerPath, vaultWalletWorkerScope } from './walletWorkerNames'
 
@@ -63,6 +64,40 @@ describe('Vault service-worker isolation', () => {
     expect(settle).toHaveBeenCalledTimes(2)
     finish('bb'.repeat(32))
     await next
+  })
+
+  it('publishes boarding failure without listener-triggered retry loops, then clears it after success', async () => {
+    vi.useFakeTimers()
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const blocked = new Error('Settlement failed: named boarding is blocked: final authorization cannot be released')
+      const settle = vi.fn().mockRejectedValue(blocked)
+      const current: VaultBoardingSettlementRuntime = { listeners: new Set() }
+      const listener = vi.fn(() => void scheduleVaultBoardingSettlement(current, settle))
+      current.listeners.add(listener)
+
+      await scheduleVaultBoardingSettlement(current, settle)
+      expect(current.boardingError).toContain('Deposit boarding needs attention')
+      expect(current.boardingSettle).toBeUndefined()
+      expect(listener).toHaveBeenCalledTimes(1)
+      await scheduleVaultBoardingSettlement(current, settle)
+      expect(settle).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(15_000)
+      await scheduleVaultBoardingSettlement(current, settle)
+      expect(settle).toHaveBeenCalledTimes(2)
+      expect(listener).toHaveBeenCalledTimes(1)
+
+      settle.mockResolvedValueOnce('aa'.repeat(32))
+      await vi.advanceTimersByTimeAsync(15_000)
+      await scheduleVaultBoardingSettlement(current, settle)
+      expect(current.boardingError).toBeUndefined()
+      expect(current.boardingRetryAfter).toBeUndefined()
+      expect(listener).toHaveBeenCalledTimes(2)
+    } finally {
+      log.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('settles exactly one confirmed boarding input to the fixed Spending address', async () => {

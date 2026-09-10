@@ -1,3 +1,9 @@
+import { lightContract } from './light/contractHandler'
+import * as delegation from './light/guardianDelegation'
+import { LightScript, type LightDescriptor } from './light/contract'
+import lightVectors from './light/testdata/contracts.json'
+import { lightTestEnrollment, lightTestStatus } from './light/testdata/helpers'
+import { requireLightStatus } from './light/status'
 import * as spendModule from './vtxo/spend'
 import * as apiModule from './api'
 import * as workerModule from './vtxo/walletWorker'
@@ -97,6 +103,7 @@ export function setupFixture() {
 beforeEach(() => {
   localStorage.clear()
   vi.restoreAllMocks()
+  vi.spyOn(delegation, 'authorizeGuardianRenewals').mockResolvedValue(null)
   vi.stubGlobal('navigator', {
     locks: { request: (_name: string, _options: unknown, run: (lock: object) => unknown) => run({}) },
   })
@@ -187,7 +194,11 @@ describe('Spending signer setup binding and lifecycle', () => {
     })
     try {
       const manager = await wallet.getContractManager()
-      await manager.createContract(vaultPolicyV1Contract(f.spending, f.status.spendingArkAddress!))
+      await manager.createContract(
+        f.spending instanceof LightScript
+          ? lightContract(f.spending, f.status.spendingArkAddress!)
+          : vaultPolicyV1Contract(f.spending, f.status.spendingArkAddress!),
+      )
       const input = {
         ...f.coin,
         txid: f.plan.txid,
@@ -268,14 +279,19 @@ it('decodes the shared response zero output index without replacing explicit inv
   expect(normalizeBitcoinResponse({ state: 'uncertain' }).receiverVout).toBeUndefined()
 })
 
-function bitcoinFixture(count = 1) {
-  const f = setupFixture()
+function bitcoinFixture(count = 1, light = false) {
+  const base = setupFixture()
+  const operatorInfo = validateExitArchive(base.archive.spending, vaultRecoveryBinding(base.kit, base.status)).info
+  const lightStatus = requireLightStatus(lightTestStatus(lightVectors[1].descriptor as LightDescriptor))
+  const f = light ? { ...base, status: lightStatus, spending: new LightScript(lightStatus.lightDescriptor!) } : base
   const outputs = Array.from({ length: count }, () => ({
     script: '0014' + '43'.repeat(20),
     amountSats: count === 2 ? 500 : 1500,
   }))
   const plan: SpendingBitcoinPlan = {
     ...f.plan,
+    vaultId: f.status.vaultId,
+    descriptorHash: guardianRenewalContextDigest(f.status),
     enrollmentDigest: '',
     reserveScript: '',
     reserveSats: 0,
@@ -294,17 +310,19 @@ function bitcoinFixture(count = 1) {
   }
   const journal: BitcoinPaymentJournal = {
     ...f.journal,
+    vaultId: f.status.vaultId,
+    descriptorHash: plan.descriptorHash,
     reserveCount: 0,
     outputs,
     plan: prepared,
     prepareRequest: {
       ...facts,
       ownerSignature: hex.encode(
-        schnorr.sign(hex.decode(savingsSetupDigest('bitcoin-prepare', facts)), scalarSecret(3)),
+        schnorr.sign(hex.decode(savingsSetupDigest('bitcoin-prepare', facts)), scalarSecret(light ? 1 : 3)),
       ),
     },
   }
-  return { ...f, plan, prepared, journal }
+  return { ...f, plan, prepared, journal, operatorInfo }
 }
 it.each([1, 2])('retains an exact Bitcoin payment with %s outputs and rejects destination substitution', (count) => {
   const f = bitcoinFixture(count)
@@ -345,103 +363,133 @@ it('reconciles a new Bitcoin payment through the shared status path without crea
   expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
 })
 
-it.each(['rejected', 'expiry', 'uncertain'])(
-  'SDK settlement preserves the Guardian %s outcome without retrying or cancelling',
-  async (state) => {
-    const f = bitcoinFixture(1)
-    vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt - 240) * 1000)
-    const repositories = {
-      walletRepository: new InMemoryWalletRepository(),
-      contractRepository: new InMemoryContractRepository(),
+it.each(
+  ['protected', 'light'].flatMap((profile) => ['rejected', 'expiry', 'uncertain'].map((state) => [profile, state])),
+)('%s SDK settlement preserves the Guardian %s outcome without retrying or cancelling', async (profile, state) => {
+  const f = bitcoinFixture(1, profile === 'light')
+  vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt - 240) * 1000)
+  const repositories = {
+    walletRepository: new InMemoryWalletRepository(),
+    contractRepository: new InMemoryContractRepository(),
+  }
+  const dispose = vi.fn()
+  const unlock = vi.fn(async () => ({
+    phoneSecret: scalarSecret(profile === 'light' ? 1 : 3),
+    scalar: scalarSecret(4),
+    assertion: {},
+  }))
+  vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({
+    unlock,
+    dispose,
+  } as never)
+  vi.spyOn(spendModule, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
+  vi.spyOn(apiModule, 'vaultGet').mockResolvedValue({
+    version: 1,
+    maxInputs: 1,
+    descriptorHash: f.plan.descriptorHash,
+  })
+  vi.spyOn(workerModule, 'ensureVaultWalletWorker').mockResolvedValue(repositories as never)
+  vi.spyOn(streamModule, 'installVaultSettlementEventSource').mockImplementation(() => {})
+  vi.spyOn(streamModule, 'waitForVaultSettlementStream').mockResolvedValue(undefined)
+  vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(f.operatorInfo)
+  vi.spyOn(RestArkProvider.prototype, 'getEventStream').mockImplementation(async function* () {})
+  vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({
+    vtxos: [
+      {
+        ...f.coin,
+        txid: f.plan.txid,
+        value: f.plan.valueSats,
+        script: hex.encode(f.spending.pkScript),
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 86400000),
+        isSpent: false,
+        virtualStatus: { state: 'settled' },
+        commitmentTxIds: ['cc'.repeat(32)],
+      },
+    ],
+  } as never)
+  vi.spyOn(bitcoinPaymentClient, 'prepare').mockResolvedValue(f.prepared)
+  const registered = vi.spyOn(bitcoinPaymentClient, 'register').mockImplementation(async (request) => {
+    expect(JSON.parse(request.message).expire_at).toBe(f.plan.registerExpireAt)
+    expect(readSpendingBitcoin(f.status)?.deleteIntent).toBeDefined()
+    const proof = Transaction.fromPSBT(base64.decode(request.psbt))
+    expect(proof.inputsLength).toBe(2)
+    expect(hex.encode(proof.getOutput(1).script!)).toBe(f.plan.outputs![0].script)
+    return {
+      state: state === 'expiry' ? 'rejected' : state,
+      reason:
+        state === 'expiry'
+          ? 'INVALID_PSBT_INPUT (5): vtxo [redacted] expires after 2026-10-07 (minExpiryGap: 1h0m0s)'
+          : 'input already spent',
     }
-    const dispose = vi.fn()
-    const unlock = vi.fn(async () => ({ phoneSecret: scalarSecret(3), scalar: scalarSecret(4), assertion: {} }))
-    vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({
-      unlock,
-      dispose,
-    } as never)
-    vi.spyOn(spendModule, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
-    vi.spyOn(apiModule, 'vaultGet').mockResolvedValue({
-      version: 1,
-      maxInputs: 1,
-      descriptorHash: f.plan.descriptorHash,
-    })
-    vi.spyOn(workerModule, 'ensureVaultWalletWorker').mockResolvedValue(repositories as never)
-    vi.spyOn(streamModule, 'installVaultSettlementEventSource').mockImplementation(() => {})
-    vi.spyOn(streamModule, 'waitForVaultSettlementStream').mockResolvedValue(undefined)
-    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(
-      validateExitArchive(f.archive.spending, vaultRecoveryBinding(f.kit, f.status)).info,
+  })
+  const released = vi.spyOn(bitcoinPaymentClient, 'release')
+  let error: unknown
+  try {
+    await sendSpendingToBitcoin(
+      { vaultId: f.status.vaultId } as never,
+      f.status,
+      f.plan.outputs!,
+      async () => true,
+      () => {},
     )
-    vi.spyOn(RestArkProvider.prototype, 'getEventStream').mockImplementation(async function* () {})
-    vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({
-      vtxos: [
-        {
-          ...f.coin,
-          txid: f.plan.txid,
-          value: f.plan.valueSats,
-          script: hex.encode(f.spending.pkScript),
-          createdAt: new Date(),
-          expiresAt: new Date(Date.now() + 86400000),
-          isSpent: false,
-          virtualStatus: { state: 'settled' },
-          commitmentTxIds: ['cc'.repeat(32)],
-        },
-      ],
-    } as never)
-    vi.spyOn(bitcoinPaymentClient, 'prepare').mockResolvedValue(f.prepared)
-    const registered = vi.spyOn(bitcoinPaymentClient, 'register').mockImplementation(async (request) => {
-      expect(JSON.parse(request.message).expire_at).toBe(f.plan.registerExpireAt)
-      expect(readSpendingBitcoin(f.status)?.deleteIntent).toBeDefined()
-      const proof = Transaction.fromPSBT(base64.decode(request.psbt))
-      expect(proof.inputsLength).toBe(2)
-      expect(hex.encode(proof.getOutput(1).script!)).toBe(f.plan.outputs![0].script)
-      return {
-        state: state === 'expiry' ? 'rejected' : state,
-        reason:
-          state === 'expiry'
-            ? 'INVALID_PSBT_INPUT (5): vtxo [redacted] expires after 2026-10-07 (minExpiryGap: 1h0m0s)'
-            : 'input already spent',
-      }
-    })
-    const released = vi.spyOn(bitcoinPaymentClient, 'release')
-    let error: unknown
-    try {
-      await sendSpendingToBitcoin(
+  } catch (caught) {
+    error = caught
+  }
+  expect(registered, String(error)).toHaveBeenCalledOnce()
+  expect(released).not.toHaveBeenCalled()
+  expect(dispose).toHaveBeenCalledOnce()
+  expect(delegation.authorizeGuardianRenewals).toHaveBeenCalledTimes(profile === 'light' ? 1 : 0)
+  if (state === 'rejected') {
+    expect(humanizeVaultError(error)).toContain('funds changed or are in use')
+    expect(readSpendingBitcoin(f.status)).toBeNull()
+  } else if (state === 'expiry') {
+    expect(humanizeVaultError(error)).toContain('Expected availability')
+    expect(humanizeVaultError(error)).not.toContain('INVALID_PSBT_INPUT')
+    expect(readSpendingBitcoin(f.status)).toBeNull()
+    await expect(
+      sendSpendingToBitcoin(
         { vaultId: f.status.vaultId } as never,
         f.status,
         f.plan.outputs!,
         async () => true,
         () => {},
-      )
-    } catch (caught) {
-      error = caught
-    }
-    expect(registered, String(error)).toHaveBeenCalledOnce()
-    expect(released).not.toHaveBeenCalled()
-    expect(dispose).toHaveBeenCalledOnce()
-    if (state === 'rejected') {
-      expect(humanizeVaultError(error)).toContain('funds changed or are in use')
-      expect(readSpendingBitcoin(f.status)).toBeNull()
-    } else if (state === 'expiry') {
-      expect(humanizeVaultError(error)).toContain('Expected availability')
-      expect(humanizeVaultError(error)).not.toContain('INVALID_PSBT_INPUT')
-      expect(readSpendingBitcoin(f.status)).toBeNull()
-      await expect(
-        sendSpendingToBitcoin(
-          { vaultId: f.status.vaultId } as never,
-          f.status,
-          f.plan.outputs!,
-          async () => true,
-          () => {},
-        ),
-      ).rejects.toThrow('Expected availability')
-      expect(unlock).toHaveBeenCalledOnce()
-      expect(bitcoinPaymentClient.prepare).toHaveBeenCalledOnce()
-      expect(registered).toHaveBeenCalledOnce()
-      expect(readSpendingBitcoin(f.status)).toBeNull()
-    } else {
-      expect(humanizeVaultError(error)).toContain('registration is still being checked')
-      expect(readSpendingBitcoin(f.status)?.stage).toBe('registering')
-    }
-  },
-)
+      ),
+    ).rejects.toThrow('Expected availability')
+    expect(unlock).toHaveBeenCalledOnce()
+    expect(bitcoinPaymentClient.prepare).toHaveBeenCalledOnce()
+    expect(registered).toHaveBeenCalledOnce()
+    expect(readSpendingBitcoin(f.status)).toBeNull()
+  } else {
+    expect(humanizeVaultError(error)).toContain('registration is still being checked')
+    expect(readSpendingBitcoin(f.status)?.stage).toBe('registering')
+  }
+})
+
+it('checks the enrolled Light output before asking for a Bitcoin payment signature', async () => {
+  const record = await lightTestEnrollment()
+  const status = requireLightStatus(lightTestStatus(record.descriptor))
+  const unlock = vi.fn()
+  const dispose = vi.fn()
+  vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({ unlock, dispose } as never)
+  vi.spyOn(apiModule, 'vaultGet').mockResolvedValue({
+    version: 1,
+    maxInputs: 1,
+    descriptorHash: guardianRenewalContextDigest(status),
+  })
+  const coins = vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({ vtxos: [] } as never)
+  const approve = vi.fn()
+  await expect(
+    sendSpendingToBitcoin(
+      record.enrollment,
+      status,
+      [{ script: '0014' + '43'.repeat(20), amountSats: 1500 }],
+      approve,
+      () => {},
+    ),
+  ).rejects.toThrow('No live Spending output is available')
+  expect(coins).toHaveBeenCalledWith({ scripts: [status.spendingArkScript] })
+  expect(unlock).not.toHaveBeenCalled()
+  expect(approve).not.toHaveBeenCalled()
+  expect(dispose).toHaveBeenCalledOnce()
+})

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Batch, RestArkProvider } from '@arkade-os/sdk'
 import {
   createFetchEventSource,
   createVaultEventSourceFactory,
   waitForVaultSettlementStream,
+  vaultSettlementStreamGuard,
 } from './settlementEventSource'
 
 class FakeEventSource extends EventTarget {
@@ -32,7 +34,7 @@ class FakeEventSource extends EventTarget {
 }
 
 describe('Vault settlement EventSource', () => {
-  it('waits for the outpoint-filtered stream and preserves native reconnects', async () => {
+  it('retries initial connection errors but fails a disconnected open stream', async () => {
     const native = new FakeEventSource()
     const factory = createVaultEventSourceFactory(() => native as unknown as EventSource)
     const topic = `${'ab'.repeat(32)}:1`
@@ -52,16 +54,12 @@ describe('Vault settlement EventSource', () => {
     expect(message).toHaveBeenCalledTimes(1)
 
     native.reconnectingError()
-    let reconnected = false
-    const reconnectReady = waitForVaultSettlementStream(topic, 100).then(() => {
-      reconnected = true
-    })
-    await Promise.resolve()
-    expect(reconnected).toBe(false)
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(native.close).toHaveBeenCalledTimes(1)
     native.open()
-    await reconnectReady
-
+    native.message('{"type":"batchFinalization"}')
     native.fatalError()
+    expect(message).toHaveBeenCalledTimes(1)
     expect(error).toHaveBeenCalledTimes(1)
     source.close()
     expect(native.close).toHaveBeenCalledTimes(1)
@@ -103,6 +101,30 @@ describe('Vault settlement EventSource', () => {
     await expect(waitForVaultSettlementStream(`${'cd'.repeat(32)}:0`, 10)).rejects.toThrow(
       /was not created before registration/,
     )
+  })
+
+  it('never lets a replacement stream revive an old final signing continuation', async () => {
+    const first = new FakeEventSource()
+    const second = new FakeEventSource()
+    const sources = [first, second]
+    const factory = createVaultEventSourceFactory(() => sources.shift()!)
+    const topic = `${'12'.repeat(32)}:0`
+    const url = `https://arkade.computer/v1/batch/events?topics=${encodeURIComponent(topic)}`
+    const original = factory(url)
+    expect(() => vaultSettlementStreamGuard(topic)).toThrow(/interrupted/)
+    first.open()
+    const assertOriginalOpen = vaultSettlementStreamGuard(topic)
+    expect(assertOriginalOpen).not.toThrow()
+    first.reconnectingError()
+    expect(assertOriginalOpen).toThrow(/interrupted/)
+
+    const replacement = factory(url)
+    second.open()
+    await waitForVaultSettlementStream(topic, 100)
+    expect(vaultSettlementStreamGuard(topic)).not.toThrow()
+    expect(assertOriginalOpen).toThrow(/interrupted/)
+    original.close()
+    replacement.close()
   })
 
   it('leaves non-settlement EventSource behavior unchanged', () => {
@@ -185,6 +207,18 @@ describe('Vault fetch settlement EventSource', () => {
     await sse.cancelled
   })
 
+  it('handles cancellation rejection when the connection is closed', async () => {
+    const cancel = vi.fn(async () => {
+      throw new DOMException('Aborted', 'AbortError')
+    })
+    const body = new ReadableStream<Uint8Array>({ cancel })
+    const factory = createVaultEventSourceFactory((url) => createFetchEventSource(url, async () => new Response(body)))
+    const topic = `${'ef'.repeat(32)}:0`
+    const source = factory(`https://arkade.computer/v1/batch/events?topics=${encodeURIComponent(topic)}`)
+    await waitForVaultSettlementStream(topic, 500)
+    source.close()
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+  })
   it('forwards SSE data lines as settlement messages', async () => {
     const sse = hangingSse()
     const factory = createVaultEventSourceFactory((url) => createFetchEventSource(url, async () => sse.response))
@@ -199,7 +233,7 @@ describe('Vault fetch settlement EventSource', () => {
     source.close()
   })
 
-  it('reconnects after the Operator stream ends', async () => {
+  it('rejects the active SDK batch after disconnect and lets a fresh attempt open', async () => {
     const first = hangingSse()
     const second = hangingSse()
     const responses = [first.response, second.response]
@@ -209,12 +243,39 @@ describe('Vault fetch settlement EventSource', () => {
       return next
     })
     const factory = createVaultEventSourceFactory((url) => createFetchEventSource(url, fetchImpl))
+    const provider = new RestArkProvider('https://arkade.computer', { eventSource: factory })
     const topic = `${'ef'.repeat(32)}:0`
-    const source = factory(`https://arkade.computer/v1/batch/events?topics=${encodeURIComponent(topic)}`)
+    const abort = new AbortController()
+    const stream = provider.getEventStream(abort.signal, [topic])
+    const started = vi.fn(async () => ({ skip: false }))
+    const finalization = vi.fn()
+    const joined = Batch.join(
+      stream,
+      {
+        onBatchStarted: started,
+        onTreeSigningStarted: async () => ({ skip: false }),
+        onTreeNonces: async () => ({ fullySigned: true }),
+        onBatchFinalization: finalization,
+      },
+      { abortController: abort },
+    )
+    // Attach the rejection assertion before closing the transport.
+    const rejected = expect(joined).rejects.toThrow('EventSource error')
     await waitForVaultSettlementStream(topic, 500)
+    first.push('data: {"batchStarted":{"id":"old-batch","intentIdHashes":[],"batchExpiry":"2592000"}}\n\n')
+    await vi.waitFor(() => expect(started).toHaveBeenCalledTimes(1))
     first.end()
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2), { timeout: 2_000 })
+    await rejected
+    expect(finalization).not.toHaveBeenCalled()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    abort.abort()
+    await stream.return?.()
+
+    // Reconciliation owns the next registration; this stream has no stale SDK state.
+    const retry = factory(`https://arkade.computer/v1/batch/events?topics=${encodeURIComponent(topic)}`)
     await expect(waitForVaultSettlementStream(topic, 500)).resolves.toBeUndefined()
-    source.close()
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    retry.close()
+    await second.cancelled
   })
 })

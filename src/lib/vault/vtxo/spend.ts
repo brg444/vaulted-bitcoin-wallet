@@ -1,4 +1,6 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from '../spendingEnrollment'
 import { LIGHT_PROFILE, LightScript } from '../light/contract'
+import { retainFinalizationRecovery } from '../recovery/finalization'
 import { requireLightStatus } from '../light/status'
 import { unlockLightOwnerKey } from '../light/keyBackup'
 import {
@@ -706,6 +708,9 @@ export function vaultPolicyV1ScriptFromStatus(status: VaultStatus): VaultPolicyV
   const pins = requireEnrolledSpendingStatus(status)
   const address = ArkAddress.decode(String(status.spendingArkAddress || ''))
   if (address.hrp !== pins.arkHrp) throw new Error('spending Ark address does not match this network')
+  const spendingOnly = status.templateVersion === SPENDING_ONLY_TEMPLATE
+  if (spendingOnly) requireSpendingEnrollmentStatus(status)
+  else if (status.protectionTier === 'light') throw new Error('Light requires its shared Spending enrollment')
   const params: VaultPolicyV1Params = {
     userPub: xOnly(status.phoneBip340Pub, 'phone pubkey'),
     vtxoVaultCosignerPub: xOnly(status.vtxoVaultCosignerPub, 'VTXO VaultCosigner pubkey'),
@@ -715,7 +720,9 @@ export function vaultPolicyV1ScriptFromStatus(status: VaultStatus): VaultPolicyV
     exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
     network: pins.network,
     exitDevicePub: xOnly(status.phoneBip340Pub, 'phone pubkey'),
-    exitHardwarePub: xOnly(status.externalOwnerWalletPub, 'hardware pubkey'),
+    ...(spendingOnly
+      ? { exitMode: 'device' as const }
+      : { exitHardwarePub: xOnly(status.externalOwnerWalletPub, 'hardware pubkey') }),
     ...(status.recoveryKeyPub || status.recoveryPub
       ? { exitRecoveryPub: xOnly(status.recoveryKeyPub || status.recoveryPub, 'recovery pubkey') }
       : {}),
@@ -2032,6 +2039,7 @@ async function reconcileOnePersistedVtxoSpend(
         status,
         xOnly(info.signerPubkey, 'Operator signer pubkey'),
       )
+      await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
       await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
       persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
       await finalizeVaultOperation(pending.vaultId, pending.operationId, pending.bundleDigest, pending.arkTxid)
@@ -2343,6 +2351,7 @@ async function completeFreshSdkVtxoSpend(
       async finalize({ authorizedCheckpointPsbts }) {
         pending = { ...pending, checkpointPsbts: authorizedCheckpointPsbts }
         await requireCurrentReservationPolicy(operator, status, pending)
+        await retainFinalizationRecovery(status, pending)
         await operator.finalizeTx(pending.arkTxid, authorizedCheckpointPsbts)
         pending = { ...pending, stage: 'operator-finalized', checkpointPsbts: authorizedCheckpointPsbts }
         persistVtxoSpend(pending)
@@ -2380,6 +2389,7 @@ async function continueSameVtxoSpend(
       status,
       xOnly(info.signerPubkey, 'Operator signer pubkey'),
     )
+    await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
     await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
     persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
     return finishOperatorFinalized({ ...pending, stage: 'operator-finalized', checkpointPsbts })
@@ -2404,6 +2414,7 @@ async function continueSameVtxoSpend(
   )
   const checkpointPsbts = pending.checkpointPsbts!
   await requireCurrentReservationPolicy(operator, status, pending)
+  await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
   await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
   persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
   try {

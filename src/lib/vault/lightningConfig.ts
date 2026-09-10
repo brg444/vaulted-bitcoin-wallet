@@ -41,11 +41,11 @@ export const MUTINYNET_LIGHTNING_SOLVER: VaultLightningSolverProfile = {
   relays: ['wss://nostr.arkade.sh'],
   minSats: 1_000,
   maxSats: 25_000,
-  maxFundingSats: 50_000,
+  maxFundingSats: fundingCeilingSats(MUTINYNET_LIGHTNING_MARKET, 25_000),
   market: MUTINYNET_LIGHTNING_MARKET,
 }
 
-/** Official mainnet preview solver. Receive remains closed (max_base_amount 0). */
+/** Release-pinned mainnet solver with both Lightning directions advertised. */
 export const BITCOIN_LIGHTNING_SOLVER: VaultLightningSolverProfile = {
   network: 'bitcoin',
   pubkey: '66422c952f8dcb96e4d0c3f049cd1e265b8461b916d9913c65c2494b64b4e3ce',
@@ -98,12 +98,12 @@ export async function discoverVaultLightningSolver(network: string): Promise<Vau
   )
   if (!market) return undefined
   const quoteLimits = sideLimits(market, 'quote')
-  const baseLimits = sideLimits(market, 'base')
   const relays = market.transports?.nostr?.relays
   if (!quoteLimits || !Array.isArray(relays) || relays.length === 0) return undefined
   const maxSats = Number(quoteLimits.max)
-  const advertisedBaseMax = baseLimits ? Number(baseLimits.max) : 0
-  const maxFundingSats = advertisedBaseMax > 0 ? advertisedBaseMax : fundingCeilingSats(market, maxSats)
+  // Card limits describe what the solver pays out on each side. Receive
+  // capacity must not cap the funding of an outbound payment plus its fee.
+  const maxFundingSats = fundingCeilingSats(market, maxSats)
   if (!Number.isSafeInteger(maxFundingSats) || maxFundingSats < maxSats) return undefined
   return {
     network: sdkNetwork,
@@ -148,4 +148,27 @@ export function vaultLightningSolverProfile(network: string | undefined): VaultL
   if (sdkNetwork === 'mutinynet') return MUTINYNET_LIGHTNING_SOLVER
   if (sdkNetwork === 'bitcoin') return BITCOIN_LIGHTNING_SOLVER
   return undefined
+}
+
+/** Amount requested is what arrives in Spending; the payer covers the quote fee. */
+export function vaultLightningReceivePlan(amountSats: number, profile: VaultLightningSolverProfile) {
+  if (!Number.isSafeInteger(amountSats) || amountSats < 1) throw new Error('Enter a whole number of sats.')
+  const plan = planOffer({ market: profile.market, give: 'quote', wantAmount: BigInt(amountSats), safetyBps: 0 })
+  if (!plan.limits.withinLimits || plan.deposit.atomic > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('Lightning receive amount is outside the solver market limits.')
+  }
+  return { receiveSats: amountSats, maxPaySats: Number(plan.deposit.atomic) }
+}
+
+export function vaultLightningReceiveEnabled(
+  network: string | undefined,
+  vaultId?: string,
+  value = import.meta.env.VITE_VAULT_LIGHTNING_RECEIVE,
+  qualifiedVault = import.meta.env.VITE_VAULT_LIGHTNING_RECEIVE_VAULT,
+) {
+  return (
+    value === 'true' &&
+    vaultLightningSolverProfile(network) !== undefined &&
+    (qualifiedVault === undefined || (!!vaultId && qualifiedVault === vaultId))
+  )
 }

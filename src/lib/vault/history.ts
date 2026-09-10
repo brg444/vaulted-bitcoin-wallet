@@ -1,5 +1,6 @@
 import { TxType, type Activity, type ArkTransaction } from '@arkade-os/sdk'
 import type { EsploraTx, EsploraUtxo } from './esplora'
+import { describePayment } from './payments'
 import { RECENT_HISTORY_LIMIT } from './constants'
 
 export type VaultHistoryKind = 'sent' | 'received'
@@ -11,14 +12,21 @@ export interface VaultHistoryItem {
   confirmed: boolean
   blockTime?: number
   account: 'spend' | 'savings'
-  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector' | 'bitcoin'
+  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector' | 'savings-ledger' | 'bitcoin'
   bitcoinOperationId?: string
   bitcoinStage?: string
+  /** Native Savings stages; accepted for forward compatibility, owned by the Savings integration. */
+  ledgerStage?: 'approval' | 'signer' | 'unknown' | 'broadcast'
   connectorStage?: 'approval' | 'signer' | 'broadcast'
   displayAmount?: number
   fee?: number
   lightningState?: string
   lightningRfqId?: string
+}
+
+/** Stable row key across history layers for dedup, retention, and arrival exclusion. */
+export function olderRowKey(item: Pick<VaultHistoryItem, 'account' | 'txid' | 'type'>): string {
+  return `${item.account}:${item.txid}:${item.type}`
 }
 
 export interface VaultHistoryGroup {
@@ -35,6 +43,7 @@ export interface VaultActivityScope {
 }
 
 export interface VaultLightningActivityRecord {
+  type?: VaultHistoryKind
   rfqId: string
   fundingTxid: string
   state: string
@@ -69,25 +78,41 @@ export function historyFromSdkActivities(
     if (boarding && !options.includeBoarding) continue
     const rfqId = typeof activity.intent?.metadata?.rfqId === 'string' ? activity.intent.metadata.rfqId : undefined
     const lightning =
-      activity.intent?.metadata?.swapKind === 'lightning_send' && Boolean(rfqId && scope.lightningRfqIds.has(rfqId))
+      ['lightning_send', 'lightning_receive'].includes(String(activity.intent?.metadata?.swapKind)) &&
+      Boolean(rfqId && scope.lightningRfqIds.has(rfqId))
     const scopedTransactions = activity.txs.filter((transaction) => scope.vaultTxids.has(sdkTransactionId(transaction)))
     if (!lightning && !boarding && scopedTransactions.length === 0) continue
 
+    const lightningRecord = lightning && rfqId ? lightningByRfqId.get(rfqId) : undefined
+    // Incoming swap accounting can net to zero between two registered contracts.
+    // The persisted claim provides its direction and recipient amount.
+    if (lightning && activity.intent?.metadata?.swapKind === 'lightning_receive' && !lightningRecord) continue
+    if (
+      !lightning &&
+      scopedTransactions.some((tx) =>
+        lightningRecords.some((r) => scope.lightningRfqIds.has(r.rfqId) && r.fundingTxid === sdkTransactionId(tx)),
+      )
+    )
+      continue
+    const incoming = lightningRecord?.type === 'received'
     const candidates = lightning || boarding ? activity.txs : scopedTransactions
-    const sent = activity.amount < 0
+    const sent = incoming ? false : activity.amount < 0
     const anchor =
       candidates.find((transaction) => transaction.type === (sent ? TxType.TxSent : TxType.TxReceived)) || candidates[0]
     if (!anchor) continue
     const txid = bitcoin ? anchor.key.commitmentTxid : sdkTransactionId(anchor)
     if (!txid) continue
-    const amount = Math.abs(activity.amount)
+    const amount = incoming ? lightningRecord.amount : Math.abs(activity.amount)
     if (!lightning && amount === 0) continue
-    const lightningRecord = lightning && rfqId ? lightningByRfqId.get(rfqId) : undefined
-    const lightningOutcome = activity.intent?.outcome || (activity.settled ? 'settled' : 'pending')
+    const lightningOutcome = incoming
+      ? lightningRecord.state
+      : activity.intent?.outcome || (activity.settled ? 'settled' : 'pending')
     const lightningFee = lightningRecord
-      ? lightningOutcome === 'refunded'
-        ? amount
-        : Math.max(lightningRecord.fee, amount - lightningRecord.displayAmount)
+      ? incoming
+        ? lightningRecord.fee
+        : lightningOutcome === 'refunded'
+          ? amount
+          : Math.max(lightningRecord.fee, amount - lightningRecord.displayAmount)
       : undefined
     rows.push({
       txid: lightningRecord?.fundingTxid || txid,
@@ -126,7 +151,7 @@ export function historyFromSdkActivities(
     if (!/^[0-9a-f]{64}$/.test(record.fundingTxid)) continue
     rows.push({
       txid: record.fundingTxid,
-      type: 'sent',
+      type: record.type ?? 'sent',
       amount: record.amount,
       confirmed: record.terminal,
       blockTime: record.createdAt,
@@ -172,6 +197,10 @@ export function groupVaultHistory(
 }
 
 function historyGroup(item: VaultHistoryItem, today: Date, yesterday: Date): Pick<VaultHistoryGroup, 'key' | 'label'> {
+  // Unresolved funds surface first even when the backend already reports the
+  // row as terminal. A failed Lightning record is terminal in storage while
+  // still requiring recovery in the UI.
+  if (describePayment(item).attention !== 'none') return { key: 'attention', label: 'Needs attention' }
   if (!item.confirmed) return { key: 'pending', label: 'Pending' }
   if (!item.blockTime) return { key: 'earlier', label: 'Earlier' }
   const date = new Date(item.blockTime * 1000)
@@ -280,6 +309,9 @@ function unixSeconds(ms: number): number | undefined {
 }
 
 function sortVaultHistory(a: VaultHistoryItem, b: VaultHistoryItem): number {
+  const attentionA = describePayment(a).attention !== 'none'
+  const attentionB = describePayment(b).attention !== 'none'
+  if (attentionA !== attentionB) return attentionA ? -1 : 1
   if (a.confirmed !== b.confirmed) return a.confirmed ? 1 : -1
   return (
     (b.blockTime || 0) - (a.blockTime || 0) ||

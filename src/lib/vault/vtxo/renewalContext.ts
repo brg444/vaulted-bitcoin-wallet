@@ -1,3 +1,4 @@
+import { SPENDING_ONLY_TEMPLATE } from '../spendingEnrollment'
 import { renewalSigningJson } from './renewalJson'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
@@ -49,7 +50,11 @@ export function guardianRenewalContext(status: VaultStatus): GuardianRenewalCont
       spendingPolicy: validateLightPolicy(d.spendingPolicy, network),
     }
   }
-  if (!isSavingsTemplate(status.templateVersion) && !isConnectorTemplate(status.templateVersion))
+  if (
+    status.templateVersion !== SPENDING_ONLY_TEMPLATE &&
+    !isSavingsTemplate(status.templateVersion) &&
+    !isConnectorTemplate(status.templateVersion)
+  )
     throw new Error('Unsupported renewal program')
   const protectionTier = requireProtectionTierMatchesRecovery(
     status.protectionTier,

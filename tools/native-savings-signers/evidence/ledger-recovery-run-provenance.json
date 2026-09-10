@@ -1,0 +1,14 @@
+{
+  "retained": {
+    "commit": "f1feaa82",
+    "policies": 8,
+    "payments": 11,
+    "rawDeviceSha256": "74b76c4318a8c9a89bbaaa8f4da8f571c5da406c24c1255a650bb9cc7f4e8646"
+  },
+  "supplemental": {
+    "file": "ledger-recovery-hardware-initiation.json",
+    "policies": 2,
+    "payments": 4,
+    "rawDeviceSha256": "dc6afaad2e017e695a5be4e1a49e697477df1d7e420c313506bb5672b3056df5"
+  }
+}

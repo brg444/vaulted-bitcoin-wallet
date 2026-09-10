@@ -1,10 +1,17 @@
+import {
+  requireSavingsRecoveryKit,
+  inspectRecoveryKit,
+  parseRecoveryKit,
+  isLedgerRecoveryKit,
+} from '../../lib/vault/program/kit'
 import QgGuidance from './qg/QgGuidance'
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { hex } from '@scure/base'
 import { Fingerprint, FileKey, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
-import { prettyAmount } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
+import { useBalanceDenomination } from './AccountBalance'
 import { broadcastTx, fetchAddressUtxos } from '../../lib/vault/esplora'
 import { recoveryOnchainFeeSats, SAVINGS_CLAIM_VBYTES, SAVINGS_TRANSITION_VBYTES } from '../../lib/vault/onchainFee'
 import { parseIncomingPsbt, psbtFile } from '../../lib/vault/savingsSpend'
@@ -17,13 +24,16 @@ import {
   finalizeGuardianExit,
   requiredGuardianExitSigners,
 } from '../../lib/vault/program/guardianExit'
-import { inspectRecoveryKit, parseRecoveryKit } from '../../lib/vault/program/kit'
+import LedgerRecovery from './LedgerRecovery'
 import { planClaim, planClawback, planInitiate } from '../../lib/vault/program/recoverFlow'
 import { buildGuardianExitPsbt } from '../../lib/vault/program/spend'
 import { findMatureBoardingInputs } from '../../lib/vault/vtxo/boardingRecovery'
 import { VaultContext } from '../../vault/context'
 import RecoveryHelp from './RecoveryHelp'
 import { HubGroup, HubRow } from './ui'
+import RecoveryCopies from './RecoveryCopies'
+import { checkProtectedRecoveryPackage } from '../../lib/vault/recovery/packageCheck'
+import { recordRecoveryCopy } from '../../lib/vault/recovery/copyStatus'
 import QgScreen, { QgCheck, QgPrimary, QgSecondary } from './qg/QgScreen'
 import { portableRecoverySource } from '../../lib/vault/recovery/portable'
 import { spendingRecoveryCoverage } from '../../lib/vault/recovery/coverage'
@@ -75,6 +85,8 @@ function RecoverAlert({ text }: { text: string }) {
 }
 
 export default function VaultRecover() {
+  const denomination = useBalanceDenomination()
+  const money = (value: number) => formatMoney(value, denomination)
   const {
     backupRecoveryKit,
     backupRecoveryArchive,
@@ -99,18 +111,22 @@ export default function VaultRecover() {
   const { toast } = useToast()
   const [backupView, setBackupView] = useState<
     'overview' | 'more' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding' | 'exit'
-  >('overview')
+  >(status?.protectionTier === 'light' && recoverEntry === 'lost' ? 'exit' : 'overview')
   const [recoveryTask, setRecoveryTask] = useState<'cancel' | 'claim' | null>(null)
-  const [view, setView] = useState<'kit' | 'lost'>(recoverEntry)
+  const [view, setView] = useState<'kit' | 'lost'>(status?.protectionTier === 'light' ? 'kit' : recoverEntry)
   const [reviewingRecovery, setReviewingRecovery] = useState(false)
   const [fromKit, setFromKit] = useState(false)
 
   useEffect(() => {
-    setView(recoverEntry)
+    setView(status?.protectionTier === 'light' ? 'kit' : recoverEntry)
+    if (status?.protectionTier === 'light' && recoverEntry === 'lost') setBackupView('exit')
     setReviewingRecovery(false)
     setFromKit(false)
-  }, [recoverEntry])
+  }, [recoverEntry, status?.protectionTier])
   const [pasted, setPasted] = useState('')
+  const [protectedCheck, setProtectedCheck] = useState('')
+  const [checkingPackage, setCheckingPackage] = useState(false)
+  useEffect(() => setProtectedCheck(''), [pasted])
   const fileRead = useRef(0)
   useEffect(
     () => () => {
@@ -159,11 +175,15 @@ export default function VaultRecover() {
       return null
     }
   }, [kitJson])
-  const eligibleClaimants = currentKit ? familyClaimants(Boolean(currentKit.descriptor.keys.recovery)) : []
+  const eligibleClaimants =
+    currentKit && currentKit.version !== 5 ? familyClaimants(Boolean(currentKit.descriptor.keys.recovery)) : []
 
   const canCancelWithoutServices = useMemo(() => {
     try {
-      return parseRecoveryKit(JSON.parse(downloadRecoveryKit())).descriptor.templateVersion === SAVINGS_TEMPLATE
+      return (
+        requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit()))).descriptor.templateVersion ===
+        SAVINGS_TEMPLATE
+      )
     } catch {
       return false
     }
@@ -191,6 +211,20 @@ export default function VaultRecover() {
     }
   }, [kitJson, pasted])
 
+  useEffect(() => {
+    if (!pasted.trim() || !status) return
+    let source
+    try {
+      source = portableRecoverySource(JSON.parse(pasted))
+    } catch {
+      return
+    }
+    if (source.header.binding.vaultId !== status.vaultId || source.header.binding.network !== status.network) return
+    void recordRecoveryCopy(status.vaultId, status.network, 'checked', source.archive.spending).catch(() =>
+      setLocalError('The file was checked, but its check date could not be saved.'),
+    )
+  }, [pasted, status?.vaultId, status?.network])
+
   const saveKit = () => {
     setLocalError('')
     try {
@@ -200,6 +234,9 @@ export default function VaultRecover() {
       setLocalError(err instanceof Error ? err.message : 'No Recovery Kit yet')
     }
   }
+
+  if (view === 'lost' && currentKit && isLedgerRecoveryKit(currentKit) && status)
+    return <LedgerRecovery kit={currentKit} status={status} back={() => setView('kit')} />
 
   if (view === 'lost' && psbtOut && preparedAction && !cancelSigners.length)
     return (
@@ -292,7 +329,7 @@ export default function VaultRecover() {
                     void (async () => {
                       try {
                         const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                        const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
+                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
                         const built = planClawback({
                           family: familyFromDescriptor(kit.descriptor),
                           claimant: c,
@@ -321,7 +358,7 @@ export default function VaultRecover() {
                     void (async () => {
                       try {
                         const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                        const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
+                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
                         if (kit.descriptor.templateVersion !== SAVINGS_TEMPLATE) {
                           throw new Error('this vault cannot cancel pending recovery without the services')
                         }
@@ -360,7 +397,7 @@ export default function VaultRecover() {
                     void (async () => {
                       try {
                         const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                        const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
+                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
                         const built = planClaim({
                           family: familyFromDescriptor(kit.descriptor),
                           claimant: c,
@@ -392,7 +429,7 @@ export default function VaultRecover() {
                   setLocalError('')
                   void (async () => {
                     try {
-                      const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
+                      const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
                       const family = familyFromDescriptor(kit.descriptor)
                       if (!savingsAddress) throw new Error('No Savings address yet')
                       const coin = (await fetchAddressUtxos(savingsAddress)).find(
@@ -572,7 +609,7 @@ export default function VaultRecover() {
                     onClick={() => {
                       setLocalError('')
                       try {
-                        const kit = parseRecoveryKit(JSON.parse(downloadRecoveryKit()))
+                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
                         const expectedPub =
                           externalRole === 'hardware' ? kit.descriptor.keys.hardware : kit.descriptor.keys.recovery
                         if (!expectedPub) throw new Error(`${KEY_LABEL[externalRole]} is not configured`)
@@ -647,7 +684,13 @@ export default function VaultRecover() {
       }
       dismiss={backupView === 'overview' && fromHome ? () => navigate('home') : undefined}
       back={
-        backupView !== 'overview' ? () => setBackupView('overview') : fromHome ? undefined : () => navigate(recoverExit)
+        status?.protectionTier === 'light' && recoverEntry === 'lost' && backupView === 'exit'
+          ? () => navigate(recoverExit)
+          : backupView !== 'overview'
+            ? () => setBackupView('overview')
+            : fromHome
+              ? undefined
+              : () => navigate(recoverExit)
       }
       footer={
         <>
@@ -663,9 +706,17 @@ export default function VaultRecover() {
               label='Download recovery package'
               disabled={busy}
               onClick={() =>
-                runBackup(async () =>
-                  downloadJson('Vaulted recovery package.json', await downloadRecoveryArchive('portable')),
-                )
+                runBackup(async () => {
+                  const body = await downloadRecoveryArchive('portable')
+                  downloadJson('Vaulted recovery package.json', body)
+                  const source = portableRecoverySource(JSON.parse(body))
+                  await recordRecoveryCopy(
+                    source.header.binding.vaultId,
+                    source.header.binding.network,
+                    'downloaded',
+                    source.archive.spending,
+                  )
+                })
               }
             />
           ) : backupView === 'kit' ? (
@@ -716,7 +767,7 @@ export default function VaultRecover() {
             {matureBoardingSats > 0 ? (
               <HubRow
                 title='Recover received Bitcoin'
-                detail={prettyAmount(matureBoardingSats)}
+                detail={money(matureBoardingSats)}
                 testId='recover-mature-boarding'
                 onClick={() => setBackupView('boarding')}
               />
@@ -725,29 +776,35 @@ export default function VaultRecover() {
           <QgSecondary label='More options' onClick={() => setBackupView('more')} />
         </>
       ) : backupView === 'more' ? (
-        <HubGroup>
-          <HubRow
-            title='Wallet details'
-            detail='Public addresses and recovery rules'
-            onClick={() => setBackupView('kit')}
-          />
-          <HubRow title='Recover to Bitcoin' onClick={() => setBackupView('exit')} />
-          <HubRow
-            title='I lost a key'
-            onClick={() => {
-              setLocalError('')
-              setFromKit(true)
-              setReviewingRecovery(false)
-              setView('lost')
-            }}
-          />
-        </HubGroup>
+        <>
+          <HubGroup>
+            <HubRow
+              title='Wallet details'
+              detail='Public addresses and recovery rules'
+              onClick={() => setBackupView('kit')}
+            />
+            <HubRow title='Recover to Bitcoin' onClick={() => setBackupView('exit')} />
+            <HubRow
+              title={currentKit?.protectionTier === 'light' ? 'Recover Spending' : 'I lost a key'}
+              onClick={() => {
+                setLocalError('')
+                setFromKit(true)
+                setReviewingRecovery(false)
+                if (currentKit?.protectionTier === 'light') setBackupView('exit')
+                else setView('lost')
+              }}
+            />
+          </HubGroup>
+          {status ? <RecoveryCopies vaultId={status.vaultId} network={status.network} /> : null}
+        </>
       ) : backupView === 'kit' ? (
         <>
           <h1>Your wallet details</h1>
           <p className='qg-copy'>
-            This public map records Savings addresses and recovery rules. It contains no private keys and cannot move
-            bitcoin by itself. Save a private copy outside this device.
+            This public map records{' '}
+            {currentKit?.protectionTier === 'light' ? 'Spending and Bitcoin deposit addresses' : 'Savings addresses'}{' '}
+            and recovery rules. It contains no private keys and cannot move bitcoin by itself. Save a private copy
+            outside this device.
           </p>
           <p className='qg-copy'>
             Save a recovery package to include Spending transaction data. This public file alone cannot recover
@@ -833,9 +890,11 @@ export default function VaultRecover() {
             a Bitcoin address without new Guardian or Operator approval.
           </p>
           <p className='qg-copy'>
-            {currentKit?.protectionTier === 'advanced'
-              ? 'You need your hardware and recovery keys. The new portable package makes Spending paths accessible without unlocking the phone.'
-              : 'You need the wallet key unlocked by your original passkey and your hardware key.'}
+            {currentKit?.protectionTier === 'light'
+              ? 'You need the saved wallet key unlocked by your original passkey. No hardware wallet is required.'
+              : currentKit?.protectionTier === 'advanced'
+                ? 'You need your hardware and recovery keys. The new portable package makes Spending paths accessible without unlocking the phone.'
+                : 'You need the wallet key unlocked by your original passkey and your hardware key.'}
           </p>
           <p className='qg-copy'>
             Bitcoin fees and waiting periods apply. A file covers the paths saved at that time; later payments and
@@ -851,7 +910,7 @@ export default function VaultRecover() {
       ) : backupView === 'boarding' ? (
         <>
           <h1>Recover received Bitcoin</h1>
-          <p className='qg-copy'>{prettyAmount(matureBoardingSats)} has waited long enough for this recovery path.</p>
+          <p className='qg-copy'>{money(matureBoardingSats)} has waited long enough for this recovery path.</p>
           <p className='qg-copy'>
             Your passkey will authorize a one-time recovery to this device. A network fee is deducted before the
             transaction is sent.
@@ -905,10 +964,48 @@ export default function VaultRecover() {
           </QgGuidance>
           {report && 'coverage' in report && pasted.trim() ? (
             <p className='qg-copy'>
-              This file contains Spending paths for {prettyAmount(report.coverage.archivedSats)}, saved{' '}
+              This file contains Spending paths for {money(report.coverage.archivedSats)}, saved{' '}
               {new Date(report.coverage.capturedAt!).toLocaleString()}. This check does not establish coverage of later
               activity or verify access to your signing keys.
             </p>
+          ) : null}
+          {report && 'coverage' in report && pasted.trim() && status ? (
+            <>
+              <QgSecondary
+                label='Check protected contents with passkey'
+                disabled={checkingPackage}
+                onClick={() => {
+                  const revision = fileRead.current
+                  setCheckingPackage(true)
+                  setLocalError('')
+                  void checkProtectedRecoveryPackage(JSON.parse(pasted), status)
+                    .then(({ contents }) => {
+                      if (revision !== fileRead.current) return
+                      setProtectedCheck(
+                        `Original passkey opened this file. It contains ${contents.pendingPayments} unresolved payment records and ${contents.lightningContracts} Lightning contract records${contents.pendingConnector ? ', plus a pending Savings action' : ''}. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals. '}Hardware and recovery keys remain untested. No funds moved.`,
+                      )
+                    })
+                    .catch((err) => {
+                      if (revision === fileRead.current)
+                        setLocalError(err instanceof Error ? err.message : 'Could not check protected contents')
+                    })
+                    .finally(() => setCheckingPackage(false))
+                }}
+              />
+              {protectedCheck ? (
+                <p className='qg-copy' role='status'>
+                  {protectedCheck}
+                </p>
+              ) : null}
+              <p className='qg-copy'>
+                Spending needs{' '}
+                {currentKit?.protectionTier === 'advanced'
+                  ? 'hardware and recovery keys for the lost-phone path'
+                  : 'the original passkey and hardware key'}
+                . Savings recovery follows its enrolled service approvals and waiting periods. A file check leaves
+                Bitcoin eligibility and external key access untested.
+              </p>
+            </>
           ) : null}
           {report && 'trees' in report && pasted.trim() ? (
             <p className='qg-copy'>

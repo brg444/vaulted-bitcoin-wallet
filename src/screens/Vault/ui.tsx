@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import Text from '../../components/Text'
-import { prettyAmount } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import { waitLabel } from '../../lib/vault/policy'
 
 export function IconBubble({ children, small }: { children: ReactNode; small?: boolean }) {
@@ -149,17 +150,20 @@ export function PolicyTimeline({
   phoneRecoveryBlocks,
   hardwareRecoveryBlocks,
   network,
+  denomination,
 }: {
   txCap: number
   dailyLimit: number
   phoneRecoveryBlocks: number
   hardwareRecoveryBlocks: number
   network?: string
+  denomination?: BalanceDenomination
 }) {
+  const money = useBalanceDenomination(denomination)
   const rows = [
     {
       title: 'Spending limits',
-      detail: `${prettyAmount(txCap)} per payment, ${prettyAmount(dailyLimit)} over a rolling 24 hours.`,
+      detail: `${formatMoney(txCap, money)} per payment, ${formatMoney(dailyLimit, money)} over a rolling 24 hours.`,
     },
     {
       title: 'If you lose this device',

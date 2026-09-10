@@ -88,7 +88,7 @@ async function readSseBody(
   const decoder = new TextDecoder()
   let buffer = ''
   const onAbort = () => {
-    void reader.cancel()
+    void reader.cancel().catch(() => undefined)
   }
   signal.addEventListener('abort', onAbort, { once: true })
   try {
@@ -176,9 +176,9 @@ export function createFetchEventSource(url: string, fetchImpl: FetchLike = fetch
 }
 
 /**
- * Keeps the stock EventSource reconnect loop intact for the settlement stream.
- * Native EventSource emits `error` while it is reconnecting; forwarding that
- * transient event makes the SDK close a connection the browser can recover.
+ * Retry connection setup, but fail an interrupted open settlement stream.
+ * Reconnecting cannot replay missed batch events; continuing the old SDK batch
+ * would leave it waiting for a phase or terminal event that has already passed.
  */
 export function createVaultEventSourceFactory(
   nativeFactory: EventSourceTransportFactory = (url) => createFetchEventSource(url),
@@ -215,17 +215,10 @@ export function createVaultEventSourceFactory(
     }
     const onError = (event: Event) => {
       if (record.closed) return
-      if (source.readyState === EVENT_SOURCE_CONNECTING) {
-        if (record.state === 'open') {
-          record.state = 'connecting'
-          armSettlementStream(record)
-        }
-        return
-      }
-      settlementStreams.delete(record)
-      record.state = 'closed'
-      record.rejectReady(new Error('Vault settlement event stream failed before opening'))
-      for (const listener of errorListeners) listener(event as MessageEvent)
+      if (source.readyState === EVENT_SOURCE_CONNECTING && record.state === 'connecting') return
+      const listeners = [...errorListeners]
+      close()
+      for (const listener of listeners) listener(event as MessageEvent)
     }
     source.addEventListener('open', onOpen)
     source.addEventListener('message', onMessage)
@@ -266,6 +259,18 @@ export function installVaultSettlementEventSource(): void {
 function latestSettlementStream(topic: string): SettlementStream | undefined {
   const matching = [...settlementStreams].filter((candidate) => !candidate.closed && candidate.topics.has(topic))
   return matching[matching.length - 1]
+}
+
+/** Bind an async signing continuation to its original uninterrupted stream. */
+export function vaultSettlementStreamGuard(topic: string): () => void {
+  const stream = latestSettlementStream(topic)
+  const assertOpen = () => {
+    if (!stream || stream.closed || stream.state !== 'open') {
+      throw new Error('Vault settlement event stream interrupted before final submission')
+    }
+  }
+  assertOpen()
+  return assertOpen
 }
 
 /** Fail closed unless the outpoint-filtered Operator stream is already open. */

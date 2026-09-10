@@ -50,7 +50,11 @@ export default function VaultConditions() {
     <QgScreen
       title='Spending limits'
       stepLabel='4 of 6'
-      back={() => navigate(setup.protectionTier === 'advanced' ? 'recovery' : 'hardware')}
+      back={() =>
+        navigate(
+          setup.protectionTier === 'light' ? 'design' : setup.protectionTier === 'advanced' ? 'recovery' : 'hardware',
+        )
+      }
       footer={
         <>
           <ErrorMessage error={Boolean(error)} text={error || ''} />

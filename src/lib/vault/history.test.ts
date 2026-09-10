@@ -240,6 +240,52 @@ describe('vault history', () => {
     })
   })
 
+  it('shows an incoming receipt once despite zero-net SDK accounting or an ungrouped payout', () => {
+    const rfqId = 'ab'.repeat(32),
+      txid = 'cd'.repeat(32)
+    const record = {
+      rfqId,
+      fundingTxid: txid,
+      type: 'received' as const,
+      state: 'settled',
+      amount: 500,
+      displayAmount: 500,
+      fee: 4,
+      createdAt: 1_700_000_000,
+      terminal: true,
+    }
+    const scope = { vaultTxids: new Set([txid]), lightningRfqIds: new Set([rfqId]) }
+    const payout: Activity = {
+      id: txid,
+      txs: [sdkTx(txid, TxType.TxReceived, 500)],
+      amount: 500,
+      createdAt: 1_700_000_000_000,
+      settled: false,
+    }
+    const group: Activity = {
+      ...payout,
+      amount: 0,
+      intent: { kind: 'swap', outcome: 'pending', metadata: { rfqId, swapKind: 'lightning_receive' } },
+    }
+    for (const activities of [[], [payout], [group], [group, payout]]) {
+      const rows = historyFromSdkActivities(activities, scope, [record])
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({
+        txid,
+        type: 'received',
+        amount: 500,
+        displayAmount: 500,
+        fee: 4,
+        confirmed: true,
+        lightningState: 'settled',
+        lightningRfqId: rfqId,
+      })
+    }
+    expect(historyFromSdkActivities([group], { vaultTxids: new Set(), lightningRfqIds: new Set() }, [record])).toEqual(
+      [],
+    )
+  })
+
   it('shows unspent boarding outputs as one pending Spending receive per transaction', () => {
     const rows = historyFromBoardingUtxos([
       { txid: 'boarding', vout: 0, value: 40_000, status: { confirmed: true } },

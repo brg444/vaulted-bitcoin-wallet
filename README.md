@@ -16,10 +16,11 @@ admission requirements come from the connected Guardian.
 | Standard | Policy-controlled Spending; delayed exit requires the device and hardware keys | Savings with device, external signer, and enrolled service approvals |
 | Advanced | Policy-controlled Spending; delayed exit requires hardware and recovery keys   | Savings with an additional, separate recovery key                    |
 
-Standard and Advanced Spending support Arkade payments and onchain receipt
-through the enrolled boarding program. Their outbound Lightning support is a
-build-enabled capability; the mainnet build enables it. Light receives and pays
-through Arkade. Lightning receive is unavailable.
+Light, Standard, and Advanced use the same Spending payment and receive routes,
+including Bitcoin receipt through the enrolled boarding program. Lightning
+send, invoice creation, and Lightning addresses require the corresponding
+build configuration and services. A configured Lightning address appears on
+the primary Receive screen alongside access to invoices and Bitcoin receive.
 
 New Savings connector enrollments use two 500-sat signer reserves. The external
 signer approves the transaction before the passkey and online services. Existing
@@ -36,9 +37,10 @@ recovery keys remain in their signing devices.
 ## Backups and recovery
 
 The Security page provides keys, backups, limits, renewal coverage, and recovery
-access. Light creates an encrypted cloud backup during automatic setup.
-Standard and Advanced can save encrypted recovery archives and public Recovery
-Kits. Keep a separate copy and preserve access to the original passkey.
+access. All three modes use the same passkey enrollment and encrypted backup
+workflow and can save recovery packages and public Recovery Kits. Light kits
+contain Spending and boarding data; protected modes also include Savings. Keep
+a separate copy and preserve access to the original passkey.
 
 An archive covers its capture time. Later receipts, payments, and renewals need
 updated transaction paths. A public Recovery Kit cannot replace missing paths

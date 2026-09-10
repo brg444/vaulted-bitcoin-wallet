@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { loadBalanceSnapshot, saveBalanceSnapshot } from '../lib/vault/balanceStore'
 import { consoleError } from '../lib/logs'
-import { fetchAddressTxs, fetchAddressUtxos, type EsploraTx, type EsploraUtxo } from '../lib/vault/esplora'
+import {
+  fetchAddressTxs,
+  fetchAddressUtxos,
+  fetchOlderAddressTxs,
+  type EsploraTx,
+  type EsploraUtxo,
+} from '../lib/vault/esplora'
 import {
   historyFromBoardingUtxos,
   historyFromTxs,
   mergeVaultHistory,
+  olderRowKey,
   type VaultHistoryItem,
 } from '../lib/vault/history'
 import { loadAddressPin, requireStatusMatchesPin, type AddressPin } from '../lib/vault/pin'
@@ -21,8 +28,12 @@ import {
 } from '../lib/vault/vtxo/walletWorker'
 import { reconcilePersistedVtxoSpend } from '../lib/vault/vtxo/spend'
 import { vaultAccountPositions } from './balances'
+import { fetchLedgerSavingsSnapshot } from '../lib/vault/ledgerSavingsWallet'
+import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
+import { ledgerEnrollmentFromStatus } from '../lib/vault/program/ledgerRecoveryDescriptor'
 
 interface VaultBalancesOptions {
+  watchedSavingsAddress?: string
   addressPin: AddressPin | null
   enrollment: EnrollmentSecrets | null
   initialStatusChecked: boolean
@@ -33,6 +44,7 @@ interface VaultBalancesOptions {
 
 interface VaultBalanceSnapshot {
   boardingBalance: number
+  boardingError?: string
   history: VaultHistoryItem[]
   savingsSats: number
   savingsSpendableSats: number
@@ -50,6 +62,46 @@ const EMPTY_BALANCES: VaultBalanceSnapshot = {
 
 const FIRST_SNAPSHOT_RETRY_MS = 2_000
 const FIRST_SNAPSHOT_RETRY_MAX_MS = 30_000
+/** Loaded activity stays bounded: recent window plus explicitly loaded older pages. */
+const MAX_ACTIVITY_ROWS = 300
+
+export interface OlderActivityState {
+  status: 'idle' | 'loading' | 'exhausted' | 'error'
+  error: string
+}
+
+export interface OlderActivityResult {
+  added: number
+  exhausted: boolean
+}
+
+/**
+ * Oldest Savings reference for the next Esplora page. Only confirmed
+ * chain-ordered rows qualify: the Esplora chain cursor is meaningless for
+ * mempool or synthetic rows, so without one there is nothing honest to page
+ * from and the caller must stop.
+ */
+export function oldestSavingsTxid(history: readonly VaultHistoryItem[]): string {
+  const confirmed = history.filter(
+    (item) => item.account === 'savings' && item.confirmed && item.blockTime && !item.txid.startsWith('bitcoin:'),
+  )
+  if (confirmed.length === 0) return ''
+  return confirmed.reduce((oldest, item) => ((item.blockTime || 0) < (oldest.blockTime || 0) ? item : oldest)).txid
+}
+
+/**
+ * Older rows absent from a fresh fetch survive refresh; every overlap keeps
+ * the fresh record, so a confirmation update or reorg is never shadowed by
+ * the retained copy.
+ */
+export function retainOlderRows(
+  older: readonly VaultHistoryItem[],
+  fresh: readonly VaultHistoryItem[],
+): VaultHistoryItem[] {
+  if (older.length === 0) return []
+  const freshKeys = new Set(fresh.map(olderRowKey))
+  return older.filter((item) => !freshKeys.has(olderRowKey(item)))
+}
 
 export function confirmedUtxoBalance(utxos: EsploraUtxo[]): number {
   const unique = new Map<string, EsploraUtxo>()
@@ -109,6 +161,7 @@ export function savingsUtxoBalance(
 // UI components consume the persistent SDK worker's balance and activity
 // snapshots; they never own settlement, Operator, or indexer lifecycle.
 export function useVaultBalances({
+  watchedSavingsAddress = '',
   addressPin,
   enrollment,
   initialStatusChecked,
@@ -116,6 +169,8 @@ export function useVaultBalances({
   setStatus,
   status,
 }: VaultBalancesOptions) {
+  const watchedAddressRef = useRef(watchedSavingsAddress)
+  watchedAddressRef.current = watchedSavingsAddress
   const refreshVersion = useRef(0)
   const statusRef = useRef(status)
   const addressPinRef = useRef(addressPin)
@@ -135,15 +190,37 @@ export function useVaultBalances({
   const [balanceError, setBalanceError] = useState('')
   const [balancesLoaded, setBalancesLoaded] = useState(() => Boolean(loadBalanceSnapshot(refreshVaultId)))
   const [refreshingBalance, setRefreshingBalance] = useState(false)
+  // True only after a refresh fetched every source for the active vault
+  // without error in this session. Cached snapshots set balancesLoaded but
+  // never this: arrival detection must wait for fresh evidence.
+  const [snapshotFresh, setSnapshotFresh] = useState(false)
+  const [olderActivity, setOlderActivity] = useState<OlderActivityState>({ status: 'idle', error: '' })
+  // Browsing history loaded beyond the recent window. Refresh retention
+  // keeps these rows while fresh evidence wins every overlap; arrival
+  // observation excludes them so old receipts never banner as new.
+  const [olderHistory, setOlderHistory] = useState<VaultHistoryItem[]>([])
+  const olderHistoryRef = useRef<VaultHistoryItem[]>([])
+  // Older-page request generation. Every vault, network, or lock transition
+  // and unmount invalidates pending flights; stale callbacks mutate nothing.
+  const generationRef = useRef(0)
+  const olderFlightRef = useRef<{ token: number; generation: number } | null>(null)
+  const flightTokenRef = useRef(0)
   const hasSnapshotRef = useRef(balancesLoaded)
   const spendingReadyRef = useRef(balancesLoaded)
+  const snapshotRef = useRef(snapshot)
+  snapshotRef.current = snapshot
 
   if (hydratedVaultId !== refreshVaultId) {
     const cachedSnapshot = loadBalanceSnapshot(refreshVaultId)
     setHydratedVaultId(refreshVaultId)
     refreshVersion.current += 1
+    generationRef.current += 1
     setSnapshot(cachedSnapshot || EMPTY_BALANCES)
     setBalancesLoaded(Boolean(cachedSnapshot))
+    setSnapshotFresh(false)
+    setOlderActivity({ status: 'idle', error: '' })
+    setOlderHistory([])
+    olderHistoryRef.current = []
     hasSnapshotRef.current = Boolean(cachedSnapshot)
     spendingReadyRef.current = Boolean(cachedSnapshot)
     setBalanceError('')
@@ -151,6 +228,22 @@ export function useVaultBalances({
     retryAttemptRef.current = 0
     window.clearTimeout(retryTimerRef.current)
   }
+
+  useEffect(() => {
+    refreshVersion.current += 1
+    generationRef.current += 1
+    setOlderHistory([])
+    olderHistoryRef.current = []
+    setOlderActivity({ status: 'idle', error: '' })
+    if (statusRef.current?.protectionTier === 'light') {
+      setSnapshot((current) => ({
+        ...current,
+        savingsSats: 0,
+        savingsSpendableSats: 0,
+        history: current.history.filter((tx) => tx.account !== 'savings'),
+      }))
+    }
+  }, [watchedSavingsAddress])
 
   const { boardingBalance, history, savingsSats, savingsSpendableSats, vtxoSpendingSats, vtxoPendingSats } = snapshot
   const positions = useMemo(
@@ -196,6 +289,7 @@ export function useVaultBalances({
     async (vaultId?: string) => {
       const version = ++refreshVersion.current
       setRefreshingBalance(true)
+      setSnapshotFresh(false)
       try {
         const id = String(
           vaultId ||
@@ -215,9 +309,10 @@ export function useVaultBalances({
         }
         const memoryPin = addressPinRef.current
         const pin = memoryPin?.vaultId === id ? memoryPin : loadAddressPin(localStorage, id)
-        const savingsAddress = pin?.savingsAddress || ''
         const fetchedStatus = await fetchVaultStatus(undefined, id)
         const liveStatus = pin ? requireStatusMatchesPin(fetchedStatus, pin) : fetchedStatus
+        const savingsAddress =
+          liveStatus.protectionTier === 'light' ? watchedAddressRef.current : pin?.savingsAddress || ''
         const spendingAddress = liveStatus?.spendingArkAddress || ''
         const boardingAddress = liveStatus?.vtxoBoardingAddress || ''
         if (!savingsAddress && !spendingAddress && !boardingAddress) {
@@ -226,6 +321,7 @@ export function useVaultBalances({
           setSnapshot(EMPTY_BALANCES)
           saveBalanceSnapshot(id, EMPTY_BALANCES)
           setBalancesLoaded(true)
+          setSnapshotFresh(true)
           hasSnapshotRef.current = true
           setBalanceError('')
           clearSnapshotRetry()
@@ -242,18 +338,23 @@ export function useVaultBalances({
         let spending = emptySpending
         let boarding = emptyBoarding
         let spendingError: unknown
-        const savingsTask = savingsAddress
-          ? Promise.all([fetchAddressUtxos(savingsAddress), fetchAddressTxs(savingsAddress)]).then(
-              ([utxos, transactions]) => {
-                const balance = savingsUtxoBalance(utxos, transactions, savingsAddress)
-                savings = {
-                  balance: balance.total,
-                  spendable: balance.spendable,
-                  history: historyFromTxs(transactions, savingsAddress, 'savings'),
-                }
-              },
-            )
-          : Promise.resolve()
+        const savingsTask =
+          liveStatus.templateVersion === LEDGER_NATIVE_TEMPLATE
+            ? fetchLedgerSavingsSnapshot(ledgerEnrollmentFromStatus(liveStatus).savings).then((snapshot) => {
+                savings = { balance: snapshot.totalSats, spendable: snapshot.availableSats, history: snapshot.history }
+              })
+            : savingsAddress
+              ? Promise.all([fetchAddressUtxos(savingsAddress), fetchAddressTxs(savingsAddress)]).then(
+                  ([utxos, transactions]) => {
+                    const balance = savingsUtxoBalance(utxos, transactions, savingsAddress)
+                    savings = {
+                      balance: balance.total,
+                      spendable: balance.spendable,
+                      history: historyFromTxs(transactions, savingsAddress, 'savings'),
+                    }
+                  },
+                )
+              : Promise.resolve()
         const spendingTask =
           spendingAddress && liveStatus.enrolled
             ? fetchVaultWalletVtxoSnapshot(liveStatus)
@@ -285,6 +386,7 @@ export function useVaultBalances({
           const preserveSpending = hasSnapshotRef.current
           setSnapshot((current) => ({
             boardingBalance: preserveSpending ? current.boardingBalance : boarding.balance,
+            boardingError: preserveSpending ? current.boardingError : undefined,
             history: mergeVaultHistory(
               savings.history,
               preserveSpending ? current.history.filter((item) => item.account === 'spend') : boarding.history,
@@ -302,10 +404,12 @@ export function useVaultBalances({
         }
         const nextSnapshot = {
           boardingBalance: spendingAddress && liveStatus.enrolled ? spending.boardingBalance || 0 : boarding.balance,
+          boardingError: spending.boardingError,
           history: mergeVaultHistory(
             savings.history,
             spendingAddress && liveStatus.enrolled ? spending.history : boarding.history,
-          ),
+            retainOlderRows(olderHistoryRef.current, savings.history),
+          ).slice(0, MAX_ACTIVITY_ROWS),
           savingsSats: savings.balance,
           savingsSpendableSats: savings.spendable,
           vtxoSpendingSats: spending.balance,
@@ -314,6 +418,7 @@ export function useVaultBalances({
         setSnapshot(nextSnapshot)
         saveBalanceSnapshot(id, nextSnapshot)
         setBalancesLoaded(true)
+        setSnapshotFresh(true)
         hasSnapshotRef.current = true
         spendingReadyRef.current = true
         setBalanceError('')
@@ -338,6 +443,108 @@ export function useVaultBalances({
   )
   refreshBalanceRef.current = refreshBalance
 
+  // Invalidate older-page flights on vault, network, or lock transitions and
+  // on unmount. A-B-A returns carry a new generation, so an earlier scope
+  // can never accept a response from before its own generation.
+  const generationScope = `${refreshVaultId}:${status?.network || ''}:${locked}`
+  useEffect(() => {
+    generationRef.current += 1
+    // The new scope starts with a fresh older-load state; stale flights stay
+    // mute and never write here themselves.
+    setOlderActivity({ status: 'idle', error: '' })
+  }, [generationScope])
+  useEffect(
+    () => () => {
+      generationRef.current += 1
+    },
+    [],
+  )
+
+  /**
+   * One more Esplora window of older Savings records. Only the Savings
+   * address supports this: SDK activity, journals, and local records are
+   * already complete, and boarding history is transient. Balances never
+   * change here; this extends loaded history only, bounded overall.
+   *
+   * Each flight binds to the current request generation. Vault, network, or
+   * lock transitions and unmount invalidate pending flights, whose stale
+   * success, error, and finally callbacks leave current state untouched. A
+   * new scope starts its own flight independently. Concurrent calls within
+   * one generation share a single flight. The merged result is computed
+   * before any state update, so state updaters stay pure.
+   */
+  const loadOlderActivity = useCallback(async (): Promise<OlderActivityResult> => {
+    const generation = generationRef.current
+    const liveFlight = olderFlightRef.current
+    if (liveFlight && liveFlight.generation === generation) return { added: 0, exhausted: false }
+    const requestId = String(
+      statusRef.current?.vaultId || enrollmentRef.current?.vaultId || addressPinRef.current?.vaultId || '',
+    ).trim()
+    const requestNetwork = statusRef.current?.network || ''
+    const memoryPin = addressPinRef.current
+    const pin =
+      memoryPin?.vaultId === requestId ? memoryPin : requestId ? loadAddressPin(localStorage, requestId) : null
+    const savingsAddress =
+      statusRef.current?.protectionTier === 'light' ? watchedAddressRef.current : pin?.savingsAddress || ''
+    const cursor = oldestSavingsTxid(snapshotRef.current.history)
+    if (!requestId || !savingsAddress || !cursor) {
+      setOlderActivity({ status: 'exhausted', error: '' })
+      return { added: 0, exhausted: true }
+    }
+    const token = (flightTokenRef.current += 1)
+    olderFlightRef.current = { token, generation }
+    setOlderActivity({ status: 'loading', error: '' })
+    // A stale flight resolves against its own generation: vault, network, or
+    // lock changes and unmount invalidate it, and its success, error, and
+    // finally callbacks leave current state untouched.
+    const stale = () => generation !== generationRef.current
+    try {
+      const { transactions, exhausted } = await fetchOlderAddressTxs(savingsAddress, cursor)
+      if (stale()) return { added: 0, exhausted: false }
+      const currentId = String(
+        statusRef.current?.vaultId || enrollmentRef.current?.vaultId || addressPinRef.current?.vaultId || '',
+      ).trim()
+      if (currentId !== requestId || (statusRef.current && statusRef.current.network !== requestNetwork)) {
+        return { added: 0, exhausted: false }
+      }
+      const fresh = historyFromTxs(transactions, savingsAddress, 'savings')
+      const base = snapshotRef.current
+      const known = new Set(base.history.map(olderRowKey))
+      const unseen = fresh.filter((item) => !known.has(olderRowKey(item)))
+      const merged = mergeVaultHistory(base.history, unseen).slice(0, MAX_ACTIVITY_ROWS)
+      // When the oldest reference cannot advance, the next request would
+      // repeat the same page: stop instead of promising every loaded payment
+      // the cap cannot hold.
+      const converged = oldestSavingsTxid(merged) === cursor
+      const done = exhausted || converged
+      const nextOlder = [...olderHistoryRef.current, ...unseen].slice(-MAX_ACTIVITY_ROWS)
+      olderHistoryRef.current = nextOlder
+      setOlderHistory(nextOlder)
+      // A concurrent refresh heals through retention: it refetches balances
+      // and keeps these rows while fresh evidence wins every overlap.
+      const mergedSnapshot = { ...base, history: merged }
+      setSnapshot(mergedSnapshot)
+      saveBalanceSnapshot(requestId, mergedSnapshot)
+      setOlderActivity({ status: done ? 'exhausted' : 'idle', error: '' })
+      return { added: unseen.length, exhausted: done }
+    } catch (error) {
+      if (stale()) return { added: 0, exhausted: false }
+      const currentId = String(
+        statusRef.current?.vaultId || enrollmentRef.current?.vaultId || addressPinRef.current?.vaultId || '',
+      ).trim()
+      if (currentId !== requestId) {
+        return { added: 0, exhausted: false }
+      }
+      consoleError(error, 'Vault older activity load')
+      setOlderActivity({ status: 'error', error: 'Could not load older activity. Try again.' })
+      return { added: 0, exhausted: false }
+    } finally {
+      // Release only this flight: an older finally must never clear a newer
+      // scope's in-flight request.
+      if (olderFlightRef.current?.token === token) olderFlightRef.current = null
+    }
+  }, [])
+
   const recoverVtxoSpend = useCallback(async () => {
     const current = statusRef.current
     if (!current?.enrolled || !current.vaultId) return
@@ -352,7 +559,7 @@ export function useVaultBalances({
   useEffect(() => {
     if (locked || !initialStatusChecked || !refreshVaultId) return
     void refreshBalance(refreshVaultId)
-  }, [initialStatusChecked, locked, refreshBalance, refreshVaultId])
+  }, [initialStatusChecked, locked, refreshBalance, refreshVaultId, watchedSavingsAddress])
 
   useEffect(() => {
     if (locked || !status?.enrolled || !status.spendingArkAddress) return
@@ -404,10 +611,15 @@ export function useVaultBalances({
 
   return {
     balanceError,
+    boardingError: snapshot.boardingError || '',
     balancesLoaded,
+    snapshotFresh,
     history,
     positions,
     refreshBalance,
     refreshingBalance,
+    loadOlderActivity,
+    olderActivity,
+    olderHistory,
   }
 }

@@ -1,0 +1,42 @@
+[
+  {
+    "case": "standard",
+    "registered": false,
+    "error": "('0x6a80', 'Error in <BitcoinInsType.REGISTER_WALLET: 2> command', '')",
+    "type": "IncorrectDataError",
+    "screens": []
+  },
+  {
+    "case": "advanced",
+    "registered": false,
+    "error": "('0x6a80', 'Error in <BitcoinInsType.REGISTER_WALLET: 2> command', '')",
+    "type": "IncorrectDataError",
+    "screens": []
+  },
+  {
+    "case": "fixed-placeholder",
+    "registered": false,
+    "error": "('0x6a80', 'Error in <BitcoinInsType.REGISTER_WALLET: 2> command', '')",
+    "type": "IncorrectDataError",
+    "screens": [
+      "Bitcoin Testnet | app is ready"
+    ]
+  },
+  {
+    "case": "derived-positive-control",
+    "registered": true,
+    "walletId": "ca9d6f1593ed892d4bf7f6e5db14ac2ca43257eb3ab8704d54bd274898043b56",
+    "screens": [
+      "Bitcoin Testnet | app is ready",
+      "Review account | to register",
+      "Account name | Native Savings",
+      "Wallet policy | tr(@0/**,pk(@0/<2;3>/ | *))",
+      "Review co-signer | public keys",
+      "Key @0, ours (1/3) | [f5acc2fd/86'/1'/0']tpu | bDDKYE6BREvDsSWM | azgHoyQWiJwYaDDYP",
+      "Key @0, ours (2/3) | bCFjYxN3HFXJP5fokei | K4hwK5tTLBNEDBwr | DXn8cQ4v9b2xdW62",
+      "Key @0, ours (3/3) | Xr5yxoQdMu1v6c7UD | XYVH27U",
+      "Register account",
+      "Account registered"
+    ]
+  }
+]

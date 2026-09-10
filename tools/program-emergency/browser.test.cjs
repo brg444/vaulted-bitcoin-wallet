@@ -12,7 +12,7 @@ const { build } = createRequire(require.resolve('vite/package.json'))('esbuild')
     stdin: {
       resolveDir: root,
       contents: `
-import { recoveryFixture } from './src/lib/vault/recovery/testdata/helpers';
+import { recoveryFixture, sharedSpendingRecoveryFixture } from './src/lib/vault/recovery/testdata/helpers';
 import { scalarSecret, FIXTURE_PHONE_DIRECT_P256 } from './src/lib/vault/program/fixtures';
 import { wrapPhoneSecret } from './src/lib/vault/prfEnvelope';
 import { buildRecoveryHeader, recoveryBackupKey } from './src/lib/vault/recovery/backupCodec';
@@ -24,6 +24,13 @@ export async function fixture() {
  const header=buildRecoveryHeader(kit,status,enrollment);
  return createPortableRecoveryPackage({name:'vaulted-recovery',version:1,header,archive},await recoveryBackupKey(scalarSecret(3),header));
 }
+export async function lightFixture() {
+ const {archive,status,kit}=sharedSpendingRecoveryFixture();
+ const enrollment={vaultId:status.vaultId,credId:'ac'.repeat(32),webauthnP256:FIXTURE_PHONE_DIRECT_P256,phoneBip340Pub:kit.descriptor.keys.phoneBip340,phoneDirectP256:kit.descriptor.keys.phoneDirectP256,...await wrapPhoneSecret(scalarSecret(9),new Uint8Array(32).fill(7))};
+ const header=buildRecoveryHeader(kit,status,enrollment);
+ return createPortableRecoveryPackage({name:'vaulted-recovery',version:1,header,archive},await recoveryBackupKey(new Uint8Array(32).fill(7),header));
+}
+export function signLight(bytes) { const tx=Transaction.fromPSBT(bytes); tx.sign(new Uint8Array(32).fill(7)); return tx.toPSBT(); }
 export function sign(bytes) { const tx=Transaction.fromPSBT(bytes); tx.sign(scalarSecret(4)); tx.sign(scalarSecret(5)); return tx.toPSBT(); }
 `,
     },
@@ -132,6 +139,38 @@ export function sign(bytes) { const tx=Transaction.fromPSBT(bytes); tx.sign(scal
     await expect(page.locator('#error')).not.toBeEmpty()
     await expect(page.locator('#prepared')).toBeHidden()
     await expect(page.locator('#review')).toBeHidden()
+    const light = await fixture.lightFixture()
+    await page.reload()
+    await page
+      .locator('#file')
+      .setInputFiles({ name: 'light.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(light)) })
+    await expect(page.locator('#review')).toBeVisible()
+    await expect(page.locator('#requirements')).toContainText('wallet key unlocked by your original passkey')
+    expect(await page.locator('#program option').evaluateAll((options) => options.map((o) => o.value))).toEqual([
+      'spending',
+      'boarding',
+    ])
+    expect(await page.locator('#fee-key option').evaluateAll((options) => options.map((o) => o.value))).toEqual([
+      'phone',
+    ])
+    await page.locator('#destination').fill(light.archive.status.vtxoBoardingAddress)
+    await page.locator('#prepare').click()
+    await expect(page.locator('#signature')).toBeVisible()
+    const lightDownloadEvent = page.waitForEvent('download')
+    await page.locator('#save-psbt').click()
+    const lightDownload = await lightDownloadEvent
+    const lightSigned = fixture.signLight(new Uint8Array(await fs.readFile(await lightDownload.path())))
+    await page
+      .locator('#signed-file')
+      .setInputFiles({ name: 'signed.psbt', mimeType: 'application/octet-stream', buffer: Buffer.from(lightSigned) })
+    await page.waitForFunction(() => document.querySelector('#signed-file').value === '')
+    await expect(page.locator('#sign-error')).toBeEmpty()
+    await page.locator('#finish-signing').click()
+    await expect(page.locator('#prepared')).toBeVisible()
+    await page.screenshot({
+      path: path.join(root, '.vault-browser-tests/recovery-qa/light-prepared.png'),
+      fullPage: true,
+    })
     if (requests.some((request) => request.method === 'POST')) throw new Error('Unexpected broadcast')
     if (blocked.length) throw new Error('Unexpected external request: ' + blocked.join(', '))
     if (errors.length) throw new Error(errors.join('\n'))
@@ -140,7 +179,7 @@ export function sign(bytes) { const tx=Transaction.fromPSBT(bytes); tx.sign(scal
       JSON.stringify(
         {
           passed: true,
-          scope: 'Advanced portable import and actual PSBT handoff; mocked Bitcoin, no broadcast',
+          scope: 'Advanced and fresh Light portable import and actual PSBT handoff; mocked Bitcoin, no broadcast',
           phoneRequested: false,
           resumed: true,
           requests,

@@ -1,7 +1,8 @@
+import { requireSpendingEnrollmentStatus } from '../spendingEnrollment'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
 import { EsploraProvider, Transaction } from '@arkade-os/sdk'
-import { parseRecoveryKit, type RecoveryKit } from '../program/kit'
+import { isLedgerRecoveryKit, isSpendingRecoveryKit, parseRecoveryKit, type RecoveryKit } from '../program/kit'
 import { kitFromFacts } from '../program/kitBackup'
 import {
   packExitArchive,
@@ -19,14 +20,23 @@ import { networkPins } from '../networkPins'
 import { readBounded } from '../bounded'
 import { isConnectorTemplate } from '../program/connector'
 import { connectorPinFromVerifiedStatus } from '../program/connectorEnroll'
+import {
+  loadBoardingTranscripts,
+  mergeBoardingTranscripts,
+  storeBoardingTranscripts,
+  validateBoardingTranscripts,
+  type BoardingTranscript,
+} from './boardingJournal'
 import { hashBoardingEnrollmentDescriptor } from '../program/enroll'
+import { loadLifecycleArchive } from '../recovery/lifecycleStore'
 
-export interface VaultRecoveryArchive {
+export interface VaultRecoveryArchive<K extends RecoveryKit = RecoveryKit> {
   name: 'vaulted-program-recovery-data'
   version: 1
-  kit: RecoveryKit
+  kit: K
   status: VaultStatus
   spending: ExitArchive
+  boardingTranscripts?: BoardingTranscript[]
   onchain: { txid: string; vout: number; value: number; script: string; parentHex: string }[]
 }
 
@@ -40,7 +50,12 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
     throw new Error('Recovery Operator does not match this release')
   const boarding = requireBoardingStatus(status, String(status.vtxoBoardingDescriptor?.boardingPub || ''))
   if (isConnectorTemplate(status.templateVersion)) connectorPinFromVerifiedStatus(status)
-  else if (
+  else if (isLedgerRecoveryKit(valid)) {
+    if (valid.descriptor.enrollmentDescriptorHash !== status.ledgerSavings?.descriptorHash)
+      throw new Error('Ledger recovery enrollment composite changed')
+  } else if (isSpendingRecoveryKit(valid)) {
+    requireSpendingEnrollmentStatus(status)
+  } else if (
     hashBoardingEnrollmentDescriptor({
       schema: 'arkade-vault/enrollment-with-board-v1',
       vaultId: status.vaultId,
@@ -68,10 +83,11 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
 export function validateVaultRecoveryArchive(value: VaultRecoveryArchive) {
   if (!value || value.name !== 'vaulted-program-recovery-data' || value.version !== 1)
     throw new Error('Invalid program recovery data')
-  const binding = vaultRecoveryBinding(value.kit, value.status)
-  validateExitArchive(value.spending, binding)
   if (!Array.isArray(value.onchain) || value.onchain.length > 1024 || JSON.stringify(value).length > 24_000_000)
     throw new Error('Onchain recovery data exceeds the archive limit')
+  const binding = vaultRecoveryBinding(value.kit, value.status)
+  validateExitArchive(value.spending, binding)
+  validateBoardingTranscripts(value.boardingTranscripts ?? [], value.status.vtxoBoardingDescriptor!)
   const scripts = new Set(archiveAddresses(value.kit, value.status).map((tree) => tree.script))
   const seen = new Set<string>()
   for (const coin of value.onchain) {
@@ -101,8 +117,10 @@ export function validateVaultRecoveryArchive(value: VaultRecoveryArchive) {
 }
 
 function archiveAddresses(kit: RecoveryKit, status: VaultStatus) {
+  if (isSpendingRecoveryKit(kit)) return [requireBoardingStatus(status, kit.descriptor.enrollment.boarding.boardingPub)]
   return [
     kit.descriptor.savings,
+    ...(isLedgerRecoveryKit(kit) ? [kit.descriptor.savingsChange] : []),
     ...Object.values(kit.descriptor.pending),
     ...Object.values(kit.descriptor.quarantine),
     requireBoardingStatus(status, status.vtxoBoardingDescriptor!.boardingPub),
@@ -176,8 +194,15 @@ export async function captureVaultRecoveryArchive(kit: RecoveryKit, status: Vaul
     const previous = await loadVaultRecoveryArchive(savedKit, savedStatus)
     const repository = vaultExitRepository(savedStatus.vaultId, binding.network)
     try {
-      const spending = await captureExitArchive(binding, repository, previous?.spending ?? null)
+      const spending =
+        (await loadLifecycleArchive(vaultWalletDatabase(savedStatus.vaultId), binding)) ??
+        (await captureExitArchive(binding, repository, previous?.spending ?? null))
       const onchain = await captureOnchain(savedKit, savedStatus, previous)
+      const boardingTranscripts = mergeBoardingTranscripts(
+        savedStatus.vtxoBoardingDescriptor!,
+        previous?.boardingTranscripts ?? [],
+        await loadBoardingTranscripts(savedStatus.vaultId, savedStatus.vtxoBoardingDescriptor!),
+      )
       const archive = validateVaultRecoveryArchive({
         name: 'vaulted-program-recovery-data',
         version: 1,
@@ -185,6 +210,7 @@ export async function captureVaultRecoveryArchive(kit: RecoveryKit, status: Vaul
         status: savedStatus,
         spending,
         onchain,
+        boardingTranscripts,
       })
       const db = await archiveDatabase(savedStatus.vaultId, binding.network)
       try {
@@ -233,6 +259,11 @@ export async function storeVaultRecoveryArchive(value: VaultRecoveryArchive) {
       archive = validateVaultRecoveryArchive({
         ...previous,
         onchain,
+        boardingTranscripts: mergeBoardingTranscripts(
+          incoming.status.vtxoBoardingDescriptor!,
+          previous.boardingTranscripts ?? [],
+          incoming.boardingTranscripts ?? [],
+        ),
         spending: {
           ...previous.spending,
           coins: packExitArchive(coins),
@@ -241,6 +272,12 @@ export async function storeVaultRecoveryArchive(value: VaultRecoveryArchive) {
         },
       })
     }
+    const boardingTranscripts = await storeBoardingTranscripts(
+      archive.status.vaultId,
+      archive.status.vtxoBoardingDescriptor!,
+      archive.boardingTranscripts ?? [],
+    )
+    archive = validateVaultRecoveryArchive({ ...archive, boardingTranscripts })
     const db = await archiveDatabase(archive.status.vaultId, binding.network)
     try {
       await new Promise<void>((resolve, reject) => {

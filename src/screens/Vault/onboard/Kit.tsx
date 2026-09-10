@@ -17,7 +17,7 @@ function downloadJson(name: string, body: string) {
 }
 
 export default function VaultKit() {
-  const { downloadRecoveryKit, navigate } = useContext(VaultContext)
+  const { downloadRecoveryKit, navigate, status } = useContext(VaultContext)
   const [downloadRequested, setDownloadRequested] = useState(false)
   const { toast } = useToast()
 
@@ -53,8 +53,10 @@ export default function VaultKit() {
     >
       <h1>Save your Recovery Kit</h1>
       <p className='qg-copy'>
-        Your Recovery Kit records Savings addresses and recovery rules. It contains no private keys. Recovery also needs
-        the keys and transaction data for the selected path.
+        Your Recovery Kit records{' '}
+        {status?.protectionTier === 'light' ? 'Spending and Bitcoin deposit addresses' : 'Savings addresses'} and
+        recovery rules. It contains no private keys. Recovery also needs the keys and transaction data for the selected
+        path.
       </p>
       {!downloadRequested ? (
         <>

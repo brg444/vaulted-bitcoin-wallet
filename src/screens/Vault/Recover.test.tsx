@@ -15,6 +15,8 @@ const boardingRecovery = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/vault/esplora', () => ({
+  fetchTipHeight: vi.fn().mockResolvedValue(1000),
+  fetchTxHex: vi.fn(),
   broadcastTx: vi.fn(),
   fetchAddressUtxos: vi.fn().mockResolvedValue([]),
   fetchFeeEstimates: vi.fn(),

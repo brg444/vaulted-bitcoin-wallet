@@ -1,169 +1,93 @@
-# Using Ledger with Vaulted Savings
+# Ledger and Vaulted Savings
 
-Your Ledger holds the separate key used to approve Savings transfers. Vaulted
-prepares the transfer, a desktop wallet passes the approval request to Ledger,
-and you review the destination and amounts on the device. The signed approval
-returns to Vaulted for the remaining approvals and submission.
+The native Ledger integration is under qualification and is not enabled for new
+RC enrollments yet. Existing wallets retain the contract selected when they were
+created. If your wallet asks for two 500-sat signer reserves, use the
+[existing connector wallet guide](ledger-connector-guide.md).
 
-This guide applies to the two-reserve connector. Existing one-reserve wallets
-retain their original contract and signing flow.
+## Native Savings setup
 
-## Compatibility today
+Connect the Ledger through a supported desktop browser and open its Bitcoin app.
+Vaulted reads its public account information and sends the complete **Vaulted
+Savings** policy for registration. Review the policy and its public keys on the
+device, then verify the receiving address. You register one policy; Vaulted
+supplies every key entry automatically.
 
-Ledger Bitcoin app 2.4.2 source, compiled for Nano S Plus, passed simulator
-tests for Taproot and native SegWit, with both full and partial withdrawals.
-The completed Bitcoin signatures and current Emulator checks passed.
+Keep the Ledger seed backup and the Vaulted recovery package. They serve different
+purposes: the seed restores the Ledger keys, while the package preserves the
+wallet policy, phone-key backup and recovery data. A policy registration record
+by itself cannot recover funds. If the registration authorization is lost, the
+same Ledger seed can register the original policy again.
 
-Physical Ledger approval, the exact application binary distributed through
-Ledger's software, a complete Ledger-plus-desktop-wallet workflow and funded
-production submission remain unqualified. Sparrow's software-signing tests
-cover its own keys, separately from its Ledger connection. Treat the device
-steps below as the workflow to qualify before relying on this setup for Savings.
+USB access depends on the browser. The current integration targets desktop
+browsers with WebHID. It does not establish a direct USB signing flow in iOS
+Safari or support for an arbitrary desktop wallet importing this policy.
 
-The recorded screens came from the Bitcoin Testnet application in the simulator.
-Labels, pagination and confirmation gestures can differ across devices and
-application versions. See the [technical qualification](../tools/connector-signers/LEDGER.md)
-for exact source and simulator versions.
+## Receive and send
 
-## Set up the key
+Receive bitcoin at the verified Savings address. Normal native Savings has no
+signer reserve to fund.
 
-1. Generate and back up the seed on your Ledger, or use an existing backed-up
-   Ledger account. Enter the PIN on the device and open its Bitcoin application
-   for the network you are using.
-2. In Sparrow, create a wallet with **Single Signature → Taproot (BIP86)**,
-   then choose **Connected Hardware Wallet** and import the Ledger account.
-   Native SegWit (BIP84) is an alternative when it is the account you intend to
-   use. Sparrow's [USB setup guide](https://sparrowwallet.com/docs/connected-wallet.html)
-   explains the connection process.
-3. Apply the settings and show the public **Descriptor** QR, or export an
-   **Output Descriptor** file. Scan, upload or paste it into Vaulted. A Taproot
-   descriptor starts with `tr(`; native SegWit starts with `wpkh(`.
-4. Compare the first receiving address selected by Vaulted with that account's
-   address, including verification on the Ledger screen. An account number or
-   passphrase change selects a different key.
+When sending, approve the retained payment with the phone, then check the
+recipient address, amount and network fee on the Ledger. The device signs the
+Savings input itself. Its DEFAULT signature commits to every output, including
+Savings change. Vaulted verifies the returned signature against the original
+payment before passing it to the transaction submission flow.
 
-Keep your seed words on their offline backup. Sparrow should connect to the
-hardware key; importing seed words into a software wallet creates a different
-security setup. Computer-generated test seeds belong in a separate test wallet.
+The qualified simulator flow displayed the named account and payment details
+without external-input or non-default signature warnings. A request to enable
+non-default signing is outside this native flow; cancel it and check the wallet
+contract. A failed or cancelled device approval is not retried automatically.
 
-The exported descriptor is public signing information. It can reveal addresses
-and transaction activity, so share it only where needed. A matching descriptor
-establishes which key is selected; signing compatibility requires its own test.
+## Recovery and qualification
 
-## Fund Savings through Vaulted
+The ordinary two-key path needs the phone and Ledger. Starting delayed recovery
+after losing one key requires a remaining user authority and the Guardian. The
+Guardian alone cannot spend. If an attacker controls both a recovery user key
+and the Guardian key, they can bypass the pending stage and steal through that
+recovery leaf. Ledger's transaction review does not protect a different path
+that can be signed without it.
 
-Receive Bitcoin using **Savings → Deposit**. The receiving address and QR code
-accept ordinary Bitcoin payments without a PSBT.
+After the pending transaction confirms, its claimant waits the enrolled block
+delay. The remaining user authorities can cancel through their saved scripts.
+The shorter hardware delay applies to this pending stage; it is not a guaranteed
+intervention window when the initiation keys are compromised.
 
-Before transferring Savings, open **Security → Savings signer setup**. Send two
-separate payments of exactly 500 sats to the displayed signer address, with
-network fees paid in addition. Compare it with the Ledger receiving address
-selected during enrollment. Wait for both outputs to confirm. The reserves total
-1,000 sats and return to the enrolled signer address after a Savings transfer.
+Simulator, complete backup restoration and funded service lifecycle tests pass,
+allowing software deployment with native enrollment disabled. Physical Ledger
+review remains required before enabling new enrollment, while existing funded
+connector wallets require an explicit migration transaction.
 
-A single payment of 1,000 sats creates the wrong output arrangement. If your
-wallet exports unsigned PSBTs, **Advanced: fund with a Savings deposit** can
-create both 500-sat outputs with a Savings deposit in one transaction. Existing
-prepared deposits remain resumable.
+The stock Ledger app cannot sign the existing Spending exit tree. Emergency
+Spending recovery therefore uses a separately bundled offline signing tool. In
+Standard, recovery needs the Ledger seed and the recovered phone key. Advanced
+needs the Ledger seed and the separate recovery wallet seed. The tool checks
+these keys against the saved enrollment before signing the reviewed exit.
 
-You can also choose **Fund from Spending** in signer setup. Review the signer
-address, reserve amount and quoted Operator fee, then confirm. This requires
-one settled Spending output covering the reserves, fee and protected change;
-setup completes after Bitcoin confirmation and local recovery-data sync.
-Pending funding remains visible on the wallet home screen.
+Entering a seed gives that offline computer access to every account derived from
+it. This is an emergency procedure: verify the recovery tool, disconnect the
+computer from networks, review the destination and fee, and transfer only the
+signed transaction back to the online recovery tool. Move remaining funds to new
+seeds afterward. Never enter a seed into the normal online wallet or send it in
+chat. Ordinary Savings payments continue to use the Ledger device.
 
-A desktop wallet watching the Ledger descriptor may show the two reserves
-without showing the Savings balance. Savings belongs to its separate enrolled
-contract, with additional signers and recovery rules. Manage Savings through
-Vaulted and leave the reserves unspent by ordinary desktop-wallet payments or
-coin consolidation. Spending a reserve interrupts the normal approval flow.
+The recovery companion exports a public signing request. Open the bundled offline
+signer, disconnect its computer, review the recipient and fees, and enter the
+required seed there. Import the resulting PSBT into the companion. Repeat with
+the second authority when required; Standard keeps its phone approval and
+Advanced needs both independent external authorities.
 
-## Review a transfer
+Bitcoin exit fees use the enrolled hardware account's ordinary Taproot receive
+key at account `/0/0`. Advanced may instead use its enrolled recovery account.
+Fund the displayed fee address with Bitcoin, then use the same offline handoff
+for each requested fee signature. The signer verifies the saved exit graph,
+funding parents, fee cap and change destination before signing. It cannot use
+these fee inputs to redirect the recovered Spending funds. Parent publication,
+fee funding and the final delayed sweep are separate Bitcoin transactions.
 
-1. Enter the recipient and amount in Vaulted, then export the hardware approval
-   PSBT. Open it in the desktop wallet connected to the enrolled Ledger account.
-2. Check the transaction details and request signing with the Ledger. The
-   device signs two reserve inputs, while the Savings input remains unsigned.
-3. Review the full recipient address against an independently obtained address,
-   and check its amount. For a partial withdrawal, also check that the remaining
-   Savings returns to the enrolled Savings address.
-4. Check both reserve returns, the anchor and the fee before confirming on the
-   Ledger. Return the partially signed PSBT to Vaulted without trying to
-   broadcast it from the desktop wallet.
-5. Complete Vaulted's remaining approval prompts and follow the pending
-   transfer there. Ledger confirmation alone does not submit the transaction.
+Spending has separate recovery paths. Its unilateral exit needs saved transaction
+paths updated after activity; Savings policy registration does not replace that
+backup or remove its synchronization requirement.
 
-The simulator displayed generic numbered outputs. Identify Savings and the
-reserves by their full addresses and amounts when reviewing them.
-A partial transfer displayed five monetary outputs; a full withdrawal displayed
-four, because there was no Savings change output.
-
-## Understand the warnings
-
-| Observed warning | Meaning in this transaction | What to check |
-| --- | --- | --- |
-| There are external inputs | Ledger owns the two reserve inputs; Savings is controlled by its separate contract. | The request came from your intended Vaulted transfer and uses the enrolled reserve key. |
-| Non-default sighash | Each reserve signature approves the output at its matching position. | The recipient and amount, protected Savings change when present, and the complete visible output list. |
-
-Sparrow may also show a **Non-Default Sighash** warning before opening the PSBT.
-These warnings are expected in the tested flow, but their presence does not
-establish that a request is safe. Cancel a request with an unexpected address,
-amount, output, signing mode or additional warning, and resolve the discrepancy
-before signing. An unexpected failure is not a reason to disable device checks.
-
-The required mode is `SIGHASH_SINGLE` without `ANYONECANPAY`. The first signature
-commits to the recipient output. The second commits to Savings change for a
-partial withdrawal, or the first returned reserve for a full withdrawal.
-
-The device displays every monetary output; each reserve signature commits to
-its corresponding output only. The Emulator independently verifies the two
-signature commitments, fee limits, protected change, reserve returns and layout.
-The subsequent Savings signatures commit to the complete transaction. This
-separation defines which checks each participant performs.
-
-Ledger's approval PSBT omits a final zero-value program-data output. Vaulted
-adds that output before the Savings approvals; none of the monetary outputs
-shown for approval changes. The data carries the proof used by the Emulator.
-Bitcoin validates the ordinary input signatures, while Arkade Script checks
-depend on an honest Emulator. You still need to verify the intended recipient.
-
-## Example amounts on the device
-
-For a partial withdrawal from 100,000 sats of Savings, the tested example paid
-8,000 sats with a 1,000-sat network fee:
-
-| Device entry | Sats | BTC |
-| --- | ---: | ---: |
-| Output 1: recipient | 8,000 | 0.00008000 |
-| Output 2: Savings change | 90,760 | 0.00090760 |
-| Output 3: reserve A | 500 | 0.00000500 |
-| Output 4: reserve B | 500 | 0.00000500 |
-| Output 5: anchor | 240 | 0.00000240 |
-| Network fee, displayed separately | 1,000 | 0.00001000 |
-
-The inputs total 101,000 sats: Savings plus the two reserves. The 240-sat anchor
-is a separate transaction output used for fee bumping, so it appears in
-addition to the network fee. For a full withdrawal with the same fee, the
-recipient receives 98,760 sats and the Savings change output disappears.
-
-The fee above is an example, not a fixed quote. The approval proof adds roughly
-2 KB to the final transaction; Vaulted includes that cost in fee estimation and
-retains its configured fee ceilings.
-
-## After approval, cancellation and recovery
-
-A partially signed PSBT is the expected return file because Ledger cannot
-supply the remaining Savings approvals. Vaulted verifies the reserve signatures
-before requesting those approvals and submitting the completed transaction.
-
-If you reject signing on the device, return to Vaulted to inspect the pending
-request. Once signatures have been returned, closing a window or disconnecting
-the Ledger does not revoke them. Resume the saved transfer and resolve its
-status before creating a replacement.
-
-A Ledger seed backup restores its key, but complete Savings recovery also
-depends on the enrolled protection tier, other required keys and retained
-recovery data. Keep Vaulted's recovery material current and stored separately.
-Advanced's independent recovery key is distinct from the Ledger seed backup;
-adding the connector leaves existing recovery delays and signer requirements
-in place.
+See the [implementation evidence and release gates](ledger-native-savings-design.md)
+and [Ledger’s integration specification](https://github.com/LedgerHQ/app-bitcoin/blob/develop/doc/integration.md).

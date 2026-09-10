@@ -8,11 +8,14 @@
     "@arkade-os/solver-discovery": "0.2.3",
     "@arkade-os/swap": "0.0.10",
     "@fontsource-variable/geist": "^5.2.8",
+    "@ledgerhq/hw-transport-webhid": "6.36.0",
+    "@ledgerhq/ledger-bitcoin": "0.3.1",
     "@ngraveio/bc-ur": "1.1.13",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@scure/base": "2.0.0",
     "@scure/bip32": "2.0.1",
+    "@scure/bip39": "2.0.1",
     "@scure/btc-signer": "2.0.1",
     "@vercel/blob": "^2.8.0",
     "buffer": "^6.0.3",
@@ -45,6 +48,7 @@
     "test:unit": "vitest run --exclude '**/e2e/**'",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.vault.config.ts",
+    "test:ux": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.ux.config.ts",
     "test:visual": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.visual.config.ts",
     "test:e2e:ui": "node scripts/prepare-browser-tests.mjs && playwright test -c playwright.vault.config.ts --ui",
     "test:codegen": "playwright codegen localhost:3003",
@@ -54,7 +58,8 @@
     "format": "prettier --write src",
     "format:check": "prettier --check src",
     "build:mutinynet": "VITE_VAULT_RELEASE_NETWORK=mutinynet pnpm build",
-    "test:recovery-browser": "node tools/program-emergency/build.mjs && node tools/program-emergency/browser.test.cjs"
+    "test:recovery-browser": "node tools/program-emergency/build.mjs && node tools/program-emergency/browser.test.cjs",
+    "test:lightning-quote": "VAULT_LN_RECEIVE_PROBE=true vitest run --config vitest.lightning-probe.config.ts"
   },
   "eslintConfig": {
     "extends": [

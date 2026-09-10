@@ -14,11 +14,11 @@
       "quote_asset": { "id": "btc", "name": "Bitcoin", "ticker": "BTC", "decimals": 8 },
       "quote_corridor": "lightning",
       "fee_bps": 30,
-      "min_base_amount": "0",
-      "max_base_amount": "0",
+      "min_base_amount": "500",
+      "max_base_amount": "50000",
       "min_quote_amount": "500",
       "max_quote_amount": "50000"
     }
   ],
-  "sig": "d46becad2e325adf6e87b53e271e7faf21c0a49ba9dd249b4c0f6865f42f55fa93035fc953003578810f89af54f0d913382df26556ec9e616d7d606669b36e1f"
+  "sig": "c2df73c8b719d89e4d64ac6ee143bbf1820f98f5443f5e5476649d178b9a21d3cc3d7bc13180c464874365629f319718083a928b4d50b8f2e303f6c7e8c774ab"
 }

@@ -4,6 +4,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion'
 
 interface QrCodeProps {
   large?: boolean
+  compact?: boolean
   value: string
 }
 
@@ -76,7 +77,7 @@ function renderFinderPattern(
   return elements
 }
 
-export default function QrCode({ large = false, value }: QrCodeProps) {
+export default function QrCode({ large = false, compact = false, value }: QrCodeProps) {
   const prefersReduced = useReducedMotion()
   const prevMatrixRef = useRef<boolean[][] | null>(null)
   const renderCountRef = useRef(0)
@@ -94,6 +95,28 @@ export default function QrCode({ large = false, value }: QrCodeProps) {
     const fgColor = '#040404'
     const bgColor = '#ffffff'
     const logoColor = '#111015'
+
+    // Small, dense codes preserve every module so software scanners can read them reliably.
+    if (compact) {
+      const path = matrix
+        .flatMap((row, y) =>
+          row.map((filled, x) =>
+            filled ? `M${quietZone + x * moduleSize},${quietZone + y * moduleSize}h10v10h-10z` : '',
+          ),
+        )
+        .join('')
+      return (
+        <svg
+          viewBox={`0 0 ${svgSize} ${svgSize}`}
+          width='100%'
+          xmlns='http://www.w3.org/2000/svg'
+          style={{ display: 'block', width: '100%', height: 'auto' }}
+        >
+          <rect width={svgSize} height={svgSize} fill={bgColor} />
+          <path d={path} fill={fgColor} />
+        </svg>
+      )
+    }
 
     const logoModules = Math.ceil(size * 0.2)
     const logoZoneSize = logoModules % 2 === 0 ? logoModules + 1 : logoModules
@@ -202,7 +225,7 @@ export default function QrCode({ large = false, value }: QrCodeProps) {
         {elements}
       </svg>
     )
-  }, [value, prefersReduced])
+  }, [value, prefersReduced, compact])
 
   return svgContent ? (
     <div className={large ? 'vault-receive-qr vault-receive-qr-large' : 'vault-receive-qr'}>{svgContent}</div>

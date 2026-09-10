@@ -10,10 +10,9 @@ import {
   type VaultRecoveryFile,
 } from './backupCodec'
 import { validateVaultRecoveryArchive, type VaultRecoveryArchive } from '../vtxo/recoveryArchive'
-import { buildRecoveryKit, parseRecoveryKit } from '../program/kit'
-import { buildVaultProgramDescriptor } from '../program/descriptor'
+import { parseRecoveryKit } from '../program/kit'
 import { validateSpendingPolicy } from '../spendingPolicy'
-import { normalizeRecoveryChain } from './exitArchive'
+import { normalizeRecoveryChain, type ExitArchive } from './exitArchive'
 
 // Compare JSON values independently of property order, while rejecting extra fields.
 function canonical(value: unknown): string {
@@ -130,6 +129,20 @@ function publicCoins(raw: string): string {
 /** Transaction paths are readable without a phone. Operational journals remain encrypted. */
 export const MAX_PORTABLE_RECOVERY_BYTES = 32_000_000
 
+export function publicExitArchive(archive: ExitArchive): ExitArchive {
+  return {
+    version: 1,
+    descriptorHash: archive.descriptorHash,
+    capturedAt: archive.capturedAt,
+    info: publicInfo(archive.info),
+    coins: publicCoins(archive.coins),
+    branches: Object.fromEntries(
+      Object.entries(archive.branches).map(([key, chain]) => [key, normalizeRecoveryChain(chain)]),
+    ),
+    transactions: { ...archive.transactions },
+  }
+}
+
 export interface PortableRecoveryPackage {
   name: 'vaulted-recovery-package'
   version: 1
@@ -141,23 +154,7 @@ export async function createPortableRecoveryPackage(file: VaultRecoveryFile, key
   const valid = validateVaultRecoveryFile(file)
   const d = valid.header.kit.descriptor
   const policy = validateSpendingPolicy(valid.header.status.spendingPolicy, d.network)
-  const kit = buildRecoveryKit(
-    buildVaultProgramDescriptor({
-      vaultId: d.vaultId,
-      network: d.network,
-      templateVersion: d.templateVersion,
-      connectorType: d.connectorType,
-      protectionTier: d.protectionTier,
-      spendingPolicy: policy,
-      phonePub: d.keys.phoneBip340,
-      hardwarePub: d.keys.hardware,
-      recoveryPub: d.keys.recovery,
-      phoneDirectP256: d.keys.phoneDirectP256,
-      vaultCosignerBase: d.keys.vaultCosignerBase,
-      arkadeCosignerBase: d.keys.arkadeCosignerBase,
-      arkadeCosigner: { origin: d.arkadeCosigner.origin, version: d.arkadeCosigner.version },
-    }),
-  )
+  const kit = parseRecoveryKit(valid.header.kit)
   const status = recoveryStatusFacts(valid.header.status)
   status.spendingPolicy = policy
   if (status.vtxoBoardingDescriptor) {

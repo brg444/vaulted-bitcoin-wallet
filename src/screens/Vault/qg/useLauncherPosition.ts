@@ -3,7 +3,7 @@ import { hapticSubtle } from '../../../lib/haptics'
 import { launcherCoast, launcherReleaseVelocity, type LauncherSample } from './launcherMomentum'
 
 const KEY = 'vault-launcher-position-v3'
-const HEIGHT = 72
+const HEIGHT = 62
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(min, max), Math.max(min, value))
 
 function readPosition() {

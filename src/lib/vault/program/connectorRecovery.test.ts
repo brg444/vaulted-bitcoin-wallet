@@ -1,3 +1,4 @@
+import { requireSavingsRecoveryKit, parseRecoveryKit, inspectRecoveryKit } from './kit'
 import { DUAL_CONNECTOR_TEMPLATE } from './connector'
 import { expect, it } from 'vitest'
 import { hex } from '@scure/base'
@@ -5,7 +6,6 @@ import { Transaction } from '@scure/btc-signer'
 import vectors from './connector-enrollment-vectors.json'
 import { buildConnectorEnrollmentPreview, buildConnectorRecoveryKit } from './connectorEnrollmentCore'
 import { familyFromDescriptor } from './descriptor'
-import { parseRecoveryKit, inspectRecoveryKit } from './kit'
 import { buildInitiatePsbt, buildClawbackPsbt, buildClaimPsbt } from './spend'
 
 for (const vector of vectors) {
@@ -15,7 +15,7 @@ for (const vector of vectors) {
       const input = { ...vector.input, templateVersion } as Parameters<typeof buildConnectorEnrollmentPreview>[0]
       const preview = buildConnectorEnrollmentPreview(input)
       const saved = buildConnectorRecoveryKit(preview, { ...input, boarding: input.boarding! })
-      const kit = parseRecoveryKit(JSON.parse(JSON.stringify(saved)))
+      const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(JSON.stringify(saved))))
       expect(kit.descriptor.savings.address).toBe(saved.savingsAddress)
       const family = familyFromDescriptor(kit.descriptor)
       expect(hex.encode(family.savings.script)).toBe(saved.savingsScript)

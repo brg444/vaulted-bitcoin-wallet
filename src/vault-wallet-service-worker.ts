@@ -1,13 +1,7 @@
-import { lightExitRepository, lightExitCapture } from './lib/vault/light/exitRepository'
 import { vaultExitRepository, vaultExitCapture } from './lib/vault/vtxo/exitRepository'
-import { loadLightWorkerDescriptor, lightObserverIdentity } from './lib/vault/light/workerIdentity'
-import { registerLightContractHandler, lightContract } from './lib/vault/light/contractHandler'
-import { lightStatusMatchesDescriptor } from './lib/vault/light/status'
-import { LightScript } from './lib/vault/light/contract'
 import {
   IndexedDBContractRepository,
   IndexedDBIntentRepository,
-  IndexedDBWalletRepository,
   MessageBus,
   RestArkProvider,
   SingleKey,
@@ -32,6 +26,7 @@ import {
   vaultWalletDatabaseForNamespace,
 } from './lib/vault/vtxo/walletWorkerNames'
 import { vaultArkServer, vaultPolicyV1ScriptFromStatus } from './lib/vault/vtxo/spend'
+import { RecoveryWalletRepository } from './lib/vault/recovery/walletRepository'
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -42,13 +37,12 @@ const pinnedNetwork = workerLocation.searchParams.get('network') || ''
 installVaultSettlementEventSource()
 registerVaultPolicyV1ContractHandler()
 
-const walletRepository = new IndexedDBWalletRepository(vaultWalletDatabaseForNamespace(namespace))
+const walletRepository = new RecoveryWalletRepository(vaultWalletDatabaseForNamespace(namespace))
 const contractRepository = new IndexedDBContractRepository(vaultWalletDatabaseForNamespace(namespace))
 const intentRepository = new IndexedDBIntentRepository(vaultWalletIntentDatabaseForNamespace(namespace))
 
 // Like the wallet and contract stores, this repository belongs to the worker.
 // Reuse it across STOP/reinitialize instead of opening another IDB connection.
-let lightVirtualTxRepository: ReturnType<typeof lightExitRepository> | undefined
 let virtualTxRepository: ReturnType<typeof vaultExitRepository> | undefined
 
 const bus = new MessageBus(walletRepository, contractRepository, {
@@ -57,48 +51,6 @@ const bus = new MessageBus(walletRepository, contractRepository, {
   messageTimeoutMs: 60_000,
   messageTimeoutOverrides: { SETTLE: 15 * 60_000 },
   buildServices: async (config) => {
-    const lightDescriptor = await loadLightWorkerDescriptor(namespace)
-    if (lightDescriptor) {
-      const status = lightStatusMatchesDescriptor(
-        await fetchVaultStatusUnpinned(undefined, lightDescriptor.vaultId),
-        lightDescriptor,
-      )
-      if (pinnedNetwork !== status.network || config.arkServer.url !== vaultArkServer(status.network))
-        throw new Error('Light worker network mismatch')
-      const operator = String(config.arkServer.publicKey || '').toLowerCase()
-      if (operator && operator !== lightDescriptor.operatorPub && operator.slice(2) !== lightDescriptor.operatorPub)
-        throw new Error('Light worker Operator mismatch')
-      registerLightContractHandler()
-      const wallet = await Wallet.create({
-        identity: lightObserverIdentity(lightDescriptor),
-        arkServerUrl: config.arkServer.url,
-        arkServerPublicKey: config.arkServer.publicKey,
-        indexerUrl: config.indexerUrl,
-        esploraUrl: config.esploraUrl,
-        storage: {
-          walletRepository,
-          contractRepository,
-          intentRepository,
-          virtualTxRepository: (lightVirtualTxRepository ??= lightExitRepository(lightDescriptor)),
-          exitDataCapture: lightExitCapture,
-        },
-        walletMode: 'static',
-        settlementConfig: { boardingUtxoSweep: false, deprecatedSignerMigration: false, autoRenewVtxos: false },
-      })
-      const manager = await wallet.getContractManager()
-      for (const contract of (await manager.getContracts()).filter((c) => c.type === 'default')) {
-        if (contract.state !== 'inactive') await manager.setContractState(contract.script, 'inactive')
-        if ((contract.watch || 'watched') !== 'retained')
-          await manager.setContractWatchState(contract.script, 'retained')
-      }
-      const spending = await manager.createContract(
-        lightContract(new LightScript(lightDescriptor), String(status.spendingArkAddress)),
-      )
-      if (spending.script !== lightDescriptor.scriptPubKey) throw new Error('Light worker Spending contract mismatch')
-      if (spending.state !== 'active') await manager.setContractState(spending.script, 'active')
-      if ((spending.watch || 'watched') !== 'watched') await manager.setContractWatchState(spending.script, 'watched')
-      return { arkProvider: new RestArkProvider(config.arkServer.url), wallet, readonlyWallet: wallet }
-    }
     const active = await loadActiveBoardingKeyForNamespace(namespace)
     const transient = active.secret.slice()
     active.secret.fill(0)
@@ -127,6 +79,8 @@ const bus = new MessageBus(walletRepository, contractRepository, {
       }
       const identity = SingleKey.fromPrivateKey(transient)
       const signingAdapter = createBoardingSigningAdapter(status.vaultId, descriptor)
+      virtualTxRepository ??= vaultExitRepository(active.vaultId, active.network)
+      walletRepository.configureRecovery(status.network, virtualTxRepository, config.arkServer.url)
       const wallet = await Wallet.create({
         identity,
         arkServerUrl: config.arkServer.url,
@@ -161,6 +115,7 @@ const bus = new MessageBus(walletRepository, contractRepository, {
         throw new Error('SDK worker derived a different vault-board-v1 address')
       }
       const manager = await wallet.getContractManager()
+      walletRepository.watchRecoveryScripts((await manager.getContracts()).map((contract) => contract.script))
       for (const contract of (await manager.getContracts()).filter((candidate) => candidate.type === 'default')) {
         if (contract.state !== 'inactive') await manager.setContractState(contract.script, 'inactive')
         if ((contract.watch || 'watched') !== 'retained') {
@@ -186,3 +141,8 @@ const bus = new MessageBus(walletRepository, contractRepository, {
 })
 
 bus.start().catch((error) => console.error('Vault wallet worker failed to start', error))
+
+// Repair persisted recovery evidence without submitting or replaying payments.
+setInterval(() => {
+  void walletRepository.repairRecovery().catch((error) => console.error('Recovery capture pending', error))
+}, 30_000)

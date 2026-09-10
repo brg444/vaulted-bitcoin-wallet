@@ -1,9 +1,9 @@
+import { requireSavingsRecoveryKit, buildRecoveryKit } from './kit'
 import { describe, expect, it } from 'vitest'
 import type { VaultStatus } from '../types'
 import { defaultSpendingPolicy, spendingPolicyDigest, spendingPolicyFromLimits } from '../spendingPolicy'
 import { buildVaultProgramDescriptor } from './descriptor'
 import { PROGRAM_FIXTURE } from './fixtures'
-import { buildRecoveryKit } from './kit'
 import { buildMapBackup, kitFromFacts, parseMapBackup } from './kitBackup'
 
 function descriptor(recovery = true) {
@@ -73,7 +73,7 @@ describe('Savings map backup', () => {
 
   it('persists a usable no-recovery Savings kit', () => {
     const committed = descriptor(false)
-    const rebuilt = kitFromFacts({ status: statusFromDescriptor(committed) })
+    const rebuilt = requireSavingsRecoveryKit(kitFromFacts({ status: statusFromDescriptor(committed) })!)
     expect(rebuilt?.descriptor.keys.recovery).toBeUndefined()
     expect(rebuilt?.descriptor.savings.address).toBe(committed.savings.address)
   })
@@ -85,7 +85,7 @@ describe('Savings map backup', () => {
       periodAllowanceSats: 300_000,
     }
     const committed = buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, spendingPolicy: selected })
-    const rebuilt = kitFromFacts({ status: statusFromDescriptor(committed) })
+    const rebuilt = requireSavingsRecoveryKit(kitFromFacts({ status: statusFromDescriptor(committed) })!)
 
     expect(rebuilt?.spendingPolicyDigest).toBe(spendingPolicyDigest(selected))
     expect(rebuilt?.descriptorHash).toBe(buildRecoveryKit(committed).descriptorHash)

@@ -1,15 +1,18 @@
 import QgAmount from './qg/QgAmount'
 import { useContext } from 'react'
-import { prettyAmount } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { truncateAddress } from '../../lib/vault/policy'
 import { VaultContext } from '../../vault/context'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import TransactionReference from './qg/TransactionReference'
 import QgScreen, { QgPrimary } from './qg/QgScreen'
 import PaymentResult from './qg/PaymentResult'
 
-export default function VaultSuccess() {
+export default function VaultSuccess({ denomination }: { denomination?: BalanceDenomination }) {
   const { account, boardingAddress, lastSend, lastTxid, lastTxKind, navigate, status } = useContext(VaultContext)
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
   const movingToSpending = Boolean(lastSend && boardingAddress && lastSend.address === boardingAddress)
   const lightning = lastTxKind === 'lightning'
   const onchain = lastTxKind === 'onchain'
@@ -42,7 +45,7 @@ export default function VaultSuccess() {
             <div>
               <span>Amount</span>
               <strong>
-                <QgAmount value={prettyAmount(lastSend.amount)} />
+                <QgAmount value={formatMoney(lastSend.amount, money)} />
               </strong>
             </div>
             <div>

@@ -1,12 +1,12 @@
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
 import { KeyRound } from 'lucide-react'
 import { useToast } from '../../components/Toast'
-import { prettyAmount, prettyNumber } from '../../lib/format'
+import { prettyNumber } from '../../lib/format'
 import { decodeVaultBip21, isVaultBip21 } from '../../lib/vault/bip21'
-import { satsFromUsd, usdFromSats } from '../../lib/vault/fiatDisplay'
+import { formatMoney, satsFromUsd, usdInputFromSats } from '../../lib/vault/fiatDisplay'
 import {
   isVaultLightningInput,
   vaultLightningSendEnabled,
@@ -16,6 +16,7 @@ import { decodeVaultLightningInvoice } from '../../lib/vault/lightningInvoice'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { isSameVtxoPayment, loadPersistedVtxoSpend } from '../../lib/vault/vtxo/spend'
 import { VaultContext } from '../../vault/context'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import Scanner from './Scanner'
 import DestinationField from './qg/DestinationField'
 import { amountSizeStyle } from './qg/QgAmount'
@@ -53,7 +54,7 @@ function payloadFromScan(raw: string, allowLightning = true): { address: string;
   return { address: trimmed }
 }
 
-export default function VaultSend() {
+export default function VaultSend({ denomination }: { denomination?: BalanceDenomination }) {
   const {
     account,
     boardingAddress,
@@ -61,7 +62,6 @@ export default function VaultSend() {
     clearSendScan,
     dailyRemaining,
     error,
-    fiatDisplayRate,
     navigate,
     reviewSpend,
     pendingPayments = [],
@@ -70,21 +70,26 @@ export default function VaultSend() {
     replaceInFlightSend,
     scanOnSend,
     setSpendDraft,
-    setFiatDisplay,
     spend,
     setup,
     status,
     positions,
   } = useContext(VaultContext)
   const { toast } = useToast()
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
+  // The USD entry is display-only: canonical sats live in spend.amount, so a
+  // rounded two-decimal field can never destroy precise values like 331 sats.
+  const showUsd = denom.unit === 'usd' && Boolean(denom.rate)
   const fromSavings = account === 'savings'
   const movingToSpending = fromSavings && Boolean(boardingAddress) && spend.address === boardingAddress
   const destNetwork = status?.network
   const lightning = !fromSavings && Boolean(lightningInvoice(spend.address, destNetwork))
   const [scan, setScan] = useState(Boolean(scanOnSend))
-  const [amountUnit, setAmountUnit] = useState<'sats' | 'usd'>('sats')
   const [usdInput, setUsdInput] = useState('')
-  const [amountRate, setAmountRate] = useState(fiatDisplayRate)
+  // Canonical sats last produced by typing. External replacements (scans,
+  // pastes, resumed drafts) bypass it, so the effect below can tell them apart.
+  const typedSats = useRef<number | null>(null)
   const availableSpend = Math.max(0, Math.min(dailyRemaining, positions.spending.availableSats))
   const available = fromSavings ? positions.savings.availableSats : availableSpend
   const bitcoinChange = !fromSavings && isVaultBitcoinAddress(spend.address, destNetwork) ? 330 : 0
@@ -101,13 +106,13 @@ export default function VaultSend() {
     : spend.amount <= 0
       ? ''
       : spend.amount < 330
-        ? 'The smallest send is ₿330.'
+        ? `The smallest send is ${formatMoney(330, money)}.`
         : spend.amount > available && !resumingPayment
           ? fromSavings
             ? 'That is more than Savings has available.'
             : 'That is more than you can send now.'
           : !fromSavings && spend.amount > setup.txCapSats
-            ? `Up to ${prettyAmount(setup.txCapSats)} per payment.`
+            ? `Up to ${formatMoney(setup.txCapSats, money)} per payment.`
             : ''
 
   useEffect(() => {
@@ -119,6 +124,22 @@ export default function VaultSend() {
     setScan(true)
   }, [scanOnSend])
 
+  // Follow the shared unit and every external amount replacement without
+  // disturbing in-progress typing: derive the USD field whenever the canonical
+  // amount differs from what typing last produced.
+  const displayedRate = useRef<number | null>(null)
+  useEffect(() => {
+    if (denom.unit !== 'usd' || !denom.rate) {
+      displayedRate.current = null
+      return
+    }
+    if (spend.amount !== typedSats.current || displayedRate.current !== denom.rate.pricePerBtc) {
+      displayedRate.current = denom.rate.pricePerBtc
+      typedSats.current = spend.amount
+      setUsdInput(spend.amount ? usdInputFromSats(spend.amount, denom.rate) : '')
+    }
+  }, [denom.unit, denom.rate, spend.amount])
+
   const closeScan = () => {
     if (scanOnSend) {
       clearSendScan()
@@ -129,30 +150,31 @@ export default function VaultSend() {
   }
 
   const setAmount = (raw: string) => {
-    if (amountUnit === 'usd') {
+    if (showUsd) {
       const normalized = raw.replace(/[^\d.]/g, '')
       if (!/^\d*(?:\.\d{0,2})?$/.test(normalized)) return
       setUsdInput(normalized)
-      setSpendDraft({ amount: satsFromUsd(Number(normalized) || 0, amountRate?.pricePerBtc || 0) })
+      const sats = satsFromUsd(Number(normalized) || 0, denom.rate?.pricePerBtc || 0)
+      typedSats.current = sats
+      setSpendDraft({ amount: sats })
       return
     }
+    typedSats.current = null
     const digits = raw.replace(/\D/g, '')
     setSpendDraft({ amount: Number(digits) || 0 })
   }
 
   const toggleAmountUnit = async () => {
-    if (amountUnit === 'usd') {
-      setAmountUnit('sats')
+    if (denom.unit === 'usd') {
+      await denom.setUnit('sats')
       return
     }
-    const rate = fiatDisplayRate || (await setFiatDisplay(true))
+    const rate = await denom.setUnit('usd')
     if (!rate) {
       toast('USD amounts are unavailable. Try again later.')
       return
     }
-    setAmountRate(rate)
-    setUsdInput(spend.amount ? usdFromSats(spend.amount, rate.pricePerBtc).toFixed(2) : '')
-    setAmountUnit('usd')
+    setUsdInput(spend.amount ? usdInputFromSats(spend.amount, rate) : '')
   }
 
   const setAddress = (value: string) => {
@@ -233,27 +255,24 @@ export default function VaultSend() {
         </>
       }
     >
-      <section
-        className='qg-amount-entry'
-        style={amountSizeStyle(amountUnit === 'usd' ? usdInput : prettyNumber(spend.amount, 0))}
-      >
+      <section className='qg-amount-entry' style={amountSizeStyle(showUsd ? usdInput : prettyNumber(spend.amount, 0))}>
         <label htmlFor='qg-send-amount'>Amount</label>
         <div>
           <button
             type='button'
             className='qg-denomination'
-            aria-label={`Amount in ${amountUnit === 'usd' ? 'US dollars' : 'bitcoin satoshis'}. Change denomination`}
+            aria-label={`Amount in ${showUsd ? 'US dollars' : 'bitcoin satoshis'}. Change denomination`}
             onClick={() => void toggleAmountUnit()}
           >
-            {amountUnit === 'usd' ? '$' : '₿'}
+            {showUsd ? '$' : '₿'}
           </button>
           <input
             id='qg-send-amount'
-            value={amountUnit === 'usd' ? usdInput : spend.amount ? prettyNumber(spend.amount, 0) : ''}
-            inputMode={amountUnit === 'usd' ? 'decimal' : 'numeric'}
+            value={showUsd ? usdInput : spend.amount ? prettyNumber(spend.amount, 0) : ''}
+            inputMode={showUsd ? 'decimal' : 'numeric'}
             readOnly={lightning}
             data-testid='vault-send-amount'
-            placeholder={amountUnit === 'usd' ? '0.00' : '20,000'}
+            placeholder={showUsd ? '0.00' : '20,000'}
             onChange={(event) => setAmount(event.target.value)}
           />
           {lightning ? null : (
@@ -262,8 +281,8 @@ export default function VaultSend() {
               className='qg-max'
               onClick={() => {
                 setSpendDraft({ amount: maximum })
-                if (amountUnit === 'usd' && amountRate) {
-                  setUsdInput(usdFromSats(maximum, amountRate.pricePerBtc).toFixed(2))
+                if (showUsd && denom.rate) {
+                  setUsdInput(usdInputFromSats(maximum, denom.rate))
                 }
               }}
             >
@@ -274,6 +293,11 @@ export default function VaultSend() {
         {amountError ? (
           <p className='qg-field-error' role='alert'>
             {amountError}
+          </p>
+        ) : null}
+        {denom.unit === 'usd' && !denom.rate ? (
+          <p className='qg-helper' role='status'>
+            USD rate unavailable — enter bitcoin instead.
           </p>
         ) : null}
       </section>
@@ -287,12 +311,12 @@ export default function VaultSend() {
         hint={fromSavings ? 'Bitcoin address' : undefined}
       />
       {fromSavings ? (
-        <p className='qg-available'>₿{prettyNumber(positions.savings.availableSats, 0)} available</p>
+        <p className='qg-available'>{formatMoney(positions.savings.availableSats, money)} available</p>
       ) : (
         <p className='qg-available' aria-label='Spending capacity'>
           {resumingPayment
-            ? `₿${prettyNumber(reservedSats || pendingSend?.amountSats || spend.amount, 0)} reserved for this payment`
-            : `₿${prettyNumber(availableSpend, 0)} available within your rolling limit`}
+            ? `${formatMoney(reservedSats || pendingSend?.amountSats || spend.amount, money)} reserved for this payment`
+            : `${formatMoney(availableSpend, money)} available within your rolling limit`}
         </p>
       )}
       {fromSavings ? (
@@ -307,7 +331,7 @@ export default function VaultSend() {
         <p className='qg-helper'>
           {lightning
             ? 'The payment fee appears before approval.'
-            : `Up to ${prettyAmount(setup.txCapSats)} per payment. The fee appears before approval.`}
+            : `Up to ${formatMoney(setup.txCapSats, money)} per payment. The fee appears before approval.`}
         </p>
       )}
     </QgScreen>

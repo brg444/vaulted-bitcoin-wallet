@@ -22,7 +22,8 @@ export function bootHaptics(): void {
 function shouldSkipHaptics(): boolean {
   if (!enabled) return true
   if (typeof window === 'undefined') return true
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  // Reduced motion controls animation, not the user's explicit tactile preference.
+  return false
 }
 
 function triggerHaptic(pattern: 'selection' | 'light' | 'medium'): void {

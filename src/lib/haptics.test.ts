@@ -14,7 +14,7 @@ import { bootHaptics, hapticLight, hapticSubtle, hapticTap, setHapticsEnabled } 
 
 describe('vault haptics', () => {
   beforeEach(() => {
-    trigger.mockClear()
+    trigger.mockReset().mockResolvedValue(undefined)
     WebHaptics.mockClear()
     setHapticsEnabled(true)
     vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: false } as MediaQueryList)
@@ -42,10 +42,10 @@ describe('vault haptics', () => {
     expect(trigger).not.toHaveBeenCalled()
   })
 
-  it('respects the device reduced-motion preference', () => {
+  it('keeps explicitly enabled haptics available with reduced motion', () => {
     vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList)
     hapticLight()
 
-    expect(trigger).not.toHaveBeenCalled()
+    expect(trigger).toHaveBeenCalledWith('light')
   })
 })

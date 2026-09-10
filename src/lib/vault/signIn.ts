@@ -12,6 +12,8 @@ import {
   recordFromRecoveryBinding,
   recoveryBindingDigest,
   verifyRecoveryBindingSignatures,
+  ledgerAccessBackup,
+  canonicalLedgerAccessBackup,
 } from './passkeyBinding'
 import { pinEnrolledStatus, pinFromEnrolledStatus } from './pin'
 import type { VaultStatus } from './types'
@@ -19,6 +21,10 @@ import { allowPasskey, isCoarsePhone, passkeyGetOptions, prfExtension, prfFrom }
 import { provisionBoardingKey } from './vtxo/board'
 import { requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
 import type { VtxoSpendPasskey } from './vtxo/spend'
+import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
+import { validateLedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollment'
+import { ledgerEnrollmentFromStatus } from './program/ledgerRecoveryDescriptor'
+import { unlockLedgerPhoneSeed } from './ledgerPhoneBackup'
 
 const PRF_SALT = new TextEncoder().encode('arkade-2fa-vault/prf/v1')
 const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
@@ -132,6 +138,7 @@ export async function beginPasskeySession(
 }
 
 export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultStatus> {
+  rec = structuredClone(rec)
   let session: Awaited<ReturnType<typeof beginPasskeySession>> | undefined
   let phoneSecret: Uint8Array | undefined
   try {
@@ -139,6 +146,10 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     if (!vaultId) throw new Error('vault id required')
     const status = await vaultCosignerClient.enrollment.status(vaultId)
     if (!status.enrolled) throw new Error('vault is not enrolled')
+    if (status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
+      const descriptor = ledgerEnrollmentFromStatus(status)
+      validateLedgerSavingsEnrollmentSecrets(rec.ledgerSavings, descriptor.savings)
+    } else if (rec.ledgerSavings) throw new Error('Ledger enrollment does not match this vault')
     const connectorPin = loadConnectorEnrollmentPin(vaultId)
     if (connectorPin) verifyConnectorStatus(status, connectorPin)
     else if (isConnectorTemplate(status.templateVersion)) {
@@ -149,12 +160,28 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     }
     session = await beginPasskeySession('install-envelope', status, rec.credId)
     phoneSecret = await decryptPhoneSecret(session.prf, rec.nonce, rec.ciphertext)
+    const ledgerBackup = ledgerAccessBackup(rec)
+    if (rec.ledgerSavings) {
+      const seed = await unlockLedgerPhoneSeed(
+        rec.ledgerSavings.phoneSeedBackup,
+        session.prf,
+        'passkey-prf',
+        rec.ledgerSavings.contract.context,
+      )
+      zeroBytes(seed)
+    }
     const bindingResponse = await vaultCosignerClient.enrollment.binding({
       vaultId: status.vaultId,
       envelopeNonce: rec.nonce,
       envelopeCiphertext: rec.ciphertext,
+      ...(ledgerBackup ? { ledgerSavings: ledgerBackup } : {}),
     })
     assertRecoveryBindingMatchesStatus(bindingResponse.binding, status)
+    if (
+      ledgerBackup &&
+      parseRecoveryBinding(bindingResponse.binding).ledgerSavingsBackup !== canonicalLedgerAccessBackup(ledgerBackup)
+    )
+      throw new Error('Guardian changed the retained Ledger recovery backup')
     const digest = recoveryBindingDigest(bindingResponse.binding)
     if (bytesToHex(digest) !== bindingResponse.bindingDigest) {
       throw new Error('server recovery binding digest mismatch')
@@ -179,6 +206,7 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
       directProof: session.assertion.directProof,
       envelopeNonce: rec.nonce,
       envelopeCiphertext: rec.ciphertext,
+      ...(ledgerBackup ? { ledgerSavings: ledgerBackup } : {}),
       binding: bindingResponse.binding,
       bindingDirectSig: bytesToHex(bindingDirectSig),
       bindingPhoneSig: bytesToHex(bindingPhoneSig),
@@ -214,7 +242,8 @@ export async function unlockLocalEnrollment(
     throw new Error('deployment RP ID does not match this signing client host')
   }
   const live = await vaultCosignerClient.enrollment.status(rec.vaultId)
-  if (isConnectorTemplate(live.templateVersion)) return signInWithPasskey(rec.vaultId, withRenewalAuth)
+  if (isConnectorTemplate(live.templateVersion) || live.templateVersion === LEDGER_NATIVE_TEMPLATE)
+    return signInWithPasskey(rec.vaultId, withRenewalAuth)
   pinEnrolledStatus(live)
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({
@@ -348,6 +377,22 @@ export async function signInWithPasskey(
       phoneSecret,
     })
     assertRecoveryBindingMatchesStatus(verified, status)
+    const enrollment = recordFromRecoveryBinding(verified, status)
+    if (enrollment.ledgerSavings) {
+      const backup = ledgerAccessBackup(enrollment)!
+      if (
+        !recovered.ledgerSavings ||
+        canonicalLedgerAccessBackup(recovered.ledgerSavings) !== canonicalLedgerAccessBackup(backup)
+      )
+        throw new Error('Recovered Ledger backup does not match its signed binding')
+      const seed = await unlockLedgerPhoneSeed(
+        enrollment.ledgerSavings.phoneSeedBackup,
+        session.prf,
+        'passkey-prf',
+        enrollment.ledgerSavings.contract.context,
+      )
+      zeroBytes(seed)
+    } else if (recovered.ledgerSavings) throw new Error('Unexpected Ledger recovery backup')
     // The signed recovery binding already commits to these fields. Validate
     // their pin shape here; persistence is best effort in the coordinator so
     // private browsing cannot turn a valid recovery into a failed login.
@@ -362,9 +407,9 @@ export async function signInWithPasskey(
           assertion: session.assertion,
         },
         false,
-        recordFromRecoveryBinding(verified),
+        enrollment,
       )
-    return { status, enrollment: recordFromRecoveryBinding(verified) }
+    return { status, enrollment }
   } finally {
     zeroBytes(session?.prf as Uint8Array, session?.scalar as Uint8Array, phoneSecret as Uint8Array)
   }

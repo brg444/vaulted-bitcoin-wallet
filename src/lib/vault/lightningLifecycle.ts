@@ -21,6 +21,7 @@ import {
 } from '@arkade-os/swap'
 import { hex } from '@scure/base'
 import { consoleError } from '../logs'
+import { receiveProfile } from './lightningReceive'
 import { decodeVaultLightningInvoice } from './lightningInvoice'
 import type { VaultLightningActivityRecord } from './history'
 import type { LightningRequestResult } from './lightningValidation'
@@ -201,7 +202,21 @@ export function createVaultLightningObserver({
   repository,
   managerConfig,
 }: VaultLightningObserverDeps): RfqSwapManager {
-  const manager = new RfqSwapManager({ indexer, repository, contracts }, { ...managerConfig, enableAutoActions: true })
+  // Incoming claims use verified payout receipts and retain their recovery
+  // records. The package's send observer must not resolve or prune them.
+  const manager = new RfqSwapManager(
+    {
+      indexer,
+      contracts,
+      repository: {
+        getAllRfqSwaps: async () => (await repository.getAllRfqSwaps()).filter((r) => r.kind !== 'lightning_receive'),
+        getRfqSwap: (id) => repository.getRfqSwap(id),
+        saveRfqSwap: (record) => repository.saveRfqSwap(record),
+        removeRfqSwap: (id) => repository.removeRfqSwap(id),
+      },
+    },
+    { ...managerConfig, enableAutoActions: true },
+  )
   setVaultLightningObserverCallbacks(manager, managerConfig?.now)
   return manager
 }
@@ -754,8 +769,24 @@ export async function listVaultLightningActivityRecords(
 ): Promise<VaultLightningActivityRecord[]> {
   const records: VaultLightningActivityRecord[] = []
   for (const record of await repository.getAllRfqSwaps()) {
-    if (record.kind !== 'lightning_send' || !record.fundingArkTxid) continue
     try {
+      if (record.kind === 'lightning_receive') {
+        const receive = receiveProfile(record)
+        if (!receive.claim) continue
+        records.push({
+          rfqId: record.rfqId,
+          fundingTxid: receive.claim.txid,
+          type: 'received',
+          state: record.state,
+          amount: record.amount!,
+          displayAmount: record.amount!,
+          fee: receive.quote.from_amount - record.amount!,
+          createdAt: record.createdAt,
+          terminal: record.state === 'settled',
+        })
+        continue
+      }
+      if (record.kind !== 'lightning_send' || !record.fundingArkTxid) continue
       const quote = quoteFromRecord(record)
       const stored = storedLightningProfile(record)
       records.push({

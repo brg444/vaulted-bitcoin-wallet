@@ -9,20 +9,30 @@ import {
   type Identity,
 } from '@arkade-os/sdk'
 import { Address, OutScript, p2tr } from '@scure/btc-signer'
-import { hex } from '@scure/base'
+import { base64, hex } from '@scure/base'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import {
   parseRecoveryKit as parsePublicKit,
   kitHasUnlock,
   type RecoveryKit as PublicKit,
 } from '../offline-recovery/src/lib/vault/program/kit'
-import { buildRecoveryKit, type RecoveryKit } from '../../src/lib/vault/program/kit'
+import {
+  buildRecoveryKit,
+  parseRecoveryKit,
+  isLedgerRecoveryKit,
+  isSpendingRecoveryKit,
+  requireSavingsRecoveryKit,
+  type SpendingRecoveryKit,
+  type LedgerRecoveryKit,
+  type RecoveryKit,
+} from '../../src/lib/vault/program/kit'
 import {
   openLocalRecoveryBackup,
   validateVaultRecoveryFile,
   type VaultRecoveryFile,
 } from '../../src/lib/vault/recovery/backupCodec'
 import { openLocalLightBackup, parseLightEncryptedBackup } from '../../src/lib/vault/light/backupCodec'
+import { parseLightRecoveryPackage, unwrapLightRecoveryPackage } from '../../src/lib/vault/light/portable'
 import { lightRecoveryStatus } from '../../src/lib/vault/light/status'
 import {
   prepareLightRecoveryWithOwner,
@@ -32,11 +42,19 @@ import {
   type LightRecoveryFile,
 } from '../../src/lib/vault/light/recovery'
 import { unlockLightWithPasskey } from '../../src/lib/vault/light/passkey'
-import { unlockPhoneBip340 } from '../../src/lib/vault/savingsSpend'
+import { unlockPhoneBip340, unlockVaultPhoneKeys } from '../../src/lib/vault/savingsSpend'
+import { connectLedgerSavings } from '../../src/lib/vault/ledgerClient'
+import { signLedgerSavingsRecoveryWithDevice } from '../../src/lib/vault/program/ledgerRecoveryDevice'
+import { SPENDING_RECOVERY_SCHEMA } from '../../src/lib/vault/program/spendingRecoveryDescriptor'
+import { LEDGER_RECOVERY_SCHEMA } from '../../src/lib/vault/program/ledgerRecoveryDescriptor'
+import { validateLedgerOfflineRequest } from '../../src/lib/vault/vtxo/ledgerOfflineRequest'
+import { ledgerRecoveryFeeWallet, type LedgerRecoveryFeeRequest } from '../../src/lib/vault/vtxo/ledgerRecoveryFee'
+import type { LedgerSpendingRecoveryRequest } from '../../src/lib/vault/vtxo/ledgerSpendingRecovery'
 import {
   prepareSavingsRecovery,
   validateSavingsRecovery,
   executeSavingsRecovery,
+  signLedgerSavingsRecoveryWithSeed,
   type SavingsRecoveryFile,
   type SavingsRecoveryPath,
   type SavingsRecoveryChain,
@@ -96,6 +114,7 @@ type Source = {
   full?: VaultRecoveryFile | ReadableRecoverySource
   light?: LightRecoveryFile
   publicKit?: PublicKit
+  ledgerKit?: LedgerRecoveryKit | SpendingRecoveryKit
   originalKit?: unknown
 }
 type Prepared =
@@ -124,7 +143,15 @@ let source: Source = {},
   coins: Coin[] = [],
   controller: AbortController | undefined
 let request:
-  | { psbt: string; keys: { role: string; publicKey: string }[]; resolve: (psbt: string) => void; key: string }
+  | {
+      psbt: string
+      keys: { role: string; publicKey: string }[]
+      resolve: (psbt: string) => void
+      key: string
+      ledgerFile?: SavingsRecoveryFile
+      ledgerSpending?: LedgerSpendingRecoveryRequest
+      ledgerFee?: LedgerRecoveryFeeRequest
+    }
   | undefined
 let busy = false
 function error(err: unknown) {
@@ -160,23 +187,28 @@ function status() {
   return source.full?.header.status || (source.light ? lightRecoveryStatus(source.light.descriptor) : undefined)
 }
 function kit(): RecoveryKit {
+  if (source.full) return parseRecoveryKit(source.full.header.kit)
+  if (source.ledgerKit) return parseRecoveryKit(source.ledgerKit)
   const d = source.full?.header.kit.descriptor || source.publicKit?.descriptor
-  if (!d) throw new Error('This path needs the saved Savings descriptor')
+  if (!d) throw new Error('This path needs the saved wallet descriptor')
   return buildRecoveryKit(d)
 }
 function network() {
-  const n = status()?.network || source.publicKit?.descriptor.network
+  const n = status()?.network || source.publicKit?.descriptor.network || source.ledgerKit?.descriptor.network
   if (!n) throw new Error('Open a recovery file first')
   requireReleaseNetwork(n)
   return n
 }
 function keys() {
   if (source.light) return [{ role: 'phone', publicKey: `02${source.light.descriptor.ownerPub}` }]
-  const k = kit().descriptor.keys
+  const saved = kit()
+  const k = saved.descriptor.keys
+  if (isSpendingRecoveryKit(saved)) return [{ role: 'phone', publicKey: k.phoneBip340 }]
+  const protectedKeys = requireSavingsRecoveryKit(saved).descriptor.keys
   return [
     { role: 'phone', publicKey: k.phoneBip340 },
-    { role: 'hardware', publicKey: k.hardware },
-    ...(k.recovery ? [{ role: 'recovery', publicKey: k.recovery }] : []),
+    { role: 'hardware', publicKey: protectedKeys.hardware },
+    ...(protectedKeys.recovery ? [{ role: 'recovery', publicKey: protectedKeys.recovery }] : []),
   ]
 }
 function feeLimits() {
@@ -235,7 +267,7 @@ function review() {
   el('change-file').hidden = false
   el('review').hidden = false
   el('prepared').hidden = !prepared
-  const k = source.full?.header.kit || source.publicKit
+  const k = source.full?.header.kit || source.publicKit || source.ledgerKit
   el('facts').textContent =
     `${source.light ? 'Light' : k?.protectionTier} · ${network()} · Wallet ${(status()?.vaultId || k?.descriptor.vaultId || '').slice(0, 8)}`
   el('amount').textContent = source.full
@@ -250,16 +282,21 @@ function review() {
   if (source.full || source.light) options.push({ value: 'spending', label: 'Spending — unilateral Bitcoin exit' })
   if (source.full || source.publicKit?.boarding)
     options.push({ value: 'boarding', label: 'Boarding — phone recovery after its delay' })
-  if (k) {
+  if (k && !isSpendingRecoveryKit(k)) {
     if (!isConnectorTemplate(k.descriptor.templateVersion))
       options.push({ value: 'savings-admin', label: 'Savings — phone and hardware' })
+    if (k.descriptor.schema === LEDGER_RECOVERY_SCHEMA)
+      options.push({ value: 'savings-admin-change', label: 'Savings change — phone and hardware' })
     for (const claimant of ['phone', 'hardware', 'recovery'] as const)
       if (k.descriptor.pending[`savings-${claimant}`]) {
         options.push(
           { value: `pending-claim:${claimant}`, label: `Pending ${claimant} recovery — claim after its delay` },
           { value: `quarantine:${claimant}`, label: `Quarantine after ${claimant} recovery — remaining keys` },
         )
-        if (familyFromDescriptor(k.descriptor).pending[`savings-${claimant}`].guardianExit)
+        if (
+          k.descriptor.schema === LEDGER_RECOVERY_SCHEMA ||
+          familyFromDescriptor(k.descriptor).pending[`savings-${claimant}`].guardianExit
+        )
           options.push({
             value: `pending-cancel:${claimant}`,
             label: `Pending ${claimant} recovery — remaining-key cancellation`,
@@ -272,7 +309,7 @@ function review() {
   for (const entry of journal?.entries || [])
     options.push({
       value: `lightning:${entry.record.rfqId}`,
-      label: `Lightning refund — ${entry.record.rfqId.slice(0, 12)}`,
+      label: `Lightning ${entry.record.kind === 'lightning_receive' ? 'receive claim' : 'refund'}: ${entry.record.rfqId.slice(0, 12)}`,
     })
   if (source.full?.name === 'vaulted-recovery' && source.full.connectorJournal?.pending)
     options.push({ value: 'connector', label: 'Saved connector payment — resume exact approval' })
@@ -292,10 +329,13 @@ function paintCoins() {
   let script: string | undefined
   if (program === 'boarding')
     script = source.full?.header.status.vtxoBoardingDescriptor?.script || source.publicKit?.boarding?.script
-  else if (program === 'savings-admin') script = kit().descriptor.savings.script
-  else if (program.startsWith('pending-') || program.startsWith('quarantine:')) {
+  else if (program === 'savings-admin') script = requireSavingsRecoveryKit(kit()).descriptor.savings.script
+  else if (program === 'savings-admin-change') {
+    const saved = kit()
+    if (isLedgerRecoveryKit(saved)) script = saved.descriptor.savingsChange.script
+  } else if (program.startsWith('pending-') || program.startsWith('quarantine:')) {
     const [path, role] = program.split(':')
-    const d = kit().descriptor
+    const d = requireSavingsRecoveryKit(kit()).descriptor
     script = (path === 'quarantine' ? d.quarantine : d.pending)[`savings-${role}` as keyof typeof d.pending]?.script
   }
   select(
@@ -311,7 +351,7 @@ function programChanged() {
   const program = value('program')
   el('requirements').textContent =
     program === 'spending'
-      ? `Required: ${source.light ? 'your owner key' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
+      ? `Required: ${source.light || source.full?.header.kit.protectionTier === 'light' ? 'the wallet key unlocked by your original passkey' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
       : program === 'connector'
         ? 'This finishes the saved payment using its retained service approvals and the required hardware signature.'
         : 'Use the keys and waiting conditions in this saved account. Review the signing request before approving.'
@@ -335,7 +375,7 @@ function programChanged() {
 
 async function funding() {
   const role = value('fee-key')
-  const key = keys().find((k) => k.role === role)
+  const key = feeKey(role)
   if (!key) return
   const address = p2tr(
     hex.decode(key.publicKey).slice(1),
@@ -343,6 +383,17 @@ async function funding() {
     getNetwork(networkPins(network()).sdkNetwork),
   ).address!
   el('funding').textContent = `Separate Bitcoin fee funding address: ${address}`
+}
+function feeKey(role: string) {
+  const saved = source.full?.header.kit
+  if (
+    saved &&
+    isLedgerRecoveryKit(saved) &&
+    value('program') === 'spending' &&
+    (role === 'hardware' || role === 'recovery')
+  )
+    return { role, publicKey: ledgerRecoveryFeeWallet(saved.descriptor, role).publicKey }
+  return keys().find((k) => k.role === role)
 }
 const chain: SavingsRecoveryChain = {
   status: async (id) => {
@@ -357,7 +408,15 @@ const chain: SavingsRecoveryChain = {
   },
   broadcast: (raw) => bitcoin.broadcastTransaction(raw),
 }
-async function requestSignature(psbt: string, required: { role: string; publicKey: string }[]) {
+async function requestSignature(
+  psbt: string,
+  required: { role: string; publicKey: string }[],
+  extra: {
+    ledgerFile?: SavingsRecoveryFile
+    ledgerSpending?: LedgerSpendingRecoveryRequest
+    ledgerFee?: LedgerRecoveryFeeRequest
+  } = {},
+) {
   const tx = Transaction.fromPSBT(recoveryPsbtBytes(psbt), { allowUnknownInputs: true, allowUnknownOutputs: true })
   const key = hex.encode(tx.unsignedTx)
   const previous = draft?.signatures[key]
@@ -416,18 +475,32 @@ async function requestSignature(psbt: string, required: { role: string; publicKe
     ? `Transaction fee: ${(inputAmount - outputAmount).toLocaleString()} sats. Separate parent fee funding may still be needed.`
     : 'Transaction fee is unavailable because an input amount is missing.'
   el('sign-phone').hidden = !required.some((k) => k.role === 'phone')
+  el('sign-ledger').hidden = !extra.ledgerFile
+  el('offline-spending').hidden = !extra.ledgerSpending && !extra.ledgerFee
+  select(
+    'ledger-role',
+    required
+      .filter((k) => k.role === 'hardware' || k.role === 'recovery')
+      .map((k) => ({ value: k.role, label: k.role })),
+  )
+  el('ledger-role-label').hidden = !extra.ledgerFile && !extra.ledgerSpending && !extra.ledgerFee
   el('signing-summary').textContent =
     `Transaction ${tx.id}\n${tx.inputsLength} inputs; ${tx.outputsLength} outputs. Review the destination and amount on your signing device.`
   return new Promise<string>((resolve) => {
-    request = { psbt, keys: required, resolve, key }
+    request = { psbt, keys: required, resolve, key, ...extra }
   })
 }
+let signingBusy = false
 async function signatureAction(action: () => Promise<void>) {
+  if (signingBusy) return
+  signingBusy = true
   el('sign-error').textContent = ''
   try {
     await action()
   } catch (err) {
     el('sign-error').textContent = err instanceof Error ? err.message : String(err)
+  } finally {
+    signingBusy = false
   }
 }
 el('save-psbt').onclick = () => {
@@ -472,25 +545,97 @@ el('accept-signature').onclick = () =>
   })
 el('sign-phone').onclick = () =>
   void signatureAction(async () => {
-    if (!request || !request.keys.some((k) => k.role === 'phone'))
+    const pending = request
+    if (!pending || !pending.keys.some((k) => k.role === 'phone'))
       throw new Error('This transaction does not request the phone key')
+    if (pending.ledgerFile) {
+      if (!source.full) throw new Error('Open the complete recovery package to unlock the Savings phone seed')
+      const unlocked = await unlockVaultPhoneKeys(source.full.header.enrollment, source.full.header.status)
+      try {
+        if (request !== pending) throw new Error('The signing request changed')
+        if (!unlocked.ledgerSavingsSeed) throw new Error('Savings phone seed is missing')
+        pending.psbt = signLedgerSavingsRecoveryWithSeed(
+          { ...pending.ledgerFile, psbt: pending.psbt },
+          unlocked.ledgerSavingsSeed,
+        ).psbt
+        el<HTMLTextAreaElement>('psbt').value = pending.psbt
+        if (draft) draft.signatures[pending.key] = pending.psbt
+      } finally {
+        unlocked.spendingPhone.fill(0)
+        unlocked.ledgerSavingsSeed?.fill(0)
+      }
+      return
+    }
     const key = await phone()
     try {
-      const tx = Transaction.fromPSBT(recoveryPsbtBytes(request.psbt), {
+      if (request !== pending) throw new Error('The signing request changed')
+      const tx = Transaction.fromPSBT(recoveryPsbtBytes(pending.psbt), {
         allowUnknownInputs: true,
         allowUnknownOutputs: true,
       })
       const signed = await SingleKey.fromPrivateKey(key).sign(tx)
-      request.psbt = acceptRecoveryPsbtSignatures(
-        request.psbt,
+      if (request !== pending) throw new Error('The signing request changed')
+      pending.psbt = acceptRecoveryPsbtSignatures(
+        pending.psbt,
         hex.encode(signed.toPSBT()),
-        request.keys.map((k) => k.publicKey),
+        pending.keys.map((k) => k.publicKey),
       )
       el<HTMLTextAreaElement>('psbt').value = request.psbt
       if (draft) draft.signatures[request.key] = request.psbt
     } finally {
       key.fill(0)
     }
+  })
+el('sign-ledger').onclick = () =>
+  void signatureAction(async () => {
+    const pending = request,
+      role = value('ledger-role')
+    if (!pending?.ledgerFile || (role !== 'hardware' && role !== 'recovery'))
+      throw new Error('Choose the required Ledger account')
+    const device = await connectLedgerSavings()
+    try {
+      if (request !== pending) throw new Error('The signing request changed')
+      const signed = await signLedgerSavingsRecoveryWithDevice(
+        device.app,
+        { ...pending.ledgerFile, psbt: pending.psbt },
+        role,
+      )
+      if (request !== pending) throw new Error('The signing request changed')
+      pending.psbt = signed.psbt
+      el<HTMLTextAreaElement>('psbt').value = pending.psbt
+      if (draft) draft.signatures[pending.key] = pending.psbt
+    } finally {
+      await device.close()
+    }
+  })
+el('save-offline-spending').onclick = () =>
+  void signatureAction(async () => {
+    const pending = request,
+      role = value('ledger-role')
+    if (pending?.ledgerFee) {
+      save(
+        'Vaulted offline recovery fee request.json',
+        validateLedgerOfflineRequest({
+          name: 'vaulted-ledger-offline-fee',
+          version: 1,
+          request: pending.ledgerFee,
+          psbt: pending.psbt,
+        }),
+      )
+      return
+    }
+    if (!pending?.ledgerSpending || (role !== 'hardware' && role !== 'recovery'))
+      throw new Error('Choose the required Ledger account')
+    save(
+      'Vaulted offline Spending request.json',
+      validateLedgerOfflineRequest({
+        name: 'vaulted-ledger-offline-spending',
+        version: 1,
+        role,
+        request: pending.ledgerSpending,
+        psbt: pending.psbt,
+      }),
+    )
   })
 el('finish-signing').onclick = () => {
   if (!request) return
@@ -539,7 +684,32 @@ async function prepare() {
       prepared = await prepareVaultSpendingRecovery(
         source.full.archive,
         d.destination,
-        (r) => requestSignature(r.psbt, r.requiredKeys),
+        async (r) => {
+          const saved = kit()
+          if (!isLedgerRecoveryKit(saved)) return requestSignature(r.psbt, r.requiredKeys)
+          const tx = Transaction.fromPSBT(recoveryPsbtBytes(r.psbt)),
+            input = tx.getInput(0)
+          const txid = hex.encode(input.txid!),
+            vout = input.index!
+          const archived = source.full!.archive.spending.transactions[txid]
+          const parentTxHex = archived
+            ? hex.encode(
+                Transaction.fromPSBT(base64.decode(archived), {
+                  allowUnknownInputs: true,
+                  allowUnknownOutputs: true,
+                }).toBytes(true, true),
+              )
+            : await readBounded(await fetch(`/esplora/tx/${txid}/hex`), 8_000_000)
+          const amount = Number(input.witnessUtxo!.amount)
+          return requestSignature(r.psbt, r.requiredKeys, {
+            ledgerSpending: {
+              descriptor: saved.descriptor,
+              coin: { txid, vout, value: amount, parentTxHex },
+              destination: d.destination,
+              feeSats: amount - Number(tx.getOutput(0).amount),
+            },
+          })
+        },
         provider,
       )
     else if (source.light) {
@@ -600,9 +770,15 @@ async function prepare() {
   } else {
     if (!d.coin) throw new Error('Choose a Bitcoin output')
     const [program, claimant] = d.program.split(':')
-    const path = (claimant ? { program, claimant } : { program }) as SavingsRecoveryPath
+    const path = (
+      program === 'savings-admin-change'
+        ? { program: 'savings-admin', change: 1 }
+        : claimant
+          ? { program, claimant }
+          : { program }
+    ) as SavingsRecoveryPath
     let file = prepareSavingsRecovery({
-      kit: kit(),
+      kit: requireSavingsRecoveryKit(kit()),
       path,
       parentHex: d.coin.parentHex,
       vout: d.coin.vout,
@@ -612,7 +788,8 @@ async function prepare() {
     const facts = validateSavingsRecovery(file)
     const signed = await requestSignature(
       file.psbt,
-      facts.signers.map((role) => keys().find((k) => k.role === role)!),
+      facts.signers.map((role, i) => ({ role, publicKey: `02${facts.pubs[i]}` })),
+      isLedgerRecoveryKit(facts.kit) ? { ledgerFile: file } : {},
     )
     // Imported PSBT signatures are already verified against every allowed role.
     file = { ...file, psbt: signed }
@@ -666,9 +843,14 @@ el('scan').onclick = () =>
   void run(async () => {
     const k = kit()
     const trees = [
-      k.descriptor.savings,
-      ...Object.values(k.descriptor.pending),
-      ...Object.values(k.descriptor.quarantine),
+      ...(isSpendingRecoveryKit(k)
+        ? []
+        : [
+            k.descriptor.savings,
+            ...(isLedgerRecoveryKit(k) ? [k.descriptor.savingsChange] : []),
+            ...Object.values(k.descriptor.pending),
+            ...Object.values(k.descriptor.quarantine),
+          ]),
       ...(source.full
         ? [source.full.header.status.vtxoBoardingDescriptor!]
         : source.publicKit?.boarding
@@ -730,6 +912,17 @@ async function load(data: unknown) {
   const x = data as { name?: string; version?: number; source?: Source; prepared?: Prepared }
   clearSource()
   raw = data
+  if (x.name === 'vaulted-light-recovery-package') {
+    const pkg = parseLightRecoveryPackage(data)
+    requireReleaseNetwork(pkg.backup.header.descriptor.network)
+    el('origin').textContent =
+      `Spending paths saved ${pkg.archive.capturedAt}. Use your original passkey at ${pkg.backup.header.origin} to unlock the owner key.`
+    el('open').hidden = false
+    el('unlock').hidden = false
+    el<HTMLDetailsElement>('unlock').open = true
+    el('review').hidden = true
+    return
+  }
   if (x.name === 'vaulted-recovery-package') {
     const pkg = parsePortableRecoveryPackage(data)
     source = { full: portableRecoverySource(pkg) }
@@ -771,14 +964,23 @@ async function load(data: unknown) {
   }
   if (x.name === 'vaulted-recovery') source.full = validateVaultRecoveryFile(data as VaultRecoveryFile)
   else if (x.name === 'vaulted-light-recovery') source.light = validateLightRecoveryFile(data)
-  else {
+  else if (
+    x.name === 'arkade-recovery-kit' &&
+    [LEDGER_RECOVERY_SCHEMA, SPENDING_RECOVERY_SCHEMA].includes(
+      (data as { descriptor?: { schema?: string } }).descriptor?.schema || '',
+    )
+  ) {
+    const saved = parseRecoveryKit(data)
+    if (!isLedgerRecoveryKit(saved) && !isSpendingRecoveryKit(saved)) throw new Error('Unsupported wallet recovery kit')
+    source.ledgerKit = saved
+  } else {
     source.publicKit = parsePublicKit(data)
     source.originalKit = data
   }
   review()
 }
 function validateSource() {
-  if ([source.full, source.light, source.publicKit].filter(Boolean).length !== 1)
+  if ([source.full, source.light, source.publicKit, source.ledgerKit].filter(Boolean).length !== 1)
     throw new Error('Recovery source must identify one wallet')
   if (source.full) {
     if (source.full.name === 'vaulted-readable-recovery') validateReadableRecoverySource(source.full)
@@ -786,6 +988,11 @@ function validateSource() {
   }
   if (source.light) validateLightRecoveryFile(source.light)
   if (source.publicKit) source.publicKit = parsePublicKit(source.originalKit || source.publicKit)
+  if (source.ledgerKit) {
+    const saved = parseRecoveryKit(source.ledgerKit)
+    if (!isLedgerRecoveryKit(saved) && !isSpendingRecoveryKit(saved)) throw new Error('Unsupported wallet recovery kit')
+    source.ledgerKit = saved
+  }
   network()
 }
 function validatePrepared() {
@@ -834,7 +1041,7 @@ el('open').onclick = () =>
       source = { full: await openLocalRecoveryBackup(parsePortableRecoveryPackage(raw).backup) }
     else if (name === 'vaulted-recovery-backup') source = { full: await openLocalRecoveryBackup(raw) }
     else {
-      const parsed = parseLightEncryptedBackup(raw)
+      const parsed = parseLightEncryptedBackup(unwrapLightRecoveryPackage(raw))
       source = { light: (await openLocalLightBackup(parsed)).file }
     }
     el('open').hidden = true
@@ -881,7 +1088,7 @@ el('execute').onclick = () =>
         return
       }
       const role = value('fee-key'),
-        key = keys().find((k) => k.role === role)!
+        key = feeKey(role)!
       const readonly = ReadonlySingleKey.fromPublicKey(hex.decode(key.publicKey))
       const identity: Identity = {
         compressedPublicKey: () => readonly.compressedPublicKey(),
@@ -892,11 +1099,42 @@ el('execute').onclick = () =>
         signerSession: () => {
           throw new Error('Recovery cannot create signing sessions')
         },
-        sign: async (tx) =>
-          Transaction.fromPSBT(recoveryPsbtBytes(await requestSignature(hex.encode(tx.toPSBT()), [key])), {
-            allowUnknownInputs: true,
-            allowUnknownOutputs: true,
-          }),
+        sign: async (tx) => {
+          let ledgerFee: LedgerRecoveryFeeRequest | undefined
+          if (
+            file.name === 'vaulted-spending-recovery' &&
+            isLedgerRecoveryKit(file.archive.kit) &&
+            (role === 'hardware' || role === 'recovery')
+          ) {
+            const fundingCoins = await Promise.all(
+              Array.from({ length: tx.inputsLength - 1 }, async (_, i) => {
+                const input = tx.getInput(i + 1),
+                  txid = hex.encode(input.txid!)
+                return {
+                  txid,
+                  vout: input.index!,
+                  value: Number(input.witnessUtxo!.amount),
+                  parentTxHex: (await readBounded(await fetch(`/esplora/tx/${txid}/hex`), 8_000_000)).trim(),
+                }
+              }),
+            )
+            ledgerFee = {
+              role,
+              file,
+              parentTxid: hex.encode(tx.getInput(0).txid!),
+              feeAddress: ledgerRecoveryFeeWallet(file.archive.kit.descriptor, role).feeAddress,
+              feeRate: file.exitPackage.feeRate,
+              fundingCoins,
+            }
+          }
+          return Transaction.fromPSBT(
+            recoveryPsbtBytes(await requestSignature(hex.encode(tx.toPSBT()), [key], ledgerFee ? { ledgerFee } : {})),
+            {
+              allowUnknownInputs: true,
+              allowUnknownOutputs: true,
+            },
+          )
+        },
       }
       const feeWallet = await OnchainWallet.create(identity, networkPins(network()).sdkNetwork, bitcoin)
       const executor =

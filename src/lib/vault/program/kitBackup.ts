@@ -1,3 +1,5 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from '../spendingEnrollment'
+import { buildSpendingRecoveryDescriptor } from './spendingRecoveryDescriptor'
 import { isConnectorTemplate } from './connector'
 import { vaultCosignerClient } from '../cosignerClient'
 import { beginPasskeySession } from '../signIn'
@@ -7,6 +9,8 @@ import { buildVaultProgramDescriptor } from './descriptor'
 import { buildRecoveryKit, parseRecoveryKit, type RecoveryKit } from './kit'
 import { SAVINGS_TEMPLATE } from './constants'
 import { isSupportedVaultNetwork } from '../constants'
+import { LEDGER_NATIVE_TEMPLATE } from './ledgerNativeKeys'
+import { buildLedgerRecoveryDescriptor, ledgerEnrollmentFromStatus } from './ledgerRecoveryDescriptor'
 
 export const MAP_BACKUP_NAME = 'arkade-vault-map'
 export const MAP_BACKUP_VERSION = 3
@@ -45,6 +49,36 @@ export function kitFromFacts(input: {
   hardwarePub?: string
   recoveryPub?: string
 }): RecoveryKit | null {
+  if (input.status?.templateVersion === SPENDING_ONLY_TEMPLATE) {
+    try {
+      const d = requireSpendingEnrollmentStatus(input.status)
+      if (
+        (input.enrollment?.phoneBip340Pub && input.enrollment.phoneBip340Pub !== d.phonePub) ||
+        (input.enrollment?.phoneDirectP256 && input.enrollment.phoneDirectP256 !== d.phoneDirectP256) ||
+        input.hardwarePub ||
+        input.recoveryPub
+      )
+        return null
+      return buildRecoveryKit(buildSpendingRecoveryDescriptor(d))
+    } catch {
+      return null
+    }
+  }
+
+  if (input.status?.templateVersion === LEDGER_NATIVE_TEMPLATE) {
+    try {
+      const descriptor = buildLedgerRecoveryDescriptor(ledgerEnrollmentFromStatus(input.status))
+      if (
+        (input.enrollment?.phoneBip340Pub && input.enrollment.phoneBip340Pub !== descriptor.keys.phoneBip340) ||
+        (input.hardwarePub && input.hardwarePub !== descriptor.keys.hardware) ||
+        (input.recoveryPub && input.recoveryPub !== descriptor.keys.recovery)
+      )
+        return null
+      return buildRecoveryKit(descriptor)
+    } catch {
+      return null
+    }
+  }
   const recoveryPub = input.recoveryPub || input.status?.recoveryPub || ''
   const hardwarePub = input.hardwarePub || input.status?.externalOwnerWalletPub || ''
   const phonePub = input.enrollment?.phoneBip340Pub || input.status?.phoneBip340Pub || ''

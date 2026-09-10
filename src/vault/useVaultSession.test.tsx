@@ -5,6 +5,9 @@ import { emptySetupPlan, type VaultSetupPlan } from '../lib/vault/setupPlan'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
 import { useVaultSession } from './useVaultSession'
+import { loadStagedEnrollment, saveStagedEnrollment, type StagedEnrollment } from '../lib/vault/enrollmentStore'
+import { ledgerRecoveryFixture } from '../lib/vault/recovery/testdata/ledger'
+import { hashLedgerSavingsEnrollment } from '../lib/vault/program/ledgerRecoveryDescriptor'
 
 const mocks = vi.hoisted(() => ({
   renew: vi.fn(),
@@ -15,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   liveStatus: vi.fn(),
   enable: vi.fn(),
   enroll: vi.fn(),
+  beginLedger: vi.fn(),
+  finishLedger: vi.fn(),
+  completeLedger: vi.fn(),
   loadPin: vi.fn(),
   makePin: vi.fn(),
   pullMap: vi.fn(),
@@ -55,10 +61,13 @@ vi.mock('../lib/vault/signIn', () => ({
 vi.mock('../lib/vault/tenantEnrollment', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/vault/tenantEnrollment')>()),
   enrollWithPasskey: mocks.enroll,
+  beginTenantEnrollment: mocks.beginLedger,
+  finishTenantEnrollment: mocks.finishLedger,
+  completeLedgerTenantEnrollment: mocks.completeLedger,
 }))
 
-vi.mock('../lib/vault/program/kitBackup', () => ({
-  kitFromFacts: vi.fn().mockReturnValue(null),
+vi.mock('../lib/vault/program/kitBackup', async (original) => ({
+  ...(await original<typeof import('../lib/vault/program/kitBackup')>()),
   pullMapBackup: mocks.pullMap,
   pushMapBackup: vi.fn(),
 }))
@@ -106,6 +115,9 @@ function setupHook(
 beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
+  mocks.beginLedger.mockReset()
+  mocks.finishLedger.mockReset()
+  mocks.completeLedger.mockReset()
   mocks.discover.mockResolvedValue('vault-a')
   mocks.enable.mockResolvedValue(status)
   mocks.pullMap.mockResolvedValue(null)
@@ -295,5 +307,151 @@ describe('local archive restore with unavailable live status', () => {
     expect(hook.setEnrollment).toHaveBeenCalledWith(enrollment)
     expect(hook.setStatus).toHaveBeenCalledWith(status)
     expect(hook.setScreen).toHaveBeenCalledWith('home')
+  })
+})
+
+describe('Ledger enrollment session interruption recovery', () => {
+  async function nativeSetup(advanced = false) {
+    const f = await ledgerRecoveryFixture(advanced)
+    const contract = f.composite.savings
+    const selected: VaultSetupPlan = {
+      ...emptySetupPlan(),
+      acceptedDesign: true,
+      complete: true,
+      protectionTier: advanced ? 'advanced' : 'standard',
+      hardwarePub: f.status.externalOwnerWalletPub!,
+      recoveryPub: f.status.recoveryPub || '',
+      txCapSats: contract.spendingPolicy.txRecipientCapSats,
+      dailyLimitSats: contract.spendingPolicy.periodAllowanceSats,
+      absoluteFeeCapSats: contract.spendingPolicy.absoluteFeeCapSats,
+      feerateCapSatPerV: contract.spendingPolicy.feerateCapSatPerV,
+      ledger: {
+        hardware: contract.context.hardware,
+        ...(contract.context.recovery ? { recovery: contract.context.recovery } : {}),
+      },
+    }
+    const { ledgerSavings, ...phone } = f.enrollment
+    const draft = {
+      version: ledgerSavings.version,
+      contract: ledgerSavings.contract,
+      phoneSeedBackup: ledgerSavings.phoneSeedBackup,
+    }
+    const saved: StagedEnrollment = {
+      ...phone,
+      handle: 'original-handle',
+      userHandle: 'ab',
+      clientDataJSON: '01',
+      authenticatorData: '02',
+      attestationObject: '03',
+      hardwareXOnly: selected.hardwarePub.slice(2),
+      ...(selected.recoveryPub ? { recoveryXOnly: selected.recoveryPub.slice(2) } : {}),
+      inviteToken: 'original-token',
+      descriptorHash: hashLedgerSavingsEnrollment(f.composite),
+      boardingPub: f.composite.boarding.boardingPub,
+      boardingDescriptor: f.composite.boarding,
+      boardingDescriptorHash: hashLedgerSavingsEnrollment(f.composite),
+      protectionTier: selected.protectionTier,
+      spendingPolicy: contract.spendingPolicy,
+      spendingPolicyDigest: contract.context.policyDigest,
+      ledgerSavingsDraft: draft,
+      ledgerSavingsDescriptor: f.composite,
+    }
+    const render = (plan = selected) => {
+      const state = {
+        reportError: vi.fn(),
+        sealPlan: vi.fn(() => plan),
+        setAddressPin: vi.fn(),
+        setBusy: vi.fn(),
+        setEnrollment: vi.fn(),
+        setLocked: vi.fn(),
+        setScreen: vi.fn(),
+        setStatus: vi.fn(),
+      }
+      const hook = renderHook(() => useVaultSession({ enrollment: null, status: null, setup: plan, ...state }))
+      return { ...hook, ...state }
+    }
+    return { f, selected, saved, render }
+  }
+
+  it.each([false, true])(
+    'resumes an unregistered draft after reload without generating another identity (advanced=%s)',
+    async (advanced) => {
+      const { f, saved, render } = await nativeSetup(advanced)
+      mocks.beginLedger.mockImplementation(async () => {
+        saveStagedEnrollment(saved)
+        return { enrollment: f.enrollment, ledgerDescriptor: f.composite, enrollmentToken: saved.inviteToken }
+      })
+      const first = render()
+      await act(async () => first.result.current.enroll('original-token'))
+      expect(mocks.beginLedger).toHaveBeenCalledTimes(1)
+      expect(first.setScreen).toHaveBeenLastCalledWith('ledger-register')
+      first.unmount()
+      const second = render()
+      await act(async () => second.result.current.enroll('ignored-new-token'))
+      expect(mocks.beginLedger).toHaveBeenCalledTimes(1)
+      expect(mocks.finishLedger).not.toHaveBeenCalled()
+      expect(mocks.completeLedger).not.toHaveBeenCalled()
+      expect(second.setScreen).toHaveBeenLastCalledWith('ledger-register')
+      expect(loadStagedEnrollment()).toEqual(saved)
+      expect(second.setBusy).toHaveBeenLastCalledWith(false)
+    },
+  )
+
+  it('retries only finish from a persisted registration after reload', async () => {
+    const { f, saved, render } = await nativeSetup(true)
+    saveStagedEnrollment({ ...saved, ledgerSavings: f.enrollment.ledgerSavings })
+    mocks.finishLedger.mockResolvedValue({ enrollment: f.enrollment, status: f.status })
+    mocks.enable.mockResolvedValue(f.status)
+    const hook = render()
+    await act(async () => hook.result.current.enroll('replacement-token'))
+    expect(mocks.finishLedger).toHaveBeenCalledExactlyOnceWith('original-token')
+    expect(mocks.beginLedger).not.toHaveBeenCalled()
+    expect(mocks.completeLedger).not.toHaveBeenCalled()
+    expect(hook.setScreen).toHaveBeenLastCalledWith('created')
+    expect(hook.setEnrollment).toHaveBeenCalledWith(f.enrollment)
+  })
+
+  it.each(['hardware', 'recovery', 'policy'] as const)(
+    'refuses replacing a staged enrollment with changed %s',
+    async (field) => {
+      const { saved, selected, render } = await nativeSetup(true)
+      saveStagedEnrollment(saved)
+      const altered = structuredClone(selected)
+      if (field === 'policy') altered.txCapSats -= 1
+      else altered.ledger![field]!.fingerprint = 'ffffffff'
+      const hook = render(altered)
+      await act(async () => hook.result.current.enroll())
+      expect(mocks.beginLedger).not.toHaveBeenCalled()
+      expect(mocks.finishLedger).not.toHaveBeenCalled()
+      expect(mocks.completeLedger).not.toHaveBeenCalled()
+      expect(hook.reportError).toHaveBeenCalledWith(expect.stringContaining('already in progress'))
+      expect(hook.setScreen).toHaveBeenLastCalledWith('problem')
+      expect(loadStagedEnrollment()).toEqual(saved)
+    },
+  )
+
+  it('retains a failed completion for finish retry without another device approval', async () => {
+    const { f, saved, render } = await nativeSetup()
+    saveStagedEnrollment(saved)
+    mocks.completeLedger.mockImplementation(async () => {
+      saveStagedEnrollment({ ...saved, ledgerSavings: f.enrollment.ledgerSavings })
+      throw new Error('finish response lost')
+    })
+    const first = render()
+    await act(async () => {
+      await expect(
+        first.result.current.completeLedgerEnrollment(f.enrollment.ledgerSavings.registration),
+      ).rejects.toThrow('finish response lost')
+    })
+    expect(first.setBusy).toHaveBeenLastCalledWith(false)
+    expect(first.setScreen).not.toHaveBeenCalledWith('created')
+    first.unmount()
+    mocks.finishLedger.mockResolvedValue({ enrollment: f.enrollment, status: f.status })
+    const resumed = render()
+    await act(async () => resumed.result.current.enroll())
+    expect(mocks.completeLedger).toHaveBeenCalledTimes(1)
+    expect(mocks.finishLedger).toHaveBeenCalledExactlyOnceWith('original-token')
+    expect(mocks.beginLedger).not.toHaveBeenCalled()
+    expect(resumed.setScreen).toHaveBeenLastCalledWith('created')
   })
 })

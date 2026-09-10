@@ -85,7 +85,7 @@ describe('Lightning SEND release boundary', () => {
       network: 'mutinynet',
       minSats: 1_000,
       maxSats: 25_000,
-      maxFundingSats: 50_000,
+      maxFundingSats: 25_076,
     })
     expect(BITCOIN_LIGHTNING_SOLVER).toMatchObject({
       network: 'bitcoin',
@@ -103,7 +103,7 @@ describe('Lightning SEND release boundary', () => {
       relays: ['wss://nostr.arkade.sh'],
       minSats: 1_000,
       maxSats: 25_000,
-      maxFundingSats: 50_000,
+      maxFundingSats: 25_076,
       market: { pair: 'BTC/lightning:BTC', fee_bps: 30 },
     })
     const bitcoin = await discoverVaultLightningSolver('bitcoin')

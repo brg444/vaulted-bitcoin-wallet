@@ -1,3 +1,4 @@
+import { isConnectorTemplate } from '../../../lib/vault/program/connector'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { CircleHelp, X } from 'lucide-react'
 import { VaultContext } from '../../../vault/context'
@@ -8,7 +9,7 @@ import InstallNotice from './InstallNotice'
 export const WalletHelpContext = createContext<{ light?: boolean; restore?: () => void }>({})
 
 export default function WalletHelp() {
-  const { busy, error, restoreRecoveryArchive } = useContext(VaultContext)
+  const { busy, error, restoreRecoveryArchive, status } = useContext(VaultContext)
   const wallet = useContext(WalletHelpContext)
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'menu' | 'restore' | 'access'>('menu')
@@ -47,7 +48,12 @@ export default function WalletHelp() {
             </button>
           </div>
           {view === 'access' && !wallet.light ? (
-            <RecoveryHelp onBack={() => setView('menu')} />
+            <RecoveryHelp
+              onBack={() => setView('menu')}
+              templateVersion={status?.templateVersion}
+              protectionTier={status?.protectionTier === 'light' ? undefined : status?.protectionTier}
+              mainnet={status?.network === 'mainnet'}
+            />
           ) : (
             <div className='qg-help-body'>
               {view === 'menu' ? (
@@ -70,7 +76,7 @@ export default function WalletHelp() {
                   {!wallet.light ? (
                     <a
                       className='qg-secondary'
-                      href='https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/ledger-guide.md'
+                      href={`https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/${isConnectorTemplate(status?.templateVersion) ? 'ledger-connector-guide.md' : 'ledger-guide.md'}`}
                       target='_blank'
                       rel='noopener noreferrer'
                       aria-label='Ledger setup and signing guide (opens in a new tab)'

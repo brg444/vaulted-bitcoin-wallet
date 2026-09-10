@@ -9,7 +9,7 @@ const origin = 'https://localhost:3120'
 export default defineConfig({
   ...base,
   projects: base.projects?.filter((project) => project.name === 'Mobile Chrome'),
-  testMatch: '**/light-funded.test.ts',
+  testMatch: '**/light*funded.test.ts',
   timeout: 240000,
   use: {
     ...base.use,

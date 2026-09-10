@@ -21,7 +21,7 @@ import {
   verifyLightRecoverySecret,
   verifySavedLightRecoveryFile,
 } from './enrollment'
-import { validateWatchedSavingsAddress, saveWatchedSavings, loadWatchedSavings } from './watchSavings'
+import { validateWatchedSavingsAddress, saveWatchedSavings, loadWatchedSavings } from '../watchSavings'
 import { lightTestEnrollment, lightTestStatus, testDescriptor, testSecret } from './testdata/helpers'
 import 'fake-indexeddb/auto'
 

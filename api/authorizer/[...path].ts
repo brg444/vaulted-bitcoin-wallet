@@ -216,8 +216,7 @@ export function publicAuthorizerPath(url = ''): string {
     ) {
       const vaultId = params.get('vaultId')
       return (
-        `/v1/vtxo/${route}/${phase}` +
-        (phase === 'info' && vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : '')
+        `/v1/vtxo/${route}/${phase}` + (phase === 'info' && vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : '')
       )
     }
     if (route === 'vtxo-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
@@ -228,6 +227,7 @@ export function publicAuthorizerPath(url = ''): string {
       return `/v1/light/renew/${phase}`
     if (route === 'light-backup' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
       return `/v1/light/backup/${phase}`
+    if (route === 'lnurl' && new Set(['challenge', 'register', 'revoke']).has(phase)) return `/v1/lnurl/${phase}`
     if (route === 'recovery-archive' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
       return `/v1/recovery-archive/${phase}`
     if (route === 'light-enroll' && new Set(['start', 'propose', 'finish']).has(phase))
@@ -326,6 +326,7 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
     res.end()
     return
   }
+  // Guardian enforces enrollment tiers on the shared endpoints.
   if (!sameOriginAllowed(req.headers)) {
     jsonError(res, 403, 'cross-origin authorizer access denied')
     return

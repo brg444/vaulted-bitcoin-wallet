@@ -2,29 +2,34 @@ import { useContext, useEffect, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { gitCommit } from '../../_gitCommit'
 import { copyToClipboard } from '../../lib/clipboard'
-import { prettyAgo, prettyAmount, prettyLongText } from '../../lib/format'
+import { prettyAgo, prettyLongText } from '../../lib/format'
+import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { hapticLight, hapticSubtle } from '../../lib/haptics'
 import { clearLogs, getLogs, type LogLine } from '../../lib/logs'
 import { Themes } from '../../lib/types'
 import {
+  loadArrivalBanners,
+  loadArrivalHaptics,
   loadVaultHaptics,
   loadVaultPrivacyLock,
   loadVaultTheme,
   resolveVaultTheme,
+  saveArrivalBanners,
+  saveArrivalHaptics,
   saveVaultHaptics,
   saveVaultPrivacyLock,
   saveVaultTheme,
   systemTheme,
 } from '../../lib/vault/prefs'
 import { setSessionLocked } from '../../lib/vault/enrollmentStore'
+import { useBalanceDenomination } from './AccountBalance'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
-import type { VaultStatus } from '../../lib/vault/types'
 import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
 
-type View = 'menu' | 'theme' | 'about' | 'haptics' | 'logs' | 'reset' | 'diagnostics'
+type View = 'menu' | 'theme' | 'about' | 'haptics' | 'notifications' | 'logs' | 'reset' | 'diagnostics'
 
 const THEME_OPTIONS: { value: Themes; testId: string; label: (theme: Themes) => string }[] = [
   { value: Themes.Auto, testId: 'select-option-0', label: () => `Auto (${systemTheme()})` },
@@ -126,31 +131,25 @@ function ResetView({ onBack, onReset }: { onBack: () => void; onReset: () => voi
   )
 }
 
-export default function VaultSettings({
-  light,
-}: {
-  light?: {
-    status: VaultStatus | null
-    busy: boolean
-    onClose: () => void
-    refresh: () => Promise<void>
-    lock: () => void
-  }
-} = {}) {
+export default function VaultSettings() {
   const context = useContext(VaultContext)
   const { reset, setup } = context
-  const status = light ? light.status : context.status
-  const busy = light ? light.busy : context.busy
-  const liveNetwork = light ? status?.network === 'mutinynet' : context.liveNetwork
-  const balanceError = light ? '' : context.balanceError
-  const refreshingBalance = light ? light.busy : context.refreshingBalance
-  const refreshBalance = light ? light.refresh : context.refreshBalance
-  const close = light ? light.onClose : () => context.navigate('home')
+  const denom = useBalanceDenomination()
+  const money = { unit: denom.unit, rate: denom.rate }
+  const status = context.status
+  const busy = context.busy
+  const liveNetwork = context.liveNetwork
+  const balanceError = context.balanceError
+  const refreshingBalance = context.refreshingBalance
+  const refreshBalance = context.refreshBalance
+  const close = () => context.navigate('home')
   const readiness = useVaultReadiness()
   const { toast } = useToast()
   const [view, setView] = useState<View>('menu')
   const [theme, setTheme] = useState(loadVaultTheme)
   const [haptics, setHaptics] = useState(loadVaultHaptics)
+  const [arrivalBanners, setArrivalBanners] = useState(loadArrivalBanners)
+  const [arrivalHaptics, setArrivalHaptics] = useState(loadArrivalHaptics)
   const [privacyLock, setPrivacyLock] = useState(loadVaultPrivacyLock)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
@@ -158,6 +157,8 @@ export default function VaultSettings({
     if (view !== 'menu') return
     setTheme(loadVaultTheme())
     setHaptics(loadVaultHaptics())
+    setArrivalBanners(loadArrivalBanners())
+    setArrivalHaptics(loadArrivalHaptics())
     setPrivacyLock(loadVaultPrivacyLock())
   }, [view])
 
@@ -204,25 +205,79 @@ export default function VaultSettings({
     return (
       <QgScreen title='Haptics' back={() => setView('menu')}>
         <HubGroup label='This device'>
+          <label className='vault-hub-row'>
+            <div className='vault-hub-copy'>
+              <p>Haptic feedback</p>
+              <p>Feedback when you tap. Availability depends on your device.</p>
+            </div>
+            <input
+              type='checkbox'
+              {...{ switch: '' }}
+              role='switch'
+              aria-label='Haptic feedback'
+              checked={haptics}
+              style={{ appearance: 'auto', width: 44, height: 28, flexShrink: 0 }}
+              onChange={(event) => {
+                const next = event.currentTarget.checked
+                setHaptics(next)
+                saveVaultHaptics(next)
+                // iPhone uses the native switch's trusted touch. Other
+                // browsers retain the library's vibration path.
+                if (next && typeof navigator.vibrate === 'function') hapticLight()
+              }}
+            />
+          </label>
+        </HubGroup>
+      </QgScreen>
+    )
+  }
+
+  if (view === 'notifications') {
+    return (
+      <QgScreen title='Notifications' back={() => setView('menu')}>
+        <HubGroup label='Payment arrivals'>
           <button
             type='button'
             role='switch'
-            aria-checked={haptics}
+            aria-checked={arrivalBanners}
             className='vault-hub-row'
+            data-testid='settings-arrival-banners'
             onClick={() => {
-              const next = !haptics
-              setHaptics(next)
-              saveVaultHaptics(next)
+              const next = !arrivalBanners
+              setArrivalBanners(next)
+              saveArrivalBanners(next)
               if (next) hapticLight()
             }}
           >
             <div className='vault-hub-copy'>
-              <p>Haptic feedback</p>
-              <p>Vibration on taps</p>
+              <p>Arrival banners</p>
+              <p>Show new payments in the wallet</p>
             </div>
-            <span className={haptics ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
+            <span className={arrivalBanners ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
+          </button>
+          <button
+            type='button'
+            role='switch'
+            aria-checked={arrivalHaptics}
+            className='vault-hub-row'
+            data-testid='settings-arrival-haptics'
+            onClick={() => {
+              const next = !arrivalHaptics
+              setArrivalHaptics(next)
+              saveArrivalHaptics(next)
+              if (next) hapticLight()
+            }}
+          >
+            <div className='vault-hub-copy'>
+              <p>Arrival haptics</p>
+              <p>Vibrate with new payments</p>
+            </div>
+            <span className={arrivalHaptics ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
           </button>
         </HubGroup>
+        <p className='qg-copy'>
+          Banners and vibration are advisory. Payments, history, and recovery work the same with them off.
+        </p>
       </QgScreen>
     )
   }
@@ -252,14 +307,14 @@ export default function VaultSettings({
       ['Policy version', status?.policyVersion],
       [
         'Protection tier',
-        light
+        tier === 'light'
           ? 'Light — passkey payments'
           : tier === 'advanced'
             ? 'Advanced — separate recovery key'
             : 'Standard — no separate recovery key',
       ],
-      ['Per-payment limit', prettyAmount(status?.txCap || setup.txCapSats)],
-      ['Rolling allowance', prettyAmount(status?.periodAllowance || setup.dailyLimitSats)],
+      ['Per-payment limit', formatMoney(status?.txCap || setup.txCapSats, money)],
+      ['Rolling allowance', formatMoney(status?.periodAllowance || setup.dailyLimitSats, money)],
       ['Vault service', readinessLabel],
       ['Site', status?.clientOrigin || location.origin],
       ['RP ID', status?.rpId],
@@ -337,6 +392,12 @@ export default function VaultSettings({
             value={haptics ? 'On' : 'Off'}
             onClick={() => setView('haptics')}
           />
+          <SettingsRow
+            label='Notifications'
+            testId='settings-notifications'
+            value={arrivalBanners ? 'On' : 'Off'}
+            onClick={() => setView('notifications')}
+          />
           <SettingsRow label='About' testId='settings-about' onClick={() => setView('about')} />
         </HubGroup>
 
@@ -345,33 +406,29 @@ export default function VaultSettings({
         </HubGroup>
 
         <HubGroup label='This browser'>
-          {light ? (
-            <SettingsRow label='Lock wallet' testId='settings-lock' onClick={light.lock} />
-          ) : (
-            <>
-              <button
-                type='button'
-                role='switch'
-                aria-checked={privacyLock}
-                className='vault-hub-row'
-                data-testid='settings-privacy-lock'
-                onClick={() => {
-                  const next = !privacyLock
-                  setPrivacyLock(next)
-                  saveVaultPrivacyLock(next)
-                  setSessionLocked(next)
-                  if (next) hapticLight()
-                }}
-              >
-                <div className='vault-hub-copy'>
-                  <p>Require passkey to open</p>
-                  <p>Hide balances until this device approves</p>
-                </div>
-                <span className={privacyLock ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
-              </button>
-              <SettingsRow label='Sign out' testId='settings-signout' danger onClick={() => setView('reset')} />
-            </>
-          )}
+          <>
+            <button
+              type='button'
+              role='switch'
+              aria-checked={privacyLock}
+              className='vault-hub-row'
+              data-testid='settings-privacy-lock'
+              onClick={() => {
+                const next = !privacyLock
+                setPrivacyLock(next)
+                saveVaultPrivacyLock(next)
+                setSessionLocked(next)
+                if (next) hapticLight()
+              }}
+            >
+              <div className='vault-hub-copy'>
+                <p>Require passkey to open</p>
+                <p>Hide balances until this device approves</p>
+              </div>
+              <span className={privacyLock ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
+            </button>
+            <SettingsRow label='Sign out' testId='settings-signout' danger onClick={() => setView('reset')} />
+          </>
         </HubGroup>
       </div>
     </QgScreen>

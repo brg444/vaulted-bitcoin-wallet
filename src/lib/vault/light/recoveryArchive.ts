@@ -8,6 +8,8 @@ import {
 import { lightExitRepository } from './exitRepository'
 import { lightDescriptorDigest, validateLightDescriptor, type LightDescriptor } from './contract'
 import { requireSpendingRecoveryCoverage } from '../recovery/coverage'
+import { loadLifecycleArchive } from '../recovery/lifecycleStore'
+import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 
 export type LightRecoveryArchive = ExitArchive
 export const normalizeLightRecoveryChain = normalizeRecoveryChain
@@ -52,7 +54,12 @@ export async function storeLightRecoveryArchive(archive: LightRecoveryArchive, d
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('archive', 'readwrite')
-      tx.objectStore('archive').put(archive, 'current')
+      const store = tx.objectStore('archive')
+      const prior = store.get('current')
+      prior.onsuccess = () => {
+        if (prior.result) store.put(prior.result, 'previous')
+        store.put(archive, 'current')
+      }
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
       tx.onabort = () => reject(tx.error)
@@ -89,11 +96,9 @@ async function capture(
 ): Promise<LightRecoveryArchive> {
   const repository = lightExitRepository(d)
   try {
-    const archive = await captureExitArchive(
-      binding(d),
-      repository,
-      await loadLightRecoveryArchive(d).catch(() => null),
-    )
+    const archive =
+      (await loadLifecycleArchive(vaultWalletDatabase(d.vaultId), binding(d))) ??
+      (await captureExitArchive(binding(d), repository, await loadLightRecoveryArchive(d).catch(() => null)))
     assertLightArchiveMatchesVtxos(archive, d, expected)
     await storeLightRecoveryArchive(archive, d)
     return archive

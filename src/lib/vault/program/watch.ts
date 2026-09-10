@@ -37,7 +37,7 @@ export function saveSeenOutpoints(vaultId: string, seen: Iterable<string>, stora
 }
 
 export async function pollPendingInitiates(input: {
-  descriptor: VaultProgramDescriptor
+  descriptor: Pick<VaultProgramDescriptor, 'keys' | 'pending'>
   fetchUtxos: (address: string) => Promise<EsploraUtxo[]>
   seen: Set<string>
 }): Promise<{ alerts: InitiateAlert[]; seen: Set<string> }> {

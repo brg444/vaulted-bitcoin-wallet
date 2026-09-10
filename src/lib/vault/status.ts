@@ -1,3 +1,4 @@
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from './spendingEnrollment'
 import { LIGHT_PROFILE } from './light/contract'
 import { requireLightStatus } from './light/status'
 import { readBounded } from './bounded'
@@ -16,6 +17,8 @@ import {
   type SpendingPolicyCapabilities,
 } from './spendingPolicy'
 import { requireProtectionTierMatchesRecovery } from './protectionTier'
+import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
+import { ledgerEnrollmentFromStatus } from './program/ledgerRecoveryDescriptor'
 
 export function authorizerBase(): string {
   // Production talks same-origin only. A VITE_ value is compiled into the
@@ -26,6 +29,7 @@ export function authorizerBase(): string {
 }
 
 export type PublicAuthorizerStatus = {
+  ledgerSavingsCapability?: { version: 1; templateVersion: typeof LEDGER_NATIVE_TEMPLATE }
   supportedSetups?: ('light' | 'standard' | 'advanced')[]
   network: string
   clientOrigin: string
@@ -228,7 +232,12 @@ export function requireStatusIdentity(
   if (status.vaultId !== expected) throw new Error('status vault id does not match')
   requireReleaseNetwork(status.network)
   if (status.templateVersion === LIGHT_PROFILE) return requireLightStatus(status)
-  if (status.templateVersion !== SAVINGS_TEMPLATE && !isConnectorTemplate(status.templateVersion))
+  if (
+    status.templateVersion !== SPENDING_ONLY_TEMPLATE &&
+    status.templateVersion !== SAVINGS_TEMPLATE &&
+    status.templateVersion !== LEDGER_NATIVE_TEMPLATE &&
+    !isConnectorTemplate(status.templateVersion)
+  )
     throw new Error('template version is not this release')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   const selected = validateSpendingPolicy(status.spendingPolicy)
@@ -243,7 +252,15 @@ export function requireStatusIdentity(
   ) {
     throw new Error('status spending policy does not match limit fields')
   }
-  if (status.enrolled && (!String(status.savingsAddress || '').trim() || !String(status.savingsScript || '').trim())) {
+  if (status.templateVersion === SPENDING_ONLY_TEMPLATE) {
+    requireSpendingEnrollmentStatus(status as VaultStatus)
+    status = { ...status, savingsAddress: '', savingsScript: '' }
+  } else if (status.protectionTier === 'light') {
+    throw new Error('Light requires its shared Spending enrollment template')
+  } else if (
+    status.enrolled &&
+    (!String(status.savingsAddress || '').trim() || !String(status.savingsScript || '').trim())
+  ) {
     throw new Error('enrolled status is missing the Savings descriptor')
   }
   const recoveryPub = String(status.recoveryPub || '').trim()
@@ -253,5 +270,9 @@ export function requireStatusIdentity(
   }
   const recovery = recoveryKeyPub || recoveryPub
   requireProtectionTierMatchesRecovery(status.protectionTier, recovery)
+  if (status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
+    ledgerEnrollmentFromStatus(status as VaultStatus)
+    status = { ...status, vtxoBoardingDescriptorHash: status.ledgerSavings!.descriptorHash }
+  } else if (status.ledgerSavings) throw new Error('Ledger Savings metadata requires its enrolled template')
   return (recovery ? { ...status, recoveryPub: recovery, recoveryKeyPub: recovery } : status) as VaultStatus
 }

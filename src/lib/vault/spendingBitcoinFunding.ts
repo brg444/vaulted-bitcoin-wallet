@@ -1,3 +1,6 @@
+import { guardianRenewalSpendUnlocker } from './light/delegationCeremony'
+import { LightScript } from './light/contract'
+import { lightContract, registerLightContractHandler } from './light/contractHandler'
 import {
   ArkAddress,
   RestArkProvider,
@@ -11,7 +14,7 @@ import { hex } from '@scure/base'
 import { Address, OutScript } from '@scure/btc-signer'
 import { scriptHexFromAddress, vaultAddressNetwork } from './bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
-import { consoleLog } from '../logs'
+import { consoleError, consoleLog } from '../logs'
 import { ensureVaultWalletWorker } from './vtxo/walletWorker'
 import { BitcoinPaymentError, bitcoinPaymentRejected } from './bitcoinPaymentError'
 import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
@@ -21,7 +24,7 @@ import { checkConnectorSetup } from './connectorSetup'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
 import { vaultPolicyV1Contract, registerVaultPolicyV1ContractHandler } from './vtxo/contractHandler'
 import {
-  vaultPolicyV1ScriptFromStatus,
+  spendingScriptFromStatus,
   createVtxoOperationId,
   createVtxoSpendUnlocker,
   newVtxoSpendChallenge,
@@ -229,13 +232,17 @@ export async function sendSpendingToBitcoin(
   return withVtxoSendLock(status.vaultId, async () => {
     const prior = readSpendingBitcoin(status)
     if (prior) throw new Error('Check the pending Bitcoin payment before starting another')
-    const unlocker = createVtxoSpendUnlocker(enrollment, bound, newVtxoSpendChallenge())
+    const unlockSpend =
+      status.protectionTier === 'light' && status.lightDescriptor
+        ? guardianRenewalSpendUnlocker(status.lightDescriptor)
+        : createVtxoSpendUnlocker
+    const unlocker = unlockSpend(enrollment, bound, newVtxoSpendChallenge())
     let wallet: Wallet | undefined
     const abort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
     try {
       progress('Checking funds for this Bitcoin payment')
-      const script = vaultPolicyV1ScriptFromStatus(status)
+      const script = spendingScriptFromStatus(status)
       const url = vaultArkServer(status.network)
       const indexer = new RestIndexerProvider(url)
       const result = await indexer.getVtxos({ scripts: [context.scriptPubKey] })
@@ -328,7 +335,8 @@ export async function sendSpendingToBitcoin(
       )
       const runtime = await ensureVaultWalletWorker(status)
       const identity = SingleKey.fromPrivateKey(auth.phoneSecret)
-      registerVaultPolicyV1ContractHandler()
+      if (script instanceof LightScript) registerLightContractHandler()
+      else registerVaultPolicyV1ContractHandler()
       wallet = await Wallet.create({
         identity,
         arkProvider: provider,
@@ -348,7 +356,11 @@ export async function sendSpendingToBitcoin(
       ).encode()
       // The SDK signer router signs only inputs belonging to a known contract.
       // Register the exact enrolled Spending script before creating intent/forfeit proofs.
-      await (await wallet.getContractManager()).createContract(vaultPolicyV1Contract(script, address))
+      await (
+        await wallet.getContractManager()
+      ).createContract(
+        script instanceof LightScript ? lightContract(script, address) : vaultPolicyV1Contract(script, address),
+      )
       const input: ExtendedVirtualCoin = {
         ...coin,
         forfeitTapLeafScript: script.forfeit(),
@@ -435,6 +447,7 @@ export async function sendSpendingToBitcoin(
         )
       return receipt
     } catch (error) {
+      consoleError(error, 'Bitcoin payment lifecycle')
       if (error instanceof BitcoinPaymentError) throw error
       const saved = readSpendingBitcoin(status)
       if (saved) {

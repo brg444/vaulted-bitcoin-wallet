@@ -24,7 +24,8 @@ export interface VaultPolicyV1Params {
   exitDelay: bigint
   exitDelayUnit: typeof VAULT_POLICY_V1_EXIT_DELAY_UNIT
   exitDevicePub: Uint8Array
-  exitHardwarePub: Uint8Array
+  exitMode?: 'hardware' | 'device'
+  exitHardwarePub?: Uint8Array
   exitRecoveryPub?: Uint8Array
   network?: VaultNetwork
 }
@@ -58,7 +59,17 @@ export function assertVaultPolicyV1Params(params: VaultPolicyV1Params): VaultPol
   const arkdServerPub = requireXOnly(params.arkdServerPub, 'arkdServerPub')
   const delegatePub = requireXOnly(params.delegatePub, 'delegatePub')
   const exitDevicePub = requireXOnly(params.exitDevicePub, 'exitDevicePub')
-  const exitHardwarePub = requireXOnly(params.exitHardwarePub, 'exitHardwarePub')
+  if (params.exitMode !== undefined && params.exitMode !== 'hardware' && params.exitMode !== 'device') {
+    throw new Error('unsupported Spending recovery mode')
+  }
+  const exitHardwarePub =
+    params.exitMode === 'device' ? undefined : requireXOnly(params.exitHardwarePub, 'exitHardwarePub')
+  if (
+    params.exitMode === 'device' &&
+    (params.exitHardwarePub || params.exitRecoveryPub || !exitDevicePub.every((b, i) => b === userPub[i]))
+  ) {
+    throw new Error('device recovery requires only the enrolled Spending owner')
+  }
   const exitRecoveryPub = params.exitRecoveryPub ? requireXOnly(params.exitRecoveryPub, 'exitRecoveryPub') : undefined
 
   if (params.exitDelayUnit !== VAULT_POLICY_V1_EXIT_DELAY_UNIT) {
@@ -88,7 +99,8 @@ export function assertVaultPolicyV1Params(params: VaultPolicyV1Params): VaultPol
     exitDelay: BigInt(pins.policyExitDelay),
     exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
     exitDevicePub,
-    exitHardwarePub,
+    ...(params.exitMode ? { exitMode: params.exitMode } : {}),
+    ...(exitHardwarePub ? { exitHardwarePub } : {}),
     ...(exitRecoveryPub ? { exitRecoveryPub } : {}),
   }
 }
@@ -113,9 +125,12 @@ export class VaultPolicyV1Script extends VtxoScript {
     })
     const exit = CSVMultisigTapscript.encode({
       timelock: { type: typed.exitDelayUnit, value: typed.exitDelay },
-      pubkeys: typed.exitRecoveryPub
-        ? [typed.exitHardwarePub, typed.exitRecoveryPub]
-        : [typed.exitDevicePub, typed.exitHardwarePub],
+      pubkeys:
+        typed.exitMode === 'device'
+          ? [typed.exitDevicePub]
+          : typed.exitRecoveryPub
+            ? [typed.exitHardwarePub!, typed.exitRecoveryPub]
+            : [typed.exitDevicePub, typed.exitHardwarePub!],
     })
     const delegate = MultisigTapscript.encode({
       pubkeys: [typed.userPub, typed.vtxoVaultCosignerPub, typed.delegatePub, typed.arkdServerPub],

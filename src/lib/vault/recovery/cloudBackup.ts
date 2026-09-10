@@ -1,3 +1,4 @@
+import { unlockLedgerPhoneSeed } from '../ledgerPhoneBackup'
 import { hex } from '@scure/base'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { authorizerBase } from '../status'
@@ -48,9 +49,9 @@ async function post<T>(phase: 'challenge' | 'open' | 'read' | 'write', body: unk
 
 export async function openRecoveryCloudBackup(
   local?: RecoveryHeader,
-  restored?: (file: VaultRecoveryFile, phone: Uint8Array) => Promise<unknown>,
+  restored?: (file: VaultRecoveryFile, phone: Uint8Array, ledgerSavingsSeed?: Uint8Array) => Promise<unknown>,
 ): Promise<RecoveryBackupSession> {
-  if (local) validateRecoveryHeader(local)
+  if (local) local = validateRecoveryHeader(structuredClone(local))
   const challenge = await post<{ challengeId: string; challenge: string }>('challenge', {})
   if (!/^[0-9a-f]{64}$/.test(challenge.challenge)) throw new Error('Invalid recovery backup challenge')
   const id = local ? Uint8Array.from(hex.decode(local.enrollment.credId)) : undefined
@@ -77,6 +78,7 @@ export async function openRecoveryCloudBackup(
   if (!prf || prf.length !== 32) throw new Error('The original passkey PRF is required for recovery')
   let direct: Awaited<ReturnType<typeof deriveDirectP256>> | undefined
   let phone: Uint8Array | undefined
+  let ledgerSavingsSeed: Uint8Array | undefined
   try {
     direct = await deriveDirectP256(prf)
     const response = await post<{
@@ -119,13 +121,22 @@ export async function openRecoveryCloudBackup(
     )
       throw new Error('Recovery backup does not match the original enrollment')
     phone = await unwrapPhoneSecret(prf, header.enrollment.nonce, header.enrollment.ciphertext)
+    if (header.enrollment.ledgerSavings) {
+      const ledger = header.enrollment.ledgerSavings
+      ledgerSavingsSeed = await unlockLedgerPhoneSeed(
+        ledger.phoneSeedBackup,
+        prf,
+        'passkey-prf',
+        ledger.contract.context,
+      )
+    }
     const key = await recoveryBackupKey(phone, header)
     const file = encrypted ? await decryptRecoveryBackup(encrypted, key) : undefined
     const revision = response.backup?.revision ?? 0
     const seen = Number(localStorage.getItem(revisionKey(vaultId)) || 0)
     if (!Number.isSafeInteger(revision) || revision < 0 || revision < seen)
       throw new Error('Cloud backup is older than the last verified copy')
-    if (file && restored) await restored(file, phone)
+    if (file && restored) await restored(file, phone, ledgerSavingsSeed)
     localStorage.setItem(revisionKey(vaultId), String(revision))
     return {
       token: response.token,
@@ -137,7 +148,7 @@ export async function openRecoveryCloudBackup(
       fingerprint: file ? fingerprint(file) : '',
     }
   } finally {
-    zeroBytes(prf, phone, direct?.scalar)
+    zeroBytes(prf, phone, ledgerSavingsSeed, direct?.scalar)
   }
 }
 

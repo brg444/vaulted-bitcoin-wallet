@@ -1,11 +1,5 @@
-import {
-  ChainTxType,
-  Transaction,
-  createExitChainResolver,
-  type ArkInfo,
-  type VirtualCoin,
-  type IndexerProvider,
-} from '@arkade-os/sdk'
+import { recoveryChainResolver } from '../recovery/pagedIndexer'
+import { ChainTxType, Transaction, type ArkInfo, type VirtualCoin, type IndexerProvider } from '@arkade-os/sdk'
 import { base64 } from '@scure/base'
 import { normalizeRecoveryChain, packExitArchive, validateExitArchive } from '../recovery/exitArchive'
 import { lightDescriptorDigest, type LightDescriptor } from './contract'
@@ -41,7 +35,7 @@ export async function requireDelegationInputAncestryForBinding(
 ) {
   const repository = createRepository()
   try {
-    const resolver = createExitChainResolver({ indexer, repository })
+    const resolver = recoveryChainResolver(indexer, repository)
     const chain = normalizeRecoveryChain(await resolver.getVtxoChain(coin))
     if (
       !coin.commitmentTxIds?.length ||

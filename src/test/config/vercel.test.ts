@@ -12,7 +12,7 @@ describe('Vercel worker caching', () => {
     })
   })
 
-  it('allows only the release-pinned Lightning relay beyond same-origin connections', () => {
+  it('restricts connections to the configured services and pinned Lightning endpoints', () => {
     const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
       headers: { source: string; headers: { key: string; value: string }[] }[]
     }
@@ -27,7 +27,11 @@ describe('Vercel worker caching', () => {
     expect(connectSrc).toEqual([
       'connect-src',
       "'self'",
-      'https://mutinynet.arkade.sh',
+      'https://ln.getvaulted.xyz',
+      'https://emulator.arkade.computer',
+      'https://arkade.computer',
+      'https://mempool.arkade.sh',
+      'wss://mempool.arkade.sh',
       'https://blockchain.info',
       'wss://nostr.arkade.sh',
     ])
@@ -131,8 +135,12 @@ describe('Vercel worker caching', () => {
     expect(config.buildCommand).toBe('pnpm build:mainnet')
     expect(config.env).toEqual({
       VAULT_RELEASE_NETWORK: 'mainnet',
+      VAULT_LIGHT_ONLY_ENROLLMENT: 'true',
+      VITE_VAULT_LIGHT_ONLY_ENROLLMENT: 'true',
       VITE_VAULT_RELEASE_NETWORK: 'mainnet',
       VITE_VAULT_LIGHTNING_SEND: 'true',
+      VITE_VAULT_LIGHTNING_RECEIVE: 'true',
+      VITE_VAULT_LNURL: 'true',
     })
     expect(config.rewrites).toContainEqual({
       source: '/esplora/:path*',
@@ -141,6 +149,8 @@ describe('Vercel worker caching', () => {
     expect(connectSrc).toEqual([
       'connect-src',
       "'self'",
+      'https://ln.getvaulted.xyz',
+      'https://emulator.arkade.computer',
       'https://arkade.computer',
       'https://mempool.arkade.sh',
       'wss://mempool.arkade.sh',
@@ -148,15 +158,21 @@ describe('Vercel worker caching', () => {
       'wss://nostr.arkade.sh',
     ])
     expect(csp).not.toContain('mutinynet')
-    expect(csp).not.toContain('getvaulted')
+    expect(csp).not.toContain('app.getvaulted.xyz')
+    expect(config.rewrites).toContainEqual({
+      source: '/v1/lnurl/:phase',
+      destination: '/api/gateway?route=lnurl&phase=:phase',
+    })
     expect(JSON.stringify(config)).not.toContain('mutinynet')
   })
 
-  it('does not put mainnet origins or the production wallet host in the Mutinynet deployment', () => {
-    const config = readFileSync('vercel.json', 'utf8')
-    expect(config).toContain('mutinynet')
-    expect(config).not.toContain('arkade.computer')
-    expect(config).not.toContain('app.getvaulted.xyz')
-    expect(config).not.toContain('mempool.space')
+  it('deploys the canonical config with the qualified mainnet restrictions', () => {
+    const config = JSON.parse(readFileSync('vercel.json', 'utf8'))
+    expect(config).toEqual(JSON.parse(readFileSync('vercel.mainnet.json', 'utf8')))
+    expect(JSON.stringify(config)).not.toContain('mutinynet')
+    expect(config.env.VAULT_LIGHT_ONLY_ENROLLMENT).toBe('true')
+    expect(config.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT).toBe('true')
+    expect(config.env.VITE_VAULT_LIGHTNING_RECEIVE).toBe('true')
+    expect(config.env.VITE_VAULT_LNURL).toBe('true')
   })
 })

@@ -1,7 +1,8 @@
 import { Landmark, Settings, Shield, Wallet, X } from 'lucide-react'
 import { useLauncherPosition } from './qg/useLauncherPosition'
+import { useLauncherGlass } from './qg/useLauncherGlass'
 import HollowPixelMark from '../../icons/HollowPixelMark'
-import { prettyNumber } from '../../lib/format'
+import { formatMoney, type MoneyDenomination } from '../../lib/vault/fiatDisplay'
 import { hapticLight, hapticSubtle } from '../../lib/haptics'
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { VaultContext, type VaultAccount, type VaultScreen } from '../../vault/context'
@@ -24,14 +25,29 @@ const ACCOUNTS: { id: VaultAccount; label: string; testId: string; icon: ReactNo
 ]
 
 export default function VaultNavigation() {
-  const { account, balancesLoaded, navigate, positions, setAccount } = useContext(VaultContext)
+  const {
+    account,
+    balancesLoaded,
+    navigate,
+    positions,
+    setAccount,
+    balanceUnit,
+    fiatDisplayRate,
+    watchedSavingsTotalSats,
+  } = useContext(VaultContext)
   return (
     <VaultLauncher
       account={account}
       balances={{
         spending: balancesLoaded ? positions.spending.totalSats : null,
-        savings: balancesLoaded ? positions.savings.totalSats : null,
+        savings:
+          watchedSavingsTotalSats !== undefined
+            ? watchedSavingsTotalSats
+            : balancesLoaded
+              ? positions.savings.totalSats
+              : null,
       }}
+      denomination={{ unit: balanceUnit ?? 'sats', rate: fiatDisplayRate ?? null }}
       onAccount={setAccount}
       actions={ACTIONS.map((action) => ({ ...action, onClick: () => navigate(action.screen) }))}
     />
@@ -41,6 +57,7 @@ export default function VaultNavigation() {
 export function VaultLauncher({
   account,
   balances,
+  denomination,
   onAccount,
   actions,
   disabled = false,
@@ -48,9 +65,11 @@ export function VaultLauncher({
   disabled?: boolean
   account: VaultAccount
   balances: { spending: number | null; savings: number | null }
+  denomination?: MoneyDenomination
   onAccount: (account: VaultAccount) => void
   actions: { id: string; label: string; testId: string; icon: ReactNode; onClick: () => void }[]
 }) {
+  const money: MoneyDenomination = denomination ?? { unit: 'sats', rate: null }
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const [pull, setPull] = useState(0)
@@ -130,6 +149,7 @@ export function VaultLauncher({
   }
 
   const placement = useLauncherPosition(layerRef, setPull, openLauncher)
+  useLauncherGlass(layerRef)
 
   const progress = open ? 1 : pull
   const peeking = !open && pull > 0
@@ -173,7 +193,7 @@ export function VaultLauncher({
           >
             <span className='qg-launcher-copy'>
               <span className='qg-launcher-label'>{item.label}</span>
-              <span className='qg-launcher-amt'>{balance !== null ? `₿${prettyNumber(balance)}` : 'Loading…'}</span>
+              <span className='qg-launcher-amt'>{balance !== null ? formatMoney(balance, money) : 'Loading…'}</span>
             </span>
             <span className='qg-launcher-icon' aria-hidden='true'>
               {item.icon}

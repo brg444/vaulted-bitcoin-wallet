@@ -1,8 +1,8 @@
+import { requireSavingsRecoveryKit, inspectRecoveryKit, parseRecoveryKit, type RecoveryKit } from './kit'
 import { loadSessionView } from './chain'
 import { CLAIMANTS, type Claimant } from './constants'
 import { deriveSession } from './session'
 import { familyFromDescriptor } from './descriptor'
-import { inspectRecoveryKit, parseRecoveryKit, type RecoveryKit } from './kit'
 import { selectRoute } from './route'
 import {
   buildClaimPsbt,
@@ -184,7 +184,7 @@ export function runKitCli(cmd: KitCliCommand): string {
       return `claim dest ${view.destScript} fee ${view.feeSats} csv ${view.sequence}`
     }
   }
-  const family = familyFromDescriptor(cmd.kit.descriptor)
+  const family = familyFromDescriptor(requireSavingsRecoveryKit(cmd.kit).descriptor)
   const coin = { txid: cmd.txid, vout: cmd.vout, value: cmd.value }
   if (cmd.name === 'initiate') {
     selectRoute({ role: 'normal' }, { type: 'initiate', claimant: cmd.claimant })
@@ -216,7 +216,7 @@ export function runKitCli(cmd: KitCliCommand): string {
 
 function formatStatus(cmd: Extract<KitCliCommand, { name: 'status' }>, view?: Parameters<typeof deriveSession>[1]) {
   const key = `savings-${cmd.claimant}` as const
-  const pending = cmd.kit.descriptor.pending[key]
+  const pending = requireSavingsRecoveryKit(cmd.kit).descriptor.pending[key]
   const snapshot = deriveSession(
     pending.delay,
     view || {
@@ -243,8 +243,8 @@ function formatStatus(cmd: Extract<KitCliCommand, { name: 'status' }>, view?: Pa
 export async function runKitCliAsync(cmd: KitCliCommand): Promise<string> {
   if (cmd.name === 'status' && cmd.esplora) {
     const key = `savings-${cmd.claimant}` as const
-    const pending = cmd.kit.descriptor.pending[key]
-    const quarantine = cmd.kit.descriptor.quarantine[key]
+    const pending = requireSavingsRecoveryKit(cmd.kit).descriptor.pending[key]
+    const quarantine = requireSavingsRecoveryKit(cmd.kit).descriptor.quarantine[key]
     const view = await loadSessionView({
       base: cmd.esplora,
       pendingAddress: pending.address,

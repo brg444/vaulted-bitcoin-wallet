@@ -10,6 +10,7 @@ import {
 import { fingerprint, hexToBytes } from './hex'
 import { requireProtectionTier, requireProtectionTierMatchesRecovery, type ProtectionTier } from './protectionTier'
 import { spendingPolicyFromLimits, validateSpendingPolicy, type SpendingPolicy } from './spendingPolicy'
+import { validateLedgerSetup, ledgerSpendingPublicKey, type VaultSetupLedger } from './ledgerSetup'
 
 export const SETUP_STORE_KEY = 'arkade-vault-v2:setup'
 
@@ -28,6 +29,7 @@ export interface VaultSetupConnector {
 }
 
 export interface VaultSetupPlan {
+  ledger?: VaultSetupLedger
   protectionTier: ProtectionTier
   hardwarePub: string
   recoveryPub: string
@@ -134,7 +136,9 @@ export function sameRole(a: string, b: string): boolean {
 
 export function planReady(plan: VaultSetupPlan): boolean {
   if (!plan.acceptedDesign) return false
-  if (!plan.hardwarePub) return false
+  if (plan.protectionTier === 'light') {
+    if (plan.hardwarePub || plan.recoveryPub || plan.connector || plan.ledger) return false
+  } else if (!plan.hardwarePub) return false
   if (plan.recoveryPub && sameRole(plan.hardwarePub, plan.recoveryPub)) return false
   try {
     requireProtectionTierMatchesRecovery(plan.protectionTier, plan.recoveryPub)
@@ -165,7 +169,9 @@ export function loadSetupPlan(storage: Storage = localStorage): VaultSetupPlan |
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
   if (
-    (parsed.protectionTier !== 'standard' && parsed.protectionTier !== 'advanced') ||
+    (parsed.protectionTier !== 'light' &&
+      parsed.protectionTier !== 'standard' &&
+      parsed.protectionTier !== 'advanced') ||
     !Number.isSafeInteger(parsed.txCapSats) ||
     !Number.isSafeInteger(parsed.dailyLimitSats) ||
     !Number.isSafeInteger(parsed.absoluteFeeCapSats) ||
@@ -173,13 +179,34 @@ export function loadSetupPlan(storage: Storage = localStorage): VaultSetupPlan |
   ) {
     return null
   }
+  if (
+    parsed.protectionTier === 'light' &&
+    (parsed.hardwarePub || parsed.recoveryPub || parsed.connector || parsed.ledger)
+  )
+    return null
   const connector = validSetupConnector(parsed.connector)
   if (Object.hasOwn(parsed, 'connector') && (!connector || parsed.hardwarePub !== connector.connectorPub)) return null
+  let ledger: VaultSetupLedger | undefined
+  if (parsed.ledger) {
+    try {
+      if (connector) return null
+      const network = requireReleaseNetwork(parsed.ledger.hardware.path[1] === 0x80000000 ? 'mainnet' : 'mutinynet')
+      ledger = validateLedgerSetup(parsed.ledger, network)
+      if (
+        ledgerSpendingPublicKey(ledger.hardware, network) !== parsed.hardwarePub ||
+        (ledger.recovery ? ledgerSpendingPublicKey(ledger.recovery, network) : '') !== parsed.recoveryPub
+      )
+        return null
+    } catch {
+      return null
+    }
+  }
   return {
     protectionTier: requireProtectionTier(parsed.protectionTier),
     hardwarePub: String(parsed.hardwarePub || ''),
     recoveryPub: String(parsed.recoveryPub || ''),
     ...(connector ? { connector } : {}),
+    ...(ledger ? { ledger } : {}),
     txCapSats: Number(parsed.txCapSats),
     dailyLimitSats: Number(parsed.dailyLimitSats),
     absoluteFeeCapSats: Number(parsed.absoluteFeeCapSats),

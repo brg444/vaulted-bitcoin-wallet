@@ -1,0 +1,14 @@
+[
+  {
+    "tier": "standard",
+    "exit": 0,
+    "stdout": "REJECTED NoSuchElementException: null\n",
+    "stderr": ""
+  },
+  {
+    "tier": "advanced",
+    "exit": 0,
+    "stdout": "REJECTED NoSuchElementException: null\n",
+    "stderr": ""
+  }
+]

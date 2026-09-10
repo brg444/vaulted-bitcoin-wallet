@@ -1,18 +1,20 @@
+import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
-import { prettyAmount } from '../../lib/format'
+import { formatMoney, hasUsdRate } from '../../lib/vault/fiatDisplay'
 import { isVaultLightningInput } from '../../lib/vault/lightningConfig'
 import { truncateAddress } from '../../lib/vault/policy'
 import { VaultContext } from '../../vault/context'
+import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount from './qg/QgAmount'
 import ReviewAmount from './qg/ReviewAmount'
 import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
 
-export default function VaultReview() {
+export default function VaultReview({ denomination }: { denomination?: BalanceDenomination }) {
   const {
     account,
     approveSend,
@@ -28,6 +30,8 @@ export default function VaultReview() {
   } = useContext(VaultContext)
   const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
+  const denom = useBalanceDenomination(denomination)
+  const money = { unit: denom.unit, rate: denom.rate }
   const fromSavings = account === 'savings'
   const bitcoinSend = !fromSavings && isVaultBitcoinAddress(spend.address, status?.network)
   const hardwareFirst = fromSavings && status?.templateVersion === DUAL_CONNECTOR_TEMPLATE
@@ -48,7 +52,7 @@ export default function VaultReview() {
       <div className='qg-screen qg-screen-progress'>
         <main className='qg-main qg-centered qg-progress-screen'>
           <span className='qg-spinner' aria-hidden='true' />
-          <ReviewAmount value={prettyAmount(spend.amount)} label='Savings transfer' />
+          <ReviewAmount value={formatMoney(spend.amount, money)} label='Savings transfer' />
           <h1 aria-live='polite'>{hardwareFirst ? 'Preparing approval' : 'Approve with passkey'}</h1>
           <p className='qg-copy'>Use Face ID, Touch ID, fingerprint, or your device PIN when prompted.</p>
         </main>
@@ -87,7 +91,7 @@ export default function VaultReview() {
       }
     >
       <ReviewAmount
-        value={prettyAmount(spend.amount)}
+        value={formatMoney(spend.amount, money)}
         label={movingToSpending ? 'You’re transferring' : lightning ? 'You’re paying' : 'You’re sending'}
       >
         <p>{fromSavings ? 'From Savings' : 'From Spending'}</p>
@@ -103,7 +107,14 @@ export default function VaultReview() {
       {bitcoinSend && bitcoinOutputs && bitcoinOutputs.length > 1 ? (
         <p className='qg-copy'>
           {bitcoinOutputs.length} separate Bitcoin outputs:{' '}
-          {bitcoinOutputs.map((output) => `${output.amountSats} sats`).join(' + ')}.
+          {bitcoinOutputs
+            .map((output) =>
+              money.unit === 'usd' && hasUsdRate(money.rate)
+                ? formatMoney(output.amountSats, money)
+                : `${output.amountSats} sats`,
+            )
+            .join(' + ')}
+          .
         </p>
       ) : null}
       <section className='qg-details' aria-label='Payment details'>
@@ -144,13 +155,13 @@ export default function VaultReview() {
               : 'Fee'}
           </span>
           <strong>
-            <QgAmount value={prettyAmount(spend.fee)} />
+            <QgAmount value={formatMoney(spend.fee, money)} />
           </strong>
         </div>
         <div>
           <span>Total</span>
           <strong>
-            <QgAmount value={prettyAmount(spend.amount + spend.fee)} />
+            <QgAmount value={formatMoney(spend.amount + spend.fee, money)} />
           </strong>
         </div>
         <div>
@@ -161,9 +172,11 @@ export default function VaultReview() {
       {!rebroadcastingConnector ? (
         <p className='qg-copy qg-approval-copy'>
           {fromSavings
-            ? hardwareFirst
-              ? 'Sign with your external wallet, then approve with your passkey to send.'
-              : 'Approve with your passkey, then sign with your external wallet.'
+            ? status?.templateVersion === LEDGER_NATIVE_TEMPLATE
+              ? 'Approve with your passkey, then review the recipient, amount and fee on your Ledger.'
+              : hardwareFirst
+                ? 'Sign with your external wallet, then approve with your passkey to send.'
+                : 'Approve with your passkey, then sign with your external wallet.'
             : bitcoinSend
               ? 'Confirm this destination and fee. Keep the wallet open while your payment joins a batch; Bitcoin confirmation follows.'
               : 'Approve with your passkey. The vault service checks your payment limits.'}

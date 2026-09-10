@@ -17,8 +17,11 @@ import { requireStatusIdentity } from './status'
 import { defaultSpendingPolicy, spendingPolicyDigest, type SpendingPolicy } from './spendingPolicy'
 import type { VaultStatusWire } from './types'
 import type { ProtectionTier } from './protectionTier'
+import type { LedgerSavingsKeyContext, LedgerAccountOrigin } from './program/ledgerNativeKeys'
 
 type ExpectedVaultStatusWire = {
+  spendingDescriptor?: import('./spendingEnrollment').SpendingEnrollmentDescriptor
+  ledgerSavings?: { context: LedgerSavingsKeyContext; spendingPolicy: SpendingPolicy; descriptorHash: string }
   connectorEnrollment?: {
     connectorType: 'p2wpkh' | 'p2tr'
     connectorPub: string
@@ -76,6 +79,12 @@ type ExpectedVaultStatusWire = {
 }
 
 type ExpectedVaultEnrollmentRequest = {
+  ledgerSavings?: {
+    templateVersion: 'phone-ledger-guardian-savings-v1'
+    phone: LedgerAccountOrigin
+    hardware: LedgerAccountOrigin
+    recovery?: LedgerAccountOrigin
+  }
   handle: string
   userHandle: string
   clientDataJSON: string
@@ -102,6 +111,12 @@ type ExpectedVaultEnrollmentRequest = {
 }
 
 type ExpectedVaultTransitionRequest = {
+  ledgerSavings?: {
+    claimant: 'phone' | 'hardware' | 'recovery'
+    remainingUser?: 'phone' | 'hardware' | 'recovery'
+    change: 0 | 1
+  }
+  phoneAuthorization?: { digest: string; signature: string }
   vaultId: string
   purpose: string
   psbt: string
