@@ -79,9 +79,12 @@ describe('arrival delivery preferences', () => {
     await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['quiet']))
     expect(mockedHaptic).not.toHaveBeenCalled()
 
+    // A later payment folds the visible banner into one summary so two
+    // notices never stack, with a single haptic pulse for the summary.
     rerender({ rows: [stored, row({ txid: 'quiet' }), row({ txid: 'loud' })], delivery: ENABLED })
-    await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['quiet', 'loud']))
-    expect(mockedHaptic).toHaveBeenCalled()
+    await waitFor(() => expect(result.current.catchUp).toMatchObject({ count: 2 }))
+    expect(result.current.arrivals).toEqual([])
+    expect(mockedHaptic).toHaveBeenCalledTimes(1)
   })
 
   it('drops a pending claim announcement when banners are disabled mid-flight', async () => {
@@ -174,6 +177,42 @@ describe('arrival delivery preferences', () => {
     })
     await waitFor(() => expect(result.current.arrivals.map((arrival) => arrival.item.txid)).toEqual(['retimed']))
     expect(mockedHaptic).toHaveBeenCalled()
+  })
+
+  it('unions two deferred batches resolving in the same act into one summary', async () => {
+    const scope = { network: 'mutinynet', vaultId: 'vault-prefs-8' }
+    const stored = row({ txid: 'stored' })
+    const resolvers: ((keys: readonly string[]) => void)[] = []
+    mockedClaim.mockImplementation(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolvers.push((keys) => resolve([...keys]))
+        }),
+    )
+    const { result, rerender } = renderHook(
+      ({ rows }) => usePaymentArrivals(rows, scope, false, true, new Set(), ENABLED),
+      { initialProps: { rows: [stored] } },
+    )
+    rerender({ rows: [stored, row({ txid: 'batch-a', amount: 1_000 }), row({ txid: 'batch-b', amount: 2_000 })] })
+    await waitFor(() => expect(mockedClaim).toHaveBeenCalledTimes(1))
+    rerender({
+      rows: [
+        stored,
+        row({ txid: 'batch-a', amount: 1_000 }),
+        row({ txid: 'batch-b', amount: 2_000 }),
+        row({ txid: 'batch-c', amount: 4_000 }),
+      ],
+    })
+    await waitFor(() => expect(mockedClaim).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      resolvers[0]([
+        'tx:mutinynet:vault-prefs-8:spend:batch-a:received',
+        'tx:mutinynet:vault-prefs-8:spend:batch-b:received',
+      ])
+      resolvers[1](['tx:mutinynet:vault-prefs-8:spend:batch-c:received'])
+    })
+    await waitFor(() => expect(result.current.catchUp).toMatchObject({ count: 3, totalSats: 7_000 }))
+    expect(result.current.arrivals).toEqual([])
   })
 })
 

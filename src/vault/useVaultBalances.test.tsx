@@ -227,6 +227,39 @@ describe('useVaultBalances', () => {
     expect(result.current.snapshotFresh).toBe(true)
   })
 
+  it('withholds fresh readiness until every source settles', async () => {
+    let resolveSavings!: (value: Awaited<ReturnType<typeof fetchAddressTxs>>) => void
+    mockedTxs.mockImplementation(
+      (address: string) =>
+        new Promise<Awaited<ReturnType<typeof fetchAddressTxs>>>((resolve) => {
+          if (address === 'tb1psavings') resolveSavings = resolve
+          else resolve([])
+        }),
+    )
+    mockedSnapshot.mockResolvedValue({ balance: 0, history: [] })
+    const { result } = setupHook(false)
+    await waitFor(() => expect(mockedSnapshot).toHaveBeenCalled())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // Spending settled but Savings is still pending: no fresh baseline yet,
+    // so arrival observation cannot treat a partial snapshot as complete.
+    expect(result.current.snapshotFresh).toBe(false)
+    expect(result.current.history).toEqual([])
+    await act(async () => {
+      resolveSavings([
+        {
+          txid: 'recent-s',
+          vin: [],
+          vout: [{ scriptpubkey_address: 'tb1psavings', value: 9_000 }],
+          status: { confirmed: true, block_time: 200 },
+        },
+      ])
+    })
+    await waitFor(() => expect(result.current.snapshotFresh).toBe(true))
+    expect(result.current.history.map((item) => item.txid)).toEqual(['recent-s'])
+  })
+
   it('appends one older Savings window without touching balances', async () => {
     mockedUtxos.mockResolvedValue([{ txid: 'recent', vout: 0, value: 9_000, status: { confirmed: true } }])
     mockedTxs.mockResolvedValue([

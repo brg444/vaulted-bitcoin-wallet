@@ -629,7 +629,7 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
     () => ({ bannersEnabled, hapticsEnabled: arrivalHapticsEnabled }),
     [bannersEnabled, arrivalHapticsEnabled],
   )
-  const { arrivals, dismissArrival, openArrivalKey } = usePaymentArrivals(
+  const { arrivals, catchUp, dismissArrival, dismissCatchUp, openArrivalKey } = usePaymentArrivals(
     visibleHistory,
     arrivalScope,
     busy || locked,
@@ -1898,6 +1898,8 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
       olderActivity,
       arrivals,
       dismissArrival,
+      catchUp,
+      dismissCatchUp,
       openArrival: (key: string) => {
         const found = openArrivalKey(key)
         if (!found) return
@@ -2081,6 +2083,8 @@ export function VaultProvider({ children, lightSession }: { children: ReactNode;
       visibleHistory,
       arrivals,
       dismissArrival,
+      catchUp,
+      dismissCatchUp,
       openArrivalKey,
       txReturn,
       loadOlderActivity,

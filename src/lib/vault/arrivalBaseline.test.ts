@@ -51,23 +51,23 @@ describe('arrival baseline', () => {
     expect(loadArrivalBaseline(SCOPE, storage).size).toBe(0)
     saveArrivalBaseline(
       SCOPE,
-      new Map(Array.from({ length: 250 }, (_, index) => [`key-${index}`, index % 2 === 0] as [string, boolean])),
+      new Map(Array.from({ length: 600 }, (_, index) => [`key-${index}`, index % 2 === 0] as [string, boolean])),
       undefined,
       storage,
     )
     const loaded = loadArrivalBaseline(SCOPE, storage)
-    expect(loaded.size).toBe(200)
+    expect(loaded.size).toBe(500)
     expect(loaded.has('key-0')).toBe(false)
-    expect(loaded.get('key-249')).toBe(false)
+    expect(loaded.get('key-599')).toBe(false)
   })
 
   it('keeps visible history ahead of stale keys under the cap', () => {
     const storage = memoryStorage()
-    const seen = new Map(Array.from({ length: 250 }, (_, index) => [`key-${index}`, true] as [string, boolean]))
+    const seen = new Map(Array.from({ length: 600 }, (_, index) => [`key-${index}`, true] as [string, boolean]))
     const current = new Set(['key-0', 'key-1', 'key-2', 'key-3', 'key-4'])
     saveArrivalBaseline(SCOPE, seen, current, storage)
     const loaded = loadArrivalBaseline(SCOPE, storage)
-    expect(loaded.size).toBe(200)
+    expect(loaded.size).toBe(500)
     for (const key of current) expect(loaded.has(key)).toBe(true)
   })
 

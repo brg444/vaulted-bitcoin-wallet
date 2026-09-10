@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { olderRowKey, type VaultHistoryItem } from '../lib/vault/history'
 import { describePayment, paymentIdentityForItem, type PaymentScope } from '../lib/vault/payments'
 import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
@@ -8,6 +8,74 @@ import { hapticSubtle } from '../lib/haptics'
 export interface PaymentArrival {
   key: string
   item: VaultHistoryItem
+}
+
+/**
+ * One accessible catch-up notice for newly verified incoming payments that
+ * landed together, such as after reconnect or reopen. A single summary
+ * replaces a burst of individual banners; one fresh payment still banners
+ * alone. The summary links to full Activity and never replays: its keys are
+ * claimed and marked seen like any delivered arrival.
+ */
+export interface PaymentCatchUp {
+  count: number
+  totalSats: number
+  keys: string[]
+  items: PaymentArrival[]
+}
+
+export function summarizeArrivals(arrivals: readonly PaymentArrival[]): PaymentCatchUp {
+  const keys = arrivals.map((arrival) => arrival.key)
+  return {
+    count: arrivals.length,
+    totalSats: arrivals.reduce((total, arrival) => total + (arrival.item.displayAmount ?? arrival.item.amount), 0),
+    keys,
+    items: [...arrivals],
+  }
+}
+
+interface ArrivalNotices {
+  arrivals: PaymentArrival[]
+  catchUp: PaymentCatchUp | null
+}
+
+const EMPTY_NOTICES: ArrivalNotices = { arrivals: [], catchUp: null }
+
+type NoticesAction =
+  | { type: 'present'; accepted: PaymentArrival[] }
+  | { type: 'dismiss'; key: string }
+  | { type: 'dismiss-summary' }
+  | { type: 'reset' }
+
+/**
+ * Atomic notice updates: every presentation merges into one state value, so
+ * two deliveries resolving before React renders union instead of
+ * overwriting. A lone fresh payment banners alone only when nothing is
+ * already showing; otherwise everything folds into a single catch-up
+ * summary, and successive batches never stack a burst alongside it.
+ */
+function noticesReducer(state: ArrivalNotices, action: NoticesAction): ArrivalNotices {
+  switch (action.type) {
+    case 'present': {
+      if (action.accepted.length === 0) return state
+      const pool = new Map<string, PaymentArrival>()
+      for (const arrival of [...(state.catchUp?.items ?? []), ...state.arrivals, ...action.accepted]) {
+        pool.set(arrival.key, arrival)
+      }
+      const combined = [...pool.values()]
+      if (!state.catchUp && state.arrivals.length === 0 && action.accepted.length === 1 && combined.length === 1) {
+        return { arrivals: combined.slice(-MAX_VISIBLE_ARRIVALS), catchUp: null }
+      }
+      return { arrivals: [], catchUp: summarizeArrivals(combined) }
+    }
+    case 'dismiss':
+      if (!state.arrivals.some((arrival) => arrival.key === action.key)) return state
+      return { ...state, arrivals: state.arrivals.filter((arrival) => arrival.key !== action.key) }
+    case 'dismiss-summary':
+      return state.catchUp ? { ...state, catchUp: null } : state
+    case 'reset':
+      return EMPTY_NOTICES
+  }
 }
 
 /**
@@ -23,7 +91,8 @@ export interface PaymentArrival {
  * queued, so a cold load cannot turn stored rows into new-payment alerts.
  * Presented payments persist as device-local receipts, so a reload or a
  * staged hydration replays nothing. Clearing local data reseeds quietly from
- * whatever history loads first.
+ * whatever history loads first. Several newly verified payments in one
+ * observation collapse into a single catch-up summary instead of a burst.
  */
 /** True when a row can banner: a complete receipt of verified external funds. */
 function isArrivalCandidate(row: VaultHistoryItem, outgoingTxids: ReadonlySet<string>): boolean {
@@ -76,6 +145,14 @@ export function detectPaymentArrivals(
 
 export function seedArrivalBaseline(rows: readonly VaultHistoryItem[], scope: PaymentScope): Map<string, boolean> {
   const seeded = loadArrivalBaseline(scope)
+  // Every present row seeds quietly, whether or not a stored baseline
+  // exists. A nonempty map is not evidence that an absent row is new: capped
+  // legacy baselines, partial snapshots, and restored data can all omit old
+  // records, so absence from the cache never proves newness. Supported
+  // reopen catch-up covers retained pending-to-available identity
+  // transitions, which detection observes as state changes on known keys.
+  // Brand-new IDs while closed stay unsupported until per-source
+  // completeness evidence can prove them new.
   const outgoingTxids = outgoingReferences(rows)
   for (const row of rows) {
     const key = paymentIdentityForItem(row, scope).key
@@ -106,10 +183,12 @@ export function usePaymentArrivals(
   delivery: ArrivalDeliveryPrefs = DEFAULT_DELIVERY,
 ): {
   arrivals: PaymentArrival[]
+  catchUp: PaymentCatchUp | null
   dismissArrival: (key: string) => void
+  dismissCatchUp: () => void
   openArrivalKey: (key: string) => VaultHistoryItem | null
 } {
-  const [arrivals, setArrivals] = useState<PaymentArrival[]>([])
+  const [notices, dispatchNotices] = useReducer(noticesReducer, EMPTY_NOTICES)
   const seenRef = useRef<Map<string, boolean> | null>(null)
   const pendingRef = useRef<PaymentArrival[]>([])
   const pausedRef = useRef(paused)
@@ -136,7 +215,7 @@ export function usePaymentArrivals(
     scopeRef.current = scopeKey
     seenRef.current = null
     pendingRef.current = []
-    setArrivals([])
+    dispatchNotices({ type: 'reset' })
   }
 
   useEffect(() => {
@@ -186,12 +265,10 @@ export function usePaymentArrivals(
           pendingRef.current = [...queued.values()]
           return
         }
+        // The reducer merges atomically, so two claims resolving before
+        // React renders union instead of overwriting.
         if (live.hapticsEnabled) hapticSubtle()
-        setArrivals((current) => {
-          const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
-          for (const arrival of accepted) queued.set(arrival.key, arrival)
-          return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
-        })
+        dispatchNotices({ type: 'present', accepted })
       })
       .catch(() => {
         // Delivery storage failure suppresses an optional banner; payment
@@ -209,12 +286,11 @@ export function usePaymentArrivals(
     }
     const flushed = pendingRef.current
     pendingRef.current = []
+    // Buffered arrivals flush through the same at-most-one-notice rule, so
+    // unlocking after several landed while approval was in flight produces
+    // one summary rather than a burst.
     if (deliveryRef.current.hapticsEnabled) hapticSubtle()
-    setArrivals((current) => {
-      const queued = new Map(current.map((arrival) => [arrival.key, arrival]))
-      for (const arrival of flushed) queued.set(arrival.key, arrival)
-      return [...queued.values()].slice(-MAX_VISIBLE_ARRIVALS)
-    })
+    dispatchNotices({ type: 'present', accepted: flushed })
   }, [paused])
 
   // Disabling banners invalidates pending and visible notices immediately,
@@ -225,21 +301,25 @@ export function usePaymentArrivals(
     if (bannersOn) return
     deliveryGenRef.current += 1
     pendingRef.current = []
-    setArrivals([])
+    dispatchNotices({ type: 'reset' })
   }, [bannersOn])
+
+  const dismissCatchUp = useCallback(() => {
+    dispatchNotices({ type: 'dismiss-summary' })
+  }, [])
 
   const dismissArrival = useCallback((key: string) => {
     pendingRef.current = pendingRef.current.filter((arrival) => arrival.key !== key)
-    setArrivals((current) => current.filter((arrival) => arrival.key !== key))
+    dispatchNotices({ type: 'dismiss', key })
   }, [])
 
   const openArrivalKey = useCallback(
     (key: string) => {
-      const arrival = [...pendingRef.current, ...arrivals].find((candidate) => candidate.key === key)
+      const arrival = [...pendingRef.current, ...notices.arrivals].find((candidate) => candidate.key === key)
       return arrival?.item || null
     },
-    [arrivals],
+    [notices.arrivals],
   )
 
-  return { arrivals, dismissArrival, openArrivalKey }
+  return { arrivals: notices.arrivals, catchUp: notices.catchUp, dismissArrival, dismissCatchUp, openArrivalKey }
 }
