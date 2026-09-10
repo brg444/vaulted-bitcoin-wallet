@@ -72,7 +72,7 @@ export default function BitcoinPaymentUi() {
           <VaultHistoryList
             account='spend'
             balancesLoaded
-            history={mode < 7 ? history.map((tx) => ({ ...tx, confirmed: true })) : history}
+            history={mode < 7 ? history.filter((tx) => !tx.bitcoinOperationId) : history}
             openTx={() => setMode(4)}
           />
         </AccountHome>

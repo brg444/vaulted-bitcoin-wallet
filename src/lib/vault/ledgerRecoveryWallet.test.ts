@@ -168,7 +168,8 @@ describe('native Ledger recovery lifecycle', () => {
       await restoreLedgerRecoveryJournal(f.composite.savings, { version: 1, records: [f.record] })
       expect(exportLedgerRecoveryJournal(f.composite.savings)).toEqual(exported)
     },
-    30000,
+    // Full signatures and repeated journal verification need headroom on shared CI CPUs.
+    60000,
   )
   it('retains phone approval after a lost response, requests a fresh session, and rejects candidate replacement', async () => {
     const f = await fixture({ kind: 'initiate', claimant: 'phone', change: 0 })

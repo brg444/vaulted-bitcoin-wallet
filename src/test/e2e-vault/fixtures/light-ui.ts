@@ -16,6 +16,22 @@ async function override(page: Page, path: string, exports: Record<string, string
     })
   })
 }
+// Override only balance data so tier comparisons keep the same production import graph.
+export async function mockVaultBalances(
+  page: Page,
+  { balance, pendingBalance, history }: { balance: number; pendingBalance: number; history: Record<string, unknown>[] },
+  savingsBalance = 0,
+) {
+  await override(page, 'vault/useVaultBalances.ts', {
+    useVaultBalances: `() => ({
+    balanceError:'',boardingError:'',balancesLoaded:true,snapshotFresh:true,
+    history:${JSON.stringify(history)},
+    positions:{spending:{availableSats:${balance},pendingSats:${pendingBalance},totalSats:${balance + pendingBalance}},savings:{availableSats:${savingsBalance},pendingSats:0,totalSats:${savingsBalance}}},
+    refreshBalance:async()=>{},refreshingBalance:false,loadOlderActivity:async()=>({added:0,exhausted:true}),olderActivity:{status:'idle',error:''},olderHistory:[]
+  })`,
+  })
+}
+
 export async function openLight(
   page: Page,
   watch = false,
@@ -59,14 +75,15 @@ export async function openLight(
       }))
     : []
   const savingsBalance = watch ? 1234567890 : 0
-  await override(page, 'vault/useVaultBalances.ts', {
-    useVaultBalances: `() => ({
-    balanceError:'',boardingError:'',balancesLoaded:true,snapshotFresh:true,
-    history:${JSON.stringify([...history, ...savingsHistory])},
-    positions:{spending:{availableSats:${snapshot?.balance ?? 12000},pendingSats:${snapshot?.pendingBalance ?? 2000},totalSats:${(snapshot?.balance ?? 12000) + (snapshot?.pendingBalance ?? 2000)}},savings:{availableSats:${savingsBalance},pendingSats:0,totalSats:${savingsBalance}}},
-    refreshBalance:async()=>{},refreshingBalance:false,loadOlderActivity:async()=>({added:0,exhausted:true}),olderActivity:{status:'idle',error:''},olderHistory:[]
-  })`,
-  })
+  await mockVaultBalances(
+    page,
+    {
+      balance: snapshot?.balance ?? 12000,
+      pendingBalance: snapshot?.pendingBalance ?? 2000,
+      history: [...history, ...savingsHistory],
+    },
+    savingsBalance,
+  )
   await override(page, 'lib/vault/vtxo/walletWorker.ts', {
     fetchVaultWalletVtxoSnapshot: `async () => ({balance:${snapshot?.balance ?? 12000},pendingBalance:${snapshot?.pendingBalance ?? 2000},recoveryVtxos:[],history:${JSON.stringify(history)}})`,
     subscribeVaultWalletEvents: `() => () => {}`,

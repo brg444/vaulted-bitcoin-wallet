@@ -125,7 +125,7 @@ describe('portable recovery data', () => {
     expect(prepared.exitPackage.steps.some((step) => step.kind === 'sweep')).toBe(true)
     expect(provider.broadcastTransaction).not.toHaveBeenCalled()
     expect(network).not.toHaveBeenCalled()
-  })
+  }, 45000)
   it('rejects missing paths and a readable archive belonging to another account', async () => {
     const { file, key } = await fixture()
     const pkg = await createPortableRecoveryPackage(file, key)

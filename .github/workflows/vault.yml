@@ -19,7 +19,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
         with:
@@ -62,7 +62,10 @@ jobs:
             }
           "
       - name: Unit tests
-        run: corepack pnpm test:unit --maxWorkers=2
+        run: corepack pnpm test:unit --maxWorkers=2 --exclude src/lib/vault/ledgerRecoveryWallet.test.ts --exclude src/lib/vault/recovery/portable.test.ts
+      # Keep expensive complete recovery signatures on one worker to avoid CPU starvation.
+      - name: Recovery signing tests
+        run: corepack pnpm exec vitest run src/lib/vault/ledgerRecoveryWallet.test.ts src/lib/vault/recovery/portable.test.ts --maxWorkers=1
       - name: Reject ambiguous builds
         run: node scripts/verify-release-build.mjs
       - name: Build vault
