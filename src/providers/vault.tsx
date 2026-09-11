@@ -3,8 +3,14 @@ import { loadWatchedSavings, saveWatchedSavings, type WatchedSavingsAddress } fr
 import { useLedgerSavings } from '../vault/useLedgerSavings'
 import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
-import { usePaymentArrivals } from '../vault/usePaymentArrivals'
-import { useNotificationPrefs } from '../vault/useNotificationPrefs'
+import { useNativePaymentNotifications } from '../vault/useNativePaymentNotifications'
+import type { PaymentArrival } from '../vault/usePaymentArrivals'
+
+/** Inert arrivals shape: the banner detector is retired; native delivery owns arrivals. */
+const EMPTY_NATIVE_ARRIVALS: PaymentArrival[] = []
+import { NOTIFY_WORKER_SCOPE } from '../lib/vault/nativeNotifications'
+import { parsePushNavScreen } from '../lib/vault/notificationEnvelope'
+import { disableBackgroundPush, isPushSubscribed, refreshBackgroundPush } from '../lib/vault/pushSubscription'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
@@ -599,7 +605,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       )
     })
   }, [visibleHistory])
-  // Arrival banners read the unfiltered history so a Savings deposit still
+  // Native receipt detection reads the unfiltered history so a Savings deposit still
   // surfaces while Spending is selected. Detection starts only after a
   // fresh successful snapshot for the active scope; cached hydration alone
   // never qualifies. Delivery pauses while locked, scopeless, or while an
@@ -610,24 +616,55 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   )
   const arrivalReady = snapshotFresh && Boolean(status?.vaultId) && Boolean(status?.network)
   // Browsing history loaded beyond the recent window never feeds arrival
-  // observation; those receipts stay visible without bannering as new.
+  // observation; those receipts stay visible without announcing as new.
   const excludedArrivalKeys = useMemo(() => new Set((olderHistory || []).map(olderRowKey)), [olderHistory])
-  // Banner and haptic preferences gate presentation only. Detection,
-  // baseline, and dedup continue while banners are disabled, so toggling
-  // never replays historical payments.
-  const { bannersEnabled, arrivalHapticsEnabled } = useNotificationPrefs()
-  const arrivalDelivery = useMemo(
-    () => ({ bannersEnabled, hapticsEnabled: arrivalHapticsEnabled }),
-    [bannersEnabled, arrivalHapticsEnabled],
-  )
-  const { arrivals, catchUp, dismissArrival, dismissCatchUp, openArrivalKey } = usePaymentArrivals(
-    visibleHistory,
-    arrivalScope,
-    busy || locked,
-    arrivalReady,
-    excludedArrivalKeys,
-    arrivalDelivery,
-  )
+  // The legacy in-app banner detector is retired: native delivery owns
+  // arrivals outright, so no second detector may seed or merge the shared
+  // baseline ahead of it. Context keeps inert empty values for shape.
+  const arrivals: PaymentArrival[] = EMPTY_NATIVE_ARRIVALS
+  const catchUp = null
+  const dismissArrival = useCallback(() => undefined, [])
+  const dismissCatchUp = useCallback(() => undefined, [])
+  const openArrivalKey = useCallback(() => null, [])
+  // Foreground OS notices for verified receipts the server cannot see
+  // (confirmed Savings deposits). Server-owned Spending receipts stay silent
+  // here under every subscription state; push owns them, even app-open.
+  const notifyRegistration = useCallback(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return Promise.resolve(undefined)
+    return navigator.serviceWorker.getRegistration(NOTIFY_WORKER_SCOPE).catch(() => undefined)
+  }, [])
+  useNativePaymentNotifications(visibleHistory, arrivalScope, busy || locked, arrivalReady, excludedArrivalKeys, {
+    getRegistration: notifyRegistration,
+    enabled: status !== null && isPushSubscribed(status),
+  })
+  useEffect(() => {
+    if (!locked && status) void refreshBackgroundPush(status).catch(() => undefined)
+    // Refresh only on unlock or wallet change; receipt refreshes do not renew leases.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, status?.vaultId, status?.network])
+  // Native tap flow: a worker tap opens `/?notify=activity`. After unlock,
+  // with a fresh snapshot, land on verified Activity and strip the param.
+  useEffect(() => {
+    if (locked || !arrivalReady) return
+    let screen: string | null = null
+    try {
+      screen = new URLSearchParams(window.location.search).get('notify')
+    } catch {
+      return
+    }
+    if (parsePushNavScreen(screen) !== 'activity') return
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('notify')
+      window.history.replaceState(null, '', url.toString())
+    } catch {
+      // Navigation still proceeds; the param is inert afterwards.
+    }
+    setScreen('activity')
+    void refreshBalance().catch(() => undefined)
+    // Runs once per unlock-ready transition; navigation consumes the param.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, arrivalReady])
 
   const {
     backupRecoveryKit,
@@ -1746,6 +1783,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         .then(() => deleteBoardingKey(status.vaultId))
         .catch(() => undefined)
     }
+    // Push teardown is best effort and never blocks sign-out. Scope cleanup
+    // revokes the server subscription, drops the local handle, and
+    // preserves the device endpoint used by other wallets.
+    if (status) void disableBackgroundPush(status).catch(() => undefined)
     setSessionLocked(true)
     setLocked(true)
     setError('')
@@ -1886,13 +1927,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       dismissArrival,
       catchUp,
       dismissCatchUp,
-      openArrival: (key: string) => {
-        const found = openArrivalKey(key)
-        if (!found) return
-        dismissArrival(key)
-        setSelectedTx(found)
-        setError('')
-        setScreen('tx')
+      openArrival: () => {
+        // Retired with the banner detector: arrivals open from Activity.
       },
       openTx: (tx) => {
         const ledger = ledgerSavings.view

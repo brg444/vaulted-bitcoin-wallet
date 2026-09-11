@@ -8,14 +8,10 @@ import { hapticLight, hapticSubtle } from '../../lib/haptics'
 import { clearLogs, getLogs, type LogLine } from '../../lib/logs'
 import { Themes } from '../../lib/types'
 import {
-  loadArrivalBanners,
-  loadArrivalHaptics,
   loadVaultHaptics,
   loadVaultPrivacyLock,
   loadVaultTheme,
   resolveVaultTheme,
-  saveArrivalBanners,
-  saveArrivalHaptics,
   saveVaultHaptics,
   saveVaultPrivacyLock,
   saveVaultTheme,
@@ -28,6 +24,7 @@ import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
+import NativeNotifications from './NativeNotifications'
 
 type View = 'menu' | 'theme' | 'about' | 'haptics' | 'notifications' | 'logs' | 'reset' | 'diagnostics'
 
@@ -148,8 +145,6 @@ export default function VaultSettings() {
   const [view, setView] = useState<View>('menu')
   const [theme, setTheme] = useState(loadVaultTheme)
   const [haptics, setHaptics] = useState(loadVaultHaptics)
-  const [arrivalBanners, setArrivalBanners] = useState(loadArrivalBanners)
-  const [arrivalHaptics, setArrivalHaptics] = useState(loadArrivalHaptics)
   const [privacyLock, setPrivacyLock] = useState(loadVaultPrivacyLock)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
@@ -157,8 +152,6 @@ export default function VaultSettings() {
     if (view !== 'menu') return
     setTheme(loadVaultTheme())
     setHaptics(loadVaultHaptics())
-    setArrivalBanners(loadArrivalBanners())
-    setArrivalHaptics(loadArrivalHaptics())
     setPrivacyLock(loadVaultPrivacyLock())
   }, [view])
 
@@ -228,56 +221,6 @@ export default function VaultSettings() {
             />
           </label>
         </HubGroup>
-      </QgScreen>
-    )
-  }
-
-  if (view === 'notifications') {
-    return (
-      <QgScreen title='Notifications' back={() => setView('menu')}>
-        <HubGroup label='Payment arrivals'>
-          <button
-            type='button'
-            role='switch'
-            aria-checked={arrivalBanners}
-            className='vault-hub-row'
-            data-testid='settings-arrival-banners'
-            onClick={() => {
-              const next = !arrivalBanners
-              setArrivalBanners(next)
-              saveArrivalBanners(next)
-              if (next) hapticLight()
-            }}
-          >
-            <div className='vault-hub-copy'>
-              <p>Arrival banners</p>
-              <p>Show new payments in the wallet</p>
-            </div>
-            <span className={arrivalBanners ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
-          </button>
-          <button
-            type='button'
-            role='switch'
-            aria-checked={arrivalHaptics}
-            className='vault-hub-row'
-            data-testid='settings-arrival-haptics'
-            onClick={() => {
-              const next = !arrivalHaptics
-              setArrivalHaptics(next)
-              saveArrivalHaptics(next)
-              if (next) hapticLight()
-            }}
-          >
-            <div className='vault-hub-copy'>
-              <p>Arrival haptics</p>
-              <p>Vibrate with new payments</p>
-            </div>
-            <span className={arrivalHaptics ? 'qg-switch is-on' : 'qg-switch'} aria-hidden />
-          </button>
-        </HubGroup>
-        <p className='qg-copy'>
-          Banners and vibration are advisory. Payments, history, and recovery work the same with them off.
-        </p>
       </QgScreen>
     )
   }
@@ -375,6 +318,7 @@ export default function VaultSettings() {
 
   if (view === 'logs') return <LogsView onBack={() => setView('diagnostics')} />
   if (view === 'reset') return <ResetView onBack={() => setView('menu')} onReset={reset} />
+  if (view === 'notifications') return <NativeNotifications status={status ?? null} onBack={() => setView('menu')} />
 
   return (
     <QgScreen title='Settings' dismiss={close}>
@@ -394,8 +338,8 @@ export default function VaultSettings() {
           />
           <SettingsRow
             label='Notifications'
-            testId='settings-notifications'
-            value={arrivalBanners ? 'On' : 'Off'}
+            testId='settings-native-notifications'
+            value='Device alerts'
             onClick={() => setView('notifications')}
           />
           <SettingsRow label='About' testId='settings-about' onClick={() => setView('about')} />

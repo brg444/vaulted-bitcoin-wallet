@@ -285,8 +285,7 @@ it('shares the destination for the selected receiving method', async () => {
 })
 
 describe('Receive arrival and contract changes', () => {
-  it('shows an arrival above the reusable address and opens its details', async () => {
-    const user = userEvent.setup()
+  it('keeps receive addresses visible without an in-app arrival banner', () => {
     const openArrival = vi.fn()
     const dismissArrival = vi.fn()
     const value = {
@@ -314,11 +313,10 @@ describe('Receive arrival and contract changes', () => {
       </ToastProvider>,
     )
 
-    expect(screen.getByText('Received ₿12,000 in Spending.')).toBeVisible()
+    expect(screen.queryByText('Received ₿12,000 in Spending.')).not.toBeInTheDocument()
     expect(screen.getByTestId('receive-bitcoin-address')).toBeVisible()
     expect(screen.getByTestId('receive-arkade-address')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'View details' }))
-    expect(openArrival).toHaveBeenCalledWith('tx:mutinynet:vault:spend:deposit:received')
+    expect(screen.queryByRole('button', { name: 'View details' })).not.toBeInTheDocument()
   })
 })
 
