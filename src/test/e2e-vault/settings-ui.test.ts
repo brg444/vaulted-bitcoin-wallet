@@ -29,6 +29,17 @@ for (const width of [320, 390]) {
       await page.route('**/src/screens/Vault/Welcome.tsx*', (route) =>
         route.fulfill({ contentType: 'application/javascript', body: fixtureBody() }),
       )
+      await page.addInitScript(() => {
+        Object.assign(window, { notificationPromptCount: 0 })
+        if ('Notification' in window) {
+          const original = Notification.requestPermission.bind(Notification)
+          Notification.requestPermission = (...args) => {
+            const observed = window as unknown as { notificationPromptCount: number }
+            observed.notificationPromptCount += 1
+            return original(...args)
+          }
+        }
+      })
       await page.goto('/')
       await page.evaluate((dark) => document.documentElement.classList.toggle('palette-dark', dark), theme === 'dark')
       await page.evaluate(() => window.localStorage.clear())
@@ -36,18 +47,18 @@ for (const width of [320, 390]) {
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
       // The native entry uses ordinary styling; the rejected banner controls are gone.
       await expect(page.getByTestId('settings-native-notifications')).toContainText('Device alerts')
-      expect(await page.evaluate(() => ('Notification' in window ? Notification.permission : 'unsupported'))).toBe(
-        'default',
-      )
+      expect(
+        await page.evaluate(() => (window as unknown as { notificationPromptCount: number }).notificationPromptCount),
+      ).toBe(0)
       await expectWalletLayout(page)
       await page.screenshot({ path: testInfo.outputPath(`settings-${width}-${theme}.png`) })
 
       await page.getByTestId('settings-native-notifications').click()
       await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible()
-      // Opening settings never prompts: permission stays at its default.
-      expect(await page.evaluate(() => ('Notification' in window ? Notification.permission : 'unsupported'))).toBe(
-        'default',
-      )
+      // Opening settings never requests permission, including when the browser starts denied.
+      expect(
+        await page.evaluate(() => (window as unknown as { notificationPromptCount: number }).notificationPromptCount),
+      ).toBe(0)
       // Rejected in-app banner design stays out of the wallet.
       await expect(page.getByTestId('settings-arrival-banners')).toHaveCount(0)
       await expect(page.getByTestId('settings-notifications')).toHaveCount(0)
