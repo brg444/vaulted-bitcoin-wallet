@@ -10,7 +10,7 @@ import {
 import { needsInstallForPush, requestNativePermission } from '../../lib/vault/nativeNotifications'
 import type { VaultStatus } from '../../lib/vault/types'
 import { HubGroup, HubRow } from './ui'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import QgScreen from './qg/QgScreen'
 
 function isStandalone(): boolean {
   try {
@@ -124,16 +124,29 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
         : subscribed
           ? 'On'
           : 'Off'
+  const actionable =
+    !installRequired &&
+    state.capable &&
+    state.permission !== 'unsupported' &&
+    state.permission !== 'denied' &&
+    state.vapidConfigured
+
+  const toggleNotifications = () => {
+    if (busy || checking) return
+    if (subscribed) void run(disableAction, 'Notifications off', false)
+    else void run(enableAction, 'Notifications on', true)
+  }
 
   return (
     <QgScreen title='Notifications' back={onBack}>
       <HubGroup label='Payment alerts'>
         <HubRow
           title='Device notifications'
-          status={checking ? 'Checking…' : summary}
+          status={busy ? 'Working…' : checking ? 'Checking…' : summary}
           chevron={false}
           testId='native-notifications-status'
-          onClick={() => undefined}
+          onClick={actionable ? toggleNotifications : undefined}
+          disabled={actionable ? busy || checking : false}
         />
       </HubGroup>
       {installRequired ? (
@@ -154,33 +167,11 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
           Background alerts are not configured for this release yet. Payments, history, and recovery work the same
           without them.
         </p>
-      ) : (
-        <>
-          <p className='qg-copy'>
-            {subscribed
-              ? 'Arkade and Lightning payments can alert this device even with the wallet closed. Bitcoin deposits need the wallet open. Notices hide amounts and accounts.'
-              : 'Get device alerts for Arkade and Lightning payments, even with the wallet closed. Bitcoin deposits need the wallet open. Notices hide amounts and accounts.'}
-          </p>
-          {error ? (
-            <p className='qg-copy' role='alert' data-testid='native-notifications-error'>
-              {error}
-            </p>
-          ) : null}
-          {subscribed ? (
-            <QgPrimary
-              onClick={() => void run(disableAction, 'Notifications off', false)}
-              disabled={busy}
-              label={busy ? 'Working…' : 'Turn off'}
-            />
-          ) : (
-            <QgPrimary
-              onClick={() => void run(enableAction, 'Notifications on', true)}
-              disabled={busy || checking}
-              label={busy ? 'Working…' : 'Turn on'}
-            />
-          )}
-        </>
-      )}
+      ) : error ? (
+        <p className='qg-copy' role='alert' data-testid='native-notifications-error'>
+          {error}
+        </p>
+      ) : null}
     </QgScreen>
   )
 }

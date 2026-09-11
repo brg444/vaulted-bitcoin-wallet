@@ -69,7 +69,7 @@ describe('native notification settings', () => {
     })
     const user = userEvent.setup()
     renderView()
-    await user.click(screen.getByRole('button', { name: 'Turn on' }))
+    await user.click(await screen.findByRole('button', { name: /Device notifications Off/ }))
     // Permission first: enable follows only after the gesture resolves it.
     await waitFor(() => expect(requestPermission).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(enableBackgroundPush).toHaveBeenCalledWith(status, expect.any(Function)))
@@ -82,7 +82,7 @@ describe('native notification settings', () => {
     vi.stubGlobal('PushManager', function () {})
     renderView()
     await waitFor(() => expect(screen.getByText(/system settings/)).toBeVisible())
-    expect(screen.queryByRole('button', { name: 'Turn on' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Device notifications/ })).toBeNull()
   })
 
   it('shows install guidance in an ordinary iPhone tab', async () => {
@@ -96,7 +96,7 @@ describe('native notification settings', () => {
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true })
     renderView()
     await waitFor(() => expect(screen.getByText(/Home Screen/)).toBeVisible())
-    expect(screen.queryByRole('button', { name: 'Turn on' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Device notifications/ })).toBeNull()
   })
 
   it('guides absent-API iPhone tabs to the Home Screen app instead of a dead end', async () => {
@@ -120,7 +120,7 @@ describe('native notification settings', () => {
     vi.stubGlobal('PushManager', function () {})
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: true }), configurable: true })
     renderView()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Turn on' })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('button', { name: /Device notifications Off/ })).toBeVisible())
   })
 
   it('turns off through an ordinary control', async () => {
@@ -138,7 +138,10 @@ describe('native notification settings', () => {
     })
     const user = userEvent.setup()
     renderView()
-    await user.click(await screen.findByRole('button', { name: 'Turn off' }))
+    const control = await screen.findByRole('button', { name: /Device notifications On/ })
+    expect(screen.queryByText(/Arkade and Lightning payments can alert/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Turn off' })).toBeNull()
+    await user.click(control)
     await waitFor(() => expect(disableBackgroundPush).toHaveBeenCalledWith(status))
   })
 })
