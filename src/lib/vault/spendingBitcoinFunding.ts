@@ -3,6 +3,9 @@ import { LightScript } from './light/contract'
 import { lightContract, registerLightContractHandler } from './light/contractHandler'
 import {
   ArkAddress,
+  Batch,
+  InMemoryContractRepository,
+  InMemoryWalletRepository,
   RestArkProvider,
   RestIndexerProvider,
   SingleKey,
@@ -15,7 +18,6 @@ import { Address, OutScript } from '@scure/btc-signer'
 import { scriptHexFromAddress, vaultAddressNetwork } from './bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { consoleError, consoleLog } from '../logs'
-import { ensureVaultWalletWorker } from './vtxo/walletWorker'
 import { BitcoinPaymentError, bitcoinPaymentRejected } from './bitcoinPaymentError'
 import { traceBitcoinBatch } from './bitcoinBatchTrace'
 import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
@@ -112,7 +114,6 @@ export async function checkSpendingBitcoin(status: VaultStatus): Promise<LightRe
     // its intent. Use the saved owner proof after expiry; only Guardian's
     // durable release, never the local clock, makes the input spendable again.
     if (
-      !journal.final &&
       !journal.receipt?.commitmentTxid &&
       !result.commitmentTxid &&
       [
@@ -120,6 +121,7 @@ export async function checkSpendingBitcoin(status: VaultStatus): Promise<LightRe
         'register_authorized',
         'register_dispatched',
         'registered',
+        'final_authorized',
         'delete_authorized',
         'delete_dispatched',
       ].includes(result.state) &&
@@ -265,6 +267,7 @@ export async function sendSpendingToBitcoin(
     let wallet: Wallet | undefined
     const abort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
+    let stream: AsyncIterableIterator<import('@arkade-os/sdk').SettlementEvent> | undefined
     const visibility = () => consoleLog(`Bitcoin payment page: ${document.visibilityState}`)
     const pagehide = () => consoleLog('Bitcoin payment page closed before the signing session finished')
     document.addEventListener('visibilitychange', visibility)
@@ -362,7 +365,6 @@ export async function sendSpendingToBitcoin(
         abort.signal,
         coin.expiresAt!,
       )
-      const runtime = await ensureVaultWalletWorker(status)
       const identity = SingleKey.fromPrivateKey(auth.phoneSecret)
       if (script instanceof LightScript) registerLightContractHandler()
       else registerVaultPolicyV1ContractHandler()
@@ -372,11 +374,11 @@ export async function sendSpendingToBitcoin(
         arkServerUrl: url,
         esploraUrl: '/esplora',
         storage: {
-          walletRepository: runtime.walletRepository,
-          contractRepository: runtime.contractRepository,
+          walletRepository: new InMemoryWalletRepository(),
+          contractRepository: new InMemoryContractRepository(),
         },
         walletMode: 'static',
-        settlementConfig: false,
+        settlementConfig: { boardingUtxoSweep: false, deprecatedSignerMigration: false, autoRenewVtxos: false },
       })
       const address = new ArkAddress(
         hex.decode(context.operatorPub),
@@ -396,53 +398,30 @@ export async function sendSpendingToBitcoin(
         intentTapLeafScript: script.forfeit(),
         tapTree: script.encode(),
       }
-      // The named program binds expiry; SDK defaults are not authorization.
-      const register = wallet.makeRegisterIntentSignature.bind(wallet)
-      wallet.makeRegisterIntentSignature = (...args) => {
-        args[5] = plan.registerExpireAt
-        return register(...args)
-      }
-      const deletion = wallet.makeDeleteIntentSignature.bind(wallet)
-      wallet.makeDeleteIntentSignature = async (...args) => {
-        const proof = await deletion(...args)
-        journal = { ...journal, deleteIntent: { proof: proof.proof, message: JSON.stringify(proof.message) } }
-        saveBitcoinPayment(journal)
-        return proof
-      }
-      const createHandler = wallet.createBatchHandler.bind(wallet)
-      wallet.createBatchHandler = (...args) => {
-        const handler = scopeBitcoinBatchFailures(createHandler(...args))
-        let batchExpiry = 0
-        let unsignedTree: TxTreeNode[] = []
-        const signing = handler.onTreeSigningStarted
-        handler.onTreeSigningStarted = async (event, tree) => {
-          const decision = await signing(event, tree)
-          if (!decision.skip) unsignedTree = flattenTree(tree)
-          return decision
-        }
-        const start = handler.onBatchStarted
-        handler.onBatchStarted = async (event) => {
-          const decision = await start(event)
-          if (!decision.skip) batchExpiry = Number(event.batchExpiry)
-          return decision
-        }
-        const finalize = handler.onBatchFinalization
-        handler.onBatchFinalization = async (event, tree, connectors) => {
-          if (!tree || !connectors || !Number.isSafeInteger(batchExpiry) || batchExpiry <= 0)
-            throw new Error('Payment recovery paths are incomplete')
-          provider.finalEvidence = {
-            batchId: event.id,
-            batchExpiry,
-            commitmentPsbt: event.commitmentTx,
-            vtxoTree: serializeLightRenewalTree(tree, unsignedTree),
-            connectors: flattenTree(connectors),
-          }
-          await finalize(event, tree, connectors)
-        }
-        return traceBitcoinBatch(handler, () =>
-          markVaultSettlementStreamParticipating(`${journal.txid}:${journal.vout}`),
-        )
-      }
+      // Retain the owner's exact non-monetary cancellation before registration.
+      // It remains usable after a reload without another passkey ceremony.
+      const deletion = await wallet.makeDeleteIntentSignature([input])
+      journal = { ...journal, deleteIntent: { proof: deletion.proof, message: JSON.stringify(deletion.message) } }
+      saveBitcoinPayment(journal)
+      // The same signing session must advertise the tree key and sign the tree.
+      // wallet.settle() hides this protected-flow boundary and previously caused
+      // Guardian finalization to miss the Operator's batch deadline.
+      const session = identity.signerSession()
+      const publicKey = hex.encode(await session.getPublicKey())
+      const intent = await wallet.makeRegisterIntentSignature(
+        [input],
+        [
+          { amount: BigInt(plan.changeSats), script: script.pkScript },
+          ...bitcoinPlanOutputs(plan).map((output) => ({
+            amount: BigInt(output.amountSats),
+            script: hex.decode(output.script),
+          })),
+        ],
+        outputs.map((_, i) => i + 1),
+        [publicKey],
+        undefined,
+        plan.registerExpireAt,
+      )
       timeout = setTimeout(
         () => {
           consoleLog('Bitcoin payment signing deadline reached')
@@ -450,18 +429,63 @@ export async function sendSpendingToBitcoin(
         },
         Math.max(1000, plan.registerExpireAt * 1000 - Date.now() + 30_000),
       )
-      const commitment = await wallet.settle(
-        {
-          inputs: [input],
-          outputs: [
-            { address, amount: BigInt(plan.changeSats) },
+      stream = provider.getEventStream(abort.signal, [publicKey, `${coin.txid}:${coin.vout}`])
+      const first = stream.next()
+      void first.catch(() => {})
+      const source = stream
+      const primed = (async function* () {
+        const next = await first
+        if (!next.done) yield next.value
+        yield* source
+      })()
+      const intentId = await provider.registerIntent(intent)
+      let handler = scopeBitcoinBatchFailures(
+        wallet.createBatchHandler(
+          intentId,
+          [input],
+          [
+            { address, amount: plan.changeSats },
             ...bitcoinPlanOutputs(plan).map((output) => ({
               address: Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(output.script))),
-              amount: BigInt(output.amountSats),
+              amount: output.amountSats,
             })),
           ],
-        },
-        (event) => {
+          session,
+        ),
+      )
+      let batchExpiry = 0
+      let unsignedTree: TxTreeNode[] = []
+      const signing = handler.onTreeSigningStarted
+      handler.onTreeSigningStarted = async (event, tree) => {
+        const decision = await signing(event, tree)
+        if (!decision.skip) unsignedTree = flattenTree(tree)
+        return decision
+      }
+      const start = handler.onBatchStarted
+      handler.onBatchStarted = async (event) => {
+        const decision = await start(event)
+        if (!decision.skip) batchExpiry = Number(event.batchExpiry)
+        return decision
+      }
+      const finalize = handler.onBatchFinalization
+      handler.onBatchFinalization = async (event, tree, connectors) => {
+        if (!tree || !connectors || !Number.isSafeInteger(batchExpiry) || batchExpiry <= 0)
+          throw new Error('Payment recovery paths are incomplete')
+        provider.finalEvidence = {
+          batchId: event.id,
+          batchExpiry,
+          commitmentPsbt: event.commitmentTx,
+          vtxoTree: serializeLightRenewalTree(tree, unsignedTree),
+          connectors: flattenTree(connectors),
+        }
+        await finalize(event, tree, connectors)
+      }
+      handler = traceBitcoinBatch(handler, () =>
+        markVaultSettlementStreamParticipating(`${journal.txid}:${journal.vout}`),
+      )
+      const commitment = await Batch.join(primed, handler, {
+        abortController: abort,
+        eventCallback: async (event) => {
           if (
             ['batch_started', 'tree_signing_started', 'batch_finalization', 'batch_finalized', 'batch_failed'].includes(
               event.type,
@@ -469,7 +493,7 @@ export async function sendSpendingToBitcoin(
           )
             consoleLog(`Bitcoin payment event received: ${event.type} (${event.id})`)
         },
-      )
+      })
       if (!commitment || !/^[a-f0-9]{64}$/.test(commitment))
         throw new Error(
           'The batch connection ended before Bitcoin payment completed. Check the pending payment before trying again.',
@@ -507,6 +531,7 @@ export async function sendSpendingToBitcoin(
       window.removeEventListener('pagehide', pagehide)
       if (timeout) clearTimeout(timeout)
       abort.abort()
+      await stream?.return?.().catch(() => {})
       unlocker.dispose()
       await wallet?.dispose().catch(() => consoleLog('Bitcoin payment signing session cleanup failed'))
     }
