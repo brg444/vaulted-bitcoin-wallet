@@ -27,6 +27,7 @@ export function HubRow({
   testId,
   danger,
   chevron,
+  disabled,
 }: {
   icon?: ReactNode
   title: string
@@ -37,6 +38,7 @@ export function HubRow({
   testId?: string
   danger?: boolean
   chevron?: boolean
+  disabled?: boolean
 }) {
   const signalLabel =
     signal === 'ok' ? 'Online' : signal === 'bad' ? 'Can’t reach' : signal === 'wait' ? 'Checking' : ''
@@ -80,7 +82,7 @@ export function HubRow({
   const className = danger ? 'vault-hub-row is-danger' : 'vault-hub-row'
   if (onClick) {
     return (
-      <button type='button' className={className} onClick={onClick} data-testid={testId}>
+      <button type='button' className={className} onClick={onClick} data-testid={testId} disabled={disabled}>
         {body}
       </button>
     )
