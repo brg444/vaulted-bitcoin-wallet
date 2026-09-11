@@ -2,8 +2,6 @@ import SpendingReceive from './SpendingReceive'
 import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import LightningReceive from './LightningReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
-import PaymentArrivalBanners from './PaymentArrivals'
-import CatchUpBanner from './CatchUpBanner'
 import ConnectorDeposit from './ConnectorDeposit'
 import ConnectorSetup from './ConnectorSetup'
 import { isConnectorTemplate } from '../../lib/vault/program/connector'
@@ -45,20 +43,8 @@ function AddressRow({
 const RECEIVE_POLL_MS = 5000
 
 export default function VaultReceive() {
-  const {
-    account,
-    boardingAddress,
-    navigate,
-    savingsAddress,
-    spendingArkAddress,
-    status,
-    refreshBalance,
-    arrivals = [],
-    dismissArrival,
-    openArrival,
-    catchUp,
-    dismissCatchUp,
-  } = useContext(VaultContext)
+  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status, refreshBalance } =
+    useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
@@ -139,18 +125,6 @@ export default function VaultReceive() {
         bitcoinAddress={boardingAddress}
         onClose={() => navigate('home')}
         onInvoice={() => setView('lightning')}
-        arrivals={
-          <>
-            <PaymentArrivalBanners
-              arrivals={arrivals}
-              onOpen={(arrival) => openArrival(arrival.key)}
-              onDismiss={dismissArrival}
-            />
-            {catchUp ? (
-              <CatchUpBanner catchUp={catchUp} onOpenActivity={() => navigate('activity')} onDismiss={dismissCatchUp} />
-            ) : null}
-          </>
-        }
       />
     )
 
@@ -169,14 +143,6 @@ export default function VaultReceive() {
       }
     >
       <div className='qg-receive'>
-        <PaymentArrivalBanners
-          arrivals={arrivals}
-          onOpen={(arrival) => openArrival(arrival.key)}
-          onDismiss={dismissArrival}
-        />
-        {catchUp ? (
-          <CatchUpBanner catchUp={catchUp} onOpenActivity={() => navigate('activity')} onDismiss={dismissCatchUp} />
-        ) : null}
         <span className='qg-protected'>
           {spending ? <ShieldCheck /> : <KeyRound />}
           {spending ? 'Spending limits' : status?.protectionTier === 'light' ? 'Watch-only Savings' : 'Two-key Savings'}

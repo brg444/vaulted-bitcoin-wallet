@@ -23,7 +23,7 @@ function fixtureBody(): string {
 
 for (const width of [320, 390]) {
   for (const theme of ['light', 'dark']) {
-    test(`notification preferences toggle at ${width}px in ${theme}`, async ({ page }, testInfo) => {
+    test(`native notification settings at ${width}px in ${theme}`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 844 })
       await mockEnrollmentAccess(page, 'open')
       await page.route('**/src/screens/Vault/Welcome.tsx*', (route) =>
@@ -34,33 +34,24 @@ for (const width of [320, 390]) {
       await page.evaluate(() => window.localStorage.clear())
       await page.reload()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
-      await expect(page.getByTestId('settings-notifications')).toContainText('On')
+      // The native entry uses ordinary styling; the rejected banner controls are gone.
+      await expect(page.getByTestId('settings-native-notifications')).toContainText('Device alerts')
+      expect(await page.evaluate(() => ('Notification' in window ? Notification.permission : 'unsupported'))).toBe(
+        'default',
+      )
       await expectWalletLayout(page)
       await page.screenshot({ path: testInfo.outputPath(`settings-${width}-${theme}.png`) })
 
-      await page.getByTestId('settings-notifications').click()
+      await page.getByTestId('settings-native-notifications').click()
       await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible()
-      const banners = page.getByTestId('settings-arrival-banners')
-      const haptics = page.getByTestId('settings-arrival-haptics')
-      await expect(banners).toHaveAttribute('aria-checked', 'true')
-      await expect(haptics).toHaveAttribute('aria-checked', 'true')
-      await expectWalletLayout(page)
-
-      await banners.click()
-      await expect(banners).toHaveAttribute('aria-checked', 'false')
-      await expect(page.getByTestId('settings-notifications')).toBeHidden()
-      await page.getByTestId('header-back').click()
-      await expect(page.getByTestId('settings-notifications')).toContainText('Off')
-      expect(await page.evaluate(() => window.localStorage.getItem('arkade-vault-arrival-banners'))).toBe('0')
-
-      // Disabled banners persist across reload; haptics stay independent.
-      await page.reload()
-      await expect(page.getByTestId('settings-notifications')).toContainText('Off')
-      await page.getByTestId('settings-notifications').click()
-      await haptics.click()
-      await expect(haptics).toHaveAttribute('aria-checked', 'false')
-      expect(await page.evaluate(() => window.localStorage.getItem('arkade-vault-arrival-haptics'))).toBe('0')
-      expect(await page.evaluate(() => window.localStorage.getItem('arkade-vault-haptics'))).toBeNull()
+      // Opening settings never prompts: permission stays at its default.
+      expect(await page.evaluate(() => ('Notification' in window ? Notification.permission : 'unsupported'))).toBe(
+        'default',
+      )
+      // Rejected in-app banner design stays out of the wallet.
+      await expect(page.getByTestId('settings-arrival-banners')).toHaveCount(0)
+      await expect(page.getByTestId('settings-notifications')).toHaveCount(0)
+      await expect(page.getByTestId('native-notifications-status')).toBeVisible()
       await expectWalletLayout(page)
     })
   }
