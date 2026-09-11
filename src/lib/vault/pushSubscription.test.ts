@@ -73,12 +73,10 @@ describe('push subscription client', () => {
     const subscribe = vi.fn().mockResolvedValue(subscription)
     vi.stubGlobal('navigator', {
       serviceWorker: {
-        register: vi
-          .fn()
-          .mockResolvedValue({
-            active: { state: 'activated' },
-            pushManager: { getSubscription: () => Promise.resolve(null), subscribe },
-          }),
+        register: vi.fn().mockResolvedValue({
+          active: { state: 'activated' },
+          pushManager: { getSubscription: () => Promise.resolve(null), subscribe },
+        }),
       },
     })
     const fetchSpy = vi
@@ -100,12 +98,10 @@ describe('push subscription client', () => {
     const subscription = fakeSubscription()
     vi.stubGlobal('navigator', {
       serviceWorker: {
-        register: vi
-          .fn()
-          .mockResolvedValue({
-            active: { state: 'activated' },
-            pushManager: { getSubscription: () => Promise.resolve(subscription) },
-          }),
+        register: vi.fn().mockResolvedValue({
+          active: { state: 'activated' },
+          pushManager: { getSubscription: () => Promise.resolve(subscription) },
+        }),
       },
     })
     const fetchSpy = vi.fn()
