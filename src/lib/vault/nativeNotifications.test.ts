@@ -25,9 +25,7 @@ describe('native notification primitives', () => {
 
   it('detects capability without prompting', () => {
     expect(isPushCapable({})).toBe(false)
-    expect(
-      isPushCapable({ Notification: { permission: 'default' }, serviceWorker: {}, PushManager: {} }),
-    ).toBe(true)
+    expect(isPushCapable({ Notification: { permission: 'default' }, serviceWorker: {}, PushManager: {} })).toBe(true)
     expect(readNotificationPermission({})).toBe('unsupported')
     expect(readNotificationPermission({ Notification: { permission: 'granted' } })).toBe('granted')
     expect(readNotificationPermission({ Notification: { permission: 'denied' } })).toBe('denied')
@@ -38,9 +36,7 @@ describe('native notification primitives', () => {
     const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
     expect(needsInstallForPush(iphone, false)).toBe(true)
     expect(needsInstallForPush(iphone, true)).toBe(false)
-    expect(
-      needsInstallForPush('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', false),
-    ).toBe(false)
+    expect(needsInstallForPush('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', false)).toBe(false)
   })
 
   it('validates the VAPID key before subscribing', () => {
@@ -54,7 +50,12 @@ describe('native notification primitives', () => {
   it('awaits this registration activation, not the page ready promise', async () => {
     await expect(awaitNotifyWorkerActive({ active: { state: 'activated' } }, 10)).resolves.toBeUndefined()
     const listeners: Record<string, () => void> = {}
-    const installing = { state: 'installing', addEventListener: (name: string, fn: () => void) => { listeners[name] = fn } }
+    const installing = {
+      state: 'installing',
+      addEventListener: (name: string, fn: () => void) => {
+        listeners[name] = fn
+      },
+    }
     const pending = awaitNotifyWorkerActive({ active: null, installing }, 1000)
     installing.state = 'activated'
     listeners.statechange!()

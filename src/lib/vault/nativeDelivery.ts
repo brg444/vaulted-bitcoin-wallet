@@ -8,10 +8,7 @@
  * At-most-once per device: the claim arbitrates tabs, and a crash between
  * claim and show can lose one notice. Activity remains the source of truth.
  */
-export async function claimNativeDelivery(
-  keys: readonly string[],
-  factory: IDBFactory = indexedDB,
-): Promise<string[]> {
+export async function claimNativeDelivery(keys: readonly string[], factory: IDBFactory = indexedDB): Promise<string[]> {
   if (!keys.length) return []
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open('vaulted-native-delivery-v1', 1)

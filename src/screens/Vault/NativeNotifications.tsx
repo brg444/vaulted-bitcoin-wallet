@@ -40,10 +40,10 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
   const [checking, setChecking] = useState(true)
   const scope = status ? `${status.network}:${status.vaultId}` : ''
   const lifecycle = useRef({ scope, generation: 0, mounted: true })
-  if (lifecycle.current.scope !== scope) lifecycle.current = { scope, generation: lifecycle.current.generation + 1, mounted: true }
+  if (lifecycle.current.scope !== scope)
+    lifecycle.current = { scope, generation: lifecycle.current.generation + 1, mounted: true }
   const state = backgroundPushState(status)
-  const installRequired =
-    typeof navigator !== 'undefined' && needsInstallForPush(navigator.userAgent, isStandalone())
+  const installRequired = typeof navigator !== 'undefined' && needsInstallForPush(navigator.userAgent, isStandalone())
 
   useEffect(() => {
     let alive = true
@@ -63,7 +63,9 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
       .then((reconciled) => {
         if (alive) setSubscribed(reconciled.subscribed)
       })
-      .catch((err: unknown) => { if (alive) setError(err instanceof Error ? err.message : 'Could not check notifications.') })
+      .catch((err: unknown) => {
+        if (alive) setError(err instanceof Error ? err.message : 'Could not check notifications.')
+      })
       .finally(() => {
         if (alive) setChecking(false)
       })
@@ -79,7 +81,8 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
   const run = async (action: (isCurrent: () => boolean) => Promise<unknown>, done: string, next: boolean) => {
     if (busy || !status) return
     const generation = lifecycle.current.generation
-    const isCurrent = () => lifecycle.current.mounted && lifecycle.current.generation === generation && lifecycle.current.scope === scope
+    const isCurrent = () =>
+      lifecycle.current.mounted && lifecycle.current.generation === generation && lifecycle.current.scope === scope
     setBusy(true)
     setError('')
     try {
@@ -134,13 +137,23 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
         />
       </HubGroup>
       {installRequired ? (
-        <p className='qg-copy'>iPhone shows payment alerts only in the installed app. Install Vaulted to your Home Screen, open it, and return here to enable.</p>
+        <p className='qg-copy'>
+          iPhone shows payment alerts only in the installed app. Install Vaulted to your Home Screen, open it, and
+          return here to enable.
+        </p>
       ) : !state.capable || state.permission === 'unsupported' ? (
-        <p className='qg-copy'>This browser cannot show device notifications. Payments, history, and recovery work the same without them.</p>
+        <p className='qg-copy'>
+          This browser cannot show device notifications. Payments, history, and recovery work the same without them.
+        </p>
       ) : state.permission === 'denied' ? (
-        <p className='qg-copy'>Notifications are off for Vaulted in your system settings. Turn them on there to get payment alerts.</p>
+        <p className='qg-copy'>
+          Notifications are off for Vaulted in your system settings. Turn them on there to get payment alerts.
+        </p>
       ) : !state.vapidConfigured ? (
-        <p className='qg-copy'>Background alerts are not configured for this release yet. Payments, history, and recovery work the same without them.</p>
+        <p className='qg-copy'>
+          Background alerts are not configured for this release yet. Payments, history, and recovery work the same
+          without them.
+        </p>
       ) : (
         <>
           <p className='qg-copy'>
@@ -154,9 +167,17 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
             </p>
           ) : null}
           {subscribed ? (
-            <QgPrimary onClick={() => void run(disableAction, 'Notifications off', false)} disabled={busy} label={busy ? 'Working…' : 'Turn off'} />
+            <QgPrimary
+              onClick={() => void run(disableAction, 'Notifications off', false)}
+              disabled={busy}
+              label={busy ? 'Working…' : 'Turn off'}
+            />
           ) : (
-            <QgPrimary onClick={() => void run(enableAction, 'Notifications on', true)} disabled={busy || checking} label={busy ? 'Working…' : 'Turn on'} />
+            <QgPrimary
+              onClick={() => void run(enableAction, 'Notifications on', true)}
+              disabled={busy || checking}
+              label={busy ? 'Working…' : 'Turn on'}
+            />
           )}
         </>
       )}

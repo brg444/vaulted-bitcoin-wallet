@@ -71,8 +71,19 @@ describe('push subscription client', () => {
     loadMock.mockReturnValueOnce(undefined)
     const subscription = fakeSubscription()
     const subscribe = vi.fn().mockResolvedValue(subscription)
-    vi.stubGlobal('navigator', { serviceWorker: { register: vi.fn().mockResolvedValue({ active: { state: 'activated' }, pushManager: { getSubscription: () => Promise.resolve(null), subscribe } }) } })
-    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse({ subHandle: 'cd'.repeat(32), expiresAt: Date.now() + 1000 }))
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        register: vi
+          .fn()
+          .mockResolvedValue({
+            active: { state: 'activated' },
+            pushManager: { getSubscription: () => Promise.resolve(null), subscribe },
+          }),
+      },
+    })
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ subHandle: 'cd'.repeat(32), expiresAt: Date.now() + 1000 }))
     vi.stubGlobal('fetch', fetchSpy)
     const created = await enableBackgroundPush(status)
     expect(configureMock).toHaveBeenCalledWith(status, 'register', '')
@@ -87,7 +98,16 @@ describe('push subscription client', () => {
     vi.stubGlobal('Notification', { permission: 'granted' })
     localStorage.setItem(storageKey, JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 1000 }))
     const subscription = fakeSubscription()
-    vi.stubGlobal('navigator', { serviceWorker: { register: vi.fn().mockResolvedValue({ active: { state: 'activated' }, pushManager: { getSubscription: () => Promise.resolve(subscription) } }) } })
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        register: vi
+          .fn()
+          .mockResolvedValue({
+            active: { state: 'activated' },
+            pushManager: { getSubscription: () => Promise.resolve(subscription) },
+          }),
+      },
+    })
     const fetchSpy = vi.fn()
     fetchSpy.mockResolvedValueOnce(jsonResponse({ expiresAt: Date.now() + 2000 }))
     vi.stubGlobal('fetch', fetchSpy)
@@ -104,9 +124,18 @@ describe('push subscription client', () => {
 
   it('revokes only this wallet and preserves the shared browser subscription', async () => {
     localStorage.setItem(storageKey, JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 100000 }))
-    localStorage.setItem('vaulted:push:v1:mainnet:vault-2', JSON.stringify({ subHandle: 'aa'.repeat(32), expiresAt: Date.now() + 100000 }))
+    localStorage.setItem(
+      'vaulted:push:v1:mainnet:vault-2',
+      JSON.stringify({ subHandle: 'aa'.repeat(32), expiresAt: Date.now() + 100000 }),
+    )
     const subscription = fakeSubscription()
-    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: vi.fn().mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }) } })
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi
+          .fn()
+          .mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }),
+      },
+    })
     const fetchSpy = vi.fn().mockResolvedValue(jsonResponse({ ok: true }))
     vi.stubGlobal('fetch', fetchSpy)
     await disableBackgroundPush(status)
@@ -127,7 +156,13 @@ describe('push subscription client', () => {
     vi.stubGlobal('Notification', { permission: 'granted' })
     localStorage.setItem(storageKey, JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 100000 }))
     const subscription = fakeSubscription()
-    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: vi.fn().mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }) } })
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi
+          .fn()
+          .mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }),
+      },
+    })
     const fetchSpy = vi.fn().mockResolvedValue(jsonResponse({ subscriptions: [] }))
     vi.stubGlobal('fetch', fetchSpy)
     await expect(reconcilePushState(status)).resolves.toEqual({ subscribed: false, expiresAt: null })
@@ -152,10 +187,14 @@ describe('push subscription client', () => {
   it('stops an enable operation after the wallet changes during worker activation', async () => {
     vi.stubGlobal('Notification', { permission: 'granted' })
     let current = true
-    vi.stubGlobal('navigator', { serviceWorker: { register: vi.fn().mockImplementation(async () => {
-      current = false
-      return { active: { state: 'activated' } }
-    }) } })
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        register: vi.fn().mockImplementation(async () => {
+          current = false
+          return { active: { state: 'activated' } }
+        }),
+      },
+    })
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
     await expect(enableBackgroundPush(status, () => current)).rejects.toThrow('Wallet changed')
@@ -166,9 +205,21 @@ describe('push subscription client', () => {
     const requestPermission = vi.fn()
     vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
     const subscription = fakeSubscription()
-    localStorage.setItem(storageKey, JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 1000, endpoint: subscription.endpoint }))
-    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: vi.fn().mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }) } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 30 * 86400000 })))
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 1000, endpoint: subscription.endpoint }),
+    )
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi
+          .fn()
+          .mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }),
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 30 * 86400000 })),
+    )
     await refreshBackgroundPush(status)
     expect(JSON.parse(localStorage.getItem(storageKey)!).expiresAt).toBeGreaterThan(Date.now() + 29 * 86400000)
     expect(requestPermission).not.toHaveBeenCalled()

@@ -5,11 +5,29 @@ import { isServerCovered, useNativePaymentNotifications } from './useNativePayme
 import type { VaultHistoryItem } from '../lib/vault/history'
 
 const scope = { network: 'mainnet', vaultId: 'vault-1' }
-const arkadeReceive: VaultHistoryItem = { txid: 'ab'.repeat(32), type: 'received', amount: 5000, confirmed: true, account: 'spend' }
-const savingsReceive: VaultHistoryItem = { txid: 'cd'.repeat(32), type: 'received', amount: 7000, confirmed: true, account: 'savings' }
+const arkadeReceive: VaultHistoryItem = {
+  txid: 'ab'.repeat(32),
+  type: 'received',
+  amount: 5000,
+  confirmed: true,
+  account: 'spend',
+}
+const savingsReceive: VaultHistoryItem = {
+  txid: 'cd'.repeat(32),
+  type: 'received',
+  amount: 7000,
+  confirmed: true,
+  account: 'savings',
+}
 const lightningReceive: VaultHistoryItem = {
-  txid: 'ef'.repeat(32), type: 'received', amount: 9000, confirmed: true, account: 'spend',
-  activity: 'lightning', lightningState: 'settled', lightningRfqId: 'rfq-1',
+  txid: 'ef'.repeat(32),
+  type: 'received',
+  amount: 9000,
+  confirmed: true,
+  account: 'spend',
+  activity: 'lightning',
+  lightningState: 'settled',
+  lightningRfqId: 'rfq-1',
 }
 
 function deps(overrides: Partial<Parameters<typeof useNativePaymentNotifications>[5]> = {}) {
@@ -72,15 +90,23 @@ describe('foreground native notifications', () => {
     const factory = new IDBFactory() as unknown as IDBFactory
     const first = deps({ idbFactory: factory })
     const second = deps({ idbFactory: factory })
-    const renderFirst = renderHook(({ rows }) => useNativePaymentNotifications(rows, scope, false, true, new Set(), first.deps), {
-      initialProps: { rows: [] as VaultHistoryItem[] },
-    })
-    const renderSecond = renderHook(({ rows }) => useNativePaymentNotifications(rows, scope, false, true, new Set(), second.deps), {
-      initialProps: { rows: [] as VaultHistoryItem[] },
-    })
+    const renderFirst = renderHook(
+      ({ rows }) => useNativePaymentNotifications(rows, scope, false, true, new Set(), first.deps),
+      {
+        initialProps: { rows: [] as VaultHistoryItem[] },
+      },
+    )
+    const renderSecond = renderHook(
+      ({ rows }) => useNativePaymentNotifications(rows, scope, false, true, new Set(), second.deps),
+      {
+        initialProps: { rows: [] as VaultHistoryItem[] },
+      },
+    )
     renderFirst.rerender({ rows: [savingsReceive] })
     renderSecond.rerender({ rows: [savingsReceive] })
-    await waitFor(() => expect(first.showNotification.mock.calls.length + second.showNotification.mock.calls.length).toBe(1))
+    await waitFor(() =>
+      expect(first.showNotification.mock.calls.length + second.showNotification.mock.calls.length).toBe(1),
+    )
   })
 
   it('buffers while locked and flushes once on unlock', async () => {

@@ -76,9 +76,7 @@ test('native delivery claims arbitrate one announcement across two tabs', async 
   await Promise.all([first, second].map((page) => page.evaluate(() => window.dispatchEvent(new Event('test-arrival')))))
   await expect
     .poll(async () => {
-      const verdicts = await Promise.all(
-        [first, second].map((page) => page.getByTestId('verdict').textContent()),
-      )
+      const verdicts = await Promise.all([first, second].map((page) => page.getByTestId('verdict').textContent()))
       return verdicts.filter((verdict) => verdict === 'announced').length
     })
     .toBe(1)

@@ -77,7 +77,10 @@ export function useNativePaymentNotifications(
     saveArrivalBaseline(scope, seen, new Set(history.map((row) => paymentIdentityForItem(row, scope).key)))
     if (fresh.length === 0) return
     const current = depsRef.current
-    if (current.enabled === false) { pendingRef.current = []; return }
+    if (current.enabled === false) {
+      pendingRef.current = []
+      return
+    }
     void (async () => {
       for (const arrival of fresh) {
         // Stale scope work (A-B-A, unmount, lock transitions) never shows.
@@ -100,7 +103,10 @@ export function useNativePaymentNotifications(
             registration = undefined
           }
           if (!aliveRef.current || generationRef.current !== generation) return
-          if (pausedRef.current) { pendingRef.current.push(payKey); continue }
+          if (pausedRef.current) {
+            pendingRef.current.push(payKey)
+            continue
+          }
           await showForegroundPaymentNotice(registration ?? undefined)
         } catch {
           // A foreground notice is advisory; history and lifecycle continue.
@@ -112,7 +118,10 @@ export function useNativePaymentNotifications(
   }, [history, ready, excludedKeys])
 
   useEffect(() => {
-    if (depsRef.current.enabled === false) { pendingRef.current = []; return }
+    if (depsRef.current.enabled === false) {
+      pendingRef.current = []
+      return
+    }
     if (paused || pendingRef.current.length === 0) return
     const generation = generationRef.current
     const current = depsRef.current
@@ -127,7 +136,10 @@ export function useNativePaymentNotifications(
       }
       for (let index = 0; index < flushed.length; index += 1) {
         if (!aliveRef.current || generationRef.current !== generation) return
-        if (pausedRef.current) { pendingRef.current.push(...flushed.slice(index)); return }
+        if (pausedRef.current) {
+          pendingRef.current.push(...flushed.slice(index))
+          return
+        }
         try {
           await showForegroundPaymentNotice(registration ?? undefined)
         } catch {

@@ -182,22 +182,38 @@ describe('provider arrival delivery', () => {
     vi.unstubAllGlobals()
   })
 
-  it.each(['spend', 'savings'] as const)('uses native delivery ownership for a new %s receipt without banners', async (account) => {
-    const showNotification = vi.fn().mockResolvedValue(undefined)
-    vi.stubGlobal('Notification', { permission: 'granted' })
-    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { getRegistration: vi.fn().mockResolvedValue({ showNotification }) } })
-    localStorage.setItem('vaulted:push:v1:mutinynet:vault-a', JSON.stringify({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 100000 }))
-    const { rerender } = renderHome()
-    await waitFor(() => expect(screen.getByTestId('dbg-vault')).toHaveTextContent('vault-a'))
-    act(() => { balances.balancesLoaded = true; balances.snapshotFresh = true })
-    rerender(renderHomeTree())
-    act(() => { balances.history = [{ txid: 'receipt-1', type: 'received', amount: 12000, confirmed: true, blockTime: 1700000100, account }] })
-    rerender(renderHomeTree())
-    await waitFor(() => expect(screen.getByTestId('dbg-history')).toHaveTextContent('1'))
-    expect(screen.getByTestId('dbg-arrivals')).toHaveTextContent('0')
-    expect(screen.queryByTestId(/^payment-arrival-/)).toBeNull()
-    expect(screen.queryByTestId('payment-catch-up')).toBeNull()
-    if (account === 'savings') await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
-    else expect(showNotification).not.toHaveBeenCalled() // Spending belongs to server push.
-  })
+  it.each(['spend', 'savings'] as const)(
+    'uses native delivery ownership for a new %s receipt without banners',
+    async (account) => {
+      const showNotification = vi.fn().mockResolvedValue(undefined)
+      vi.stubGlobal('Notification', { permission: 'granted' })
+      Object.defineProperty(navigator, 'serviceWorker', {
+        configurable: true,
+        value: { getRegistration: vi.fn().mockResolvedValue({ showNotification }) },
+      })
+      localStorage.setItem(
+        'vaulted:push:v1:mutinynet:vault-a',
+        JSON.stringify({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 100000 }),
+      )
+      const { rerender } = renderHome()
+      await waitFor(() => expect(screen.getByTestId('dbg-vault')).toHaveTextContent('vault-a'))
+      act(() => {
+        balances.balancesLoaded = true
+        balances.snapshotFresh = true
+      })
+      rerender(renderHomeTree())
+      act(() => {
+        balances.history = [
+          { txid: 'receipt-1', type: 'received', amount: 12000, confirmed: true, blockTime: 1700000100, account },
+        ]
+      })
+      rerender(renderHomeTree())
+      await waitFor(() => expect(screen.getByTestId('dbg-history')).toHaveTextContent('1'))
+      expect(screen.getByTestId('dbg-arrivals')).toHaveTextContent('0')
+      expect(screen.queryByTestId(/^payment-arrival-/)).toBeNull()
+      expect(screen.queryByTestId('payment-catch-up')).toBeNull()
+      if (account === 'savings') await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+      else expect(showNotification).not.toHaveBeenCalled() // Spending belongs to server push.
+    },
+  )
 })

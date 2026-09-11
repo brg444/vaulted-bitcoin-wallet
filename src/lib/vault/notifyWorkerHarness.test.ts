@@ -25,7 +25,11 @@ function harness(existingWindows: string[] = []): Harness {
   const listeners: Harness['listeners'] = {}
   const showNotification = vi.fn().mockResolvedValue(undefined)
   const openWindow = vi.fn().mockResolvedValue(undefined)
-  const clients = existingWindows.map((url) => ({ url, focus: vi.fn().mockResolvedValue(undefined), navigate: vi.fn().mockResolvedValue(undefined) }))
+  const clients = existingWindows.map((url) => ({
+    url,
+    focus: vi.fn().mockResolvedValue(undefined),
+    navigate: vi.fn().mockResolvedValue(undefined),
+  }))
   const sandbox = {
     self: {
       addEventListener: (name: string, fn: (event: Record<string, unknown>) => void) => {
@@ -114,7 +118,9 @@ describe('notify worker', () => {
     h.listeners.push!(other.event)
     await other.settled()
     expect(h.showNotification).toHaveBeenCalledTimes(4)
-    expect((h.showNotification.mock.calls[3]![1] as Record<string, unknown>).tag).toBe(`vaulted-payment:${'ef'.repeat(32)}`)
+    expect((h.showNotification.mock.calls[3]![1] as Record<string, unknown>).tag).toBe(
+      `vaulted-payment:${'ef'.repeat(32)}`,
+    )
   })
 
   it('stays silent only for malformed, expired, and oversized payloads', async () => {
@@ -131,7 +137,15 @@ describe('notify worker', () => {
       h.listeners.push!(pushed.event)
       await pushed.settled()
     }
-    const huge = pushEvent(JSON.stringify({ v: 1, sub: 'ab'.repeat(32), event: 'cd'.repeat(32), exp: Math.floor(Date.now() / 1000) + 10, pad: 'x'.repeat(600) }))
+    const huge = pushEvent(
+      JSON.stringify({
+        v: 1,
+        sub: 'ab'.repeat(32),
+        event: 'cd'.repeat(32),
+        exp: Math.floor(Date.now() / 1000) + 10,
+        pad: 'x'.repeat(600),
+      }),
+    )
     h.listeners.push!(huge.event)
     await huge.settled()
     expect(h.showNotification).not.toHaveBeenCalled()

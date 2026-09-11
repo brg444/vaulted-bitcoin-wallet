@@ -41,7 +41,11 @@ function loadStored(status: VaultStatus): StoredPushSubscription | null {
     const parsed = JSON.parse(raw) as Partial<StoredPushSubscription>
     if (typeof parsed.subHandle !== 'string' || !/^[0-9a-f]{64}$/.test(parsed.subHandle)) return null
     if (typeof parsed.expiresAt !== 'number' || !Number.isSafeInteger(parsed.expiresAt)) return null
-    return { subHandle: parsed.subHandle, expiresAt: parsed.expiresAt, endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint : undefined }
+    return {
+      subHandle: parsed.subHandle,
+      expiresAt: parsed.expiresAt,
+      endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint : undefined,
+    }
   } catch {
     return null
   }
@@ -67,13 +71,20 @@ export function isPushSubscribed(status: VaultStatus): boolean {
  * never strand the user in a false Enabled state. Network failures leave
  * local state untouched.
  */
-export async function reconcilePushState(status: VaultStatus): Promise<{ subscribed: boolean; expiresAt: number | null }> {
+export async function reconcilePushState(
+  status: VaultStatus,
+): Promise<{ subscribed: boolean; expiresAt: number | null }> {
   const stored = loadStored(status)
   if (!stored) return { subscribed: false, expiresAt: null }
   try {
     const registration = await navigator.serviceWorker.getRegistration(NOTIFY_WORKER_SCOPE)
     const subscription = await registration?.pushManager.getSubscription()
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted' || !subscription || (stored.endpoint && stored.endpoint !== subscription.endpoint)) {
+    if (
+      typeof Notification === 'undefined' ||
+      Notification.permission !== 'granted' ||
+      !subscription ||
+      (stored.endpoint && stored.endpoint !== subscription.endpoint)
+    ) {
       await disableBackgroundPush(status)
       return { subscribed: false, expiresAt: null }
     }
@@ -87,7 +98,12 @@ export async function reconcilePushState(status: VaultStatus): Promise<{ subscri
       clearStoredPushSubscription(status)
       return { subscribed: false, expiresAt: null }
     }
-    saveStored(status, { ...stored, subHandle: match.subHandle, expiresAt: match.expiresAt, endpoint: subscription.endpoint })
+    saveStored(status, {
+      ...stored,
+      subHandle: match.subHandle,
+      expiresAt: match.expiresAt,
+      endpoint: subscription.endpoint,
+    })
     return { subscribed: match.expiresAt > Date.now(), expiresAt: match.expiresAt }
   } catch {
     // Keep the handle for a retry, but never report an unverified device as enabled.
@@ -158,8 +174,13 @@ export async function notifyWorkerRegistration(): Promise<ServiceWorkerRegistrat
  *  is claimed); a Guardian that requires a name surfaces its exact error and
  *  Settings falls back to address-setup guidance.
  */
-export async function enableBackgroundPush(status: VaultStatus, isCurrent: () => boolean = () => true): Promise<StoredPushSubscription> {
-  const assertCurrent = () => { if (!isCurrent()) throw new Error('Wallet changed. Reopen notification settings to continue.') }
+export async function enableBackgroundPush(
+  status: VaultStatus,
+  isCurrent: () => boolean = () => true,
+): Promise<StoredPushSubscription> {
+  const assertCurrent = () => {
+    if (!isCurrent()) throw new Error('Wallet changed. Reopen notification settings to continue.')
+  }
   const finish = async (next: StoredPushSubscription): Promise<StoredPushSubscription> => {
     if (!isCurrent()) {
       await receiverFetch(status, `/v1/vaulted/push/subscriptions/${next.subHandle}`, { method: 'DELETE' })
@@ -192,7 +213,10 @@ export async function enableBackgroundPush(status: VaultStatus, isCurrent: () =>
   const stored = loadStored(status)
   const subscription =
     existing ??
-    (await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: new Uint8Array(vapidKey) }))
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: new Uint8Array(vapidKey),
+    }))
   assertCurrent()
   const body = {
     endpoint: subscription.endpoint,
@@ -243,13 +267,23 @@ export async function refreshBackgroundPush(status: VaultStatus): Promise<void> 
   if (!subscription) return
   // Renew before the server lease expires; keep endpoint rotation in sync.
   if (stored.endpoint === subscription.endpoint && stored.expiresAt > Date.now() + 7 * 86400000) return
-  const body = JSON.stringify({ endpoint: subscription.endpoint, p256dh: keyToBase64url(subscription.getKey('p256dh')), auth: keyToBase64url(subscription.getKey('auth')), encoding: 'aes128gcm' })
-  const updated = await receiverFetch(status, '/v1/vaulted/push/subscriptions', { method: 'POST', body }) as StoredPushSubscription
+  const body = JSON.stringify({
+    endpoint: subscription.endpoint,
+    p256dh: keyToBase64url(subscription.getKey('p256dh')),
+    auth: keyToBase64url(subscription.getKey('auth')),
+    encoding: 'aes128gcm',
+  })
+  const updated = (await receiverFetch(status, '/v1/vaulted/push/subscriptions', {
+    method: 'POST',
+    body,
+  })) as StoredPushSubscription
   if (loadStored(status)?.subHandle !== stored.subHandle) {
-    if (/^[0-9a-f]{64}$/.test(updated.subHandle)) await receiverFetch(status, `/v1/vaulted/push/subscriptions/${updated.subHandle}`, { method: 'DELETE' })
+    if (/^[0-9a-f]{64}$/.test(updated.subHandle))
+      await receiverFetch(status, `/v1/vaulted/push/subscriptions/${updated.subHandle}`, { method: 'DELETE' })
     return
   }
-  if (/^[0-9a-f]{64}$/.test(updated.subHandle) && Number.isSafeInteger(updated.expiresAt)) saveStored(status, { ...updated, endpoint: subscription.endpoint })
+  if (/^[0-9a-f]{64}$/.test(updated.subHandle) && Number.isSafeInteger(updated.expiresAt))
+    saveStored(status, { ...updated, endpoint: subscription.endpoint })
 }
 
 export interface BackgroundPushState {
@@ -263,8 +297,7 @@ export interface BackgroundPushState {
 
 /** Synchronous settings state. Never prompts, never touches the network. */
 export function backgroundPushState(status: VaultStatus | null): BackgroundPushState {
-  const capable =
-    typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
+  const capable = typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
   const permission: BackgroundPushState['permission'] =
     typeof Notification === 'undefined'
       ? 'unsupported'
@@ -272,7 +305,14 @@ export function backgroundPushState(status: VaultStatus | null): BackgroundPushS
         ? Notification.permission
         : 'default'
   if (!status) {
-    return { capable, permission, vapidConfigured: vapidKeyBytes(pushVapidPublicKey()) !== null, enrolled: false, subscribed: false, expiresAt: null }
+    return {
+      capable,
+      permission,
+      vapidConfigured: vapidKeyBytes(pushVapidPublicKey()) !== null,
+      enrolled: false,
+      subscribed: false,
+      expiresAt: null,
+    }
   }
   let enrolled = false
   try {

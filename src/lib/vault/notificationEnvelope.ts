@@ -50,7 +50,10 @@ function exactFields(record: Record<string, unknown>, fields: readonly string[])
 }
 
 /** Strict versioned parse of a decrypted push payload. Unknown versions, shapes, and extras fail. */
-export function parseNotificationEnvelope(value: unknown, nowSeconds = Math.floor(Date.now() / 1000)): NotificationEnvelope | null {
+export function parseNotificationEnvelope(
+  value: unknown,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): NotificationEnvelope | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
   if (!exactFields(record, ENVELOPE_FIELDS)) return null

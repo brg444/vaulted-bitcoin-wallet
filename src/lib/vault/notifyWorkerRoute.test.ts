@@ -43,7 +43,9 @@ describe('notify worker deployment route', () => {
       // The worker scope has no server route: it is client-side only.
       expect(parsed.rewrites.some((r) => vercelSourceToRegExp(r.source)?.test('/__vault-notify/'))).toBe(true)
       // CSP allows same-origin worker registration.
-      const csp = parsed.headers.find((h) => h.source === '/(.*)')!.headers.find((h) => h.key === 'Content-Security-Policy')!.value
+      const csp = parsed.headers
+        .find((h) => h.source === '/(.*)')!
+        .headers.find((h) => h.key === 'Content-Security-Policy')!.value
       expect(csp).toMatch(/worker-src 'self'/)
     })
   }

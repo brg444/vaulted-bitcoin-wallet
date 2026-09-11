@@ -30,8 +30,14 @@ function renderView() {
 
 describe('native notification settings', () => {
   beforeEach(() => {
-    ;(reconcilePushState as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ subscribed: false, expiresAt: null })
-    ;(enableBackgroundPush as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 1000 })
+    ;(reconcilePushState as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      subscribed: false,
+      expiresAt: null,
+    })
+    ;(enableBackgroundPush as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      subHandle: 'ab'.repeat(32),
+      expiresAt: Date.now() + 1000,
+    })
     ;(disableBackgroundPush as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
   })
 
@@ -57,7 +63,10 @@ describe('native notification settings', () => {
     vi.stubGlobal('Notification', { permission: 'default', requestPermission })
     vi.stubGlobal('navigator', { userAgent: 'desktop', serviceWorker: {} })
     vi.stubGlobal('PushManager', function () {})
-    ;(enableBackgroundPush as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 1000 })
+    ;(enableBackgroundPush as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      subHandle: 'ab'.repeat(32),
+      expiresAt: Date.now() + 1000,
+    })
     const user = userEvent.setup()
     renderView()
     await user.click(screen.getByRole('button', { name: 'Turn on' }))
@@ -79,7 +88,10 @@ describe('native notification settings', () => {
   it('shows install guidance in an ordinary iPhone tab', async () => {
     vi.stubEnv('VITE_PUSH_VAPID_PUBLIC_KEY', VAPID)
     vi.stubGlobal('Notification', { permission: 'default' })
-    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', serviceWorker: {} })
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+      serviceWorker: {},
+    })
     vi.stubGlobal('PushManager', function () {})
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true })
     renderView()
@@ -101,7 +113,10 @@ describe('native notification settings', () => {
   it('offers enable in the installed supported app', async () => {
     vi.stubEnv('VITE_PUSH_VAPID_PUBLIC_KEY', VAPID)
     vi.stubGlobal('Notification', { permission: 'default' })
-    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', serviceWorker: {} })
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+      serviceWorker: {},
+    })
     vi.stubGlobal('PushManager', function () {})
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: true }), configurable: true })
     renderView()
@@ -113,8 +128,14 @@ describe('native notification settings', () => {
     vi.stubGlobal('Notification', { permission: 'granted' })
     vi.stubGlobal('navigator', { userAgent: 'desktop', serviceWorker: {} })
     vi.stubGlobal('PushManager', function () {})
-    localStorage.setItem('vaulted:push:v1:mainnet:vault-1', JSON.stringify({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 100000 }))
-    ;(reconcilePushState as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ subscribed: true, expiresAt: Date.now() + 100000 })
+    localStorage.setItem(
+      'vaulted:push:v1:mainnet:vault-1',
+      JSON.stringify({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 100000 }),
+    )
+    ;(reconcilePushState as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      subscribed: true,
+      expiresAt: Date.now() + 100000,
+    })
     const user = userEvent.setup()
     renderView()
     await user.click(await screen.findByRole('button', { name: 'Turn off' }))

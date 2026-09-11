@@ -111,7 +111,10 @@ export async function awaitNotifyWorkerActive(
 ): Promise<void> {
   if (registration.active?.state === 'activated') return
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Notification worker did not activate. Please reopen the app and try again.')), timeoutMs)
+    const timer = setTimeout(
+      () => reject(new Error('Notification worker did not activate. Please reopen the app and try again.')),
+      timeoutMs,
+    )
     const done = () => {
       clearTimeout(timer)
       resolve()
@@ -123,7 +126,7 @@ export async function awaitNotifyWorkerActive(
         return
       }
       worker.addEventListener('statechange', () => {
-        if (worker.state === 'activated' || (registration.active?.state === 'activated')) done()
+        if (worker.state === 'activated' || registration.active?.state === 'activated') done()
       })
     }
     watch(registration.installing)
@@ -162,7 +165,11 @@ export async function showForegroundPaymentNotice(
   }
   try {
     const notice = new Notification(NATIVE_PAYMENT_TITLE, { body: NATIVE_PAYMENT_BODY, tag: NATIVE_PAYMENT_TAG })
-    notice.onclick = () => { window.focus(); window.location.assign('/?notify=activity'); notice.close() }
+    notice.onclick = () => {
+      window.focus()
+      window.location.assign('/?notify=activity')
+      notice.close()
+    }
     return 'shown'
   } catch {
     return 'skipped'
