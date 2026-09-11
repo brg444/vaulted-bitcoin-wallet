@@ -384,6 +384,9 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
     }
   } catch (error) {
     let teardownError: unknown
+    // A manager restore can still be reading contracts through the worker.
+    // Drain it before disposing the MessageBus on initialization failures too.
+    await swapManager?.stop().catch(() => undefined)
     if (wallet) {
       try {
         await wallet.dispose()
@@ -391,7 +394,6 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
         teardownError = failure
       }
     }
-    await swapManager?.stop().catch(() => undefined)
     await Promise.allSettled([
       walletRepository[Symbol.asyncDispose](),
       contractRepository[Symbol.asyncDispose](),
