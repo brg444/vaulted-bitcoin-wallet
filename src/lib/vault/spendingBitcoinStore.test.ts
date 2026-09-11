@@ -147,7 +147,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     expect(readSpendingBitcoin(f.status)).toBeNull()
   })
   it.each(['prepared', 'registered', 'register_dispatched', 'delete_dispatched'])(
-    'status %s never requests cancellation',
+    'unexpired status %s never requests cancellation',
     async (state) => {
       const f = setupFixture()
       saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered' })
@@ -158,6 +158,57 @@ describe('Spending signer setup binding and lifecycle', () => {
       expect(readSpendingBitcoin(f.status)).not.toBeNull()
     },
   )
+  it.each(['released', 'uncertain', 'waiting_expiry'])(
+    'expired registration requests cancellation and preserves funds unless Guardian returns released (%s)',
+    async (state) => {
+      const f = setupFixture()
+      const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
+      saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
+      vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 15) * 1000)
+      vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'registered' })
+      const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state })
+      expect((await checkSpendingBitcoin(f.status))?.state).toBe(state)
+      expect(release).toHaveBeenCalledWith({
+        vaultId: f.status.vaultId,
+        operationId: f.plan.operationId,
+        deleteIntent: deletion,
+      })
+      expect(readSpendingBitcoin(f.status) === null).toBe(state === 'released')
+    },
+  )
+  it.each(['final_authorized', 'final_dispatched', 'submitted', 'confirmed', 'uncertain', 'not_found'])(
+    'expired status %s does not infer that final submission failed',
+    async (state) => {
+      const f = setupFixture()
+      saveBitcoinPayment({
+        ...f.journal,
+        plan: f.prepared,
+        stage: 'registered',
+        deleteIntent: { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' },
+      })
+      vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
+      vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state })
+      const release = vi.spyOn(bitcoinPaymentClient, 'release')
+      // Submitted/confirmed without a matching receipt must also remain reserved.
+      await checkSpendingBitcoin(f.status).catch(() => undefined)
+      expect(release).not.toHaveBeenCalled()
+      expect(readSpendingBitcoin(f.status)).not.toBeNull()
+    },
+  )
+  it('retains an expired registration after cancellation transport failure or missing owner proof', async () => {
+    const f = setupFixture()
+    const saved = { ...f.journal, plan: f.prepared, stage: 'registered' as const }
+    saveBitcoinPayment(saved)
+    vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
+    vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'registered' })
+    const release = vi.spyOn(bitcoinPaymentClient, 'release').mockRejectedValue(new Error('connection reset'))
+    await checkSpendingBitcoin(f.status)
+    expect(release).not.toHaveBeenCalled()
+    const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
+    saveBitcoinPayment({ ...saved, deleteIntent: deletion })
+    await expect(checkSpendingBitcoin(f.status)).rejects.toThrow('connection reset')
+    expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deletion)
+  })
   it('explicit cancellation uses the retained proof and keeps ambiguous funds reserved', async () => {
     const f = setupFixture()
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }

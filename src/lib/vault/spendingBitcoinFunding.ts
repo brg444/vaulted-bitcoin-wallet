@@ -94,7 +94,7 @@ export async function checkSpendingBitcoin(status: VaultStatus): Promise<LightRe
     const journal = readSpendingBitcoin(status)
     if (!journal) return null
     const body = { vaultId: journal.vaultId, operationId: journal.operationId }
-    const result = await bitcoinPaymentClient.status(body)
+    let result = await bitcoinPaymentClient.status(body)
     if (
       journal.stage === 'preparing' &&
       result.state === 'not_found' &&
@@ -103,11 +103,31 @@ export async function checkSpendingBitcoin(status: VaultStatus): Promise<LightRe
       clearBitcoinPayment(journal)
       return { state: 'cancelled' }
     }
+    // A registered batch can fail before finalization without the SDK deleting
+    // its intent. Use the saved owner proof after expiry; only Guardian's
+    // durable release, never the local clock, makes the input spendable again.
+    if (
+      !journal.final &&
+      !journal.receipt?.commitmentTxid &&
+      !result.commitmentTxid &&
+      [
+        'prepared',
+        'register_authorized',
+        'register_dispatched',
+        'registered',
+        'delete_authorized',
+        'delete_dispatched',
+      ].includes(result.state) &&
+      journal.prepareRequest!.expiresAt * 1000 <= Date.now() - 15000 &&
+      (journal.deleteIntent || result.state === 'prepared' || result.state === 'register_authorized')
+    ) {
+      result = await bitcoinPaymentClient.release({ ...body, deleteIntent: journal.deleteIntent })
+    }
     retainBitcoinOutcome(status, result)
     return result
   })
 }
-/** Cancellation is a user action, never a side effect of status polling. */
+/** Explicit cancellation also works before the expiry cleanup runs. */
 export async function cancelSpendingBitcoin(status: VaultStatus): Promise<LightRenewalResponse | null> {
   return withVtxoSendLock(status.vaultId, async () => {
     const journal = readSpendingBitcoin(status)
@@ -193,7 +213,7 @@ class SpendingBitcoinProvider extends RestArkProvider {
   override async deleteIntent(): Promise<void> {
     // SDK error cleanup cannot prove non-admission for a named Guardian operation.
     // Its generic intent repository is deliberately not installed on this signing view.
-    // Keep the saved authorization until status or explicit cancellation proves release.
+    // Keep the saved authorization until expiry cleanup or cancellation proves release.
   }
 }
 
