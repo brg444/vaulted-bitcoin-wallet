@@ -33,7 +33,11 @@ import {
   vtxoSpendDirectSig,
   withVtxoSendLock,
 } from './vtxo/spend'
-import { installVaultSettlementEventSource, waitForVaultSettlementStream } from './vtxo/settlementEventSource'
+import {
+  installVaultSettlementEventSource,
+  markVaultSettlementStreamParticipating,
+  waitForVaultSettlementStream,
+} from './vtxo/settlementEventSource'
 import { flattenTree, serializeLightRenewalForfeit, serializeLightRenewalTree } from './light/renewal'
 import type {
   LightRenewalFinalEvidence,
@@ -435,7 +439,9 @@ export async function sendSpendingToBitcoin(
           }
           await finalize(event, tree, connectors)
         }
-        return traceBitcoinBatch(handler)
+        return traceBitcoinBatch(handler, () =>
+          markVaultSettlementStreamParticipating(`${journal.txid}:${journal.vout}`),
+        )
       }
       timeout = setTimeout(
         () => {

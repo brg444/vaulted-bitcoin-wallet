@@ -4,12 +4,13 @@ import { consoleError, consoleLog } from '../logs'
 type Handler = ReturnType<Wallet['createBatchHandler']>
 
 /** Observe completed SDK phases, not merely receipt of a broadcast event. */
-export function traceBitcoinBatch(handler: Handler): Handler {
+export function traceBitcoinBatch(handler: Handler, markParticipating: () => void = () => undefined): Handler {
   const start = handler.onBatchStarted
   handler.onBatchStarted = async (event) => {
     consoleLog(`Bitcoin batch ${event.id}: checking participation`)
     try {
       const decision = await start(event)
+      if (!decision.skip) markParticipating()
       consoleLog(`Bitcoin batch ${event.id}: ${decision.skip ? 'not selected' : 'participation acknowledged'}`)
       return decision
     } catch (error) {

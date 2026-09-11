@@ -41,7 +41,8 @@ it.each(['mainnet', 'mutinynet'] as const)('traces the real SDK participation de
   try {
     const id = '55618613-1b4f-4783-b98f-86094193da39'
     const hash = hex.encode(sha256(new TextEncoder().encode(id)))
-    const handler = traceBitcoinBatch(wallet.createBatchHandler(id, [], []))
+    const markParticipating = vi.fn()
+    const handler = traceBitcoinBatch(wallet.createBatchHandler(id, [], []), markParticipating)
     const event = {
       type: SettlementEventType.BatchStarted as const,
       id: 'test-batch',
@@ -50,9 +51,11 @@ it.each(['mainnet', 'mutinynet'] as const)('traces the real SDK participation de
     }
     expect(await handler.onBatchStarted(event)).toEqual({ skip: true })
     expect(ack).not.toHaveBeenCalled()
+    expect(markParticipating).not.toHaveBeenCalled()
     expect(getLogs().at(-1)?.msg).toContain('not selected')
     expect(await handler.onBatchStarted({ ...event, intentIdHashes: [hash] })).toEqual({ skip: false })
     expect(ack).toHaveBeenCalledExactlyOnceWith(id)
+    expect(markParticipating).toHaveBeenCalledOnce()
     expect(getLogs().at(-1)?.msg).toContain('participation acknowledged')
 
     const failure = new Error('confirmation session not started')
