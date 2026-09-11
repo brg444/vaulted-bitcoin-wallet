@@ -1,7 +1,5 @@
 import WatchedSavings from './WatchedSavings'
 import PaymentNotice from './qg/PaymentNotice'
-import PaymentArrivalBanners from './PaymentArrivals'
-import CatchUpBanner from './CatchUpBanner'
 import { useContext, useEffect, type ReactNode } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
@@ -24,11 +22,6 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
     boardingError,
     pendingPayments = [],
     openPendingPayment,
-    arrivals = [],
-    dismissArrival,
-    openArrival,
-    catchUp,
-    dismissCatchUp,
     navigate,
     openSendScan,
     openRecover,
@@ -116,15 +109,6 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
           ))
         : null}
       {error && (pendingPayments.length > 0 || error !== balanceError) ? <PaymentNotice message={error} /> : null}
-
-      <PaymentArrivalBanners
-        arrivals={arrivals}
-        onOpen={(arrival) => openArrival(arrival.key)}
-        onDismiss={dismissArrival}
-      />
-      {catchUp ? (
-        <CatchUpBanner catchUp={catchUp} onOpenActivity={() => navigate('activity')} onDismiss={dismissCatchUp} />
-      ) : null}
 
       {!spending ? (
         <button

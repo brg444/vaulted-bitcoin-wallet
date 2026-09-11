@@ -1,6 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../components/Toast'
 import { pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
@@ -12,8 +11,7 @@ import type { VaultStatus } from '../lib/vault/types'
 import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
 import { VaultProvider, VaultContext } from './vault'
 import VaultHome from '../screens/Vault/Home'
-import VaultReceive from '../screens/Vault/Receive'
-import { useContext, type ReactElement } from 'react'
+import { useContext } from 'react'
 
 function DebugProbe() {
   const vault = useContext(VaultContext)
@@ -21,7 +19,7 @@ function DebugProbe() {
     <div>
       <span data-testid='dbg-arrivals'>{vault.arrivals.length}</span>
       <span data-testid='dbg-vault'>{vault.status?.vaultId || 'none'}</span>
-      <span data-testid='dbg-history'>{vault.history.length}</span>
+      <span data-testid='dbg-history'>{vault.allHistory.length}</span>
       <span data-testid='dbg-screen'>{vault.screen}</span>
       <span data-testid='dbg-selected'>{vault.selectedTx?.txid || 'none'}</span>
     </div>
@@ -181,134 +179,41 @@ describe('provider arrival delivery', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
-  it('banners a direct Arkade receive that lands after a fresh baseline, on Home', async () => {
-    const { rerender } = renderHome()
-    await waitFor(() => expect(balances.fetchStatus).toHaveBeenCalled())
-    act(() => {
-      balances.balancesLoaded = true
-      balances.snapshotFresh = true
-    })
-    rerender(renderHomeTree())
-    const receive: VaultHistoryItem = {
-      txid: 'ark-receive-1',
-      type: 'received',
-      amount: 12_000,
-      confirmed: true,
-      blockTime: 1_700_000_100,
-      account: 'spend',
-    }
-    act(() => {
-      balances.history = [receive]
-    })
-    rerender(renderHomeTree())
-    const banner = await screen.findByText('Received ₿12,000 in Spending.')
-    expect(banner).toBeVisible()
-  })
-
-  it('opens the arrived payment details from the banner', async () => {
-    const user = userEvent.setup()
-    const { rerender } = renderHome()
-    await waitFor(() => expect(balances.fetchStatus).toHaveBeenCalled())
-    act(() => {
-      balances.balancesLoaded = true
-      balances.snapshotFresh = true
-    })
-    rerender(renderHomeTree())
-    act(() => {
-      balances.history = [
-        { txid: 'ark-receive-1', type: 'received', amount: 12_000, confirmed: true, blockTime: 1, account: 'spend' },
-      ]
-    })
-    rerender(renderHomeTree())
-    expect(screen.getByTestId('dbg-selected')).toHaveTextContent('none')
-    await user.click(await screen.findByRole('button', { name: 'View details' }))
-    expect(screen.getByTestId('dbg-selected')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByTestId('dbg-selected')).toHaveTextContent('ark-receive-1'))
-    await waitFor(() => expect(screen.getByTestId('dbg-screen')).toHaveTextContent('tx'))
-  })
-})
-
-describe('provider arrival delivery on Receive', () => {
-  beforeEach(() => {
-    window.localStorage.clear()
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    balances.history = []
-    balances.snapshotFresh = false
-    balances.balancesLoaded = false
-    balances.fetchStatus.mockReset().mockResolvedValue(STATUS)
-    localStorage.setItem(SELECTED_VAULT_STORE, 'vault-a')
-    localStorage.setItem(
-      `${ENROLL_STORE}:vault-a`,
-      JSON.stringify({
-        vaultId: 'vault-a',
-        credId: '00',
-        webauthnP256: '02',
-        phoneDirectP256: '02',
-        phoneBip340Pub: '02',
-        nonce: '00',
-        ciphertext: '00',
-      }),
-    )
-    saveAddressPin(pinFromEnrolledStatus(STATUS))
-  })
-
-  function renderReceiveTree() {
-    return (
-      <ToastProvider>
-        <VaultProvider>
-          <VaultReceive />
-          <DebugProbe />
-        </VaultProvider>
-      </ToastProvider>
-    )
-  }
-
-  async function seedBaseline(rerender: (ui: ReactElement) => void) {
-    await waitFor(() => expect(balances.fetchStatus).toHaveBeenCalled())
-    act(() => {
-      balances.balancesLoaded = true
-      balances.snapshotFresh = true
-    })
-    rerender(renderReceiveTree())
-  }
-
-  it('shows the catch-up summary on Receive for two arrivals in one snapshot', async () => {
-    const user = userEvent.setup()
-    const { rerender } = render(renderReceiveTree())
-    await seedBaseline(rerender)
-    act(() => {
-      balances.history = [
-        { txid: 'ark-a', type: 'received', amount: 5_000, confirmed: true, blockTime: 1, account: 'spend' },
-        { txid: 'ark-b', type: 'received', amount: 7_000, confirmed: true, blockTime: 2, account: 'spend' },
-      ]
-    })
-    rerender(renderReceiveTree())
-    expect(await screen.findByTestId('payment-catch-up')).toBeVisible()
-    expect(screen.queryByTestId(/^payment-arrival-/)).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'View activity' }))
-    await waitFor(() => expect(screen.getByTestId('dbg-screen')).toHaveTextContent('activity'))
-  })
-
-  it('merges a second receipt into the summary on Receive without dismissing the first', async () => {
-    const { rerender } = render(renderReceiveTree())
-    await seedBaseline(rerender)
-    act(() => {
-      balances.history = [
-        { txid: 'ark-a', type: 'received', amount: 5_000, confirmed: true, blockTime: 1, account: 'spend' },
-      ]
-    })
-    rerender(renderReceiveTree())
-    await screen.findByText('Received ₿5,000 in Spending.')
-    act(() => {
-      balances.history = [
-        { txid: 'ark-a', type: 'received', amount: 5_000, confirmed: true, blockTime: 1, account: 'spend' },
-        { txid: 'ark-b', type: 'received', amount: 7_000, confirmed: true, blockTime: 2, account: 'spend' },
-      ]
-    })
-    rerender(renderReceiveTree())
-    expect(await screen.findByTestId('payment-catch-up')).toBeVisible()
-    expect(screen.queryByTestId(/^payment-arrival-/)).toBeNull()
-  })
+  it.each(['spend', 'savings'] as const)(
+    'uses native delivery ownership for a new %s receipt without banners',
+    async (account) => {
+      const showNotification = vi.fn().mockResolvedValue(undefined)
+      vi.stubGlobal('Notification', { permission: 'granted' })
+      Object.defineProperty(navigator, 'serviceWorker', {
+        configurable: true,
+        value: { getRegistration: vi.fn().mockResolvedValue({ showNotification }) },
+      })
+      localStorage.setItem(
+        'vaulted:push:v1:mutinynet:vault-a',
+        JSON.stringify({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 100000 }),
+      )
+      const { rerender } = renderHome()
+      await waitFor(() => expect(screen.getByTestId('dbg-vault')).toHaveTextContent('vault-a'))
+      act(() => {
+        balances.balancesLoaded = true
+        balances.snapshotFresh = true
+      })
+      rerender(renderHomeTree())
+      act(() => {
+        balances.history = [
+          { txid: 'receipt-1', type: 'received', amount: 12000, confirmed: true, blockTime: 1700000100, account },
+        ]
+      })
+      rerender(renderHomeTree())
+      await waitFor(() => expect(screen.getByTestId('dbg-history')).toHaveTextContent('1'))
+      expect(screen.getByTestId('dbg-arrivals')).toHaveTextContent('0')
+      expect(screen.queryByTestId(/^payment-arrival-/)).toBeNull()
+      expect(screen.queryByTestId('payment-catch-up')).toBeNull()
+      if (account === 'savings') await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+      else expect(showNotification).not.toHaveBeenCalled() // Spending belongs to server push.
+    },
+  )
 })
