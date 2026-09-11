@@ -3,6 +3,7 @@ import { Batch, RestArkProvider } from '@arkade-os/sdk'
 import {
   createFetchEventSource,
   createVaultEventSourceFactory,
+  markVaultSettlementStreamParticipating,
   waitForVaultSettlementStream,
   vaultSettlementStreamGuard,
 } from './settlementEventSource'
@@ -34,7 +35,7 @@ class FakeEventSource extends EventTarget {
 }
 
 describe('Vault settlement EventSource', () => {
-  it('retries initial connection errors but fails a disconnected open stream', async () => {
+  it('retries until participation and fails a disconnect after participation', async () => {
     const native = new FakeEventSource()
     const factory = createVaultEventSourceFactory(() => native as unknown as EventSource)
     const topic = `${'ab'.repeat(32)}:1`
@@ -53,6 +54,18 @@ describe('Vault settlement EventSource', () => {
     native.message('{"type":"streamStarted"}')
     expect(message).toHaveBeenCalledTimes(1)
 
+    native.reconnectingError()
+    expect(error).not.toHaveBeenCalled()
+    let reconnected = false
+    const reconnectReady = waitForVaultSettlementStream(topic, 100).then(() => {
+      reconnected = true
+    })
+    await Promise.resolve()
+    expect(reconnected).toBe(false)
+    native.open()
+    await reconnectReady
+
+    markVaultSettlementStreamParticipating(topic)
     native.reconnectingError()
     expect(error).toHaveBeenCalledTimes(1)
     expect(native.close).toHaveBeenCalledTimes(1)
@@ -233,7 +246,7 @@ describe('Vault fetch settlement EventSource', () => {
     source.close()
   })
 
-  it('rejects the active SDK batch after disconnect and lets a fresh attempt open', async () => {
+  it('reconnects while waiting and rejects the SDK batch after its intent participates', async () => {
     const first = hangingSse()
     const second = hangingSse()
     const responses = [first.response, second.response]
@@ -247,7 +260,11 @@ describe('Vault fetch settlement EventSource', () => {
     const topic = `${'ef'.repeat(32)}:0`
     const abort = new AbortController()
     const stream = provider.getEventStream(abort.signal, [topic])
-    const started = vi.fn(async () => ({ skip: false }))
+    const started = vi.fn(async (event: { id: string }) => {
+      const skip = event.id === 'old-batch'
+      if (!skip) markVaultSettlementStreamParticipating(topic)
+      return { skip }
+    })
     const finalization = vi.fn()
     const joined = Batch.join(
       stream,
@@ -259,23 +276,21 @@ describe('Vault fetch settlement EventSource', () => {
       },
       { abortController: abort },
     )
-    // Attach the rejection assertion before closing the transport.
+    // Attach the rejection assertion before closing either transport.
     const rejected = expect(joined).rejects.toThrow('EventSource error')
     await waitForVaultSettlementStream(topic, 500)
     first.push('data: {"batchStarted":{"id":"old-batch","intentIdHashes":[],"batchExpiry":"2592000"}}\n\n')
     await vi.waitFor(() => expect(started).toHaveBeenCalledTimes(1))
     first.end()
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2), { timeout: 2_000 })
+    await expect(waitForVaultSettlementStream(topic, 500)).resolves.toBeUndefined()
+    second.push('data: {"batchStarted":{"id":"our-batch","intentIdHashes":[],"batchExpiry":"2592000"}}\n\n')
+    await vi.waitFor(() => expect(started).toHaveBeenCalledTimes(2))
+    second.end()
     await rejected
     expect(finalization).not.toHaveBeenCalled()
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
     abort.abort()
     await stream.return?.()
-
-    // Reconciliation owns the next registration; this stream has no stale SDK state.
-    const retry = factory(`https://arkade.computer/v1/batch/events?topics=${encodeURIComponent(topic)}`)
-    await expect(waitForVaultSettlementStream(topic, 500)).resolves.toBeUndefined()
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
-    retry.close()
-    await second.cancelled
   })
 })

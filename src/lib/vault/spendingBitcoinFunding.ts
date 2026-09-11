@@ -17,6 +17,7 @@ import { schnorr } from '@noble/curves/secp256k1.js'
 import { consoleError, consoleLog } from '../logs'
 import { ensureVaultWalletWorker } from './vtxo/walletWorker'
 import { BitcoinPaymentError, bitcoinPaymentRejected } from './bitcoinPaymentError'
+import { traceBitcoinBatch } from './bitcoinBatchTrace'
 import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
 import { vaultGet, vaultPost } from './api'
 import { connectorIdentity } from './connectorWithdrawal'
@@ -32,7 +33,11 @@ import {
   vtxoSpendDirectSig,
   withVtxoSendLock,
 } from './vtxo/spend'
-import { installVaultSettlementEventSource, waitForVaultSettlementStream } from './vtxo/settlementEventSource'
+import {
+  installVaultSettlementEventSource,
+  markVaultSettlementStreamParticipating,
+  waitForVaultSettlementStream,
+} from './vtxo/settlementEventSource'
 import { flattenTree, serializeLightRenewalForfeit, serializeLightRenewalTree } from './light/renewal'
 import type {
   LightRenewalFinalEvidence,
@@ -260,6 +265,10 @@ export async function sendSpendingToBitcoin(
     let wallet: Wallet | undefined
     const abort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
+    const visibility = () => consoleLog(`Bitcoin payment page: ${document.visibilityState}`)
+    const pagehide = () => consoleLog('Bitcoin payment page closed before the signing session finished')
+    document.addEventListener('visibilitychange', visibility)
+    window.addEventListener('pagehide', pagehide)
     try {
       progress('Checking funds for this Bitcoin payment')
       const script = spendingScriptFromStatus(status)
@@ -430,9 +439,17 @@ export async function sendSpendingToBitcoin(
           }
           await finalize(event, tree, connectors)
         }
-        return handler
+        return traceBitcoinBatch(handler, () =>
+          markVaultSettlementStreamParticipating(`${journal.txid}:${journal.vout}`),
+        )
       }
-      timeout = setTimeout(() => abort.abort(), Math.max(1000, plan.registerExpireAt * 1000 - Date.now() + 30_000))
+      timeout = setTimeout(
+        () => {
+          consoleLog('Bitcoin payment signing deadline reached')
+          abort.abort()
+        },
+        Math.max(1000, plan.registerExpireAt * 1000 - Date.now() + 30_000),
+      )
       const commitment = await wallet.settle(
         {
           inputs: [input],
@@ -450,7 +467,7 @@ export async function sendSpendingToBitcoin(
               event.type,
             )
           )
-            consoleLog(`Bitcoin payment batch: ${event.type}`)
+            consoleLog(`Bitcoin payment event received: ${event.type} (${event.id})`)
         },
       )
       if (!commitment || !/^[a-f0-9]{64}$/.test(commitment))
@@ -486,6 +503,8 @@ export async function sendSpendingToBitcoin(
       }
       throw error
     } finally {
+      document.removeEventListener('visibilitychange', visibility)
+      window.removeEventListener('pagehide', pagehide)
       if (timeout) clearTimeout(timeout)
       abort.abort()
       unlocker.dispose()
