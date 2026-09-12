@@ -1,6 +1,7 @@
 import type { NetworkName } from '@arkade-os/sdk'
 import type { InvoiceFacts } from '@arkade-os/swap'
 import bolt11 from 'light-bolt11-decoder'
+import { LightningPaymentError } from './lightningError'
 
 const NETWORK_PREFIX: Record<NetworkName, string> = {
   bitcoin: 'bc',
@@ -10,7 +11,7 @@ const NETWORK_PREFIX: Record<NetworkName, string> = {
   regtest: 'bcrt',
 }
 
-export class LightningInvoiceRejected extends Error {
+export class LightningInvoiceRejected extends LightningPaymentError {
   constructor(
     readonly reason:
       | 'unparseable'

@@ -2,6 +2,7 @@ import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { useContext, useEffect, useRef, useState } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
+import type { InvoiceFacts } from '@arkade-os/swap'
 import { KeyRound } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import { prettyNumber } from '../../lib/format'
@@ -13,6 +14,7 @@ import {
   vaultLightningSolverProfile,
 } from '../../lib/vault/lightningConfig'
 import { decodeVaultLightningInvoice } from '../../lib/vault/lightningInvoice'
+import { humanizeVaultError } from '../../lib/vault/humanize'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { isSameVtxoPayment, loadPersistedVtxoSpend } from '../../lib/vault/vtxo/spend'
 import { VaultContext } from '../../vault/context'
@@ -22,14 +24,14 @@ import DestinationField from './qg/DestinationField'
 import { amountSizeStyle } from './qg/QgAmount'
 import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 
-function lightningInvoice(value: string, network?: string) {
-  if (!network || !vaultLightningSendEnabled(network as NetworkName) || !isVaultLightningInput(value)) return undefined
+function lightningInvoice(value: string, network?: string): { invoice?: InvoiceFacts; error?: string } {
+  if (!network || !vaultLightningSendEnabled(network as NetworkName) || !isVaultLightningInput(value)) return {}
   const profile = vaultLightningSolverProfile(network as NetworkName)
-  if (!profile) return undefined
+  if (!profile) return {}
   try {
-    return decodeVaultLightningInvoice(value, profile.network)
-  } catch {
-    return undefined
+    return { invoice: decodeVaultLightningInvoice(value, profile.network) }
+  } catch (error) {
+    return { error: humanizeVaultError(error) }
   }
 }
 
@@ -84,7 +86,8 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
   const fromSavings = account === 'savings'
   const movingToSpending = fromSavings && Boolean(boardingAddress) && spend.address === boardingAddress
   const destNetwork = status?.network
-  const lightning = !fromSavings && Boolean(lightningInvoice(spend.address, destNetwork))
+  const lightningValidation = fromSavings ? {} : lightningInvoice(spend.address, destNetwork)
+  const lightning = Boolean(lightningValidation.invoice)
   const [scan, setScan] = useState(Boolean(scanOnSend))
   const [usdInput, setUsdInput] = useState('')
   // Canonical sats last produced by typing. External replacements (scans,
@@ -179,7 +182,7 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
 
   const setAddress = (value: string) => {
     const next = payloadFromScan(value, !fromSavings)
-    const lightningAmount = fromSavings ? undefined : lightningInvoice(next.address, destNetwork)?.amountSats
+    const lightningAmount = fromSavings ? undefined : lightningInvoice(next.address, destNetwork).invoice?.amountSats
     setSpendDraft({
       address: next.address,
       ...(lightningAmount === undefined && next.amount === undefined ? {} : { amount: lightningAmount ?? next.amount }),
@@ -197,7 +200,9 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
         label={fromSavings ? 'Scan Bitcoin address' : 'Scan payment'}
         onData={(data) => {
           const next = payloadFromScan(data, !fromSavings)
-          const lightningAmount = fromSavings ? undefined : lightningInvoice(next.address, destNetwork)?.amountSats
+          const lightningAmount = fromSavings
+            ? undefined
+            : lightningInvoice(next.address, destNetwork).invoice?.amountSats
           setSpendDraft({
             address: next.address,
             ...(lightningAmount || next.amount ? { amount: lightningAmount || next.amount } : {}),
@@ -236,7 +241,13 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
           ) : null}
           <QgPrimary
             onClick={() => void reviewSpend()}
-            disabled={busy || Boolean(amountError) || spend.amount <= 0 || !spend.address.trim()}
+            disabled={
+              busy ||
+              Boolean(amountError) ||
+              Boolean(lightningValidation.error) ||
+              spend.amount <= 0 ||
+              !spend.address.trim()
+            }
             loading={busy}
             label={
               busy
@@ -309,7 +320,14 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
         onChange={(event) => setAddress(event.target.value)}
         onScan={() => setScan(true)}
         hint={fromSavings ? 'Bitcoin address' : undefined}
+        aria-invalid={Boolean(lightningValidation.error)}
+        aria-describedby={lightningValidation.error ? 'vault-send-lightning-error' : undefined}
       />
+      {lightningValidation.error ? (
+        <p id='vault-send-lightning-error' className='qg-inline-error' role='alert'>
+          {lightningValidation.error}
+        </p>
+      ) : null}
       {fromSavings ? (
         <p className='qg-available'>{formatMoney(positions.savings.availableSats, money)} available</p>
       ) : (
