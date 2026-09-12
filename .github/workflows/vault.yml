@@ -37,30 +37,8 @@ jobs:
         run: corepack pnpm exec eslint "src/**/*.{ts,tsx,js,jsx}" --max-warnings=0
       - name: Type check
         run: corepack pnpm typecheck
-      - name: Contract pack
-        run: |
-          node -e "
-            const pack = require('./src/lib/vault/contract-pack.json')
-            const programs = pack.programs || {}
-            const names = Object.keys(programs).sort()
-            const expected = ['phone-ledger-guardian-savings-v1', 'savings-connector-dual-v2', 'savings-connector-v1', 'savings-recovery-v1', 'vault-board-v1', 'vault-policy-v1']
-            if (JSON.stringify(names) !== JSON.stringify(expected)) {
-              throw new Error('contract pack must contain exactly the current programs')
-            }
-            const savings = programs['savings-recovery-v1']
-            if (!savings || savings.template !== 'phone-hww-recovery-savings-v1' || savings.enrollable !== true) {
-              throw new Error('contract pack must publish the enrollable Savings program')
-            }
-            if (programs['vault-board-v1'].destination !== 'vault-policy-v1') {
-              throw new Error('boarding must settle only to vault-policy-v1')
-            }
-            const light = pack.enrollmentProfiles['vaulted-spending-v1']
-            if (pack.databaseSchemaVersion !== 11 || light.spending !== 'vault-policy-v1' ||
-                light.boarding !== 'vault-board-v1' || light.exitMode !== 'device' ||
-                light.savings !== 'watch-only' || light.hardwareKey !== 'forbidden' || light.recoveryKey !== 'forbidden') {
-              throw new Error('fresh Light must use shared Spending and boarding with device recovery')
-            }
-          "
+      - name: Contract packs
+        run: node scripts/verify-contract-packs.mjs
       - name: Unit tests
         run: corepack pnpm test:unit --maxWorkers=2 --exclude src/lib/vault/ledgerRecoveryWallet.test.ts --exclude src/lib/vault/recovery/portable.test.ts
       # Keep expensive complete recovery signatures on one worker to avoid CPU starvation.

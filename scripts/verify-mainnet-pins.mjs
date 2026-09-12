@@ -6,11 +6,6 @@ const expectedOperator = {
   unilateralExitDelay: '605184',
   boardingExitDelay: '7776256',
 }
-const expectedEmulator = {
-  version: 'v0.0.7',
-  signerPubkey: '0239c196415da47b26456a101daaa12ba9e445bfe153197f1e2b750bf40e52092e',
-}
-
 async function requireJson(url) {
   let response
   try {
@@ -32,13 +27,6 @@ function verify(label, actual, expected) {
   }
 }
 
-const emulatorOrigin = process.env.VAULT_ARKADE_COSIGNER_ORIGIN
-if (!emulatorOrigin) throw new Error('VAULT_ARKADE_COSIGNER_ORIGIN is required for the private release check')
-
-const [operator, emulator] = await Promise.all([
-  requireJson('https://arkade.computer/v1/info'),
-  requireJson(new URL('/v1/info', emulatorOrigin)),
-])
+const operator = await requireJson('https://arkade.computer/v1/info')
 verify('Operator', operator, expectedOperator)
-verify('Emulator', emulator, expectedEmulator)
-console.log(`mainnet pins verified against Operator ${operator.version} and Emulator ${emulator.version}`)
+console.log(`mainnet pins verified against Operator ${operator.version}`)

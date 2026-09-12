@@ -13,7 +13,7 @@ const publicStatus = {
   network: 'mainnet',
   clientOrigin: origin,
   rpId: 'rc.getvaulted.xyz',
-  templateVersion: pack.programs['savings-recovery-v1'].template,
+  templateVersion: 'vaulted-spending-v1',
   policyVersion: schema.schema,
   enrollmentMode: 'token',
   spendingPolicyCapabilities: {
