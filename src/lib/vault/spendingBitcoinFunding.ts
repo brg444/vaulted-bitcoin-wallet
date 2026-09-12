@@ -1,6 +1,3 @@
-import { guardianRenewalSpendUnlocker } from './light/delegationCeremony'
-import { LightScript } from './light/contract'
-import { lightContract, registerLightContractHandler } from './light/contractHandler'
 import {
   ArkAddress,
   Batch,
@@ -15,19 +12,17 @@ import {
 } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import { Address, OutScript } from '@scure/btc-signer'
-import { scriptHexFromAddress, vaultAddressNetwork } from './bitcoin'
+import { vaultAddressNetwork } from './bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { consoleError, consoleLog } from '../logs'
 import { BitcoinPaymentError, bitcoinPaymentRejected } from './bitcoinPaymentError'
 import { traceBitcoinBatch } from './bitcoinBatchTrace'
 import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
 import { vaultGet, vaultPost } from './api'
-import { connectorIdentity } from './connectorWithdrawal'
-import { checkConnectorSetup } from './connectorSetup'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
 import { vaultPolicyV1Contract, registerVaultPolicyV1ContractHandler } from './vtxo/contractHandler'
 import {
-  spendingScriptFromStatus,
+  vaultPolicyV1ScriptFromStatus,
   createVtxoOperationId,
   createVtxoSpendUnlocker,
   newVtxoSpendChallenge,
@@ -78,10 +73,11 @@ export function normalizeBitcoinResponse(response: LightRenewalResponse): LightR
 const responsePost = (phase: string, body: unknown) =>
   post<LightRenewalResponse>(phase, body).then(normalizeBitcoinResponse)
 export const bitcoinPaymentClient = {
-  prepare: (body: NonNullable<BitcoinPaymentJournal['prepareRequest']>) =>
-    body.outputs
-      ? post<SpendingBitcoinPrepared>('prepare', body)
-      : vaultPost<SpendingBitcoinPrepared>('/v1/vtxo/savings-setup/prepare', body),
+  prepare: (body: NonNullable<BitcoinPaymentJournal['prepareRequest']>) => {
+    if (Object.hasOwn(body, 'reserveCount')) throw new Error('Unsupported Bitcoin payment request')
+    validateBitcoinOutputs(body.outputs)
+    return post<SpendingBitcoinPrepared>('prepare', body)
+  },
   register: (body: LightRenewalRegisterRequest) => responsePost('register', body),
   final: (body: LightRenewalOperationRequest & { evidence: LightRenewalFinalEvidence }) => responsePost('final', body),
   status: (body: LightRenewalOperationRequest) => responsePost('status', body),
@@ -259,11 +255,7 @@ export async function sendSpendingToBitcoin(
   return withVtxoSendLock(status.vaultId, async () => {
     const prior = readSpendingBitcoin(status)
     if (prior) throw new Error('Check the pending Bitcoin payment before starting another')
-    const unlockSpend =
-      status.protectionTier === 'light' && status.lightDescriptor
-        ? guardianRenewalSpendUnlocker(status.lightDescriptor)
-        : createVtxoSpendUnlocker
-    const unlocker = unlockSpend(enrollment, bound, newVtxoSpendChallenge())
+    const unlocker = createVtxoSpendUnlocker(enrollment, bound, newVtxoSpendChallenge())
     let wallet: Wallet | undefined
     const abort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
@@ -274,7 +266,7 @@ export async function sendSpendingToBitcoin(
     window.addEventListener('pagehide', pagehide)
     try {
       progress('Checking funds for this Bitcoin payment')
-      const script = spendingScriptFromStatus(status)
+      const script = vaultPolicyV1ScriptFromStatus(status)
       const url = vaultArkServer(status.network)
       const indexer = new RestIndexerProvider(url)
       const result = await indexer.getVtxos({ scripts: [context.scriptPubKey] })
@@ -366,8 +358,7 @@ export async function sendSpendingToBitcoin(
         coin.expiresAt!,
       )
       const identity = SingleKey.fromPrivateKey(auth.phoneSecret)
-      if (script instanceof LightScript) registerLightContractHandler()
-      else registerVaultPolicyV1ContractHandler()
+      registerVaultPolicyV1ContractHandler()
       wallet = await Wallet.create({
         identity,
         arkProvider: provider,
@@ -387,11 +378,7 @@ export async function sendSpendingToBitcoin(
       ).encode()
       // The SDK signer router signs only inputs belonging to a known contract.
       // Register the exact enrolled Spending script before creating intent/forfeit proofs.
-      await (
-        await wallet.getContractManager()
-      ).createContract(
-        script instanceof LightScript ? lightContract(script, address) : vaultPolicyV1Contract(script, address),
-      )
+      await (await wallet.getContractManager()).createContract(vaultPolicyV1Contract(script, address))
       const input: ExtendedVirtualCoin = {
         ...coin,
         forfeitTapLeafScript: script.forfeit(),
@@ -549,19 +536,5 @@ function retainBitcoinOutcome(status: VaultStatus, result: LightRenewalResponse)
       receipt: result,
       ...(result.state === 'confirmed' ? { stage: 'confirmed' as const } : {}),
     })
-  }
-}
-
-/** Only setup knows the signer address and required exact-value outputs. */
-export async function signerFundingOutputs(status: VaultStatus) {
-  connectorIdentity(status)
-  const setup = await checkConnectorSetup(status)
-  if (setup.state !== 'checked' || setup.missing === 0) throw new Error('Check signer setup before funding it')
-  return {
-    address: setup.address,
-    outputs: Array.from({ length: setup.missing }, () => ({
-      script: scriptHexFromAddress(setup.address, status.network),
-      amountSats: setup.amount,
-    })),
   }
 }

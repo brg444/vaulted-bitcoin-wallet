@@ -34,8 +34,6 @@ export type PaymentRoute =
   | 'lightning-send'
   | 'lightning-receive'
   | 'boarding'
-  | 'savings-handoff'
-  | 'savings-connector'
   | 'savings-ledger'
 
 export type PaymentAttention = 'none' | 'action' | 'check'
@@ -321,48 +319,6 @@ export function describePayment(item: VaultHistoryItem): PaymentDescription {
   const sent = item.type === 'sent'
   if (item.activity === 'lightning') return lightningDescription(item, !sent)
   if (item.activity === 'bitcoin' && sent) return bitcoinSendDescription(item)
-  if (item.activity === 'savings-handoff') {
-    return {
-      route: 'savings-handoff',
-      title: 'Waiting for hardware',
-      state: 'Complete or cancel',
-      copy: 'This Savings transfer waits for the hardware signature. Complete or cancel it.',
-      attention: 'action',
-      complete: false,
-      canRetry: false,
-      origin: 'uncertain',
-      suppressArrival: true,
-    }
-  }
-  if (item.activity === 'savings-connector') {
-    if (item.connectorStage === 'broadcast') {
-      return {
-        route: 'savings-connector',
-        title: 'Savings transfer pending',
-        state: 'Check or retry broadcast',
-        copy: 'This signed Savings transfer still needs to reach Bitcoin. Check its status before trying again.',
-        attention: 'check',
-        complete: false,
-        canRetry: false,
-        origin: 'uncertain',
-        suppressArrival: true,
-      }
-    }
-    return {
-      route: 'savings-connector',
-      title: item.connectorStage === 'signer' ? 'Waiting for signer' : 'Savings approval pending',
-      state: 'Continue payment',
-      copy:
-        item.connectorStage === 'signer'
-          ? 'This Savings transfer waits for the hardware signer.'
-          : 'Approve this Savings transfer to continue.',
-      attention: 'action',
-      complete: false,
-      canRetry: false,
-      origin: 'uncertain',
-      suppressArrival: true,
-    }
-  }
   if (item.activity === 'savings-ledger') return ledgerDescription(item)
   if (item.activity === 'boarding') {
     // Boarding carries the deposit into Spending, but the same address also

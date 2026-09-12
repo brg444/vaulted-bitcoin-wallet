@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultReview from './Review'
-import { DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
+import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 
 function review(overrides: Partial<VaultContextProps> = {}) {
   const value = {
@@ -86,16 +86,14 @@ describe('payment review continuity', () => {
     }
   })
 
-  it.each([false, true])('retains the Savings amount during approval, hardware first=%s', (hardwareFirst) => {
+  it('retains the Ledger Savings amount during passkey approval', () => {
     const { value } = review({
       account: 'savings',
       busy: true,
-      status: { templateVersion: hardwareFirst ? DUAL_CONNECTOR_TEMPLATE : undefined } as VaultContextProps['status'],
+      status: { templateVersion: LEDGER_NATIVE_TEMPLATE } as VaultContextProps['status'],
     })
     expect(document.querySelector('.qg-review-amount strong')).toHaveTextContent('₿12,000')
-    expect(
-      screen.getByRole('heading', { name: hardwareFirst ? 'Preparing approval' : 'Approve with passkey' }),
-    ).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Approve with passkey' })).toBeVisible()
     expect(screen.queryByRole('button')).toBeNull()
     expect(value.approveSend).not.toHaveBeenCalled()
   })

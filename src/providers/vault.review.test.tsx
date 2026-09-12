@@ -11,6 +11,8 @@ import { hex } from '@scure/base'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useContext } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
+import { ledgerRecoveryFixture } from '../lib/vault/recovery/testdata/ledger'
 import { POLICY_VERSION } from '../lib/vault/constants'
 import { ENROLL_STORE, SELECTED_VAULT_STORE, SESSION_LOCK_STORE } from '../lib/vault/enrollmentStore'
 import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP } from '../lib/vault/lightningTestUtils'
@@ -25,11 +27,15 @@ import ledgerVectors from '../lib/vault/program/ledger-key-vectors.json'
 import { ledgerSpendingPublicKey } from '../lib/vault/ledgerSetup'
 
 const mocks = vi.hoisted(() => ({
+  ledger: vi.fn(),
+  ledgerReview: vi.fn(),
+  ledgerApprove: vi.fn(),
+  ledgerComplete: vi.fn(),
+  ledgerRefresh: vi.fn(),
   readLedgerAccount: vi.fn(),
   closeLedger: vi.fn(async () => undefined),
   authorizeRenewals: vi.fn(async () => null),
   bitcoinSend: vi.fn(),
-  signerOutputs: vi.fn(),
   availableSats: 20000,
   refreshBalance: vi.fn(),
   loadLightningFunding: vi.fn(),
@@ -44,7 +50,6 @@ const mocks = vi.hoisted(() => ({
   resumeLightningFunding: vi.fn(),
   recordLightningFunding: vi.fn(),
   getLightningStatus: vi.fn(),
-  loadHandoff: vi.fn(),
   lightningEnabled: vi.fn(),
   unlockSpend: vi.fn(async () => ({
     assertion: { credentialId: 'aa', clientDataJSON: 'bb', authenticatorData: 'cc', signature: 'dd' },
@@ -52,6 +57,8 @@ const mocks = vi.hoisted(() => ({
     scalar: new Uint8Array(32).fill(8),
   })),
 }))
+
+vi.mock('../vault/useLedgerSavings', () => ({ useLedgerSavings: mocks.ledger }))
 
 vi.mock('../lib/vault/ledgerClient', async (original) => ({
   ...(await original<typeof import('../lib/vault/ledgerClient')>()),
@@ -64,7 +71,6 @@ vi.mock('../lib/vault/light/guardianDelegation', () => ({ authorizeGuardianRenew
 vi.mock('../lib/vault/spendingBitcoinFunding', async (original) => ({
   ...(await original<typeof import('../lib/vault/spendingBitcoinFunding')>()),
   sendSpendingToBitcoin: mocks.bitcoinSend,
-  signerFundingOutputs: mocks.signerOutputs,
 }))
 
 vi.mock('../lib/vault/status', async (importOriginal) => {
@@ -108,11 +114,6 @@ vi.mock('../lib/vault/savingsSpend', async (importOriginal) => {
   const original = await importOriginal<typeof import('../lib/vault/savingsSpend')>()
   return { ...original, unlockPhoneBip340: mocks.unlock }
 })
-
-vi.mock('../lib/vault/savingsHandoff', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../lib/vault/savingsHandoff')>()),
-  loadPendingSavingsHandoff: mocks.loadHandoff,
-}))
 
 vi.mock('../lib/vault/lightning', () => ({
   VaultLightningFundingNotStartedError: mocks.FundingNotStartedError,
@@ -238,9 +239,6 @@ function Probe() {
       <button type='button' onClick={() => vault.setSpendDraft({ address: bitcoinDestination, amount: 1500 })}>
         Set Bitcoin draft
       </button>
-      <button type='button' onClick={vault.fundSavingsSigner}>
-        Fund signer
-      </button>
       <button type='button' onClick={vault.reviewSpend}>
         Review
       </button>
@@ -274,6 +272,17 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   })
 
   beforeEach(() => {
+    mocks.ledgerReview.mockReset().mockResolvedValue(212)
+    mocks.ledgerApprove.mockReset().mockResolvedValue(undefined)
+    mocks.ledgerComplete.mockReset().mockResolvedValue('ab'.repeat(32))
+    mocks.ledgerRefresh.mockReset().mockResolvedValue(undefined)
+    mocks.ledger.mockReturnValue({
+      view: null,
+      review: mocks.ledgerReview,
+      approve: mocks.ledgerApprove,
+      complete: mocks.ledgerComplete,
+      refresh: mocks.ledgerRefresh,
+    })
     mocks.bitcoinSend.mockReset()
     mocks.refreshBalance.mockReset().mockResolvedValue(undefined)
     mocks.availableSats = 20000
@@ -293,7 +302,6 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       }),
     )
     mocks.fetchStatus.mockResolvedValue(status)
-    mocks.loadHandoff.mockReturnValue(null)
     mocks.lightningEnabled.mockReturnValue(false)
     mocks.reserve.mockResolvedValue(reviewed)
     mocks.send.mockRejectedValue(new VtxoReviewedReservationError())
@@ -326,6 +334,76 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       refundLocktime: 4_000_000_100,
     })
   })
+
+  async function openLedgerSavings(templateVersion = LEDGER_NATIVE_TEMPLATE) {
+    const f = await ledgerRecoveryFixture()
+    localStorage.setItem(SELECTED_VAULT_STORE, f.status.vaultId)
+    localStorage.setItem(`${ENROLL_STORE}:${f.status.vaultId}`, JSON.stringify(f.enrollment))
+    saveAddressPin(pinFromEnrolledStatus(f.status))
+    mocks.fetchStatus.mockResolvedValue({ ...f.status, templateVersion })
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByText('Show Savings'))
+    fireEvent.click(screen.getByText('Set Bitcoin draft'))
+    return f
+  }
+
+  it('reviews and approves Ledger Savings through its payment owner', async () => {
+    await openLedgerSavings()
+    fireEvent.click(screen.getByText('Review'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    expect(mocks.ledgerReview).toHaveBeenCalledWith(
+      expect.objectContaining({ address: bitcoinDestination, amount: 1500 }),
+    )
+    expect(screen.getByTestId('fee')).toHaveTextContent('212')
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('ledger-sign'))
+    expect(mocks.ledgerApprove).toHaveBeenCalledExactlyOnceWith({ address: bitcoinDestination, amount: 1500, fee: 212 })
+    expect(mocks.bitcoinSend).not.toHaveBeenCalled()
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
+
+  it('rejects a Ledger review result after the draft changes', async () => {
+    await openLedgerSavings()
+    let complete!: (fee: number) => void
+    mocks.ledgerReview.mockReturnValue(
+      new Promise<number>((resolve) => {
+        complete = resolve
+      }),
+    )
+    fireEvent.click(screen.getByText('Review'))
+    await waitFor(() => expect(mocks.ledgerReview).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByText('Set draft'))
+    await act(async () => complete(212))
+    expect(screen.getByTestId('error')).toHaveTextContent('Send details changed. Review the payment again.')
+    expect(screen.getByTestId('screen')).not.toHaveTextContent('review')
+    expect(mocks.ledgerApprove).not.toHaveBeenCalled()
+  })
+
+  it.each([SAVINGS_TEMPLATE, 'phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2', 'unknown'])(
+    'rejects retired or unknown Savings before signing: %s',
+    async (templateVersion) => {
+      expect(templateVersion).not.toBe(LEDGER_NATIVE_TEMPLATE)
+      await openLedgerSavings(templateVersion)
+      fireEvent.click(screen.getByText('Review'))
+      await waitFor(() =>
+        expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
+      )
+      fireEvent.click(screen.getByText('Approve'))
+      await waitFor(() =>
+        expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
+      )
+      expect(mocks.ledgerReview).not.toHaveBeenCalled()
+      expect(mocks.ledgerApprove).not.toHaveBeenCalled()
+      expect(mocks.unlock).not.toHaveBeenCalled()
+      expect(mocks.send).not.toHaveBeenCalled()
+      expect(mocks.bitcoinSend).not.toHaveBeenCalled()
+    },
+  )
 
   it('uses shared Bitcoin review and keeps Light Savings watch-only', async () => {
     const record = { enrollment: sharedSpendingEnrollment(), descriptor: sharedSpendingDescriptor }
@@ -493,29 +571,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       expect(screen.getByTestId('sent-amount')).toBeEmptyDOMElement()
     },
   )
-  it('funds signer approval outputs through the same Review and confirmation', async () => {
-    const outputs = Array.from({ length: 2 }, () => ({ script: '0014' + '43'.repeat(20), amountSats: 500 }))
-    mocks.signerOutputs.mockResolvedValue({ address: bitcoinDestination, outputs })
-    mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, actual, approve) => {
-      expect(actual).toEqual(outputs)
-      return (await approve({ feeSats: 400 }))
-        ? { state: 'submitted', commitmentTxid: 'ab'.repeat(32) }
-        : { state: 'cancelled' }
-    })
-    render(
-      <VaultProvider>
-        <Probe />
-      </VaultProvider>,
-    )
-    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
-    fireEvent.click(screen.getByText('Fund signer'))
-    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
-    expect(screen.getByTestId('fee')).toHaveTextContent('400')
-    fireEvent.click(screen.getByText('Approve'))
-    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
-    expect(screen.getByTestId('sent-amount')).toHaveTextContent('1000')
-    expect(mocks.bitcoinSend).toHaveBeenCalledOnce()
-  })
+
   it('cancels Bitcoin approval when leaving Review without submitting another payment', async () => {
     let approved: boolean | undefined
     mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, _outputs, approve) => {
@@ -881,33 +937,6 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await waitFor(() => expect(screen.getByTestId('error')).not.toBeEmptyDOMElement())
     expect(phoneSecret).toEqual(new Uint8Array(32))
     expect(mocks.send).not.toHaveBeenCalled()
-  })
-
-  it('restores a pending Savings handoff and reopens its hardware step', async () => {
-    mocks.loadHandoff.mockReturnValue({
-      version: 1,
-      vaultId: 'vault-a',
-      psbtHex: 'phone-signed-psbt',
-      destAddress: destination,
-      amountSats: 12_000,
-      feeSats: 1_500,
-      network: 'mutinynet',
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 60_000,
-    })
-
-    render(
-      <VaultProvider>
-        <Probe />
-      </VaultProvider>,
-    )
-
-    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
-    fireEvent.click(screen.getByRole('button', { name: 'Show Savings' }))
-    await waitFor(() => expect(screen.getByTestId('activity')).toHaveTextContent('savings-handoff'))
-    fireEvent.click(screen.getByRole('button', { name: 'Open first activity' }))
-    expect(screen.getByTestId('screen')).toHaveTextContent('handoff')
-    expect(screen.getByTestId('fee')).toHaveTextContent('1500')
   })
 
   it('reacquires and clears the phone key for a package-managed refund retry', async () => {

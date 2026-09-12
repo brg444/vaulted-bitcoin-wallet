@@ -236,16 +236,22 @@ describe('payment states', () => {
   })
 
   it('suppresses arrivals for internal movement while preserving account wording', () => {
-    const handoff = describePayment(
+    const payment = describePayment(
       item({
         txid: 'pending-savings:1',
         type: 'sent',
         account: 'savings',
-        activity: 'savings-handoff',
+        activity: 'savings-ledger',
+        ledgerStage: 'signer',
         confirmed: false,
       }),
     )
-    expect(handoff).toMatchObject({ title: 'Waiting for hardware', suppressArrival: true, attention: 'action' })
+    expect(payment).toMatchObject({
+      title: 'Savings transfer',
+      state: 'Waiting for signer',
+      suppressArrival: true,
+      attention: 'action',
+    })
     const outflow = describePayment(item({ txid: 'spend-out', type: 'sent', account: 'spend' }))
     expect(outflow.suppressArrival).toBe(true)
   })

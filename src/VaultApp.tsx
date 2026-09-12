@@ -7,7 +7,6 @@ import './screens/Vault/vault-system.css'
 import './screens/Vault/quiet-guardian-flows.css'
 import './screens/Vault/qg/layout.css'
 import './screens/Vault/quiet-guardian-screens.css'
-import VaultHandoff from './screens/Vault/Handoff'
 import VaultWelcome from './screens/Vault/Welcome'
 import VaultUnlock from './screens/Vault/Unlock'
 import VaultKeys from './screens/Vault/Keys'
@@ -48,7 +47,6 @@ export default function VaultApp() {
     ...spendingScreens,
     welcome: <VaultWelcome />,
     unlock: <VaultUnlock />,
-    handoff: <VaultHandoff />,
     'ledger-sign': <VaultLedgerPayment />,
     design: <VaultDesign />,
     hardware: <LedgerHardware />,

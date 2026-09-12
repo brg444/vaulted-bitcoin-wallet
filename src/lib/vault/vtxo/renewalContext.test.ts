@@ -1,3 +1,4 @@
+import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
 import { ArkAddress } from '@arkade-os/sdk'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { hex } from '@scure/base'
@@ -124,6 +125,17 @@ describe('shared Spending renewal identity', () => {
     expect(() => guardianRenewalContext({ ...status, templateVersion: 'future-program' })).toThrow()
     expect(guardianRenewalContextDigest(fixtures[1])).not.toBe(guardianRenewalContextDigest(fixtures[3]))
   })
+
+  it.each(expectedVectors.filter((vector) => vector.status.templateVersion === SAVINGS_TEMPLATE))(
+    'Ledger Spending preserves the existing $name context bytes and digest',
+    (vector) => {
+      const status = { ...vector.status, templateVersion: LEDGER_NATIVE_TEMPLATE } as VaultStatus
+      expect(guardianRenewalContext(status)).toEqual(vector.context)
+      expect(guardianRenewalContextDigest(status)).toBe(vector.descriptorHash)
+      expect(() => guardianRenewalContext({ ...status, spendingArkScript: '5120' + '11'.repeat(32) })).toThrow()
+      expect(() => guardianRenewalContext({ ...status, spendingPolicyDigest: '00'.repeat(32) })).toThrow()
+    },
+  )
 
   it('matches the cross-language vectors', () => {
     const vectors = fixtures.map((status) => ({

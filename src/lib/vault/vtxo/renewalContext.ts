@@ -1,3 +1,4 @@
+import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
 import { SPENDING_ONLY_TEMPLATE } from '../spendingEnrollment'
 import { renewalSigningJson } from './renewalJson'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -52,6 +53,7 @@ export function guardianRenewalContext(status: VaultStatus): GuardianRenewalCont
   }
   if (
     status.templateVersion !== SPENDING_ONLY_TEMPLATE &&
+    status.templateVersion !== LEDGER_NATIVE_TEMPLATE &&
     !isSavingsTemplate(status.templateVersion) &&
     !isConnectorTemplate(status.templateVersion)
   )

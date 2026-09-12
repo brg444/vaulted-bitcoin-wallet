@@ -3,8 +3,6 @@ import { Transaction } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { schnorr } from '@noble/curves/secp256k1.js'
-import { connectorContract, connectorIdentity } from './connectorWithdrawal'
-import { buildConnectorFamily, DUAL_CONNECTOR_TEMPLATE } from './program/connector'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
 import { renewalSigningJson } from './vtxo/renewalJson'
 import type { LightRenewalFinalEvidence, LightRenewalResponse } from './light/renewalTypes'
@@ -15,7 +13,7 @@ export interface BitcoinPaymentOutput {
   amountSats: number
 }
 export interface SpendingBitcoinPlan {
-  outputs?: BitcoinPaymentOutput[]
+  outputs: BitcoinPaymentOutput[]
   operationId: string
   vaultId: string
   descriptorHash: string
@@ -40,66 +38,8 @@ export const savingsSetupDigest = (phase: string, body: unknown) =>
   hex.encode(sha256(new TextEncoder().encode(`vaulted-vtxo/savings-setup/${phase}/v1:${renewalSigningJson(body)}`)))
 const canonicalHex = (value: unknown, bytes: number): value is string =>
   typeof value === 'string' && new RegExp(`^[a-f0-9]{${bytes * 2}}$`).test(value)
-// Keep the existing namespace so old signed attempts and other tabs share one reservation.
+// Current Bitcoin payment attempts and other tabs share this persisted namespace.
 export const setupKey = (vault: string) => `vaulted:savings-setup:${vault}`
-export function validateSpendingBitcoinPlan(
-  value: SpendingBitcoinPrepared,
-  status: VaultStatus,
-): SpendingBitcoinPrepared {
-  if (value?.plan?.outputs !== undefined) return validateBitcoinPlan(value, status)
-  const identity = connectorIdentity(status)
-  const contract = connectorContract(status)
-  const family = buildConnectorFamily(contract)
-  const p = value?.plan
-  const dual = status.templateVersion === DUAL_CONNECTOR_TEMPLATE
-  if (
-    !p ||
-    p.vaultId !== status.vaultId ||
-    p.descriptorHash !== guardianRenewalContextDigest(status) ||
-    p.enrollmentDigest !== identity.enrollmentDigest ||
-    !canonicalHex(p.operationId, 16) ||
-    !canonicalHex(p.txid, 32) ||
-    !canonicalHex(p.feePolicyDigest, 32) ||
-    p.reserveScript !== hex.encode(family.connector.script) ||
-    p.reserveSats !== (dual ? 500 : 1000) ||
-    !Number.isInteger(p.reserveCount) ||
-    p.reserveCount < 1 ||
-    p.reserveCount > (dual ? 2 : 1) ||
-    !Number.isSafeInteger(p.vout) ||
-    p.vout < 0 ||
-    p.vout > 0xffffffff ||
-    !Number.isSafeInteger(p.valueSats) ||
-    p.valueSats > 21e14 ||
-    !Number.isSafeInteger(p.changeSats) ||
-    p.changeSats < 330 ||
-    !Number.isSafeInteger(p.feeSats) ||
-    p.feeSats < 0 ||
-    p.feeSats > Math.min(5000, contract.absoluteFeeCapSats) ||
-    p.reserveSats * p.reserveCount > contract.spendingPolicy.txRecipientCapSats ||
-    p.valueSats !== p.changeSats + p.reserveSats * p.reserveCount + p.feeSats ||
-    !Number.isSafeInteger(p.registerExpireAt) ||
-    p.registerExpireAt <= 0
-  )
-    throw new Error('Bitcoin payment does not match this vault and its limits')
-  const plan: SpendingBitcoinPlan = {
-    operationId: p.operationId,
-    vaultId: p.vaultId,
-    descriptorHash: p.descriptorHash,
-    enrollmentDigest: p.enrollmentDigest,
-    txid: p.txid,
-    vout: p.vout,
-    valueSats: p.valueSats,
-    changeSats: p.changeSats,
-    reserveScript: p.reserveScript,
-    reserveSats: p.reserveSats,
-    reserveCount: p.reserveCount,
-    feeSats: p.feeSats,
-    feePolicyDigest: p.feePolicyDigest,
-    registerExpireAt: p.registerExpireAt,
-  }
-  if (savingsSetupDigest('plan', plan) !== value.planDigest) throw new Error('Bitcoin payment approval changed')
-  return { ...value, plan }
-}
 export interface BitcoinPaymentJournal {
   version: 1
   vaultId: string
@@ -108,7 +48,7 @@ export interface BitcoinPaymentJournal {
   txid: string
   vout: number
   reserveCount: number
-  outputs?: BitcoinPaymentOutput[]
+  outputs: BitcoinPaymentOutput[]
   valueSats: number
   stage: 'preparing' | 'prepared' | 'registering' | 'registered' | 'finalizing' | 'submitted' | 'confirmed'
   plan?: SpendingBitcoinPrepared
@@ -120,8 +60,7 @@ export interface BitcoinPaymentJournal {
     operationId: string
     txid: string
     vout: number
-    reserveCount?: number
-    outputs?: BitcoinPaymentOutput[]
+    outputs: BitcoinPaymentOutput[]
     expiresAt: number
     ownerSignature: string
   }
@@ -143,12 +82,11 @@ export function readSpendingBitcoin(status: VaultStatus): BitcoinPaymentJournal 
     !Number.isSafeInteger(j.valueSats) ||
     j.valueSats <= 0 ||
     j.valueSats > 21e14 ||
-    !Number.isInteger(j.reserveCount) ||
-    j.reserveCount < (j.outputs ? 0 : 1) ||
-    j.reserveCount > 2 ||
+    j.reserveCount !== 0 ||
     !['preparing', 'prepared', 'registering', 'registered', 'finalizing', 'submitted', 'confirmed'].includes(j.stage)
   )
     throw new Error('Bitcoin payment record does not match this wallet')
+  validateBitcoinOutputs(j.outputs)
   if (
     (j.stage !== 'preparing' && !j.plan) ||
     (['finalizing', 'submitted', 'confirmed'].includes(j.stage) && !j.final) ||
@@ -175,15 +113,14 @@ export function readSpendingBitcoin(status: VaultStatus): BitcoinPaymentJournal 
     r.operationId !== j.operationId ||
     r.txid !== j.txid ||
     r.vout !== j.vout ||
-    (r.outputs
-      ? j.reserveCount !== 0 || JSON.stringify(r.outputs) !== JSON.stringify(j.outputs)
-      : r.reserveCount !== j.reserveCount || j.outputs !== undefined) ||
+    Object.hasOwn(r, 'reserveCount') ||
+    JSON.stringify(r.outputs) !== JSON.stringify(j.outputs) ||
     !Number.isSafeInteger(r.expiresAt) ||
     r.expiresAt <= 0 ||
     !canonicalHex(r.ownerSignature, 64) ||
     !schnorr.verify(
       hex.decode(r.ownerSignature),
-      hex.decode(savingsSetupDigest(r.outputs ? 'bitcoin-prepare' : 'prepare', prepareFacts(r))),
+      hex.decode(savingsSetupDigest('bitcoin-prepare', prepareFacts(r))),
       hex.decode(guardianRenewalContext(status).ownerPub),
     )
   )
@@ -215,7 +152,7 @@ export function prepareFacts(r: NonNullable<BitcoinPaymentJournal['prepareReques
     operationId: r.operationId,
     txid: r.txid,
     vout: r.vout,
-    ...(r.outputs ? { outputs: validateBitcoinOutputs(r.outputs) } : { reserveCount: r.reserveCount }),
+    outputs: validateBitcoinOutputs(r.outputs),
     expiresAt: r.expiresAt,
   }
 }
@@ -269,14 +206,16 @@ export function validateBitcoinOutputs(outputs: BitcoinPaymentOutput[]): Bitcoin
   return result
 }
 export function bitcoinPlanOutputs(p: SpendingBitcoinPlan): BitcoinPaymentOutput[] {
-  return (
-    p.outputs || Array.from({ length: p.reserveCount }, () => ({ script: p.reserveScript, amountSats: p.reserveSats }))
-  )
+  return validateBitcoinOutputs(p.outputs)
 }
-function validateBitcoinPlan(value: SpendingBitcoinPrepared, status: VaultStatus): SpendingBitcoinPrepared {
-  const p = value.plan
+export function validateSpendingBitcoinPlan(
+  value: SpendingBitcoinPrepared,
+  status: VaultStatus,
+): SpendingBitcoinPrepared {
+  const p = value?.plan
+  if (!p) throw new Error('Bitcoin payment plan is missing')
   const policy = guardianRenewalContext(status).spendingPolicy
-  const outputs = validateBitcoinOutputs(p.outputs!)
+  const outputs = validateBitcoinOutputs(p.outputs)
   const amount = outputs.reduce((n, o) => n + o.amountSats, 0)
   if (
     p.vaultId !== status.vaultId ||

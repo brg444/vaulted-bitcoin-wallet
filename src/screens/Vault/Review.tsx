@@ -1,7 +1,5 @@
-import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
-import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 import { useContext, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
@@ -24,7 +22,6 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
     error,
     navigate,
     resumingPayment,
-    rebroadcastingConnector,
     spend,
     status,
   } = useContext(VaultContext)
@@ -34,7 +31,6 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
   const money = { unit: denom.unit, rate: denom.rate }
   const fromSavings = account === 'savings'
   const bitcoinSend = !fromSavings && isVaultBitcoinAddress(spend.address, status?.network)
-  const hardwareFirst = fromSavings && status?.templateVersion === DUAL_CONNECTOR_TEMPLATE
   const movingToSpending = fromSavings && Boolean(boardingAddress) && spend.address === boardingAddress
   const lightning = isVaultLightningInput(spend.address)
   const destinationType = movingToSpending ? 'Spending' : lightning ? 'Lightning invoice' : 'Address'
@@ -47,13 +43,13 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
         ? destinationValue
         : truncateAddress(destinationValue, 8)
 
-  if (fromSavings && busy && !rebroadcastingConnector) {
+  if (fromSavings && busy) {
     return (
       <div className='qg-screen qg-screen-progress'>
         <main className='qg-main qg-centered qg-progress-screen'>
           <span className='qg-spinner' aria-hidden='true' />
           <ReviewAmount value={formatMoney(spend.amount, money)} label='Savings transfer' />
-          <h1 aria-live='polite'>{hardwareFirst ? 'Preparing approval' : 'Approve with passkey'}</h1>
+          <h1 aria-live='polite'>Approve with passkey</h1>
           <p className='qg-copy'>Use Face ID, Touch ID, fingerprint, or your device PIN when prompted.</p>
         </main>
       </div>
@@ -74,17 +70,13 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
             label={
               busy
                 ? 'Completing payment…'
-                : rebroadcastingConnector
-                  ? 'Retry broadcast'
-                  : fromSavings
-                    ? hardwareFirst
-                      ? 'Continue to signer'
-                      : 'Sign on this device'
-                    : resumingPayment
-                      ? 'Continue payment'
-                      : bitcoinSend
-                        ? 'Confirm Bitcoin payment'
-                        : 'Approve payment'
+                : fromSavings
+                  ? 'Sign on this device'
+                  : resumingPayment
+                    ? 'Continue payment'
+                    : bitcoinSend
+                      ? 'Confirm Bitcoin payment'
+                      : 'Approve payment'
             }
           />
         </>
@@ -147,13 +139,7 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
           </div>
         )}
         <div>
-          <span>
-            {fromSavings
-              ? isConnectorTemplate(status?.templateVersion)
-                ? 'Network fee and 240-sat anchor'
-                : 'Network fee'
-              : 'Fee'}
-          </span>
+          <span>{fromSavings ? 'Network fee' : 'Fee'}</span>
           <strong>
             <QgAmount value={formatMoney(spend.fee, money)} />
           </strong>
@@ -169,19 +155,13 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
           <strong>{status?.network === 'mainnet' ? 'Bitcoin' : 'Mutinynet'}</strong>
         </div>
       </section>
-      {!rebroadcastingConnector ? (
-        <p className='qg-copy qg-approval-copy'>
-          {fromSavings
-            ? status?.templateVersion === LEDGER_NATIVE_TEMPLATE
-              ? 'Approve with your passkey, then review the recipient, amount and fee on your Ledger.'
-              : hardwareFirst
-                ? 'Sign with your external wallet, then approve with your passkey to send.'
-                : 'Approve with your passkey, then sign with your external wallet.'
-            : bitcoinSend
-              ? 'Confirm this destination and fee. Keep the wallet open while your payment joins a batch; Bitcoin confirmation follows.'
-              : 'Approve with your passkey. The vault service checks your payment limits.'}
-        </p>
-      ) : null}
+      <p className='qg-copy qg-approval-copy'>
+        {fromSavings
+          ? 'Approve with your passkey, then review the recipient, amount and fee on your Ledger.'
+          : bitcoinSend
+            ? 'Confirm this destination and fee. Keep the wallet open while your payment joins a batch; Bitcoin confirmation follows.'
+            : 'Approve with your passkey. The vault service checks your payment limits.'}
+      </p>
       {lightning ? (
         <details className='qg-guidance'>
           <summary>View Lightning invoice</summary>

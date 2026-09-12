@@ -2,9 +2,6 @@ import SpendingReceive from './SpendingReceive'
 import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import LightningReceive from './LightningReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
-import ConnectorDeposit from './ConnectorDeposit'
-import ConnectorSetup from './ConnectorSetup'
-import { isConnectorTemplate } from '../../lib/vault/program/connector'
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { KeyRound, Share2, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
@@ -48,7 +45,7 @@ export default function VaultReceive() {
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
-  const [view, setView] = useState<'receive' | 'setup' | 'deposit' | 'lightning'>('receive')
+  const [view, setView] = useState<'receive' | 'lightning'>('receive')
   useEffect(() => {
     // A payment arriving while the request screen is open must surface
     // without waiting for a worker event, focus change, or manual refresh.
@@ -111,11 +108,6 @@ export default function VaultReceive() {
 
   if (view === 'lightning' && spending && status)
     return <LightningReceive status={status} refreshBalance={refreshBalance} onBack={() => setView('receive')} />
-
-  if (view === 'setup' && status && isConnectorTemplate(status.templateVersion))
-    return <ConnectorSetup status={status} onBack={() => setView('receive')} onDeposit={() => setView('deposit')} />
-  if (view === 'deposit' && status && isConnectorTemplate(status.templateVersion))
-    return <ConnectorDeposit status={status} onBack={() => setView('setup')} onAddress={() => setView('receive')} />
 
   if (spending && status && lightningAddressEnabled() && vaultLightningReceiveEnabled(status.network, status.vaultId))
     return (
@@ -191,9 +183,6 @@ export default function VaultReceive() {
       </div>
       {spending && vaultLightningReceiveEnabled(status?.network, status?.vaultId) ? (
         <QgSecondary label='Create invoice' onClick={() => setView('lightning')} />
-      ) : null}
-      {!spending && isConnectorTemplate(status?.templateVersion) ? (
-        <QgSecondary label='Set up Savings signer' onClick={() => setView('setup')} />
       ) : null}
     </QgScreen>
   )

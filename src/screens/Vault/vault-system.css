@@ -897,7 +897,6 @@ html.palette-dark [data-testid='vault-app'] {
 .vault-settings-subview,
 .vault-detail-content,
 .vault-recover-content,
-.vault-handoff-content,
 .vault-scanner-content,
 .vault-error-content {
   background: var(--vault-paper);
@@ -914,7 +913,6 @@ html.palette-dark [data-testid='vault-app'] {
 .vault-settings-subview > .content-shell,
 .vault-detail-content > .content-shell,
 .vault-recover-content > .content-shell,
-.vault-handoff-content > .content-shell,
 .vault-scanner-content > .content-shell {
   padding-top: 0.875rem;
 }
@@ -1355,7 +1353,7 @@ html.palette-dark [data-testid='vault-app'] {
   }
 }
 
-/* Transaction, success, recovery, and handoff */
+/* Transaction, success and recovery */
 
 .vault-tx-layout .vault-hero {
   padding: 1.5rem 0 1.25rem;
@@ -1389,12 +1387,7 @@ html.palette-dark [data-testid='vault-app'] {
   max-width: 360px;
 }
 
-.vault-recover-flow > .vault-panel,
-.vault-handoff-flow > .vault-panel {
-  box-shadow: none;
-}
-
-.vault-handoff-flow > .button:not(.secondary) {
+.vault-recover-flow > .vault-panel {
   box-shadow: none;
 }
 
@@ -2007,7 +2000,6 @@ html.palette-dark [data-testid='vault-app'] {
 .vault-review,
 .vault-success-layout,
 .vault-tx-layout,
-.vault-handoff-flow,
 .vault-signin-flow,
 .vault-security,
 .vault-settings-menu {

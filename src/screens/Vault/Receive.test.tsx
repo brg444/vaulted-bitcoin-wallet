@@ -1,11 +1,9 @@
-import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import { VaultContext, type VaultAccount, type VaultContextProps } from '../../vault/context'
 import VaultReceive from './Receive'
-import { DUAL_CONNECTOR_TEMPLATE } from '../../lib/vault/program/connector'
 
 const gates = vi.hoisted(() => ({ receive: false, address: false }))
 vi.mock('../../lib/vault/lightningConfig', () => ({ vaultLightningReceiveEnabled: () => gates.receive }))
@@ -24,8 +22,6 @@ vi.mock('./LightningReceive', () => ({
   default: ({ onBack }: { onBack: () => void }) => <button onClick={onBack}>Invoice amount; back to Receive</button>,
 }))
 
-vi.mock('./ConnectorSetup', () => ({ default: () => <h1>Savings signer setup</h1> }))
-
 vi.mock('../../components/QrCode', () => ({
   default: ({ large, value }: { large?: boolean; value: string }) => (
     <div data-large={String(Boolean(large))} data-testid='receive-qr'>
@@ -34,12 +30,11 @@ vi.mock('../../components/QrCode', () => ({
   ),
 }))
 
-function renderReceive(account: VaultAccount, connector = false, lightning = false, light = false) {
+function renderReceive(account: VaultAccount, lightning = false, light = false) {
   const refreshBalance = vi.fn().mockResolvedValue(undefined)
   const value = {
     account,
     ...(lightning ? { status: { network: 'mainnet', vaultId: 'fixture-vault' } } : {}),
-    ...(connector ? { status: { templateVersion: DUAL_CONNECTOR_TEMPLATE } } : {}),
     boardingAddress: light ? '' : 'tb1qboarding',
     liveNetwork: true,
     navigate: () => {},
@@ -110,7 +105,7 @@ describe('Vault receive', () => {
   it('keeps Light receiving usable when Lightning is disabled and no Bitcoin deposit address exists', async () => {
     const share = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { share, canShare: () => true })
-    renderReceive('spend', false, false, true)
+    renderReceive('spend', false, true)
     expect(screen.getByTestId('receive-qr')).toHaveTextContent('tark1spending')
     expect(screen.queryByTestId('receive-bitcoin-address')).toBeNull()
     await userEvent.click(screen.getByTestId('receive-share'))
@@ -154,15 +149,6 @@ describe('Vault receive', () => {
       title: 'Vaulted Savings address',
       text: 'tb1qsavings',
     })
-  })
-
-  it('opens connector Savings on its address and QR, with signer setup separate', async () => {
-    const user = userEvent.setup()
-    renderReceive('savings', true)
-    expect(screen.getByTestId('receive-qr').textContent).toBe('tb1qsavings')
-    expect(screen.queryByRole('heading', { name: 'Fund Savings in one transaction' })).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Set up Savings signer' }))
-    expect(screen.getByRole('heading', { name: 'Savings signer setup' })).toBeTruthy()
   })
 
   it('explains a missing Savings pin instead of suggesting setup is still processing', () => {
@@ -232,7 +218,7 @@ describe('Vault receive', () => {
     gates.receive = true
     gates.address = true
     const user = userEvent.setup()
-    renderReceive('spend', false, true)
+    renderReceive('spend', true)
     expect(screen.getByText('alex@ln.getvaulted.xyz')).toBeVisible()
     expect(screen.getByTestId('primary-lightning')).toHaveAttribute('data-primary', 'true')
     await user.click(screen.getByRole('button', { name: 'Create invoice' }))
@@ -244,7 +230,7 @@ describe('Vault receive', () => {
   it('keeps Lightning out of Savings even when both gates are enabled', () => {
     gates.receive = true
     gates.address = true
-    renderReceive('savings', false, true)
+    renderReceive('savings', true)
     expect(screen.queryByTestId('primary-lightning')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Create invoice' })).toBeNull()
     expect(screen.getByTestId('receive-qr')).toHaveTextContent('tb1qsavings')
@@ -252,14 +238,14 @@ describe('Vault receive', () => {
 
   it('retains invoice receive when reusable Lightning addresses are disabled', () => {
     gates.receive = true
-    renderReceive('spend', false, true)
+    renderReceive('spend', true)
     expect(screen.queryByTestId('primary-lightning')).toBeNull()
     expect(screen.getByRole('button', { name: 'Create invoice' })).toBeVisible()
   })
 
   it('respects the Lightning receive gate even with reusable addresses enabled', () => {
     gates.address = true
-    renderReceive('spend', false, true)
+    renderReceive('spend', true)
     expect(screen.queryByTestId('primary-lightning')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Create invoice' })).toBeNull()
   })
@@ -271,7 +257,7 @@ it('shares the destination for the selected receiving method', async () => {
   const share = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'share', { configurable: true, value: share })
   const user = userEvent.setup()
-  renderReceive('spend', false, true)
+  renderReceive('spend', true)
   await user.click(screen.getByRole('button', { name: 'Share address' }))
   expect(share).toHaveBeenLastCalledWith({ title: 'Vaulted Lightning address', text: 'alex@ln.getvaulted.xyz' })
   await user.click(screen.getByTestId('receive-method-fast'))
@@ -318,28 +304,4 @@ describe('Receive arrival and contract changes', () => {
     expect(screen.getByTestId('receive-arkade-address')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'View details' })).not.toBeInTheDocument()
   })
-})
-
-it('leaves connector setup when the enrolled contract changes to native Savings', async () => {
-  const value = {
-    account: 'savings',
-    status: { templateVersion: DUAL_CONNECTOR_TEMPLATE },
-    savingsAddress: 'tb1qsavings',
-    navigate: vi.fn(),
-    refreshBalance: vi.fn().mockResolvedValue(undefined),
-  } as unknown as VaultContextProps
-  const wrapper = (current: VaultContextProps) => (
-    <ToastProvider>
-      <VaultContext.Provider value={current}>
-        <VaultReceive />
-      </VaultContext.Provider>
-    </ToastProvider>
-  )
-  const view = render(wrapper(value))
-  await userEvent.click(screen.getByRole('button', { name: 'Set up Savings signer' }))
-  expect(screen.getByRole('heading', { name: 'Savings signer setup' })).toBeVisible()
-  view.rerender(wrapper({ ...value, status: { ...value.status!, templateVersion: LEDGER_NATIVE_TEMPLATE } }))
-  expect(screen.queryByRole('heading', { name: 'Savings signer setup' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Set up Savings signer' })).toBeNull()
-  expect(screen.getByTestId('receive-qr')).toBeVisible()
 })

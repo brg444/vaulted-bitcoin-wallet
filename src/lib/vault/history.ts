@@ -12,12 +12,11 @@ export interface VaultHistoryItem {
   confirmed: boolean
   blockTime?: number
   account: 'spend' | 'savings'
-  activity?: 'boarding' | 'lightning' | 'savings-handoff' | 'savings-connector' | 'savings-ledger' | 'bitcoin'
+  activity?: 'boarding' | 'lightning' | 'savings-ledger' | 'bitcoin'
   bitcoinOperationId?: string
   bitcoinStage?: string
   /** Native Savings stages; accepted for forward compatibility, owned by the Savings integration. */
   ledgerStage?: 'approval' | 'signer' | 'unknown' | 'broadcast'
-  connectorStage?: 'approval' | 'signer' | 'broadcast'
   displayAmount?: number
   fee?: number
   lightningState?: string

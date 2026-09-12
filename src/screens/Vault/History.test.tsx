@@ -159,7 +159,7 @@ describe('Vault history', () => {
     expect(screen.getAllByText('Pending')).toHaveLength(2)
   })
 
-  it('reopens a phone-signed Savings transfer waiting for hardware', async () => {
+  it('reopens a phone-signed Ledger Savings transfer', async () => {
     const user = userEvent.setup()
     const pending = {
       txid: 'pending-savings:1',
@@ -167,18 +167,19 @@ describe('Vault history', () => {
       amount: 51_500,
       confirmed: false,
       account: 'savings' as const,
-      activity: 'savings-handoff' as const,
+      activity: 'savings-ledger' as const,
+      ledgerStage: 'signer' as const,
     }
     const value = renderHistory({ account: 'savings', history: [pending] })
 
     expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeTruthy()
-    expect(screen.getByText('Waiting for hardware')).toBeTruthy()
-    expect(screen.getByText('Complete or cancel')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /Waiting for hardware ₿51,500/i }))
+    expect(screen.getByText('Savings transfer')).toBeTruthy()
+    expect(screen.getByText('Waiting for signer')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /Savings transfer.*51,500/i }))
     expect(value.openTx).toHaveBeenCalledWith(pending)
   })
 
-  it('keeps a local hardware handoff visible while remote Savings activity loads', () => {
+  it('keeps a local Ledger payment visible while remote Savings activity loads', () => {
     renderHistory({
       account: 'savings',
       balancesLoaded: false,
@@ -189,13 +190,14 @@ describe('Vault history', () => {
           amount: 21_500,
           confirmed: false,
           account: 'savings',
-          activity: 'savings-handoff',
+          activity: 'savings-ledger',
+          ledgerStage: 'signer',
         },
       ],
     })
 
-    expect(screen.getByText('Waiting for hardware')).toBeTruthy()
-    expect(screen.getByText('Complete or cancel')).toBeTruthy()
+    expect(screen.getByText('Savings transfer')).toBeTruthy()
+    expect(screen.getByText('Waiting for signer')).toBeTruthy()
     expect(screen.queryByText('Loading activity…')).toBeNull()
   })
 

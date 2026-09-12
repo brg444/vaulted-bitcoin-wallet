@@ -1,9 +1,4 @@
-import { lightContract } from './light/contractHandler'
 import * as delegation from './light/guardianDelegation'
-import { LightScript, type LightDescriptor } from './light/contract'
-import lightVectors from './light/testdata/contracts.json'
-import { lightTestEnrollment, lightTestStatus } from './light/testdata/helpers'
-import { requireLightStatus } from './light/status'
 import * as spendModule from './vtxo/spend'
 import * as apiModule from './api'
 import * as streamModule from './vtxo/settlementEventSource'
@@ -17,6 +12,7 @@ import {
   Batch,
   SettlementEventType,
   RestArkProvider,
+  EsploraProvider,
   RestIndexerProvider,
   SingleKey,
   InMemoryContractRepository,
@@ -24,10 +20,9 @@ import {
   Transaction,
   type ExtendedVirtualCoin,
 } from '@arkade-os/sdk'
-import { recoveryFixture } from './recovery/testdata/helpers'
-import { DUAL_CONNECTOR_TEMPLATE, buildConnectorFamily } from './program/connector'
-import { connectorPinFromVerifiedStatus, saveConnectorEnrollmentPin } from './program/connectorEnroll'
-import { connectorContract } from './connectorWithdrawal'
+import { sharedSpendingRecoveryFixture } from './recovery/testdata/helpers'
+import { ledgerRecoveryFixture } from './recovery/testdata/ledger'
+import { sharedSpendingEnrollment, sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
 import { scalarSecret } from './program/fixtures'
 import {
@@ -51,35 +46,41 @@ import {
   normalizeBitcoinResponse,
 } from './spendingBitcoinFunding'
 
-export function setupFixture() {
-  const f = recoveryFixture(false, 'mainnet', undefined, undefined, {
-    templateVersion: DUAL_CONNECTOR_TEMPLATE,
-    connectorType: 'p2wpkh',
-  })
-  saveConnectorEnrollmentPin(connectorPinFromVerifiedStatus(f.status))
+async function bitcoinFixture(count = 1, light = false) {
+  const source = light ? sharedSpendingRecoveryFixture() : await ledgerRecoveryFixture(false, 'mainnet')
+  const spending = spendModule.vaultPolicyV1ScriptFromStatus(source.status)
+  const coin = JSON.parse(source.archive.spending.coins)[0]
+  // Public deterministic key from the shared Spending vector, or the Ledger fixture phone key.
+  const phoneSecret = light ? new Uint8Array(32).fill(7) : scalarSecret(3)
+  expect(hex.encode(schnorr.getPublicKey(phoneSecret))).toBe(source.status.phoneBip340Pub!.slice(2))
+  const outputs = Array.from({ length: count }, () => ({
+    script: '0014' + '43'.repeat(20),
+    amountSats: count === 2 ? 500 : 1500,
+  }))
   const plan: SpendingBitcoinPlan = {
     operationId: 'aa'.repeat(16),
-    vaultId: f.status.vaultId,
-    descriptorHash: guardianRenewalContextDigest(f.status),
-    enrollmentDigest: f.status.connectorEnrollment!.enrollmentDigest,
+    vaultId: source.status.vaultId,
+    descriptorHash: guardianRenewalContextDigest(source.status),
+    enrollmentDigest: '',
     txid: 'bb'.repeat(32),
     vout: 0,
     valueSats: 40000,
-    changeSats: 38600,
-    reserveScript: hex.encode(buildConnectorFamily(connectorContract(f.status)).connector.script),
-    reserveSats: 500,
-    reserveCount: 2,
+    changeSats: 40000 - outputs.reduce((n, o) => n + o.amountSats, 0) - 400,
+    reserveScript: '',
+    reserveSats: 0,
+    reserveCount: 0,
     feeSats: 400,
     feePolicyDigest: 'cc'.repeat(32),
     registerExpireAt: Math.floor(Date.now() / 1000) + 240,
+    outputs,
   }
-  const prepared = { plan, planDigest: savingsSetupDigest('plan', plan), state: 'prepared' }
+  const prepared = { plan, planDigest: savingsSetupDigest('bitcoin-plan', plan), state: 'prepared' }
   const request = {
     vaultId: plan.vaultId,
     operationId: plan.operationId,
     txid: plan.txid,
     vout: plan.vout,
-    reserveCount: plan.reserveCount,
+    outputs,
     expiresAt: plan.registerExpireAt,
   }
   const journal: BitcoinPaymentJournal = {
@@ -90,26 +91,32 @@ export function setupFixture() {
     txid: plan.txid,
     vout: 0,
     valueSats: plan.valueSats,
-    reserveCount: 2,
+    reserveCount: 0,
+    outputs,
     stage: 'preparing',
     prepareRequest: {
       ...request,
-      ownerSignature: hex.encode(schnorr.sign(hex.decode(savingsSetupDigest('prepare', request)), scalarSecret(3))),
+      ownerSignature: hex.encode(schnorr.sign(hex.decode(savingsSetupDigest('bitcoin-prepare', request)), phoneSecret)),
     },
   }
-  return { ...f, plan, prepared, journal }
+  const operatorInfo = validateExitArchive(
+    source.archive.spending,
+    vaultRecoveryBinding(source.kit, source.status),
+  ).info
+  return { ...source, spending, coin, phoneSecret, plan, prepared, journal, operatorInfo }
 }
 beforeEach(() => {
   localStorage.clear()
   vi.restoreAllMocks()
+  vi.spyOn(EsploraProvider.prototype, 'getCoins').mockResolvedValue([])
   vi.spyOn(delegation, 'authorizeGuardianRenewals').mockResolvedValue(null)
   vi.stubGlobal('navigator', {
     locks: { request: (_name: string, _options: unknown, run: (lock: object) => unknown) => run({}) },
   })
 })
-describe('Spending signer setup binding and lifecycle', () => {
-  it('binds destination, fee, enrollment, count and signed prepare expiry', () => {
-    const f = setupFixture()
+describe('Bitcoin payment binding and lifecycle', () => {
+  it('binds destination, fee, enrollment, outputs and signed prepare expiry', async () => {
+    const f = await bitcoinFixture(2)
     expect(validateSpendingBitcoinPlan(f.prepared, f.status)).toEqual(f.prepared)
     saveBitcoinPayment({ ...f.journal, plan: f.prepared })
     expect(readSpendingBitcoin(f.status)?.plan).toEqual(f.prepared)
@@ -132,7 +139,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     }
   })
   it('checks a lost prepare without replaying it or cancelling it', async () => {
-    const f = setupFixture()
+    const f = await bitcoinFixture(2)
     saveBitcoinPayment(f.journal)
     vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'not_found' })
     const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare')
@@ -148,7 +155,7 @@ describe('Spending signer setup binding and lifecycle', () => {
   it.each(['prepared', 'registered', 'register_dispatched', 'delete_dispatched'])(
     'unexpired status %s never requests cancellation',
     async (state) => {
-      const f = setupFixture()
+      const f = await bitcoinFixture(2)
       saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered' })
       vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state })
       const release = vi.spyOn(bitcoinPaymentClient, 'release')
@@ -160,7 +167,7 @@ describe('Spending signer setup binding and lifecycle', () => {
   it.each(['released', 'uncertain', 'waiting_expiry'])(
     'expired registration requests cancellation and preserves funds unless Guardian returns released (%s)',
     async (state) => {
-      const f = setupFixture()
+      const f = await bitcoinFixture(2)
       const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
       saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
       vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 15) * 1000)
@@ -178,7 +185,7 @@ describe('Spending signer setup binding and lifecycle', () => {
   it.each(['final_dispatched', 'submitted', 'confirmed', 'uncertain', 'not_found'])(
     'expired status %s does not infer that final submission failed',
     async (state) => {
-      const f = setupFixture()
+      const f = await bitcoinFixture(2)
       saveBitcoinPayment({
         ...f.journal,
         plan: f.prepared,
@@ -195,7 +202,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     },
   )
   it('asks Guardian to release an expired final authorization that never reached dispatch', async () => {
-    const f = setupFixture()
+    const f = await bitcoinFixture(2)
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
     saveBitcoinPayment({
       ...f.journal,
@@ -216,7 +223,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     expect(readSpendingBitcoin(f.status)).toBeNull()
   })
   it('retains an expired registration after cancellation transport failure or missing owner proof', async () => {
-    const f = setupFixture()
+    const f = await bitcoinFixture(2)
     const saved = { ...f.journal, plan: f.prepared, stage: 'registered' as const }
     saveBitcoinPayment(saved)
     vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
@@ -230,7 +237,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deletion)
   })
   it('explicit cancellation uses the retained proof and keeps ambiguous funds reserved', async () => {
-    const f = setupFixture()
+    const f = await bitcoinFixture(2)
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
     saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
     const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state: 'uncertain' })
@@ -245,15 +252,15 @@ describe('Spending signer setup binding and lifecycle', () => {
     expect((await cancelSpendingBitcoin(f.status))?.state).toBe('released')
     expect(readSpendingBitcoin(f.status)).toBeNull()
   })
-  it.each(['legacy', 'bitcoin'] as const)('uses the stock SDK to sign both intent inputs for %s', async (kind) => {
-    const f = kind === 'legacy' ? setupFixture() : bitcoinFixture(2)
+  it('uses the stock SDK to sign both intent inputs for a Bitcoin payment', async () => {
+    const f = await bitcoinFixture(2)
     const provider = new RestArkProvider('https://operator.invalid')
     vi.spyOn(provider, 'getInfo').mockResolvedValue(
       validateExitArchive(f.archive.spending, vaultRecoveryBinding(f.kit, f.status)).info,
     )
     registerVaultPolicyV1ContractHandler()
     const wallet = await Wallet.create({
-      identity: SingleKey.fromPrivateKey(scalarSecret(3)),
+      identity: SingleKey.fromPrivateKey(f.phoneSecret),
       arkProvider: provider,
       indexerProvider: exitArchiveProviders(f.archive.spending, vaultRecoveryBinding(f.kit, f.status)).indexerProvider,
       storage: {
@@ -265,11 +272,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     })
     try {
       const manager = await wallet.getContractManager()
-      await manager.createContract(
-        f.spending instanceof LightScript
-          ? lightContract(f.spending, f.status.spendingArkAddress!)
-          : vaultPolicyV1Contract(f.spending, f.status.spendingArkAddress!),
-      )
+      await manager.createContract(vaultPolicyV1Contract(f.spending, f.status.spendingArkAddress!))
       const input = {
         ...f.coin,
         txid: f.plan.txid,
@@ -283,8 +286,8 @@ describe('Spending signer setup binding and lifecycle', () => {
         [input],
         [
           { amount: BigInt(f.plan.changeSats), script: f.spending.pkScript },
-          { amount: 500n, script: hex.decode(f.plan.outputs?.[0].script || f.plan.reserveScript) },
-          { amount: 500n, script: hex.decode(f.plan.outputs?.[0].script || f.plan.reserveScript) },
+          { amount: 500n, script: hex.decode(f.plan.outputs[0].script) },
+          { amount: 500n, script: hex.decode(f.plan.outputs[0].script) },
         ],
         [1, 2],
         ['02' + hex.encode(schnorr.getPublicKey(scalarSecret(25)))],
@@ -296,7 +299,7 @@ describe('Spending signer setup binding and lifecycle', () => {
       saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent })
       expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deleteIntent)
       const proof = Transaction.fromPSBT(base64.decode(intent.proof))
-      const vector = kind === 'legacy' ? process.env.VAULT_SETUP_SDK_VECTOR : process.env.VAULT_BITCOIN_SDK_VECTOR
+      const vector = process.env.VAULT_BITCOIN_SDK_VECTOR
       if (vector)
         writeFileSync(
           vector,
@@ -350,67 +353,44 @@ it('decodes the shared response zero output index without replacing explicit inv
   expect(normalizeBitcoinResponse({ state: 'uncertain' }).receiverVout).toBeUndefined()
 })
 
-function bitcoinFixture(count = 1, light = false) {
-  const base = setupFixture()
-  const operatorInfo = validateExitArchive(base.archive.spending, vaultRecoveryBinding(base.kit, base.status)).info
-  const lightStatus = requireLightStatus(lightTestStatus(lightVectors[1].descriptor as LightDescriptor))
-  const f = light ? { ...base, status: lightStatus, spending: new LightScript(lightStatus.lightDescriptor!) } : base
-  const outputs = Array.from({ length: count }, () => ({
-    script: '0014' + '43'.repeat(20),
-    amountSats: count === 2 ? 500 : 1500,
-  }))
-  const plan: SpendingBitcoinPlan = {
+it.each([1, 2])(
+  'retains an exact Bitcoin payment with %s outputs and rejects destination substitution',
+  async (count) => {
+    const f = await bitcoinFixture(count)
+    expect(validateSpendingBitcoinPlan(f.prepared, f.status)).toEqual(f.prepared)
+    saveBitcoinPayment(f.journal)
+    expect(readSpendingBitcoin(f.status)?.outputs).toEqual(f.plan.outputs)
+    const outputs = [{ script: '0014' + '44'.repeat(20), amountSats: 1500 }]
+    expect(() => validateSpendingBitcoinPlan({ ...f.prepared, plan: { ...f.plan, outputs } }, f.status)).toThrow()
+    // Even replacing both the display and quote with a new valid hash cannot change the owner's signed request.
+    const plan = { ...f.plan, outputs, changeSats: f.plan.valueSats - 1500 - f.plan.feeSats }
+    saveBitcoinPayment({
+      ...f.journal,
+      outputs,
+      plan: { ...f.prepared, plan, planDigest: savingsSetupDigest('bitcoin-plan', plan) },
+    })
+    expect(() => readSpendingBitcoin(f.status)).toThrow('authorization changed')
+  },
+)
+it('rejects retired reserve-only plans, journals and prepare requests without posting', async () => {
+  const f = await bitcoinFixture(2)
+  const plan = {
     ...f.plan,
-    vaultId: f.status.vaultId,
-    descriptorHash: guardianRenewalContextDigest(f.status),
-    enrollmentDigest: '',
-    reserveScript: '',
-    reserveSats: 0,
-    reserveCount: 0,
-    outputs,
-    changeSats: f.plan.valueSats - outputs.reduce((n, o) => n + o.amountSats, 0) - f.plan.feeSats,
+    outputs: undefined,
+    reserveScript: f.plan.outputs[0].script,
+    reserveSats: 500,
+    reserveCount: 2,
   }
-  const prepared = { plan, planDigest: savingsSetupDigest('bitcoin-plan', plan), state: 'prepared' }
-  const facts = {
-    vaultId: plan.vaultId,
-    operationId: plan.operationId,
-    txid: plan.txid,
-    vout: plan.vout,
-    outputs,
-    expiresAt: plan.registerExpireAt,
-  }
-  const journal: BitcoinPaymentJournal = {
-    ...f.journal,
-    vaultId: f.status.vaultId,
-    descriptorHash: plan.descriptorHash,
-    reserveCount: 0,
-    outputs,
-    plan: prepared,
-    prepareRequest: {
-      ...facts,
-      ownerSignature: hex.encode(
-        schnorr.sign(hex.decode(savingsSetupDigest('bitcoin-prepare', facts)), scalarSecret(light ? 1 : 3)),
-      ),
-    },
-  }
-  return { ...f, plan, prepared, journal, operatorInfo }
-}
-it.each([1, 2])('retains an exact Bitcoin payment with %s outputs and rejects destination substitution', (count) => {
-  const f = bitcoinFixture(count)
-  expect(validateSpendingBitcoinPlan(f.prepared, f.status)).toEqual(f.prepared)
-  saveBitcoinPayment(f.journal)
-  expect(readSpendingBitcoin(f.status)?.outputs).toEqual(f.plan.outputs)
-  const outputs = [{ script: '0014' + '44'.repeat(20), amountSats: 1500 }]
-  expect(() => validateSpendingBitcoinPlan({ ...f.prepared, plan: { ...f.plan, outputs } }, f.status)).toThrow()
-  // Even replacing both the display and quote with a new valid hash cannot change the owner's signed request.
-  const plan = { ...f.plan, outputs, changeSats: f.plan.valueSats - 1500 - f.plan.feeSats }
-  saveBitcoinPayment({
-    ...f.journal,
-    outputs,
-    plan: { ...f.prepared, plan, planDigest: savingsSetupDigest('bitcoin-plan', plan) },
-  })
-  expect(() => readSpendingBitcoin(f.status)).toThrow('authorization changed')
+  expect(() => validateSpendingBitcoinPlan({ ...f.prepared, plan } as never, f.status)).toThrow()
+  saveBitcoinPayment({ ...f.journal, outputs: undefined, reserveCount: 2 } as never)
+  expect(() => readSpendingBitcoin(f.status)).toThrow('does not match this wallet')
+  const post = vi.spyOn(apiModule, 'vaultPost')
+  const request = { ...f.journal.prepareRequest!, outputs: undefined, reserveCount: 2 }
+  expect(() => bitcoinPaymentClient.prepare(request as never)).toThrow('Unsupported Bitcoin payment request')
+  expect(() => bitcoinPaymentClient.prepare({ ...f.journal.prepareRequest!, outputs: undefined } as never)).toThrow()
+  expect(post).not.toHaveBeenCalled()
 })
+
 it('rejects nonstandard outputs, dust and unsafe values before preparing a payment', () => {
   for (const output of [
     { script: '6a', amountSats: 1000 },
@@ -422,7 +402,7 @@ it('rejects nonstandard outputs, dust and unsafe values before preparing a payme
   expect(() => validateBitcoinOutputs([])).toThrow()
 })
 it('reconciles a new Bitcoin payment through the shared status path without creating another authorization', async () => {
-  const f = bitcoinFixture(2)
+  const f = await bitcoinFixture(2)
   saveBitcoinPayment(f.journal)
   const status = vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'uncertain' })
   const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare')
@@ -439,11 +419,11 @@ it.each(
     ['rejected', 'expiry', 'uncertain', 'registered'].map((state) => [profile, state]),
   ),
 )('%s explicit batch preserves the Guardian %s outcome without retrying or cancelling', async (profile, state) => {
-  const f = bitcoinFixture(1, profile === 'light')
+  const f = await bitcoinFixture(1, profile === 'light')
   vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt - 240) * 1000)
   const dispose = vi.fn()
   const unlock = vi.fn(async () => ({
-    phoneSecret: scalarSecret(profile === 'light' ? 1 : 3),
+    phoneSecret: f.phoneSecret,
     scalar: scalarSecret(4),
     assertion: {},
   }))
@@ -513,7 +493,7 @@ it.each(
   expect(released).not.toHaveBeenCalled()
   expect(settle).not.toHaveBeenCalled()
   expect(dispose).toHaveBeenCalledOnce()
-  expect(delegation.authorizeGuardianRenewals).toHaveBeenCalledTimes(profile === 'light' ? 1 : 0)
+  expect(delegation.authorizeGuardianRenewals).not.toHaveBeenCalled()
   if (state === 'rejected') {
     expect(humanizeVaultError(error)).toContain('funds changed or are in use')
     expect(readSpendingBitcoin(f.status)).toBeNull()
@@ -545,8 +525,8 @@ it.each(
 })
 
 it('checks the enrolled Light output before asking for a Bitcoin payment signature', async () => {
-  const record = await lightTestEnrollment()
-  const status = requireLightStatus(lightTestStatus(record.descriptor))
+  const enrollment = sharedSpendingEnrollment()
+  const status = sharedSpendingStatus()
   const unlock = vi.fn()
   const dispose = vi.fn()
   vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({ unlock, dispose } as never)
@@ -559,7 +539,7 @@ it('checks the enrolled Light output before asking for a Bitcoin payment signatu
   const approve = vi.fn()
   await expect(
     sendSpendingToBitcoin(
-      record.enrollment,
+      enrollment,
       status,
       [{ script: '0014' + '43'.repeat(20), amountSats: 1500 }],
       approve,

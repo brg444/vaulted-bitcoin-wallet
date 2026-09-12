@@ -44,6 +44,7 @@ export function humanizeVaultError(err: unknown): string {
   if (err instanceof ConnectorUserError || err instanceof BitcoinPaymentError) return err.message
   const parts = nestedErrorMessages(err)
   const raw = parts[0] || (err instanceof Error ? err.message : String(err || 'Something went wrong'))
+  if (raw === 'This Savings program is no longer supported.') return raw
   if (Object.hasOwn(LEDGER_ENROLLMENT_MESSAGES, raw)) return LEDGER_ENROLLMENT_MESSAGES[raw]
   const name = err instanceof Error ? err.name.toLowerCase() : ''
   const msg = parts.join(' \n ').toLowerCase() || raw.toLowerCase()

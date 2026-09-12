@@ -12,20 +12,11 @@ import { NOTIFY_WORKER_SCOPE } from '../lib/vault/nativeNotifications'
 import { parsePushNavScreen } from '../lib/vault/notificationEnvelope'
 import { disableBackgroundPush, isPushSubscribed, refreshBackgroundPush } from '../lib/vault/pushSubscription'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
-import { signerFundingOutputs, sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
+import { sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
 import { clearSpendingRenewalReads } from '../lib/vault/vtxo/guardianRenewal'
 import { useRecoveryArchive } from '../vault/useRecoveryArchive'
-import {
-  prepareConnectorWithdrawal,
-  loadConnectorWithdrawal,
-  reconcileConnectorWithdrawal,
-  approveConnectorWithdrawal,
-  completeConnectorWithdrawal,
-  connectorHandoff,
-  type PendingConnector,
-} from '../lib/vault/connectorWithdrawal'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
 import { reconcileStagedEnrollment, type EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
@@ -39,23 +30,8 @@ import {
 } from '../lib/vault/enrollmentStore'
 import { loadAddressPin, type AddressPin } from '../lib/vault/pin'
 import { zeroBytes } from '../lib/vault/ceremony/directauth'
-import { broadcastTx, confirmedSpendables, fetchAddressUtxos } from '../lib/vault/esplora'
 import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
-import {
-  buildSavingsPsbt,
-  finalizeSavingsPsbt,
-  parseIncomingPsbt,
-  requireSameSavingsIntent,
-  signSavingsPsbt,
-  unlockPhoneBip340,
-} from '../lib/vault/savingsSpend'
-import {
-  clearPendingSavingsHandoff,
-  createPendingSavingsHandoff,
-  loadPendingSavingsHandoff,
-  savePendingSavingsHandoff,
-  type PendingSavingsHandoff,
-} from '../lib/vault/savingsHandoff'
+import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
 import { consoleError } from '../lib/logs'
 import { requireSdkNetworkName } from '../lib/vault/networkPins'
 import { humanizeVaultError } from '../lib/vault/humanize'
@@ -89,7 +65,7 @@ import {
   type VaultVtxoSpendQuote,
   vaultArkServer,
 } from '../lib/vault/vtxo/spend'
-import { deleteBoardingKey, requireBoardingStatus } from '../lib/vault/vtxo/board'
+import { deleteBoardingKey } from '../lib/vault/vtxo/board'
 import { recoverMatureBoardingInputs } from '../lib/vault/vtxo/boardingRecovery'
 import { ensureVaultWalletWorker, shutdownVaultWalletWorker } from '../lib/vault/vtxo/walletWorker'
 import { fetchPublicStatus, fetchVaultStatus, type PublicAuthorizerStatus } from '../lib/vault/status'
@@ -108,7 +84,6 @@ import {
   type SpendingPolicy,
 } from '../lib/vault/spendingPolicy'
 import { requireProtectionTier, type ProtectionTier } from '../lib/vault/protectionTier'
-import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
 import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
 import { useDisplayUnit } from '../lib/vault/useDisplayUnit'
 import { getPriceFeed } from '../lib/fiat'
@@ -200,9 +175,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [initialStatusChecked, setInitialStatusChecked] = useState(false)
   const [account, setAccount] = useState<VaultAccount>('spend')
   const [scanOnSend, setScanOnSend] = useState(false)
-  const [pendingConnector, setPendingConnector] = useState<PendingConnector | null>(null)
-  const [handoffPsbt, setHandoffPsbt] = useState('')
-  const [pendingSavingsHandoff, setPendingSavingsHandoff] = useState<PendingSavingsHandoff | null>(null)
   const [locked, setLocked] = useState(() => bootLocked())
   useEffect(() => {
     if (bitcoinApproval.current && screen !== 'review') {
@@ -352,30 +324,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [enrollment])
 
   useEffect(() => {
-    const vaultId = status?.vaultId || enrollment?.vaultId || ''
-    if (!vaultId) return
-    const pending = loadPendingSavingsHandoff(localStorage, vaultId)
-    setPendingSavingsHandoff(pending)
-    if (pending) setHandoffPsbt(pending.psbtHex)
-  }, [enrollment?.vaultId, status?.vaultId])
-
-  useEffect(() => {
-    if (!pendingSavingsHandoff) return
-    const delay = Math.max(0, pendingSavingsHandoff.expiresAt - Date.now())
-    const timeout = window.setTimeout(() => {
-      try {
-        clearPendingSavingsHandoff(localStorage, pendingSavingsHandoff.vaultId)
-      } catch {
-        // Expiry still clears the active session when browser storage is unavailable.
-      }
-      setPendingSavingsHandoff(null)
-      setHandoffPsbt('')
-      setScreen((current) => (current === 'handoff' ? 'home' : current))
-    }, delay)
-    return () => window.clearTimeout(timeout)
-  }, [pendingSavingsHandoff])
-
-  useEffect(() => {
     if (!status) return
     const protectionTier = status.protectionTier
     if (status.network === 'mutinynet' && account === 'savings') {
@@ -476,43 +424,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     status,
   })
   const spendingAvailableSats = positions.spending.availableSats
-  const savingsAvailableSats = positions.savings.availableSats
   const dailyLimit = status?.enrolled ? (status.periodAllowance ?? setup.dailyLimitSats) : setup.dailyLimitSats
   const dailyRemaining = status?.enrolled ? (status.periodRemaining ?? dailyLimit) : 0
   const enrolled = Boolean(status?.enrolled)
   const networkLabel = activeNetwork === 'mainnet' ? 'Bitcoin' : liveNetwork ? 'Mutinynet' : 'Unavailable'
   const clearError = useCallback(() => reportError(''), [reportError])
 
-  useEffect(() => {
-    if (!status?.enrolled || !isConnectorTemplate(status.templateVersion) || locked) {
-      setPendingConnector(null)
-      return
-    }
-    let stopped = false
-    const refresh = async () => {
-      try {
-        const retained = await loadConnectorWithdrawal(status)
-        if (!stopped) setPendingConnector(retained)
-        const current = await reconcileConnectorWithdrawal(status)
-        if (!stopped) setPendingConnector(current)
-      } catch {
-        // An unavailable chain or service does not cancel a signed candidate.
-      }
-    }
-    void refresh()
-    const interval = window.setInterval(() => void refresh(), 20_000)
-    return () => {
-      stopped = true
-      window.clearInterval(interval)
-    }
-  }, [status, locked])
   const ledgerSavings = useLedgerSavings(status, enrollment, locked)
   const spendingBitcoin = useSpendingBitcoin(status, locked)
   const historyWithBitcoin = useMemo(
     () => withBitcoinPaymentHistory(history, spendingBitcoin.operation),
     [history, spendingBitcoin.operation],
   )
-  const historyWithLedger = useMemo<VaultHistoryItem[]>(() => {
+  const visibleHistory = useMemo<VaultHistoryItem[]>(() => {
     const pending = ledgerSavings.view
     if (!pending || pending.outcome === 'prepared' || pending.outcome === 'conflicted') return historyWithBitcoin
     const existing = historyWithBitcoin.find(
@@ -542,46 +466,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       ...historyWithBitcoin.filter((row) => row.txid !== pending.record.candidateId || row.account !== 'savings'),
     ]
   }, [ledgerSavings.view, historyWithBitcoin])
-  const visibleHistory = useMemo<VaultHistoryItem[]>(
-    () =>
-      pendingConnector
-        ? [
-            {
-              txid: pendingConnector.candidateTxid,
-              type: 'sent',
-              amount: pendingConnector.record.amountSats + pendingConnector.record.feeSats + 240,
-              confirmed: false,
-              blockTime: 0,
-              account: 'savings',
-              activity: 'savings-connector',
-              connectorStage: pendingConnector.record.signedTxHex
-                ? 'broadcast'
-                : (
-                      pendingConnector.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE
-                        ? !pendingConnector.record.hardwareSignatures
-                        : !!pendingConnector.record.savingsWitness
-                    )
-                  ? 'signer'
-                  : 'approval',
-            },
-            ...historyWithLedger.filter((row) => row.txid !== pendingConnector.candidateTxid),
-          ]
-        : pendingSavingsHandoff
-          ? [
-              {
-                txid: `pending-savings:${pendingSavingsHandoff.createdAt}`,
-                type: 'sent',
-                amount: pendingSavingsHandoff.amountSats + pendingSavingsHandoff.feeSats,
-                confirmed: false,
-                blockTime: Math.floor(pendingSavingsHandoff.createdAt / 1000),
-                account: 'savings',
-                activity: 'savings-handoff',
-              },
-              ...historyWithLedger,
-            ]
-          : historyWithLedger,
-    [historyWithLedger, pendingSavingsHandoff, pendingConnector],
-  )
   useEffect(() => {
     setSelectedTx((current) => {
       if (!current) return current
@@ -874,14 +758,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     reviewedVtxoQuote && status?.vaultId
       ? loadPersistedVtxoSpendById(status.vaultId, reviewedVtxoQuote.operationId)
       : undefined
-  const rebroadcastingConnector = Boolean(
-    account === 'savings' &&
-      pendingConnector?.record.signedTxHex &&
-      pendingConnector.record.recipient === spend.address &&
-      pendingConnector.record.amountSats === spend.amount,
-  )
-  const resumingPayment =
-    rebroadcastingConnector || Boolean(reviewedPendingPayment && vtxoSpendIsLivePending(reviewedPendingPayment))
+  const resumingPayment = Boolean(reviewedPendingPayment && vtxoSpendIsLivePending(reviewedPendingPayment))
 
   const pendingPayments = status?.enrolled
     ? listPersistedVtxoSpends(status.vaultId).map((operation) => ({
@@ -1101,24 +978,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     },
     [enrollment, status, refreshBalance],
   )
-  const fundSavingsSigner = useCallback(async () => {
-    if (!status?.enrolled) return
-    setBusy(true)
-    setError('')
-    try {
-      const funding = await signerFundingOutputs(status)
-      const draft = { address: funding.address, amount: funding.outputs.reduce((n, o) => n + o.amountSats, 0), fee: 0 }
-      setAccount('spend')
-      setSpend(draft)
-      spendRef.current = draft
-      await reviewBitcoinPayment(funding.outputs, draft)
-    } catch (err) {
-      setError(humanizeVaultError(err))
-    } finally {
-      setBusy(false)
-    }
-  }, [status, reviewBitcoinPayment])
-
   const reviewSpend = useCallback(async () => {
     setError('')
     setReviewedVtxoQuote(null)
@@ -1160,7 +1019,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setError(`At least ₿${minimumAmount}.`)
       return
     }
-    if (account === 'savings' && status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
+    if (account === 'savings') {
+      if (status.templateVersion !== LEDGER_NATIVE_TEMPLATE) {
+        setError('This Savings program is no longer supported.')
+        return
+      }
       setBusy(true)
       try {
         const fee = await ledgerSavings.review(spend)
@@ -1177,77 +1040,49 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       }
       return
     }
-    if (account === 'savings' && isConnectorTemplate(status.templateVersion)) {
-      setBusy(true)
-      try {
-        const prepared = await prepareConnectorWithdrawal(status, spend.address, spend.amount)
-        setPendingConnector(prepared)
-        if (spendRef.current.address !== spend.address || spendRef.current.amount !== spend.amount) {
-          setError('Send details changed. Review the send again.')
-          return
-        }
-        setSpend({ ...spend, fee: prepared.record.feeSats + 240 })
-        setScreen('review')
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      } finally {
-        setBusy(false)
-      }
-      return
-    }
-    const source = account === 'savings' ? savingsAvailableSats : spendingAvailableSats
-    const persistedVtxo = account === 'spend' ? loadPersistedVtxoSpend(status.vaultId) : undefined
+    const persistedVtxo = loadPersistedVtxoSpend(status.vaultId)
     const resumingVtxo = Boolean(persistedVtxo && isSameVtxoPayment(persistedVtxo, spend.address, spend.amount))
-    if (account === 'spend' && !resumingVtxo && listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending)) {
+    if (!resumingVtxo && listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending)) {
       setError('A payment is still pending. Open Pending payment to resume it before starting another.')
       return
     }
-    if (account !== 'savings' && !resumingVtxo) {
-      if (spend.amount > setup.txCapSats) {
-        setError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
-        return
-      }
-    }
-    const preliminaryTotal = account === 'savings' ? spend.amount + spend.fee : spend.amount
-    if (preliminaryTotal > source && !resumingVtxo) {
-      setError(account === 'savings' ? 'Not enough confirmed savings.' : 'Not enough confirmed spending funds.')
+    if (!resumingVtxo && spend.amount > setup.txCapSats) {
+      setError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
       return
     }
-    if (account === 'savings' && spend.amount + spend.fee < source && source - (spend.amount + spend.fee) < DUST_SATS) {
-      setError('Leave ₿330 of change, or send the rest.')
+    if (spend.amount > spendingAvailableSats && !resumingVtxo) {
+      setError('Not enough confirmed spending funds.')
       return
     }
-    if (account !== 'savings') {
-      if (!enrollment) {
-        setError('Sign in with the passkey that created this vault.')
+    if (!enrollment) {
+      setError('Sign in with the passkey that created this vault.')
+      return
+    }
+    setBusy(true)
+    try {
+      const preview = await previewVaultVtxoSend(status, spend.address, spend.amount, {
+        replaceExisting: replaceExistingVtxoRef.current,
+      })
+      if (
+        spendRef.current.address.trim() !== preview.destAddress.trim() ||
+        spendRef.current.amount !== preview.amountSats
+      ) {
+        setError('Send details changed. Review the send again.')
         return
       }
-      setBusy(true)
-      try {
-        const preview = await previewVaultVtxoSend(status, spend.address, spend.amount, {
-          replaceExisting: replaceExistingVtxoRef.current,
-        })
-        if (
-          spendRef.current.address.trim() !== preview.destAddress.trim() ||
-          spendRef.current.amount !== preview.amountSats
-        ) {
-          setError('Send details changed. Review the send again.')
-          return
-        }
-        setCanReplaceInFlightSend(false)
-        setReviewedVtxoQuote(preview)
-        setSpend((current) =>
-          current.address === spend.address && current.amount === spend.amount
-            ? { ...current, fee: preview.feeSats }
-            : current,
-        )
-      } catch (err) {
-        setCanReplaceInFlightSend(isVtxoReservedReplaceError(err))
-        setError(humanizeVaultError(err))
-        return
-      } finally {
-        setBusy(false)
-      }
+      setCanReplaceInFlightSend(false)
+      setReviewedVtxoQuote(preview)
+      setSpend((current) =>
+        current.address === spend.address && current.amount === spend.amount
+          ? { ...current, fee: preview.feeSats }
+          : current,
+      )
+    } catch (err) {
+      setCanReplaceInFlightSend(isVtxoReservedReplaceError(err))
+      setError(humanizeVaultError(err))
+      return
+    } finally {
+      setBusy(false)
     }
     setScreen('review')
   }, [
@@ -1256,7 +1091,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     reviewLightningSpend,
     reviewBitcoinPayment,
     ledgerSavings.review,
-    savingsAvailableSats,
     setup.txCapSats,
     spend,
     status,
@@ -1297,93 +1131,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     if (!status?.enrolled || !enrollment || !savingsAddress) {
       throw new Error('Sign in with the passkey that created this vault.')
     }
-    if (status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
-      const txid = await ledgerSavings.approve(spend)
-      if (txid) await finishBroadcast(txid)
-      else setScreen('ledger-sign')
-      return
+    if (status.templateVersion !== LEDGER_NATIVE_TEMPLATE) {
+      throw new Error('This Savings program is no longer supported.')
     }
-    if (isConnectorTemplate(status.templateVersion)) {
-      const candidate = await loadConnectorWithdrawal(status)
-      if (
-        !candidate ||
-        candidate.record.recipient !== spend.address ||
-        candidate.record.amountSats !== spend.amount ||
-        candidate.record.feeSats + 240 !== spend.fee
-      )
-        throw new Error('Review this Savings transfer again.')
-      try {
-        if (candidate.record.signedTxHex || candidate.record.hardwareSignatures) {
-          const txid = await completeConnectorWithdrawal(
-            status,
-            candidate.candidateTxid,
-            candidate.record.signedTxHex ?? candidate.prepared.psbt(),
-            enrollment,
-          )
-          await finishBroadcast(txid)
-          return
-        }
-        const approved = await approveConnectorWithdrawal(status, enrollment, candidate.candidateTxid)
-        setPendingConnector(approved)
-        setHandoffPsbt(connectorHandoff(approved))
-        setScreen('handoff')
-      } finally {
-        try {
-          setPendingConnector(await loadConnectorWithdrawal(status))
-        } catch {
-          /* Keep the visible operation and preserve the original failure. */
-        }
-      }
-      return
-    }
-    if (pendingSavingsHandoff) {
-      throw new Error('Complete or cancel the Savings transfer waiting for hardware first.')
-    }
-    const need = spend.amount + spend.fee
-    const utxos = await fetchAddressUtxos(savingsAddress)
-    const coins = confirmedSpendables(utxos, need)
-    if (coins.length === 0) throw new Error('Confirmed Savings funds do not cover this transfer.')
-    const leaf = 'admin' as const
-    if (spend.address === status.vtxoBoardingAddress) {
-      requireBoardingStatus(status, String(status.vtxoBoardingDescriptor?.boardingPub || ''))
-    }
-    const unsigned = buildSavingsPsbt({
-      status,
-      phonePub: enrollment.phoneBip340Pub,
-      destAddress: spend.address,
-      amountSats: spend.amount,
-      feeSats: spend.fee,
-      coins: coins.map((coin) => ({
-        txid: coin.txid,
-        vout: coin.vout,
-        value: coin.value,
-        confirmedHeight: coin.status.block_height,
-      })),
-      leaf,
-    })
-    const secret = await unlockPhoneBip340(enrollment, status)
-    try {
-      const signed = signSavingsPsbt(unsigned, secret)
-      const pending = createPendingSavingsHandoff({
-        vaultId: status.vaultId,
-        psbtHex: signed,
-        destAddress: spend.address,
-        amountSats: spend.amount,
-        feeSats: spend.fee,
-        network: status.network,
-      })
-      try {
-        savePendingSavingsHandoff(localStorage, pending)
-      } catch {
-        throw new Error('This browser cannot save the pending Savings transfer. Use the installed wallet.')
-      }
-      setPendingSavingsHandoff(pending)
-      setHandoffPsbt(signed)
-      setScreen('handoff')
-    } finally {
-      zeroBytes(secret)
-    }
-  }, [enrollment, pendingSavingsHandoff, savingsAddress, spend, status, finishBroadcast, ledgerSavings.approve])
+    const txid = await ledgerSavings.approve(spend)
+    if (txid) await finishBroadcast(txid)
+    else setScreen('ledger-sign')
+  }, [enrollment, savingsAddress, spend, status, finishBroadcast, ledgerSavings.approve])
 
   const completeLedgerPayment = useCallback(
     async (candidateId: string, signedPsbt: string) => {
@@ -1401,91 +1155,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       }
     },
     [ledgerSavings.complete, ledgerSavings.refresh, finishBroadcast],
-  )
-
-  const discardPendingSavingsHandoff = useCallback(() => {
-    const vaultId = pendingSavingsHandoff?.vaultId || status?.vaultId || ''
-    if (vaultId) {
-      try {
-        clearPendingSavingsHandoff(localStorage, vaultId)
-      } catch {
-        // The active session can still discard its copy when storage is unavailable.
-      }
-    }
-    setPendingSavingsHandoff(null)
-    setHandoffPsbt('')
-  }, [pendingSavingsHandoff?.vaultId, status?.vaultId])
-
-  const cancelSavingsHandoff = useCallback(() => {
-    if (status && isConnectorTemplate(status.templateVersion)) {
-      setError('')
-      setScreen('home')
-      return
-    }
-    discardPendingSavingsHandoff()
-    setSpend({ address: '', amount: 0, fee: vaultDraftFee('savings', liveNetwork) })
-    setError('')
-    setAccount('savings')
-    setScreen('home')
-  }, [discardPendingSavingsHandoff, liveNetwork, status?.templateVersion])
-
-  const completeSavingsHandoff = useCallback(
-    async (signedPsbt: string) => {
-      setBusy(true)
-      setError('')
-      try {
-        if (status && isConnectorTemplate(status.templateVersion)) {
-          if (!pendingConnector) throw new Error('The pending Savings transfer is missing.')
-          const txid = await completeConnectorWithdrawal(
-            status,
-            pendingConnector.candidateTxid,
-            signedPsbt,
-            enrollment ?? undefined,
-          )
-          await finishBroadcast(txid)
-          setPendingConnector(await loadConnectorWithdrawal(status))
-          return
-        }
-        if (!pendingSavingsHandoff) throw new Error('the pending Savings transfer is missing')
-        if (!handoffPsbt || handoffPsbt !== pendingSavingsHandoff.psbtHex) {
-          throw new Error('the pending Savings transfer changed locally')
-        }
-        const incoming = parseIncomingPsbt(signedPsbt)
-        requireSameSavingsIntent(
-          pendingSavingsHandoff.psbtHex,
-          incoming,
-          pendingSavingsHandoff.destAddress,
-          pendingSavingsHandoff.amountSats,
-          pendingSavingsHandoff.network,
-          enrollment?.phoneBip340Pub || '',
-          status?.externalOwnerWalletPub || '',
-        )
-        const final = finalizeSavingsPsbt(incoming)
-        const txid = await broadcastTx(final.txHex)
-        discardPendingSavingsHandoff()
-        await finishBroadcast(txid)
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      } finally {
-        if (status && isConnectorTemplate(status.templateVersion)) {
-          try {
-            setPendingConnector(await loadConnectorWithdrawal(status))
-          } catch {
-            /* Preserve the original error. */
-          }
-        }
-        setBusy(false)
-      }
-    },
-    [
-      discardPendingSavingsHandoff,
-      enrollment,
-      finishBroadcast,
-      handoffPsbt,
-      pendingSavingsHandoff,
-      pendingConnector,
-      status,
-    ],
   )
 
   const approveSend = useCallback(async () => {
@@ -1726,7 +1395,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setLastTxKind('')
     setAccount('spend')
     setScanOnSend(false)
-    setHandoffPsbt('')
     setScreen('welcome')
   }, [status])
 
@@ -1809,9 +1477,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       approveSend,
       busy,
       canSend: spendingAvailableSats >= DUST_SATS,
-      cancelSavingsHandoff,
-      completeSavingsHandoff,
-      handoffPsbt,
       ledgerPayment: ledgerSavings.view,
       completeLedgerPayment,
       confirmConditions,
@@ -1870,37 +1535,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           setScreen(ledger.record.phonePsbt && !ledger.record.txHex ? 'ledger-sign' : 'review')
           return
         }
-        if (pendingConnector && tx.txid === pendingConnector.candidateTxid) {
-          setAccount('savings')
-          setSpend({
-            address: pendingConnector.record.recipient,
-            amount: pendingConnector.record.amountSats,
-            fee: pendingConnector.record.feeSats + 240,
-          })
-          setError('')
-          if (
-            (pendingConnector.record.savingsWitness ||
-              (pendingConnector.record.contract.templateVersion === DUAL_CONNECTOR_TEMPLATE &&
-                !pendingConnector.record.hardwareSignatures)) &&
-            !pendingConnector.record.signedTxHex
-          ) {
-            setHandoffPsbt(connectorHandoff(pendingConnector))
-            setScreen('handoff')
-          } else setScreen('review')
-          return
-        }
-        if (tx.activity === 'savings-handoff' && pendingSavingsHandoff) {
-          setAccount('savings')
-          setSpend({
-            address: pendingSavingsHandoff.destAddress,
-            amount: pendingSavingsHandoff.amountSats,
-            fee: pendingSavingsHandoff.feeSats,
-          })
-          setHandoffPsbt(pendingSavingsHandoff.psbtHex)
-          setError('')
-          setScreen('handoff')
-          return
-        }
         setSelectedTx(tx)
         setTxReturn(screen)
         setError('')
@@ -1931,10 +1565,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       refreshingBalance,
       reset,
       reviewSpend,
-      fundSavingsSigner,
       bitcoinOutputs,
       resumingPayment,
-      rebroadcastingConnector,
       pendingPayments,
       openPendingPayment,
       canReplaceInFlightSend,
@@ -1989,15 +1621,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       initiateAlerts,
       approveSend,
       busy,
-      cancelSavingsHandoff,
-      completeSavingsHandoff,
       confirmConditions,
       setSpendingPolicy,
       deployment?.spendingPolicyCapabilities,
       deployment?.enrollmentMode,
       deployment?.supportedSetups,
       deployment?.ledgerSavingsCapability,
-      handoffPsbt,
       ledgerSavings.view,
       completeLedgerPayment,
       dailyLimit,
@@ -2028,8 +1657,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       txReturn,
       loadOlderActivity,
       olderActivity,
-      pendingSavingsHandoff,
-      pendingConnector,
       selectedTx,
       liveNetwork,
       locked,
@@ -2047,10 +1674,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       refreshingBalance,
       reset,
       reviewSpend,
-      fundSavingsSigner,
       bitcoinOutputs,
       resumingPayment,
-      rebroadcastingConnector,
       pendingPayments,
       openPendingPayment,
       canReplaceInFlightSend,

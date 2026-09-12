@@ -47,7 +47,6 @@ export type VaultScreen =
   | 'keys'
   | 'settings'
   | 'signin'
-  | 'handoff'
   | 'recovery'
   | 'recover'
   | 'tx'
@@ -94,9 +93,6 @@ export interface VaultContextProps {
   approveSend: () => Promise<void>
   busy: boolean
   canSend: boolean
-  cancelSavingsHandoff: () => void
-  completeSavingsHandoff: (signedPsbt: string) => Promise<void>
-  handoffPsbt: string
   confirmConditions: () => void
   setSpendingPolicy: (policy: SpendingPolicy) => void
   spendingPolicyCapabilities: SpendingPolicyCapabilities
@@ -148,9 +144,7 @@ export interface VaultContextProps {
   refreshingBalance: boolean
   reset: () => void
   reviewSpend: () => Promise<void>
-  fundSavingsSigner: () => Promise<void>
   bitcoinOutputs?: BitcoinPaymentOutput[]
-  rebroadcastingConnector: boolean
   resumingPayment: boolean
   pendingPayments: { operationId: string; amountSats: number; authorized: boolean }[]
   openPendingPayment: (operationId: string) => Promise<void>
@@ -203,9 +197,6 @@ export const VaultContext = createContext<VaultContextProps>({
   approveSend: async () => {},
   busy: false,
   canSend: false,
-  cancelSavingsHandoff: () => {},
-  completeSavingsHandoff: async () => {},
-  handoffPsbt: '',
   confirmConditions: () => {},
   setSpendingPolicy: () => {},
   spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
@@ -255,8 +246,6 @@ export const VaultContext = createContext<VaultContextProps>({
   refreshingBalance: false,
   reset: () => {},
   reviewSpend: async () => {},
-  fundSavingsSigner: async () => {},
-  rebroadcastingConnector: false,
   resumingPayment: false,
   pendingPayments: [],
   openPendingPayment: async () => {},

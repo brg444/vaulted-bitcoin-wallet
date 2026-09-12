@@ -134,10 +134,10 @@ describe('arrival detection', () => {
         txid: 'pending-savings:1',
         type: 'sent',
         account: 'savings',
-        activity: 'savings-handoff',
+        activity: 'savings-ledger',
+        ledgerStage: 'signer',
         confirmed: false,
       }),
-      row({ txid: 'connector', type: 'sent', account: 'savings', activity: 'savings-connector', confirmed: false }),
       row({ txid: 'pending-arkade', confirmed: false }),
       // Settled boarding mixes external deposits with internal
       // Savings-to-Spending transfers, so it stays visible in activity
