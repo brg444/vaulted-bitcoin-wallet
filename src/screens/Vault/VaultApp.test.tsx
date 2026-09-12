@@ -1,13 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
-import { PROGRAM_FIXTURE } from '../../lib/vault/program/fixtures'
+import ledgerVectors from '../../lib/vault/program/ledger-key-vectors.json'
 import { VaultProvider } from '../../providers/vault'
 import VaultApp from '../../VaultApp'
 import { SAVINGS_TEMPLATE } from '../../lib/vault/program/constants'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../../lib/vault/spendingPolicy'
-import { REQUIRED_CONNECTOR_CAPABILITY } from '../../lib/vault/program/connectorEnroll'
 
 vi.mock('../../lib/vault/status', async (original) => ({
   ...(await original<typeof import('../../lib/vault/status')>()),
@@ -19,11 +18,21 @@ vi.mock('../../lib/vault/status', async (original) => ({
     policyVersion: 'vault-spending-policy-v1',
     enrollmentMode: 'open',
     spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
-    connectorCapability: REQUIRED_CONNECTOR_CAPABILITY,
+    ledgerSavingsCapability: { version: 1, templateVersion: 'phone-ledger-guardian-savings-v1' },
     vtxoBoardingProgram: 'vault-board-v1',
   })),
 }))
-const signerDescriptor = `wpkh([12345678/84h/1h/0h/0/0]${PROGRAM_FIXTURE.hardwarePub})`
+const ledgerContext = ledgerVectors.find((v) => v.input.network === 'mutinynet' && v.input.recovery)!.input
+vi.mock('../../lib/vault/ledgerClient', async (original) => ({
+  ...(await original<typeof import('../../lib/vault/ledgerClient')>()),
+  connectLedgerSavings: vi.fn(async () => ({ app: {}, close: vi.fn(async () => undefined) })),
+  readLedgerSavingsAccount: vi.fn(async () => ledgerContext.hardware),
+}))
+
+beforeEach(() => {
+  vi.stubGlobal('isSecureContext', true)
+  vi.stubGlobal('navigator', new Proxy(navigator, { has: (target, key) => key === 'hid' || Reflect.has(target, key) }))
+})
 
 function renderVault() {
   window.localStorage.clear()
@@ -60,10 +69,9 @@ describe('VaultApp onboarding', () => {
 
     await user.click(await screen.findByRole('button', { name: /^Standard/ }))
 
-    expect(await screen.findByRole('heading', { name: 'Add your hardware key' })).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Paste' }))
-    fireEvent.change(screen.getByTestId('hardware-pub'), { target: { value: signerDescriptor } })
-    await user.click(screen.getByRole('button', { name: 'Use this hardware key' }))
+    expect(await screen.findByRole('heading', { name: 'Protect Savings with Ledger' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Paste' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Connect Ledger' }))
 
     expect(await screen.findByRole('heading', { name: 'Set your spending limits' })).toBeTruthy()
     expect(screen.getByTestId('policy-tx-cap')).toBeTruthy()
@@ -92,15 +100,12 @@ describe('VaultApp onboarding', () => {
     renderVault()
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.click(await screen.findByRole('button', { name: /^Advanced/ }))
-    await user.click(await screen.findByRole('button', { name: 'Paste' }))
-    fireEvent.change(await screen.findByTestId('hardware-pub'), {
-      target: { value: signerDescriptor },
+    await user.click(await screen.findByRole('button', { name: 'Connect Ledger' }))
+    expect(await screen.findByRole('button', { name: 'Use this recovery account' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Public recovery account' }), {
+      target: { value: JSON.stringify(ledgerContext.recovery) },
     })
-    await user.click(screen.getByRole('button', { name: 'Use this hardware key' }))
-
-    expect(screen.getByRole('button', { name: 'Use this recovery key' })).toBeDisabled()
-    fireEvent.change(screen.getByTestId('recovery-pub'), { target: { value: PROGRAM_FIXTURE.recoveryPub } })
-    await user.click(screen.getByRole('button', { name: 'Use this recovery key' }))
+    await user.click(screen.getByRole('button', { name: 'Use this recovery account' }))
     await user.click(await screen.findByRole('button', { name: 'Review setup' }))
 
     expect(await screen.findByText('Advanced')).toBeTruthy()

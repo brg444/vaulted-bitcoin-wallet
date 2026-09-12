@@ -194,28 +194,19 @@ describe('Vault session program-pin recovery', () => {
 describe('Vault session enrollment passkey install', () => {
   const readySetup: VaultSetupPlan = {
     ...emptySetupPlan(),
+    protectionTier: 'light',
     acceptedDesign: true,
-    hardwarePub: '02' + '11'.repeat(32),
     complete: true,
-    connector: {
-      descriptor: 'fixture',
-      address: 'fixture',
-      selectedPath: 'fixture',
-      connectorPub: '02' + '11'.repeat(32),
-      connectorType: 'p2wpkh',
-      connectorFingerprint: 1,
-      connectorPath: [0x80000054, 0x80000001, 0x80000000, 0, 0],
-    },
   }
 
-  it('requires a new descriptor even when a previous vault is enrolled', async () => {
+  it('requires Ledger for protected setup even when a previous vault is enrolled', async () => {
     const reportError = vi.fn()
     const setScreen = vi.fn()
     const hook = renderHook(() =>
       useVaultSession({
         enrollment,
         status,
-        setup: { ...readySetup, connector: undefined },
+        setup: { ...readySetup, protectionTier: 'standard' },
         reportError,
         setScreen,
         sealPlan: vi.fn(() => readySetup),
@@ -229,11 +220,11 @@ describe('Vault session enrollment passkey install', () => {
     await act(async () => hook.result.current.enroll())
     expect(mocks.enroll).not.toHaveBeenCalled()
     expect(setScreen).toHaveBeenCalledWith('hardware')
-    expect(reportError).toHaveBeenCalledWith(expect.stringContaining('public wallet descriptor'))
+    expect(reportError).toHaveBeenCalledWith(expect.stringContaining('Connect a Ledger'))
   })
 
   it.each([null, { ...status, externalOwnerWalletPub: '03' + '22'.repeat(32) }])(
-    'enrolls the new descriptor independently of a previous vault status %j',
+    'enrolls shared Spending independently of a previous vault status %j',
     async (previousStatus) => {
       mocks.enroll.mockResolvedValue({ enrollment, status })
       mocks.enable.mockRejectedValue(new Error('authorizer did not persist passkey sign-in recovery data'))
@@ -263,7 +254,7 @@ describe('Vault session enrollment passkey install', () => {
         'a'.repeat(32),
         expect.objectContaining({
           hardwarePub: readySetup.hardwarePub,
-          connector: expect.objectContaining({ connectorPub: readySetup.hardwarePub }),
+          protectionTier: 'light',
         }),
       )
       expect(mocks.enable).toHaveBeenCalledTimes(2)

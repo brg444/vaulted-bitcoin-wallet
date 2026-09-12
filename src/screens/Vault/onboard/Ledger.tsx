@@ -6,7 +6,7 @@ import QgScreen, { QgPrimary } from '../qg/QgScreen'
 import QgGuidance from '../qg/QgGuidance'
 
 export function LedgerHardware() {
-  const { connectLedgerKey, busy, error, navigate } = useContext(VaultContext)
+  const { connectLedgerKey, ledgerAvailable, busy, error, navigate } = useContext(VaultContext)
   const supported = globalThis.isSecureContext && typeof navigator !== 'undefined' && 'hid' in navigator
   return (
     <QgScreen
@@ -16,7 +16,7 @@ export function LedgerHardware() {
       footer={
         <QgPrimary
           label={busy ? 'Check your Ledger…' : 'Connect Ledger'}
-          disabled={busy || !supported}
+          disabled={busy || !supported || !ledgerAvailable}
           onClick={() => void connectLedgerKey('hardware')}
         />
       }
@@ -39,6 +39,7 @@ export function LedgerHardware() {
           remaining funds to a new seed.
         </p>
       </QgGuidance>
+      {!ledgerAvailable ? <p role='status'>Ledger Savings setup is unavailable on this deployment.</p> : null}
       {!supported ? <p role='status'>Set up Ledger in a supported desktop browser with USB device access.</p> : null}
       {error ? <p role='alert'>{error}</p> : null}
     </QgScreen>

@@ -22,17 +22,6 @@ export default function VaultPlan() {
       footer={<QgPrimary onClick={finishPlan} disabled={!consented} label='Continue' />}
     >
       <h1>Review your Vault</h1>
-      {setup.connector ? (
-        <details className='qg-guidance'>
-          <summary>Verify signer reserve address · 1,000 sats</summary>
-          <div className='qg-guidance-body'>
-            <p style={{ overflowWrap: 'anywhere' }} data-testid='plan-connector-address'>
-              {setup.connector.address}
-            </p>
-            <p>Compare this address with your signing wallet. Savings deposits use a separate address after setup.</p>
-          </div>
-        </details>
-      ) : null}
       <section className='qg-summary'>
         <div>
           <span>Network</span>
@@ -72,9 +61,8 @@ export default function VaultPlan() {
           {advanced
             ? 'The separate recovery key can recover Savings if both normal keys are lost.'
             : 'If both normal keys are lost, Standard has no separate recovery key.'}{' '}
-          {setup.ledger
-            ? 'Starting delayed recovery requires the Guardian. A compromised user key together with a compromised Guardian can bypass the recovery delay; the Guardian cannot spend alone.'
-            : 'Starting delayed recovery requires the recovery services.'}
+          Starting delayed recovery requires the Guardian. A compromised user key together with a compromised Guardian
+          can bypass the recovery delay; the Guardian cannot spend alone.
         </p>
       )}
       {setup.ledger ? (

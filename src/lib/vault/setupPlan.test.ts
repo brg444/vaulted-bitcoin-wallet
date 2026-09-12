@@ -1,4 +1,5 @@
-import { importConnectorOrigin } from './program/connectorOrigin'
+import { ledgerSpendingPublicKey } from './ledgerSetup'
+import vectors from './program/ledger-key-vectors.json'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   FORBIDDEN_PUBLIC_KEY_2G,
@@ -13,6 +14,11 @@ import {
 } from './setupPlan'
 import { PROGRAM_FIXTURE } from './program/fixtures'
 
+const context = vectors.find((v) => v.input.network === 'mutinynet' && v.input.recovery)!.input
+const ledger = { hardware: context.hardware }
+const hardwarePub = ledgerSpendingPublicKey(context.hardware, 'mutinynet')
+const recoveryPub = ledgerSpendingPublicKey(context.recovery!, 'mutinynet')
+
 afterEach(() => localStorage.clear())
 
 describe('vault setup plan', () => {
@@ -22,18 +28,20 @@ describe('vault setup plan', () => {
     const noRecovery = {
       ...emptySetupPlan(),
       acceptedDesign: true,
-      hardwarePub: PROGRAM_FIXTURE.hardwarePub,
+      hardwarePub,
+      ledger,
     }
     expect(planReady(noRecovery)).toBe(true)
     const same = {
       ...noRecovery,
-      recoveryPub: PROGRAM_FIXTURE.hardwarePub,
+      recoveryPub: hardwarePub,
     }
     expect(planReady(same)).toBe(false)
     const plan = {
       ...noRecovery,
       protectionTier: 'advanced' as const,
-      recoveryPub: '022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4',
+      recoveryPub,
+      ledger: { ...ledger, recovery: context.recovery! },
     }
     expect(planReady(plan)).toBe(true)
   })
@@ -58,7 +66,8 @@ describe('vault setup plan', () => {
   it('round-trips the complete configurable policy shape', () => {
     const plan = {
       ...emptySetupPlan(),
-      hardwarePub: PROGRAM_FIXTURE.hardwarePub,
+      hardwarePub,
+      ledger,
       acceptedDesign: true,
     }
     saveSetupPlan(plan)
@@ -69,7 +78,8 @@ describe('vault setup plan', () => {
     localStorage.setItem(
       SETUP_STORE_KEY,
       JSON.stringify({
-        hardwarePub: PROGRAM_FIXTURE.hardwarePub,
+        hardwarePub,
+        ledger,
         recoveryPub: '',
         txCapSats: 50_000,
         dailyLimitSats: 100_000,
@@ -81,16 +91,24 @@ describe('vault setup plan', () => {
   })
 
   it('requires the selected protection tier to match recovery-key presence', () => {
-    const base = { ...emptySetupPlan(), acceptedDesign: true, hardwarePub: PROGRAM_FIXTURE.hardwarePub }
+    const base = { ...emptySetupPlan(), acceptedDesign: true, hardwarePub, ledger }
     expect(planReady({ ...base, protectionTier: 'advanced' })).toBe(false)
     expect(planReady({ ...base, protectionTier: 'standard', recoveryPub: PROGRAM_FIXTURE.recoveryPub })).toBe(false)
-    expect(planReady({ ...base, protectionTier: 'advanced', recoveryPub: PROGRAM_FIXTURE.recoveryPub })).toBe(true)
+    expect(
+      planReady({
+        ...base,
+        protectionTier: 'advanced',
+        recoveryPub,
+        ledger: { ...ledger, recovery: context.recovery! },
+      }),
+    ).toBe(true)
   })
 
   it('does not migrate a setup plan that predates protection tiers', () => {
     const legacy: Partial<ReturnType<typeof emptySetupPlan>> = {
       ...emptySetupPlan(),
-      hardwarePub: PROGRAM_FIXTURE.hardwarePub,
+      hardwarePub,
+      ledger,
       acceptedDesign: true,
       complete: true,
     }
@@ -100,39 +118,20 @@ describe('vault setup plan', () => {
   })
 })
 
-describe('connector setup restore', () => {
-  const descriptor = `wpkh([12345678/84h/1h/0h/0/0]${PROGRAM_FIXTURE.hardwarePub})`
-  const imported = importConnectorOrigin(descriptor, 'mutinynet')
-  const connector = {
-    descriptor,
-    address: imported.address,
-    selectedPath: imported.selectedPath,
-    connectorPub: imported.publicKey,
-    connectorType: imported.type,
-    connectorFingerprint: imported.fingerprint,
-    connectorPath: imported.path,
-  }
-  const plan = { ...emptySetupPlan(), hardwarePub: imported.publicKey, connector }
-  it('rebuilds the exact imported origin on restore', () => {
+describe('retired setup rejection', () => {
+  it.each([{}, { connector: {} }, { connector: { descriptor: 'retired' } }])(
+    'rejects raw hardware and connector setup without importing it: %o',
+    (extra) => {
+      const plan = { ...emptySetupPlan(), acceptedDesign: true, hardwarePub, ...extra }
+      saveSetupPlan(plan)
+      expect(loadSetupPlan()).toBeNull()
+      expect(planReady(plan)).toBe(false)
+    },
+  )
+  it('rejects a substituted Ledger Spending key', () => {
+    const plan = { ...emptySetupPlan(), acceptedDesign: true, hardwarePub: PROGRAM_FIXTURE.hardwarePub, ledger }
     saveSetupPlan(plan)
-    expect(loadSetupPlan()).toEqual(plan)
-  })
-  it.each([
-    { connectorType: 'p2tr' },
-    { connectorFingerprint: -1 },
-    { connectorPath: [0] },
-    { connectorPub: FORBIDDEN_PUBLIC_KEY_G },
-    { address: 'bc1qwrong' },
-    { selectedPath: 'wrong' },
-    { descriptor: 'invalid' },
-  ])('rejects a present malformed connector without falling back to a raw key: %o', (change) => {
-    localStorage.setItem(SETUP_STORE_KEY, JSON.stringify({ ...plan, connector: { ...connector, ...change } }))
     expect(loadSetupPlan()).toBeNull()
-  })
-  it('rejects a connector/key mismatch and malformed JSON', () => {
-    saveSetupPlan({ ...plan, hardwarePub: FORBIDDEN_PUBLIC_KEY_G })
-    expect(loadSetupPlan()).toBeNull()
-    localStorage.setItem(SETUP_STORE_KEY, '{')
-    expect(loadSetupPlan()).toBeNull()
+    expect(planReady(plan)).toBe(false)
   })
 })

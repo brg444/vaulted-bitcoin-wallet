@@ -97,10 +97,6 @@ type ExpectedVaultEnrollmentRequest = {
   externalOwnerWalletXOnly?: string
   recoveryXOnly?: string
   recoveryKeyXOnly?: string
-  connectorType?: 'p2wpkh' | 'p2tr'
-  connectorPub?: string
-  connectorFingerprint?: number
-  connectorPath?: number[]
   vaultId?: string
   descriptorHash?: string
   vtxoBoardingProgram?: 'vault-board-v1'

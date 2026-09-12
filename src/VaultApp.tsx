@@ -16,14 +16,12 @@ import VaultConditions from './screens/Vault/onboard/Conditions'
 import VaultCreated from './screens/Vault/onboard/Created'
 import VaultCreating from './screens/Vault/onboard/Creating'
 import VaultDesign from './screens/Vault/onboard/Design'
-import VaultHardware from './screens/Vault/onboard/Hardware'
 import { LedgerHardware, LedgerRecoveryKey, LedgerEnrollmentRegistration } from './screens/Vault/onboard/Ledger'
 import VaultKit from './screens/Vault/onboard/Kit'
 import VaultPasskey from './screens/Vault/onboard/Passkey'
 import VaultPlan from './screens/Vault/onboard/Plan'
 import VaultProblem from './screens/Vault/onboard/Problem'
 import VaultReady from './screens/Vault/onboard/Ready'
-import VaultRecovery from './screens/Vault/onboard/Recovery'
 import VaultRecover from './screens/Vault/Recover'
 import VaultSignIn from './screens/Vault/onboard/SignIn'
 import VaultNavigation, { destinationForScreen } from './screens/Vault/Navigation'
@@ -34,7 +32,7 @@ import { useIntentPress } from './screens/Vault/qg/useIntentPress'
 import { useScreenMotion } from './screens/Vault/qg/useScreenMotion'
 
 export default function VaultApp() {
-  const { screen, account, ledgerAvailable, setup } = useContext(VaultContext)
+  const { screen, account } = useContext(VaultContext)
   const root = useRef<HTMLDivElement>(null)
   const scope = `${screen}:${account}`
   const intentPress = useIntentPress(scope)
@@ -53,9 +51,9 @@ export default function VaultApp() {
     handoff: <VaultHandoff />,
     'ledger-sign': <VaultLedgerPayment />,
     design: <VaultDesign />,
-    hardware: ledgerAvailable ? <LedgerHardware /> : <VaultHardware />,
+    hardware: <LedgerHardware />,
     'ledger-register': <LedgerEnrollmentRegistration />,
-    recovery: setup.ledger ? <LedgerRecoveryKey /> : <VaultRecovery />,
+    recovery: <LedgerRecoveryKey />,
     recover: <VaultRecover />,
     conditions: <VaultConditions />,
     plan: <VaultPlan />,

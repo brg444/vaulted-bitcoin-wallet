@@ -151,13 +151,13 @@ export function useVaultSession({
 
   const enroll = useCallback(
     async (token = '') => {
-      if (!planReady(setup)) {
-        reportError('Finish setup first.')
+      if (setup.protectionTier !== 'light' && !setup.ledger) {
+        reportError('Connect a Ledger before creating protected Savings.')
+        setScreen('hardware')
         return
       }
-      if (setup.protectionTier !== 'light' && !setup.connector && !setup.ledger) {
-        reportError('Add a supported public wallet descriptor before creating this vault.')
-        setScreen('hardware')
+      if (!planReady(setup)) {
+        reportError('Finish setup first.')
         return
       }
       setBusy(true)
@@ -168,16 +168,6 @@ export function useVaultSession({
           protectionTier: setup.protectionTier,
           hardwarePub: setup.hardwarePub,
           ...(setup.recoveryPub ? { recoveryPub: setup.recoveryPub } : {}),
-          ...(setup.connector
-            ? {
-                connector: {
-                  connectorPub: setup.connector.connectorPub,
-                  connectorType: setup.connector.connectorType,
-                  connectorFingerprint: setup.connector.connectorFingerprint,
-                  connectorPath: [...setup.connector.connectorPath],
-                },
-              }
-            : {}),
           ...(setup.ledger ? { ledger: setup.ledger } : {}),
           spendingPolicy: setupSpendingPolicy(setup),
         }

@@ -20,7 +20,7 @@ import { ledgerFixturePRF, ledgerFixtureSeed, ledgerRecoveryFixture } from './re
 import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import { hashLedgerSavingsEnrollment } from './program/ledgerRecoveryDescriptor'
 import { scalarSecret } from './program/fixtures'
-import { deleteBoardingKey, stageBoardingKey } from './vtxo/board'
+import { activateBoardingKey, deleteBoardingKey, stageBoardingKey } from './vtxo/board'
 import { generateLedgerPhoneSeed } from './ledgerPhoneBackup'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from './spendingPolicy'
 
@@ -333,6 +333,23 @@ describe('Ledger enrollment commitment and interruption recovery', () => {
     )
     expect(createCredential).not.toHaveBeenCalled()
     expect(generateLedgerPhoneSeed).not.toHaveBeenCalled()
+  })
+
+  it('reconciles a crash after board-key activation before enrollment promotion', async () => {
+    const f = await fixture()
+    await stageBoardingKey({ vaultId: f.status.vaultId, network: 'mutinynet', phoneSecret: scalarSecret(3) })
+    const saved = staged(f, true)
+    saveStagedEnrollment(saved)
+    await activateBoardingKey({
+      vaultId: saved.vaultId,
+      descriptorHash: saved.boardingDescriptorHash!,
+      expectedBoardingPub: saved.boardingPub!,
+    })
+    vi.spyOn(vaultCosignerClient.enrollment, 'status').mockResolvedValue(f.status)
+    await expect(reconcileStagedEnrollment()).resolves.toMatchObject({ status: f.status })
+    expect(loadStagedEnrollment()).toBeNull()
+    expect(loadEnrollment(localStorage, saved.vaultId)?.ledgerSavings).toEqual(f.enrollment.ledgerSavings)
+    expect(createCredential).not.toHaveBeenCalled()
   })
 
   it('does not finish when durable registration storage fails', async () => {

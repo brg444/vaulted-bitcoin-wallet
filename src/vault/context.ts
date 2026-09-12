@@ -73,9 +73,6 @@ export interface VaultContextProps {
   spendingRenewals?: SpendingRenewalJournal | null
   spendingBitcoin?: { operation: BitcoinPaymentJournal | null; error: string }
   positions: VaultAccountPositions
-  applyHardware: (raw: string) => void
-  applyConnectorDescriptor: (raw: string) => void
-  applyRecovery: (raw: string) => void
   setProtectionTier: (tier: ProtectionTier) => void
   skipRecovery: () => void
   downloadRecoveryKit: () => string
@@ -185,9 +182,6 @@ export const VaultContext = createContext<VaultContextProps>({
   acceptDesign: () => {},
   account: 'spend',
   positions: EMPTY_VAULT_POSITIONS,
-  applyHardware: () => {},
-  applyConnectorDescriptor: () => {},
-  applyRecovery: () => {},
   setProtectionTier: () => {},
   skipRecovery: () => {},
   downloadRecoveryKit: () => '',

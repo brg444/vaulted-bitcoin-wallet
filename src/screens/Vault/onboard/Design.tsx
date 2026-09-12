@@ -17,7 +17,7 @@ export default function VaultDesign() {
         ) : null}
         <button type='button' disabled={lightOnly} onClick={() => acceptDesign('standard')}>
           <strong>Standard</strong>
-          <small>Passkey payments and Savings protected by your hardware wallet.</small>
+          <small>Passkey payments and Savings protected by your Ledger.</small>
         </button>
         <button type='button' disabled={lightOnly} onClick={() => acceptDesign('advanced')}>
           <strong>Advanced</strong>
@@ -27,7 +27,7 @@ export default function VaultDesign() {
       <p className='qg-copy'>
         {lightOnly
           ? 'Standard and Advanced setup is temporarily unavailable. Existing wallets remain accessible.'
-          : 'Standard and Advanced require a compatible hardware wallet. Your protection choice is fixed after setup.'}
+          : 'Standard and Advanced require a Ledger. Your protection choice is fixed after setup.'}
       </p>
     </QgScreen>
   )

@@ -20,10 +20,13 @@ import type { VaultStatus } from '../lib/vault/types'
 import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
 import { persistVtxoSpend, VtxoReviewedReservationError, type VaultVtxoSpendQuote } from '../lib/vault/vtxo/spend'
 import { VaultContext, VaultProvider } from './vault'
-import VaultHardware from '../screens/Vault/onboard/Hardware'
-import { CONNECTOR_TEST_DESCRIPTOR, CONNECTOR_TEST_PUB } from '../test/e2e-vault/fixtures/connector'
+import { LedgerHardware } from '../screens/Vault/onboard/Ledger'
+import ledgerVectors from '../lib/vault/program/ledger-key-vectors.json'
+import { ledgerSpendingPublicKey } from '../lib/vault/ledgerSetup'
 
 const mocks = vi.hoisted(() => ({
+  readLedgerAccount: vi.fn(),
+  closeLedger: vi.fn(async () => undefined),
   authorizeRenewals: vi.fn(async () => null),
   bitcoinSend: vi.fn(),
   signerOutputs: vi.fn(),
@@ -50,6 +53,12 @@ const mocks = vi.hoisted(() => ({
   })),
 }))
 
+vi.mock('../lib/vault/ledgerClient', async (original) => ({
+  ...(await original<typeof import('../lib/vault/ledgerClient')>()),
+  connectLedgerSavings: vi.fn(async () => ({ app: {}, close: mocks.closeLedger })),
+  readLedgerSavingsAccount: mocks.readLedgerAccount,
+}))
+
 vi.mock('../lib/vault/light/guardianDelegation', () => ({ authorizeGuardianRenewals: mocks.authorizeRenewals }))
 
 vi.mock('../lib/vault/spendingBitcoinFunding', async (original) => ({
@@ -62,7 +71,11 @@ vi.mock('../lib/vault/status', async (importOriginal) => {
   const original = await importOriginal<typeof import('../lib/vault/status')>()
   return {
     ...original,
-    fetchPublicStatus: vi.fn(async () => ({ enrollmentMode: 'token' })),
+    fetchPublicStatus: vi.fn(async () => ({
+      enrollmentMode: 'token',
+      network: 'mutinynet',
+      ledgerSavingsCapability: { version: 1, templateVersion: 'phone-ledger-guardian-savings-v1' },
+    })),
     fetchVaultStatus: mocks.fetchStatus,
   }
 })
@@ -257,6 +270,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
   })
 
   beforeEach(() => {
@@ -521,7 +535,14 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await waitFor(() => expect(approved).toBe(false))
     expect(screen.getByTestId('screen')).toHaveTextContent('home')
   })
-  it('starts another vault with an editable descriptor and accepts a different hardware key', async () => {
+  it('starts another vault with a fresh Ledger account without changing the enrolled vault', async () => {
+    vi.stubGlobal('isSecureContext', true)
+    vi.stubGlobal(
+      'navigator',
+      new Proxy(navigator, { has: (target, key) => key === 'hid' || Reflect.has(target, key) }),
+    )
+    const origin = ledgerVectors.find((v) => v.input.network === 'mutinynet')!.input.hardware
+    mocks.readLedgerAccount.mockResolvedValue(origin)
     const oldStatus = { ...status, externalOwnerWalletPub: golden.fixtures.exitHardwarePub }
     mocks.fetchStatus.mockResolvedValue(oldStatus)
     localStorage.setItem(
@@ -542,7 +563,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
           <span data-testid='new-key'>{vault.setup.hardwarePub}</span>
           <span data-testid='setup-screen'>{vault.screen}</span>
           <button onClick={() => vault.acceptDesign('standard')}>Start another vault</button>
-          {vault.screen === 'hardware' ? <VaultHardware /> : null}
+          {vault.screen === 'hardware' ? <LedgerHardware /> : null}
         </>
       )
     }
@@ -554,15 +575,10 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await waitFor(() => expect(screen.getByTestId('old-vault')).toHaveTextContent('vault-a'))
     fireEvent.click(screen.getByText('Start another vault'))
     expect(screen.queryByRole('textbox')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
-    const input = screen.getByRole('textbox', { name: 'Wallet descriptor' })
-    expect(input).toHaveValue('')
-    expect(input).not.toHaveAttribute('readonly')
-    expect(screen.getByRole('button', { name: 'Use this hardware key' })).toBeDisabled()
-    fireEvent.change(input, { target: { value: CONNECTOR_TEST_DESCRIPTOR } })
-    fireEvent.click(screen.getByRole('button', { name: 'Use this hardware key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Connect Ledger' }))
     await waitFor(() => expect(screen.getByTestId('setup-screen')).toHaveTextContent('conditions'))
-    expect(screen.getByTestId('new-key')).toHaveTextContent(CONNECTOR_TEST_PUB)
+    expect(screen.getByTestId('new-key')).toHaveTextContent(ledgerSpendingPublicKey(origin, 'mutinynet'))
+    expect(mocks.closeLedger).toHaveBeenCalled()
     expect(localStorage.getItem(`${ENROLL_STORE}:vault-a`)).toBe(savedEnrollment)
   })
 

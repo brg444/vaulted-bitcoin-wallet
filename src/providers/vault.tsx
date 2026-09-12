@@ -91,10 +91,8 @@ import {
   clearSetupPlan,
   emptySetupPlan,
   loadSetupPlan,
-  parseCompressedPub,
   planReady,
   saveSetupPlan,
-  sameBip340Key,
   sameRole,
   type VaultSetupPlan,
 } from '../lib/vault/setupPlan'
@@ -104,7 +102,6 @@ import {
   type SpendingPolicy,
 } from '../lib/vault/spendingPolicy'
 import { requireProtectionTier, type ProtectionTier } from '../lib/vault/protectionTier'
-import { importConnectorOrigin } from '../lib/vault/program/connectorOrigin'
 import { isConnectorTemplate, DUAL_CONNECTOR_TEMPLATE } from '../lib/vault/program/connector'
 import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
 import { useDisplayUnit } from '../lib/vault/useDisplayUnit'
@@ -657,82 +654,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         ...draft,
         acceptedDesign: true,
         protectionTier,
-        ...(protectionTier === 'light'
-          ? { hardwarePub: '', recoveryPub: '', connector: undefined, ledger: undefined }
-          : {}),
+        ...(protectionTier === 'light' ? { hardwarePub: '', recoveryPub: '', ledger: undefined } : {}),
         ...(protectionTier === 'standard'
           ? { recoveryPub: '', ...(draft.ledger ? { ledger: { hardware: draft.ledger.hardware } } : {}) }
           : {}),
       })
       setError('')
       setScreen(protectionTier === 'light' ? 'conditions' : 'hardware')
-    },
-    [persist, setup],
-  )
-
-  const applyConnectorDescriptor = useCallback(
-    (raw: string) => {
-      setError('')
-      try {
-        const network = status?.network || deployment?.network
-        if (network !== 'mainnet' && network !== 'mutinynet') throw new Error('Vault network is not ready yet')
-        const imported = importConnectorOrigin(raw.trim(), network)
-        persist({
-          ...setup,
-          hardwarePub: imported.publicKey,
-          ledger: undefined,
-          connector: {
-            descriptor: raw.trim(),
-            address: imported.address,
-            selectedPath: imported.selectedPath,
-            connectorPub: imported.publicKey,
-            connectorType: imported.type,
-            connectorFingerprint: imported.fingerprint,
-            connectorPath: [...imported.path],
-          },
-        })
-        setScreen(setup.protectionTier === 'advanced' ? 'recovery' : 'conditions')
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      }
-    },
-    [persist, setup, status?.network, deployment?.network],
-  )
-
-  const applyHardware = useCallback(
-    (raw: string) => {
-      const trimmed = raw.trim()
-      if (/^(wpkh|tr)\(/.test(trimmed)) {
-        applyConnectorDescriptor(trimmed)
-        return
-      }
-      setError('')
-      try {
-        const hardwarePub = parseCompressedPub(raw, 'hardware key')
-        if (status?.externalOwnerWalletPub && !sameBip340Key(hardwarePub, status.externalOwnerWalletPub)) {
-          throw new Error('This Mutinynet vault requires the hardware key already configured on the service')
-        }
-        persist({ ...setup, hardwarePub })
-        setScreen(setup.protectionTier === 'advanced' ? 'recovery' : 'conditions')
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      }
-    },
-    [persist, setup, status?.externalOwnerWalletPub],
-  )
-
-  const applyRecovery = useCallback(
-    (raw: string) => {
-      setError('')
-      try {
-        const recoveryPub = parseCompressedPub(raw, 'recovery key')
-        if (!setup.hardwarePub) throw new Error('Set hardware first')
-        if (sameRole(recoveryPub, setup.hardwarePub)) throw new Error('Recovery must be a different key')
-        persist({ ...setup, protectionTier: 'advanced', recoveryPub })
-        setScreen('conditions')
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      }
     },
     [persist, setup],
   )
@@ -790,7 +718,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           })
           setScreen('conditions')
         } else {
-          persist({ ...setup, hardwarePub: key, recoveryPub: '', connector: undefined, ledger: { hardware: origin } })
+          persist({ ...setup, hardwarePub: key, recoveryPub: '', ledger: { hardware: origin } })
           setScreen(setup.protectionTier === 'advanced' ? 'recovery' : 'conditions')
         }
       } catch (err) {
@@ -1816,9 +1744,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       account,
       spendingRenewals,
       spendingBitcoin,
-      applyHardware,
-      applyConnectorDescriptor,
-      applyRecovery,
       connectLedgerKey,
       applyLedgerRecovery,
       completeLedgerEnrollment,
@@ -2008,9 +1933,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       completeLedgerEnrollment,
       spendingRenewals,
       spendingBitcoin,
-      applyHardware,
-      applyConnectorDescriptor,
-      applyRecovery,
       setProtectionTier,
       skipRecovery,
       downloadRecoveryKit,
