@@ -89,14 +89,15 @@ describe('vault UI lock', () => {
     expect(ledgerRecovery).toMatch(/requireLedgerRecoveryUserApproval/)
     expect(ledgerRecovery).toMatch(/acceptSavingsRecoverySignature/)
     expect(app).not.toMatch(/offline-recovery/)
-    expect(existsSync(resolve(root, 'tools/offline-recovery/index.html'))).toBe(true)
+    expect(existsSync(resolve(root, 'tools/offline-recovery/index.html'))).toBe(false)
+    expect(existsSync(resolve(root, 'tools/offline-recovery/src/lib/vault/program/connector.ts'))).toBe(false)
     expect(existsSync(resolve(root, 'tools/offline-recovery/Recover.command'))).toBe(true)
     expect(read('.gitmodules')).toMatch(/vaulted-emergency-recovery/)
   })
 
   it('keeps emergency recovery copy free of protocol jargon', () => {
     const userCopy = [
-      read('tools/offline-recovery/index.html'),
+      read('tools/offline-recovery/programs/mainnet/index.html'),
       read('src/screens/Vault/onboard/Kit.tsx'),
       read('src/screens/Vault/Recover.tsx'),
       read('docs/emergency-recovery.md'),
@@ -104,7 +105,7 @@ describe('vault UI lock', () => {
     expect(userCopy).not.toMatch(/version 4/i)
     expect(userCopy).not.toMatch(/\bRP ID\b/)
     expect(userCopy).not.toMatch(/envelope/i)
-    expect(read('tools/offline-recovery/index.html')).toMatch(/Open recovery/)
+    expect(read('tools/offline-recovery/programs/mainnet/index.html')).toMatch(/Recover to Bitcoin/)
     for (const network of ['mainnet', 'mutinynet']) {
       const page = read(`tools/offline-recovery/programs/${network}/index.html`)
       expect(page).toMatch(/Recovery file/)
