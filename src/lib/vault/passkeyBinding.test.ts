@@ -1,86 +1,55 @@
 import { describe, expect, it } from 'vitest'
-import { accessMode, assertRecoveryBindingMatchesStatus, parseRecoveryBinding } from './passkeyBinding'
-import { POLICY_VERSION } from './constants'
-import type { VaultStatus } from './types'
+import {
+  accessMode,
+  assertRecoveryBindingMatchesStatus,
+  parseRecoveryBinding,
+  recordFromRecoveryBinding,
+  recoveryBindingDigest,
+} from './passkeyBinding'
+import { sharedSpendingStatus, sharedSpendingEnrollment } from './vtxo/testdata/sharedSpending'
 
-const SAVINGS_BINDING = {
+const STATUS = sharedSpendingStatus()
+const enrollment = sharedSpendingEnrollment()
+const SPENDING_BINDING = {
   version: 4,
-  credentialId: 'aa',
-  webauthnP256: '02' + '11'.repeat(32),
-  phoneDirectP256: '02' + '22'.repeat(32),
-  phoneBip340Pub: '02' + '33'.repeat(32),
-  externalOwnerWalletPub: '02' + '44'.repeat(32),
-  vaultCosignerBasePub: '02' + '55'.repeat(32),
-  arkadeCosignerBasePub: '02' + '66'.repeat(32),
-  arkadeCosignerOrigin: 'https://mutinynet.arkade.sh',
-  arkadeCosignerVersion: '0.4.65',
-  clientOrigin: 'https://vault.example',
-  rpId: 'vault.example',
-  network: 'mutinynet',
-  vaultId: 'vault-a',
-  templateVersion: 'phone-hww-recovery-savings-v1',
-  policyVersion: POLICY_VERSION,
-  protectionTier: 'standard',
-  savingsAddress: 'tb1psavings',
-  savingsScript: '5120' + '77'.repeat(32),
-  vtxoVaultCosignerPub: '02' + '88'.repeat(32),
-  vtxoExitDelay: 4608,
-  vtxoExitDelayUnit: 'seconds',
-  spendingArkAddress: 'tark1spending',
-  spendingArkScript: '5120' + '99'.repeat(32),
-  vtxoDelegatePub: '02' + 'aa'.repeat(32),
-  vtxoBoardingActive: true,
-  vtxoBoardingProgram: 'vault-board-v1',
-  vtxoBoardingAddress: 'tb1pboarding',
-  vtxoBoardingScript: '5120' + 'bb'.repeat(32),
-  vtxoBoardingExitDelay: 604672,
-  vtxoBoardingExitDelayUnit: 'seconds',
+  credentialId: enrollment.credId,
+  webauthnP256: enrollment.webauthnP256,
+  phoneDirectP256: STATUS.phoneDirectP256 ?? '',
+  phoneBip340Pub: STATUS.phoneBip340Pub ?? '',
+  externalOwnerWalletPub: STATUS.externalOwnerWalletPub ?? '',
+  vaultCosignerBasePub: STATUS.vaultCosignerBasePub ?? '',
+  arkadeCosignerBasePub: STATUS.arkadeCosignerBasePub ?? '',
+  arkadeCosignerOrigin: STATUS.arkadeCosignerOrigin ?? '',
+  arkadeCosignerVersion: STATUS.arkadeCosignerVersion ?? '',
+  clientOrigin: STATUS.clientOrigin ?? '',
+  rpId: STATUS.rpId ?? '',
+  network: STATUS.network ?? '',
+  vaultId: STATUS.vaultId ?? '',
+  templateVersion: STATUS.templateVersion ?? '',
+  policyVersion: STATUS.policyVersion ?? '',
+  protectionTier: STATUS.protectionTier ?? '',
+  savingsAddress: STATUS.savingsAddress ?? '',
+  savingsScript: STATUS.savingsScript ?? '',
+  vtxoVaultCosignerPub: STATUS.vtxoVaultCosignerPub ?? '',
+  vtxoExitDelay: STATUS.vtxoExitDelay ?? '',
+  vtxoExitDelayUnit: STATUS.vtxoExitDelayUnit ?? '',
+  spendingArkAddress: STATUS.spendingArkAddress ?? '',
+  spendingArkScript: STATUS.spendingArkScript ?? '',
+  vtxoDelegatePub: STATUS.vtxoDelegatePub ?? '',
+  vtxoBoardingActive: STATUS.vtxoBoardingActive ?? '',
+  vtxoBoardingProgram: STATUS.vtxoBoardingProgram ?? '',
+  vtxoBoardingAddress: STATUS.vtxoBoardingAddress ?? '',
+  vtxoBoardingScript: STATUS.vtxoBoardingScript ?? '',
+  vtxoBoardingExitDelay: STATUS.vtxoBoardingExitDelay ?? '',
+  vtxoBoardingExitDelayUnit: STATUS.vtxoBoardingExitDelayUnit ?? '',
   recipientDustSats: 330,
-  txRecipientCapSats: 50_000,
-  periodAllowanceSats: 100_000,
-  absoluteFeeCapSats: 5_000,
-  feerateCapSatVb: 10,
+  txRecipientCapSats: STATUS.txCap,
+  periodAllowanceSats: STATUS.periodAllowance,
+  absoluteFeeCapSats: STATUS.absoluteFeeCap,
+  feerateCapSatVb: STATUS.feerateCapSatVb,
   envelopeNonce: 'cc'.repeat(12),
   envelopeCiphertext: 'dd'.repeat(48),
 }
-
-const STATUS = {
-  enrolled: true,
-  network: SAVINGS_BINDING.network,
-  clientOrigin: SAVINGS_BINDING.clientOrigin,
-  rpId: SAVINGS_BINDING.rpId,
-  vaultId: SAVINGS_BINDING.vaultId,
-  templateVersion: SAVINGS_BINDING.templateVersion,
-  policyVersion: SAVINGS_BINDING.policyVersion,
-  protectionTier: 'standard',
-  externalOwnerWalletPub: SAVINGS_BINDING.externalOwnerWalletPub,
-  vaultCosignerBasePub: SAVINGS_BINDING.vaultCosignerBasePub,
-  arkadeCosignerBasePub: SAVINGS_BINDING.arkadeCosignerBasePub,
-  arkadeCosignerOrigin: SAVINGS_BINDING.arkadeCosignerOrigin,
-  arkadeCosignerVersion: SAVINGS_BINDING.arkadeCosignerVersion,
-  savingsAddress: SAVINGS_BINDING.savingsAddress,
-  savingsScript: SAVINGS_BINDING.savingsScript,
-  periodAllowance: SAVINGS_BINDING.periodAllowanceSats,
-  periodSpent: 0,
-  periodRemaining: SAVINGS_BINDING.periodAllowanceSats,
-  txCap: SAVINGS_BINDING.txRecipientCapSats,
-  absoluteFeeCap: SAVINGS_BINDING.absoluteFeeCapSats,
-  feerateCapSatVb: SAVINGS_BINDING.feerateCapSatVb,
-  phoneBip340Pub: SAVINGS_BINDING.phoneBip340Pub,
-  phoneDirectP256: SAVINGS_BINDING.phoneDirectP256,
-  vtxoVaultCosignerPub: SAVINGS_BINDING.vtxoVaultCosignerPub,
-  vtxoExitDelay: SAVINGS_BINDING.vtxoExitDelay,
-  vtxoExitDelayUnit: SAVINGS_BINDING.vtxoExitDelayUnit,
-  spendingArkAddress: SAVINGS_BINDING.spendingArkAddress,
-  spendingArkScript: SAVINGS_BINDING.spendingArkScript,
-  vtxoDelegatePub: SAVINGS_BINDING.vtxoDelegatePub,
-  vtxoBoardingActive: SAVINGS_BINDING.vtxoBoardingActive,
-  vtxoBoardingProgram: SAVINGS_BINDING.vtxoBoardingProgram,
-  vtxoBoardingAddress: SAVINGS_BINDING.vtxoBoardingAddress,
-  vtxoBoardingScript: SAVINGS_BINDING.vtxoBoardingScript,
-  vtxoBoardingExitDelay: SAVINGS_BINDING.vtxoBoardingExitDelay,
-  vtxoBoardingExitDelayUnit: SAVINGS_BINDING.vtxoBoardingExitDelayUnit,
-} satisfies VaultStatus
 
 describe('vault access mode', () => {
   it('sends an enrolled visitor without local secrets to sign-in', () => {
@@ -96,17 +65,35 @@ describe('vault access mode', () => {
   })
 })
 
-describe('Savings recovery binding', () => {
+describe('shared Spending recovery binding', () => {
+  it.each([
+    [4, 'vaulted-light-v1'],
+    [4, 'phone-hww-recovery-savings-v1'],
+    [5, 'phone-connector-recovery-savings-v1'],
+    [5, 'phone-connector-recovery-savings-v2'],
+    [4, 'phone-ledger-guardian-savings-v1'],
+    [6, 'vaulted-spending-v1'],
+  ])('rejects retired or mismatched binding %s/%s', (version, templateVersion) => {
+    const binding = { ...SPENDING_BINDING, version, templateVersion }
+    expect(() => parseRecoveryBinding(JSON.stringify(binding))).toThrow(/binding (version|program)/)
+    expect(() => assertRecoveryBindingMatchesStatus(binding, STATUS)).toThrow(/binding (version|program)/)
+    expect(() => recordFromRecoveryBinding(binding)).toThrow(/binding (version|program)/)
+  })
+
+  it('has no connector binding digest domain', () => {
+    expect(() => recoveryBindingDigest(JSON.stringify({ version: 5 }))).toThrow('recovery binding version')
+  })
+
   it('accepts the canonical v4 fields and exact tier, Spending, and boarding status', () => {
-    expect(parseRecoveryBinding(JSON.stringify(SAVINGS_BINDING))).toEqual(SAVINGS_BINDING)
-    expect(assertRecoveryBindingMatchesStatus(JSON.stringify(SAVINGS_BINDING), STATUS)).toEqual(SAVINGS_BINDING)
+    expect(parseRecoveryBinding(JSON.stringify(SPENDING_BINDING))).toEqual(SPENDING_BINDING)
+    expect(assertRecoveryBindingMatchesStatus(JSON.stringify(SPENDING_BINDING), STATUS)).toEqual(SPENDING_BINDING)
   })
 
   it('rejects retired fields and pre-v4 bindings', () => {
     expect(() =>
-      parseRecoveryBinding(JSON.stringify({ ...SAVINGS_BINDING, operationalAddress: 'tb1pretired' })),
+      parseRecoveryBinding(JSON.stringify({ ...SPENDING_BINDING, operationalAddress: 'tb1pretired' })),
     ).toThrow(/fields or order/)
-    expect(() => parseRecoveryBinding(JSON.stringify({ ...SAVINGS_BINDING, version: 3 }))).toThrow(/version/)
+    expect(() => parseRecoveryBinding(JSON.stringify({ ...SPENDING_BINDING, version: 3 }))).toThrow(/version/)
   })
 
   it.each([
@@ -125,7 +112,7 @@ describe('Savings recovery binding', () => {
     'protectionTier',
   ] as const)('rejects a recovery binding whose %s differs from status', (field) => {
     expect(() =>
-      assertRecoveryBindingMatchesStatus(JSON.stringify(SAVINGS_BINDING), { ...STATUS, [field]: 'mutated' }),
+      assertRecoveryBindingMatchesStatus(JSON.stringify(SPENDING_BINDING), { ...STATUS, [field]: 'mutated' }),
     ).toThrow(new RegExp(`recovery binding ${field} does not match vault status`))
   })
 })

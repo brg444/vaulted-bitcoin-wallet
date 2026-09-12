@@ -9,16 +9,7 @@ import { restoreLightningRecoveryJournal } from './lightningArchive'
 import { restoreSpendingRecoveryJournal } from '../vtxo/spend'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 import { vaultLightningSwapStorageName } from '../lightningLifecycle'
-import { restoreConnectorRecoveryJournal } from '../program/connectorStore'
-import { isConnectorTemplate } from '../program/connector'
-import {
-  connectorPinFromVerifiedStatus,
-  saveConnectorEnrollmentPin,
-  connectorKitFromVerifiedStatus,
-  saveConnectorRecoveryKit,
-  loadConnectorEnrollmentPin,
-  verifyConnectorStatus,
-} from '../program/connectorEnroll'
+import { requireStatusIdentity } from '../status'
 import { loadEnrollment, saveEnrollment, saveSelectedVaultId } from '../enrollmentStore'
 import { saveAddressPin, pinFromEnrolledStatus, loadAddressPin } from '../pin'
 import { loadLocalKit, saveLocalKit } from '../program/kitStore'
@@ -36,7 +27,12 @@ export async function restoreVaultRecoveryFile(
   phone: Uint8Array,
   ledgerSavingsSeed?: Uint8Array,
 ) {
-  const file = validateVaultRecoveryFile(JSON.parse(JSON.stringify(value)))
+  const candidate = JSON.parse(JSON.stringify(value)) as VaultRecoveryFile
+  requireStatusIdentity(
+    candidate?.archive?.status as Parameters<typeof requireStatusIdentity>[0],
+    candidate?.header?.binding?.vaultId,
+  )
+  const file = validateVaultRecoveryFile(candidate)
   if (!navigator.locks) throw new Error('Web Locks required to restore complete recovery data')
   const spending = Uint8Array.from(phone),
     savings = ledgerSavingsSeed ? Uint8Array.from(ledgerSavingsSeed) : undefined
@@ -64,7 +60,7 @@ async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerS
       ) !== canonicalLedgerValue(context.phone)
     )
       throw new Error('Recovery Savings HD seed does not match the enrolled origin')
-  } else if (ledgerSavingsSeed) throw new Error('Savings HD seed supplied for a legacy recovery file')
+  } else if (ledgerSavingsSeed) throw new Error('Savings HD seed supplied for a Spending-only recovery file')
   const existingKit = loadLocalKit(status.vaultId)
   if (existingKit && existingKit.descriptorHash !== file.header.kit.descriptorHash)
     throw new Error('A different local Recovery Kit must not be overwritten')
@@ -79,9 +75,6 @@ async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerS
   const pin = pinFromEnrolledStatus(status)
   const oldPin = loadAddressPin(localStorage, status.vaultId)
   if (oldPin && oldPin.pinHash !== pin.pinHash) throw new Error('Recovery address pin differs from this device')
-  const connector = isConnectorTemplate(status.templateVersion) ? connectorPinFromVerifiedStatus(status) : null
-  const previousConnector = connector ? loadConnectorEnrollmentPin(status.vaultId) : null
-  if (previousConnector) verifyConnectorStatus(status, previousConnector)
   // The key is derived from the original phone key and verified against the
   // saved enrollment before activation; no separate boarding secret is imported.
   await provisionBoardingKey(phone, status)
@@ -97,16 +90,6 @@ async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerS
       const contract = file.header.kit.descriptor.ledgerSavings
       if (file.ledgerSavingsJournal) await restoreLedgerSavingsPaymentJournal(contract, file.ledgerSavingsJournal)
       if (file.ledgerRecoveryJournal) await restoreLedgerRecoveryJournal(contract, file.ledgerRecoveryJournal)
-    }
-    if (connector)
-      await restoreConnectorRecoveryJournal(
-        { vaultId: status.vaultId, enrollmentDigest: status.connectorEnrollment!.enrollmentDigest },
-        file.connectorJournal,
-        localStorage,
-      )
-    if (connector) {
-      saveConnectorEnrollmentPin(connector)
-      saveConnectorRecoveryKit(connectorKitFromVerifiedStatus(status))
     }
     await storeVaultRecoveryArchive(file.archive)
     await storeRecoveryImport(file.header.binding.descriptorHash, file)

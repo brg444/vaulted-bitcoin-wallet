@@ -19,8 +19,8 @@ vi.mock('./vtxo/board', () => ({
   provisionBoardingKey: mocks.provision,
 }))
 
-import { enablePasskeyLogin, unlockLocalEnrollment } from './signIn'
-import { CONNECTOR_TEMPLATE } from './program/connector'
+import { unlockLocalEnrollment } from './signIn'
+import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 import { deriveDirectP256 } from './ceremony/directauth'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { hex } from '@scure/base'
@@ -63,6 +63,7 @@ describe('local vault unlock', () => {
       const direct = await deriveDirectP256(prf)
       const status = {
         enrolled: true,
+        templateVersion: SPENDING_ONLY_TEMPLATE,
         vaultId: 'ab'.repeat(32),
         network: 'mutinynet',
         rpId: location.hostname,
@@ -115,18 +116,11 @@ describe('local vault unlock', () => {
     },
   )
 
-  it('does not sign a replacement connector binding when its independent enrollment pin is missing', async () => {
-    mocks.status.mockResolvedValue({ enrolled: true, vaultId: 'vault-a', templateVersion: CONNECTOR_TEMPLATE })
-    await expect(
-      enablePasskeyLogin({ vaultId: 'vault-a' } as Parameters<typeof enablePasskeyLogin>[0]),
-    ).rejects.toThrow('connector enrollment pin required')
-    expect(mocks.provision).not.toHaveBeenCalled()
-  })
-
   it('fetches and verifies the enrolled status before decrypting the phone scalar', async () => {
     const order: string[] = []
     const status = {
       enrolled: true,
+      templateVersion: SPENDING_ONLY_TEMPLATE,
       vaultId: 'vault-a',
       rpId: location.hostname,
       clientOrigin: location.origin,

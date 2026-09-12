@@ -1,3 +1,4 @@
+import { ledgerRecoveryFixture } from './recovery/testdata/ledger'
 import type { LightDescriptor, LightPolicy } from './light/contract'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { VaultErrorResponse } from './api'
@@ -11,10 +12,8 @@ import {
   type VtxoReserveRequest,
   type VtxoReserveResponse,
 } from './cosignerClient'
-import { POLICY_VERSION } from './constants'
-import { SAVINGS_TEMPLATE } from './program/constants'
 import { requireStatusIdentity } from './status'
-import { defaultSpendingPolicy, spendingPolicyDigest, type SpendingPolicy } from './spendingPolicy'
+import type { SpendingPolicy } from './spendingPolicy'
 import type { VaultStatusWire } from './types'
 import type { ProtectionTier } from './protectionTier'
 import type { LedgerSavingsKeyContext, LedgerAccountOrigin } from './program/ledgerNativeKeys'
@@ -155,47 +154,6 @@ type ExpectedVtxoOperationWireView = {
   checkpointPsbts?: string[]
 }
 
-function statusWire(): VaultStatusWire {
-  const spendingPolicy = defaultSpendingPolicy()
-  return {
-    enrolled: true,
-    network: 'mutinynet',
-    clientOrigin: 'https://vault.example',
-    rpId: 'vault.example',
-    vaultId: 'vault-a',
-    templateVersion: SAVINGS_TEMPLATE,
-    policyVersion: POLICY_VERSION,
-    protectionTier: 'advanced',
-    recoveryKeyPub: `02${'aa'.repeat(32)}`,
-    arkadeCosignerOrigin: 'https://mutinynet.arkade.sh',
-    arkadeCosignerVersion: '0.4.65',
-    savingsAddress: 'tb1psavings',
-    savingsScript: `5120${'bb'.repeat(32)}`,
-    passkeyLoginAvailable: true,
-    enrollmentMode: 'invite',
-    periodAllowance: 100_000,
-    periodSpent: 10_000,
-    periodRemaining: 90_000,
-    txCap: 50_000,
-    absoluteFeeCap: 5_000,
-    feerateCapSatVb: 10,
-    spendingPolicy,
-    spendingPolicyDigest: spendingPolicyDigest(spendingPolicy),
-    vtxoVaultCosignerPub: `02${'cc'.repeat(32)}`,
-    vtxoExitDelay: 4608,
-    vtxoExitDelayUnit: 'seconds',
-    spendingArkAddress: 'tark1spending',
-    spendingArkScript: `5120${'dd'.repeat(32)}`,
-    vtxoDelegatePub: `02${'ee'.repeat(32)}`,
-    vtxoBoardingActive: true,
-    vtxoBoardingProgram: 'vault-board-v1',
-    vtxoBoardingAddress: 'tb1pboarding',
-    vtxoBoardingScript: `5120${'ff'.repeat(32)}`,
-    vtxoBoardingExitDelay: 604672,
-    vtxoBoardingExitDelayUnit: 'seconds',
-  }
-}
-
 describe('Vault cosigner wire DTO conformance', () => {
   it('matches the frozen server status and request schemas exactly', () => {
     expectTypeOf<VaultStatusWire>().toEqualTypeOf<ExpectedVaultStatusWire>()
@@ -228,8 +186,12 @@ describe('Vault cosigner wire DTO conformance', () => {
     expectTypeOf<VtxoOperationWireView>().toEqualTypeOf<ExpectedVtxoOperationWireView>()
   })
 
-  it('normalizes the recovery key only after preserving the exact status wire object', () => {
-    const wire = statusWire()
+  it('normalizes the recovery key only after preserving the exact status wire object', async () => {
+    const wire = structuredClone((await ledgerRecoveryFixture(true)).status) as VaultStatusWire & {
+      recoveryPub?: string
+    }
+    wire.recoveryKeyPub = wire.recoveryPub
+    delete wire.recoveryPub
     const domain = requireStatusIdentity(wire, wire.vaultId)
 
     expect(wire).not.toHaveProperty('recoveryPub')

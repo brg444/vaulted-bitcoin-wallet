@@ -1,3 +1,4 @@
+import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { verifyDirectP256 } from './ceremony/directauth'
@@ -10,7 +11,6 @@ import { validateLedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollme
 
 const encoder = new TextEncoder()
 const BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v4')
-const CONNECTOR_BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v5')
 const LEDGER_BINDING_DOMAIN = encoder.encode('arkade-vault/recovery-binding/v6')
 const PROOF_DOMAIN = encoder.encode('arkade-2fa-vault/passkey-proof/v1')
 const ZERO = Uint8Array.of(0)
@@ -51,23 +51,23 @@ export function passkeyProofDigest(purpose: string, challenge: Uint8Array, crede
 export function recoveryBindingDigest(binding: string): Uint8Array {
   if (!binding || binding.length > 16 * 1024) throw new Error('recovery binding')
   const version = (JSON.parse(binding) as { version?: unknown }).version
-  const domain =
-    version === 4
-      ? BINDING_DOMAIN
-      : version === 5
-        ? CONNECTOR_BINDING_DOMAIN
-        : version === 6
-          ? LEDGER_BINDING_DOMAIN
-          : undefined
+  const domain = version === 4 ? BINDING_DOMAIN : version === 6 ? LEDGER_BINDING_DOMAIN : undefined
   if (!domain) throw new Error('recovery binding version')
   return sha256(concat(domain, ZERO, encoder.encode(binding)))
 }
 
 type RecoveryBinding = Record<string, string | number | boolean>
 
+function requireRecoveryBindingProgram(value: RecoveryBinding) {
+  if (value?.version !== 4 && value?.version !== 6) throw new Error('recovery binding version')
+  const expected = value.version === 4 ? SPENDING_ONLY_TEMPLATE : LEDGER_NATIVE_TEMPLATE
+  if (value.templateVersion !== expected) throw new Error('recovery binding program is not this release')
+}
+
 export function parseRecoveryBinding(binding: string): RecoveryBinding {
   if (!binding || binding.length > 16 * 1024) throw new Error('recovery binding')
   const value = JSON.parse(binding) as RecoveryBinding
+  requireRecoveryBindingProgram(value)
   const expected = [
     'version',
     'credentialId',
@@ -108,27 +108,18 @@ export function parseRecoveryBinding(binding: string): RecoveryBinding {
     'envelopeNonce',
     'envelopeCiphertext',
   ]
-  if (value?.version === 5)
-    expected.push(
-      'connectorType',
-      'connectorPub',
-      'connectorFingerprint',
-      'connectorPath',
-      'connectorEnrollmentDigest',
-      'connectorDescriptorHash',
-    )
   if (value?.version === 6)
     expected.push('ledgerSavingsContextDigest', 'ledgerSavingsDescriptorHash', 'ledgerSavingsBackup')
   const got = Object.keys(value || {})
   if (got.length !== expected.length || expected.some((field, i) => got[i] !== field)) {
     throw new Error('recovery binding fields or order')
   }
-  if (value.version !== 4 && value.version !== 5 && value.version !== 6) throw new Error('recovery binding version')
   return value
 }
 
 export function assertRecoveryBindingMatchesStatus(binding: string | RecoveryBinding, status: VaultStatus) {
   const value = typeof binding === 'string' ? parseRecoveryBinding(binding) : binding
+  requireRecoveryBindingProgram(value)
   const pairs: [string, keyof VaultStatus][] = [
     ['phoneDirectP256', 'phoneDirectP256'],
     ['phoneBip340Pub', 'phoneBip340Pub'],
@@ -168,19 +159,6 @@ export function assertRecoveryBindingMatchesStatus(binding: string | RecoveryBin
       throw new Error('recovery binding ' + bindingField + ' does not match vault status')
     }
   }
-  if (value.version === 5) {
-    const identity = status.connectorEnrollment
-    if (
-      !identity ||
-      value.connectorType !== identity.connectorType ||
-      value.connectorPub !== identity.connectorPub ||
-      value.connectorFingerprint !== identity.connectorFingerprint ||
-      value.connectorPath !== identity.connectorPath.join('/') ||
-      value.connectorEnrollmentDigest !== identity.enrollmentDigest ||
-      value.connectorDescriptorHash !== identity.descriptorHash
-    )
-      throw new Error('connector recovery binding does not match vault status')
-  } else if (status.connectorEnrollment) throw new Error('connector requires version 5 recovery binding')
   if (value.version === 6) {
     if (
       status.templateVersion !== LEDGER_NATIVE_TEMPLATE ||
@@ -275,6 +253,7 @@ export function verifyRecoveryBindingSignatures(input: {
 }
 
 export function recordFromRecoveryBinding(value: RecoveryBinding, status?: VaultStatus): EnrollmentSecrets {
+  requireRecoveryBindingProgram(value)
   const vaultId = String(value.vaultId || '').trim()
   if (!vaultId) throw new Error('vault id required')
   if (value.version === 6 && !status) throw new Error('Ledger recovery requires verified vault status')

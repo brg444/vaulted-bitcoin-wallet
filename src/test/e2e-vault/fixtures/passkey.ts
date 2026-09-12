@@ -1,13 +1,14 @@
-import { CONNECTOR_TEST_DESCRIPTOR, CONNECTOR_TEST_PUB } from './connector'
-import { buildConnectorEnrollmentPreview } from '../../../lib/vault/program/connectorEnrollmentCore'
-import { tweakPrivateKey } from '../../../lib/vault/program/tweak'
-import { DUAL_CONNECTOR_TEMPLATE, DUAL_CONNECTOR_PROGRAM } from '../../../lib/vault/program/connector'
+import {
+  SPENDING_ONLY_TEMPLATE,
+  SPENDING_ENROLLMENT_SCHEMA,
+  spendingEnrollmentHash,
+  validateSpendingEnrollment,
+  type SpendingEnrollmentDescriptor,
+} from '../../../lib/vault/spendingEnrollment'
 import { expect, test as base, type BrowserContext, type CDPSession, type Page, type Route } from '@playwright/test'
 import { ArkAddress, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
-import { Transaction } from '@scure/btc-signer'
-import { buildVaultProgramDescriptor } from '../../../lib/vault/program/descriptor'
-import { PROGRAM_FIXTURE, scalarSecret } from '../../../lib/vault/program/fixtures'
+import { PROGRAM_FIXTURE } from '../../../lib/vault/program/fixtures'
 import { recoveryBindingDigest } from '../../../lib/vault/passkeyBinding'
 import { bytesToHex } from '../../../lib/vault/hex'
 import { POLICY_VERSION } from '../../../lib/vault/constants'
@@ -90,9 +91,7 @@ export type FakePasskeyAuthorizer = {
   setInviteOnly(enabled: boolean): void
   readonly invite: string
   readonly vaultId: string
-  broadcastedTransaction(): string
   clearRecoverGate(): void
-  fundSavings(value: number): void
   rejectNextRecoveryAsWrongCredential(): void
   releaseRecover(): void
   selectedSpendingPolicy(): SpendingPolicy | undefined
@@ -135,13 +134,7 @@ function publicStatus() {
     enrollmentMode: 'token',
     spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
     vtxoBoardingProgram: BOARDING_PROGRAM,
-    connectorCapability: {
-      schema: 'arkade-vault/connector-capability-v1',
-      program: DUAL_CONNECTOR_PROGRAM,
-      template: DUAL_CONNECTOR_TEMPLATE,
-      reserveSats: 1000,
-      enrollmentSchema: 'arkade-vault/enrollment-with-connector-v1',
-    },
+    supportedSetups: ['light'],
   }
 }
 
@@ -158,24 +151,12 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
     this.inviteOnly = enabled
   }
 
-  private connectorPreview?: ReturnType<typeof buildConnectorEnrollmentPreview>
-  private parents = new Map<string, string>()
-  private reserveUtxos: Record<string, unknown>[] = []
-  private operation?: {
-    operationId: string
-    candidateTxid: string
-    signedPsbt: string
-    phase: string
-    resolution: string
-    verified: boolean
-  }
-  private fundingValue = 0
   private enrolled = false
   private passkeyLoginAvailable = false
   private proposed?: Record<string, any>
   private pendingPolicy?: SpendingPolicy
-  private pendingProtectionTier?: 'standard' | 'advanced'
-  private descriptor?: ReturnType<typeof buildVaultProgramDescriptor>
+  private pendingProtectionTier?: 'light'
+  private descriptor?: SpendingEnrollmentDescriptor
   private boardingDescriptor?: BoardingDescriptor
   private boardingDescriptorHash?: string
   private install?: PasskeyInstall
@@ -183,8 +164,6 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
   private recoverGate?: { promise: Promise<void>; release: () => void }
   private recoverSeen?: { promise: Promise<void>; resolve: () => void }
   private wrongRecovery = false
-  private savingsUtxos: Record<string, unknown>[] = []
-  private broadcastHex = ''
 
   constructor(private readonly page: Page) {}
 
@@ -204,38 +183,13 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       const request = route.request()
       const url = new URL(request.url())
       if (url.pathname.endsWith('/fee-estimates')) return json(route, { '3': 1, '6': 1 })
-      const parentMatch = url.pathname.match(/\/tx\/([0-9a-f]+)\/hex$/)
-      if (parentMatch && this.parents.has(parentMatch[1]))
-        return route.fulfill({ status: 200, body: this.parents.get(parentMatch[1])! })
       if (url.pathname.endsWith('/blocks/tip/height')) return route.fulfill({ status: 200, body: '1' })
-      if (url.pathname.endsWith('/tx') && request.method() === 'POST') {
-        this.broadcastHex = request.postData() || ''
-        return route.fulfill({
-          status: 200,
-          body: Transaction.fromRaw(hex.decode(this.broadcastHex), { allowUnknownOutputs: true }).id,
-        })
-      }
-      const addressUtxos = url.pathname.match(/\/address\/([^/]+)\/utxo$/)
-      if (addressUtxos) {
-        const address = decodeURIComponent(addressUtxos[1])
-        return json(
-          route,
-          address === this.status().savingsAddress
-            ? this.savingsUtxos
-            : address === this.connectorPreview?.family.connector.address
-              ? this.reserveUtxos
-              : [],
-        )
-      }
+      if (/\/address\/[^/]+\/utxo$/.test(url.pathname)) return json(route, [])
       if (/\/address\/[^/]+\/txs(?:\/chain\/[^/]+)?$/.test(url.pathname)) return json(route, [])
       if (/\/tx\/[0-9a-f]+\/status$/.test(url.pathname)) return json(route, { confirmed: false })
       if (/\/tx\/[0-9a-f]+\/outspends$/.test(url.pathname)) return json(route, [])
       return json(route, { error: 'not found' }, 404)
     })
-  }
-
-  broadcastedTransaction() {
-    return this.broadcastHex
   }
 
   clearRecoverGate() {
@@ -249,28 +203,6 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       seen = resolve
     })
     this.recoverSeen = { promise: seenPromise, resolve: seen }
-  }
-
-  fundSavings(value: number) {
-    if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Savings fixture value must be positive sats')
-    this.fundingValue = value
-    this.refreshFunding()
-  }
-
-  private refreshFunding() {
-    if (!this.connectorPreview || !this.fundingValue) return
-    const parent = (script: Uint8Array, value: number, tag: string) => {
-      const tx = new Transaction({ version: 2, allowUnknownInputs: true, allowUnknownOutputs: true })
-      tx.addInput({ txid: tag.repeat(32), index: 0 })
-      tx.addOutput({ script, amount: BigInt(value) })
-      this.parents.set(tx.id, hex.encode(tx.toBytes(true)))
-      return [{ txid: tx.id, vout: 0, value, status: { confirmed: true, block_height: 1 } }]
-    }
-    this.savingsUtxos = parent(this.connectorPreview.family.savings.script, this.fundingValue, '77')
-    this.reserveUtxos = [
-      ...parent(this.connectorPreview.family.connector.script, 500, '78'),
-      ...parent(this.connectorPreview.family.connector.script, 500, '79'),
-    ]
   }
 
   releaseRecover() {
@@ -297,35 +229,23 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
     const spendingPolicy = proposed?.spendingPolicy
       ? validateSpendingPolicy(proposed.spendingPolicy)
       : defaultSpendingPolicy()
-    const spending = descriptor
-      ? new VaultPolicyV1Script({
-          userPub: xonly(descriptor.keys.phoneBip340),
-          vtxoVaultCosignerPub: xonly(descriptor.keys.vaultCosignerBase),
-          arkdServerPub: xonly(MUTINYNET_OPERATOR_SIGNER_PUB),
-          delegatePub: xonly(VAULT_POLICY_V1_PINNED_DELEGATE),
-          exitDelay: VAULT_POLICY_V1_EXIT_DELAY,
-          exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
-          exitDevicePub: xonly(descriptor.keys.phoneBip340),
-          exitHardwarePub: xonly(descriptor.keys.hardware),
-          ...(descriptor.keys.recovery ? { exitRecoveryPub: xonly(descriptor.keys.recovery) } : {}),
-        })
-      : undefined
     return {
       enrolled: this.enrolled,
       network: 'mutinynet',
       clientOrigin: ORIGIN,
       rpId: RP_ID,
       vaultId,
-      templateVersion: DUAL_CONNECTOR_TEMPLATE,
+      templateVersion: SPENDING_ONLY_TEMPLATE,
       policyVersion: POLICY_VERSION,
-      protectionTier: (proposed?.protectionTier as 'standard' | 'advanced') || 'standard',
-      externalOwnerWalletPub: descriptor?.keys.hardware || PROGRAM_FIXTURE.hardwarePub,
+      protectionTier: 'light',
+      externalOwnerWalletPub: '',
+      spendingDescriptor: descriptor,
       vaultCosignerBasePub: PROGRAM_FIXTURE.vaultCosignerBase,
       arkadeCosignerBasePub: PROGRAM_FIXTURE.arkadeCosignerBase,
       arkadeCosignerOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
       arkadeCosignerVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
-      savingsAddress: descriptor?.savings.address || 'tb1psavings',
-      savingsScript: descriptor?.savings.script || `5120${'11'.repeat(32)}`,
+      savingsAddress: '',
+      savingsScript: '',
       periodAllowance: spendingPolicy.periodAllowanceSats,
       periodSpent: 0,
       periodRemaining: spendingPolicy.periodAllowanceSats,
@@ -336,18 +256,13 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       spendingPolicyDigest: spendingPolicyDigest(spendingPolicy),
       phoneBip340Pub: proposed?.phoneBip340Pub,
       phoneDirectP256: proposed?.phoneDirectP256,
-      ...(descriptor?.keys.recovery
-        ? { recoveryPub: descriptor.keys.recovery, recoveryKeyPub: descriptor.keys.recovery }
-        : {}),
       passkeyLoginAvailable: this.passkeyLoginAvailable,
       enrollmentMode: this.enrolled ? 'closed' : 'token',
       vtxoVaultCosignerPub: PROGRAM_FIXTURE.vaultCosignerBase,
       vtxoExitDelay: Number(VAULT_POLICY_V1_EXIT_DELAY),
       vtxoExitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
-      spendingArkAddress: spending
-        ? new ArkAddress(xonly(MUTINYNET_OPERATOR_SIGNER_PUB), spending.tweakedPublicKey, 'tark').encode()
-        : '',
-      spendingArkScript: spending ? hex.encode(spending.pkScript) : '',
+      spendingArkAddress: descriptor?.address || '',
+      spendingArkScript: descriptor?.script || '',
       vtxoDelegatePub: VAULT_POLICY_V1_PINNED_DELEGATE,
       vtxoBoardingActive: Boolean(this.enrolled && this.boardingDescriptor),
       vtxoBoardingProgram: BOARDING_PROGRAM,
@@ -357,18 +272,6 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       vtxoBoardingExitDelayUnit: 'seconds',
       vtxoBoardingDescriptor: this.boardingDescriptor,
       vtxoBoardingDescriptorHash: this.boardingDescriptorHash,
-      ...(this.connectorPreview && proposed
-        ? {
-            connectorEnrollment: {
-              connectorType: proposed.connectorType,
-              connectorPub: proposed.connectorPub,
-              connectorFingerprint: proposed.connectorFingerprint,
-              connectorPath: proposed.connectorPath,
-              enrollmentDigest: this.connectorPreview.digest,
-              descriptorHash: this.connectorPreview.compositeHash,
-            },
-          }
-        : {}),
     }
   }
 
@@ -376,7 +279,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
     if (!this.proposed) throw new Error('passkey was not proposed')
     const status = this.status()
     return JSON.stringify({
-      version: 5,
+      version: 4,
       credentialId: this.proposed.credentialId,
       webauthnP256: this.proposed.webauthnP256,
       phoneDirectP256: status.phoneDirectP256,
@@ -414,12 +317,6 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       feerateCapSatVb: status.feerateCapSatVb,
       envelopeNonce: body.envelopeNonce,
       envelopeCiphertext: body.envelopeCiphertext,
-      connectorType: status.connectorEnrollment!.connectorType,
-      connectorPub: status.connectorEnrollment!.connectorPub,
-      connectorFingerprint: status.connectorEnrollment!.connectorFingerprint,
-      connectorPath: status.connectorEnrollment!.connectorPath.join('/'),
-      connectorEnrollmentDigest: status.connectorEnrollment!.enrollmentDigest,
-      connectorDescriptorHash: status.connectorEnrollment!.descriptorHash,
     })
   }
 
@@ -449,7 +346,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         return json(route, { code: 'REJECTED', error: 'spending policy digest mismatch' }, 400)
       }
       this.pendingPolicy = spendingPolicy
-      if (body?.protectionTier !== 'standard' && body?.protectionTier !== 'advanced') {
+      if (body?.protectionTier !== 'light') {
         return json(route, { code: 'REJECTED', error: 'protection tier required' }, 400)
       }
       this.pendingProtectionTier = body.protectionTier
@@ -482,19 +379,6 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         return json(route, { code: 'REJECTED', error: 'boarding key must be BIP340 x-only' }, 400)
       }
       this.proposed = body
-      this.descriptor = buildVaultProgramDescriptor({
-        vaultId: VAULT_ID,
-        network: 'mutinynet',
-        protectionTier: body.protectionTier,
-        phonePub: body.phoneBip340Pub,
-        hardwarePub: CONNECTOR_TEST_PUB,
-        ...(body.recoveryXOnly ? { recoveryPub: `02${body.recoveryXOnly}` } : {}),
-        phoneDirectP256: body.phoneDirectP256,
-        vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
-        arkadeCosignerBase: PROGRAM_FIXTURE.arkadeCosignerBase,
-        arkadeCosigner: PROGRAM_FIXTURE.arkadeCosigner,
-        spendingPolicy: body.spendingPolicy as SpendingPolicy,
-      })
       const boarding = createBoardingProgramScript(
         {
           name: BOARDING_PROGRAM,
@@ -519,87 +403,44 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         script: hex.encode(boarding.pkScript),
         address: boarding.onchainAddress(getNetwork('mutinynet')),
       }
-      const preview = buildConnectorEnrollmentPreview({
-        templateVersion: DUAL_CONNECTOR_TEMPLATE,
+      const spending = new VaultPolicyV1Script({
+        userPub: xonly(body.phoneBip340Pub),
+        vtxoVaultCosignerPub: xonly(PROGRAM_FIXTURE.vaultCosignerBase),
+        arkdServerPub: xonly(MUTINYNET_OPERATOR_SIGNER_PUB),
+        delegatePub: xonly(VAULT_POLICY_V1_PINNED_DELEGATE),
+        exitDelay: VAULT_POLICY_V1_EXIT_DELAY,
+        exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
+        exitDevicePub: xonly(body.phoneBip340Pub),
+        exitMode: 'device',
+        network: 'mutinynet',
+      })
+      this.descriptor = validateSpendingEnrollment({
+        schema: SPENDING_ENROLLMENT_SCHEMA,
+        template: SPENDING_ONLY_TEMPLATE,
         vaultId: VAULT_ID,
         network: 'mutinynet',
-        protectionTier: body.protectionTier,
+        protectionTier: 'light',
         phonePub: body.phoneBip340Pub,
         phoneDirectP256: body.phoneDirectP256,
-        recoveryPub: body.recoveryXOnly ? `02${body.recoveryXOnly}` : undefined,
-        vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
-        arkadeCosignerBase: PROGRAM_FIXTURE.arkadeCosignerBase,
-        arkadeOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
-        arkadeVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
+        cosignerPub: PROGRAM_FIXTURE.vaultCosignerBase,
+        operatorPub: MUTINYNET_OPERATOR_SIGNER_PUB,
+        delegatePub: VAULT_POLICY_V1_PINNED_DELEGATE,
+        exitMode: 'device',
+        exitDelay: Number(VAULT_POLICY_V1_EXIT_DELAY),
+        exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
         spendingPolicy: proposedPolicy,
+        spendingPolicyDigest: spendingPolicyDigest(proposedPolicy),
+        script: hex.encode(spending.pkScript),
+        address: new ArkAddress(xonly(MUTINYNET_OPERATOR_SIGNER_PUB), spending.tweakedPublicKey, 'tark').encode(),
         boarding: this.boardingDescriptor,
-        origin: {
-          connectorPub: body.connectorPub,
-          connectorType: body.connectorType,
-          connectorFingerprint: body.connectorFingerprint,
-          connectorPath: body.connectorPath,
-        },
       })
-      this.connectorPreview = preview
-      this.descriptor = preview.descriptor
-      this.boardingDescriptorHash = preview.boardingHash
-      this.refreshFunding()
+      this.boardingDescriptorHash = spendingEnrollmentHash(this.descriptor)
       return json(route, {
         vaultId: VAULT_ID,
-        descriptorHash: preview.compositeHash,
-        descriptor: {
-          schema: 'arkade-vault/enrollment-with-connector-v1',
-          vaultId: VAULT_ID,
-          boarding: this.boardingDescriptor,
-          connector: {
-            schema: 'arkade-vault/connector-enrollment-v1',
-            template: DUAL_CONNECTOR_TEMPLATE,
-            vaultId: VAULT_ID,
-            network: 'mutinynet',
-            protectionTier: body.protectionTier,
-            phonePub: body.phoneBip340Pub,
-            hardwarePub: body.connectorPub,
-            phoneDirectP256: body.phoneDirectP256,
-            ...(body.recoveryXOnly ? { recoveryPub: `02${body.recoveryXOnly}` } : {}),
-            vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
-            arkadeCosignerBase: PROGRAM_FIXTURE.arkadeCosignerBase,
-            arkadeOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
-            arkadeVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
-            spendingPolicyDigest: spendingPolicyDigest(proposedPolicy),
-            program: hex.encode(preview.family.program),
-            savingsScript: preview.descriptor.savings.script,
-            savingsAddress: preview.descriptor.savings.address,
-            connectorScript: hex.encode(preview.family.connector.script),
-            connectorType: body.connectorType,
-            fingerprint: body.connectorFingerprint,
-            originPath: body.connectorPath.join('/'),
-            enrollmentDigest: preview.digest,
-          },
-        },
+        descriptorHash: this.boardingDescriptorHash,
+        descriptor: this.descriptor,
       })
     }
-    if (path === '/v1/connector/withdraw/authorize' && body) {
-      if (!this.connectorPreview) throw new Error('connector not enrolled')
-      const tx = Transaction.fromPSBT(hex.decode(body.psbt), {
-        allowUnknownInputs: true,
-        allowUnknownOutputs: true,
-        allowUnknown: true,
-      })
-      tx.signIdx(tweakPrivateKey(scalarSecret(14), this.connectorPreview.family.program), 2)
-      tx.signIdx(tweakPrivateKey(scalarSecret(15), this.connectorPreview.family.program), 2)
-      const signedPsbt = hex.encode(tx.toPSBT())
-      this.operation = {
-        operationId: 'ab'.repeat(16),
-        candidateTxid: tx.id,
-        signedPsbt,
-        phase: 'emulator_signed',
-        resolution: 'none',
-        verified: true,
-      }
-      return json(route, { operationId: this.operation.operationId, signedPsbt, replay: false })
-    }
-    if (path === '/v1/connector/operation')
-      return this.operation ? json(route, this.operation) : json(route, { error: 'not found' }, 404)
     if (path === '/v1/enroll/finish') {
       this.enrolled = true
       const status = this.status()
@@ -910,14 +751,11 @@ export const test = base.extend<Fixtures>({
   },
 })
 
-export async function reachPasskeySetup(page: Page, inviteOnly = true, signerDescriptor = CONNECTOR_TEST_DESCRIPTOR) {
+export async function reachPasskeySetup(page: Page, inviteOnly = true) {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /Everyday spending/ })).toBeVisible()
   await page.getByRole('button', { name: 'Get started' }).click()
-  await page.getByRole('button', { name: /^Standard/ }).click()
-  await page.getByRole('button', { name: 'Paste', exact: true }).click()
-  await page.getByTestId('hardware-pub').fill(signerDescriptor)
-  await page.getByRole('button', { name: 'Use this hardware key' }).click()
+  await page.getByRole('button', { name: /^Light/ }).click()
   await page.getByRole('button', { name: 'Review setup' }).click()
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: 'Continue' }).click()

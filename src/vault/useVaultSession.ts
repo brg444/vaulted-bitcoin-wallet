@@ -31,15 +31,6 @@ import {
 import type { LedgerSavingsRegistration } from '../lib/vault/ledgerClient'
 import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 import { canonicalLedgerValue } from '../lib/vault/program/ledgerEnrollment'
-import {
-  connectorPinFromVerifiedStatus,
-  saveConnectorEnrollmentPin,
-  loadConnectorEnrollmentPin,
-  verifyConnectorStatus,
-  connectorKitFromVerifiedStatus,
-  saveConnectorRecoveryKit,
-} from '../lib/vault/program/connectorEnroll'
-import { isConnectorTemplate } from '../lib/vault/program/connector'
 import type { VaultStatus } from '../lib/vault/types'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { saveLocalKit } from '../lib/vault/program/kitStore'
@@ -74,14 +65,6 @@ async function restoreMap(enrollment: EnrollmentSecrets, status: VaultStatus, se
   } catch {
     // Authentication is independent of the optional recovery-map backup.
   }
-}
-
-function restoreConnectorPin(status: VaultStatus): void {
-  if (!isConnectorTemplate(status.templateVersion)) return
-  const existing = loadConnectorEnrollmentPin(status.vaultId)
-  if (existing) verifyConnectorStatus(status, existing)
-  else saveConnectorEnrollmentPin(connectorPinFromVerifiedStatus(status))
-  saveConnectorRecoveryKit(connectorKitFromVerifiedStatus(status))
 }
 
 function bestEffortBrowserWrite(write: () => void) {
@@ -243,7 +226,6 @@ export function useVaultSession({
         const unlocked = await unlockLocalEnrollment(local, (live, auth, canAuthorizeNew, record) =>
           renewFromLocalUnlock(live, record, auth, canAuthorizeNew),
         )
-        restoreConnectorPin(unlocked.status)
         setEnrollment(unlocked.enrollment)
         setLocked(false)
         const live = unlocked.status
@@ -253,14 +235,12 @@ export function useVaultSession({
         bestEffortBrowserWrite(() => saveEnrollment(unlocked.enrollment))
         bestEffortBrowserWrite(() => saveSelectedVaultId(unlocked.enrollment.vaultId))
         bestEffortBrowserWrite(() => setSessionLocked(false))
-        if (isConnectorTemplate(live.templateVersion) || live.templateVersion === LEDGER_NATIVE_TEMPLATE)
-          await setupSpendingRenewals(live, unlocked.enrollment)
+        if (live.templateVersion === LEDGER_NATIVE_TEMPLATE) await setupSpendingRenewals(live, unlocked.enrollment)
         void restoreMap(unlocked.enrollment, live, setup)
         return
       }
       if (local) {
         const live = await enablePasskeyLogin(local)
-        restoreConnectorPin(live)
         const livePin = pinFromEnrolledStatus(live)
         setEnrollment(local)
         setLocked(false)
@@ -280,7 +260,6 @@ export function useVaultSession({
       const result = await signInWithPasskey(vaultId, (live, auth, canAuthorizeNew, record) =>
         renewFromLocalUnlock(live, record, auth, canAuthorizeNew),
       )
-      restoreConnectorPin(result.status)
       const recoveredPin = pinFromEnrolledStatus(result.status)
       setEnrollment(result.enrollment)
       setLocked(false)
@@ -313,7 +292,6 @@ export function useVaultSession({
         if (!file) throw new Error('No complete encrypted recovery archive was found')
         imported = true
         const live = await fetchVaultStatus(undefined, file.header.binding.vaultId)
-        restoreConnectorPin(live)
         const livePin = pinFromEnrolledStatus(live)
         setEnrollment(file.header.enrollment)
         setAddressPin(livePin)

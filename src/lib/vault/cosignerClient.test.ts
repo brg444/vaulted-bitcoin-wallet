@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { POLICY_VERSION } from './constants'
 import { vaultCosignerClient, type VaultEnrollmentRequest, type VaultSessionAssertion } from './cosignerClient'
 import { SAVINGS_TEMPLATE } from './program/constants'
+import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES, defaultSpendingPolicy, spendingPolicyDigest } from './spendingPolicy'
 
 const spendingPolicy = defaultSpendingPolicy()
@@ -51,6 +52,8 @@ describe('VaultCosignerClient route compatibility', () => {
   })
 
   it('groups the exact existing HTTP API into enrollment, recovery, and Spending capabilities', async () => {
+    const status = sharedSpendingStatus()
+    const statusPath = `/v1/status?vault=${encodeURIComponent(status.vaultId)}`
     const operationWire = {
       operationId: '11'.repeat(16),
       bundleDigest: '22'.repeat(32),
@@ -79,46 +82,8 @@ describe('VaultCosignerClient route compatibility', () => {
           { status: 200 },
         )
       }
-      if (path === '/v1/status?vault=vault%20a') {
-        return new Response(
-          JSON.stringify({
-            enrolled: false,
-            network: 'mutinynet',
-            clientOrigin: 'https://vault.example',
-            rpId: 'vault.example',
-            vaultId: 'vault a',
-            templateVersion: SAVINGS_TEMPLATE,
-            policyVersion: POLICY_VERSION,
-            protectionTier: 'standard',
-            arkadeCosignerOrigin: 'https://mutinynet.arkade.sh',
-            arkadeCosignerVersion: '0.4.65',
-            savingsAddress: 'tb1ptest',
-            savingsScript: `5120${'aa'.repeat(32)}`,
-            passkeyLoginAvailable: false,
-            enrollmentMode: 'invite',
-            periodAllowance: 100_000,
-            periodSpent: 0,
-            periodRemaining: 100_000,
-            txCap: 50_000,
-            absoluteFeeCap: 5_000,
-            feerateCapSatVb: 10,
-            spendingPolicy,
-            spendingPolicyDigest: policyDigest,
-            vtxoVaultCosignerPub: `02${'11'.repeat(32)}`,
-            vtxoExitDelay: 4608,
-            vtxoExitDelayUnit: 'seconds',
-            spendingArkAddress: 'tark1spending',
-            spendingArkScript: `5120${'22'.repeat(32)}`,
-            vtxoDelegatePub: `02${'33'.repeat(32)}`,
-            vtxoBoardingActive: true,
-            vtxoBoardingProgram: 'vault-board-v1',
-            vtxoBoardingAddress: 'tb1pboarding',
-            vtxoBoardingScript: `5120${'44'.repeat(32)}`,
-            vtxoBoardingExitDelay: 604672,
-            vtxoBoardingExitDelayUnit: 'seconds',
-          }),
-          { status: 200 },
-        )
+      if (path === statusPath) {
+        return new Response(JSON.stringify(status), { status: 200 })
       }
       if (path === '/v1/vtxo/operation?vaultId=vault%20a&operationId=operation%2F1') {
         return new Response(JSON.stringify(operationWire), { status: 200 })
@@ -128,7 +93,7 @@ describe('VaultCosignerClient route compatibility', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await vaultCosignerClient.enrollment.publicStatus()
-    await vaultCosignerClient.enrollment.status('vault a')
+    await vaultCosignerClient.enrollment.status(status.vaultId)
     await vaultCosignerClient.enrollment.invite('invite-a')
     await vaultCosignerClient.enrollment.start('invite-a', {
       protectionTier: 'standard',
@@ -208,7 +173,7 @@ describe('VaultCosignerClient route compatibility', () => {
 
     expect(fetchMock.mock.calls.map(([path, init]) => `${(init as RequestInit).method} ${String(path)}`)).toEqual([
       'GET /v1/status',
-      'GET /v1/status?vault=vault%20a',
+      `GET ${statusPath}`,
       'GET /v1/invite',
       'POST /v1/enroll/start',
       'POST /v1/enroll/propose',

@@ -2,9 +2,6 @@ import { getNetwork } from '@arkade-os/sdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { hex } from '@scure/base'
 import { isVaultBitcoinAddress } from '../bitcoin'
-import { requireStatusIdentity } from '../status'
-import { spendingScriptFromStatus, vaultPolicyV1ScriptFromStatus } from '../vtxo/spend'
-import { bindStatusToLocalPin } from '../pin'
 import { lightStatusMatchesDescriptor, requireLightStatus } from './status'
 import { lightObserverIdentity, storeLightWorkerDescriptor, loadLightWorkerDescriptor } from './workerIdentity'
 import { vaultWalletNamespace } from '../vtxo/walletWorkerNames'
@@ -27,14 +24,6 @@ import 'fake-indexeddb/auto'
 
 beforeEach(() => localStorage.clear())
 describe('Light integrated identity boundaries', () => {
-  it('reconstructs its receiving script while legacy pinning and Savings contracts reject it', () => {
-    const wire = lightTestStatus()
-    const st = requireStatusIdentity(wire, wire.vaultId)
-    expect(st.lightDescriptor).toEqual(testDescriptor)
-    expect(hex.encode(spendingScriptFromStatus(st).pkScript)).toBe(testDescriptor.scriptPubKey)
-    expect(() => vaultPolicyV1ScriptFromStatus(st)).toThrow('Light')
-    expect(() => bindStatusToLocalPin(st)).toThrow()
-  })
   it.each([
     { protectionTier: 'standard' },
     { templateVersion: 'arkade-vault-v1' },

@@ -8,6 +8,7 @@ import type { VaultStatus, BoardingDescriptor } from '../../types'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../../spendingPolicy'
 import { buildVaultProgramDescriptor, type VaultProgramDescriptor } from '../../program/descriptor'
 import { sharedSpendingStatus } from '../../vtxo/testdata/sharedSpending'
+import { spendingEnrollmentHash } from '../../spendingEnrollment'
 import { buildSpendingRecoveryDescriptor } from '../../program/spendingRecoveryDescriptor'
 import { vaultPolicyV1ScriptFromStatus } from '../../vtxo/spend'
 import { buildRecoveryKit, type RecoveryKit } from '../../program/kit'
@@ -172,8 +173,32 @@ export function recoveryFixture(
   return { ...recoveryArchiveFixture(kit, status, spending), board }
 }
 
-export function sharedSpendingRecoveryFixture() {
+export function sharedSpendingRecoveryFixture(derivedBoardingPub?: string) {
   const status = sharedSpendingStatus()
+  if (derivedBoardingPub) {
+    const prior = status.vtxoBoardingDescriptor!
+    const board = createBoardingProgramScript(
+      {
+        name: BOARDING_PROGRAM,
+        boardingPubKey: hex.decode(derivedBoardingPub).slice(1),
+        cosignerPubKey: hex.decode(prior.vaultBoardCosignerPub).slice(1),
+        recoveryPubKey: hex.decode(prior.recoveryPhonePub).slice(1),
+      },
+      hex.decode(prior.operatorPub).slice(1),
+      { type: 'seconds', value: BigInt(prior.exitDelay) },
+    )
+    const boarding = {
+      ...prior,
+      boardingPub: derivedBoardingPub,
+      script: hex.encode(board.pkScript),
+      address: board.onchainAddress(getNetwork(networkPins(prior.network).sdkNetwork)),
+    }
+    status.spendingDescriptor = { ...status.spendingDescriptor!, boarding }
+    status.vtxoBoardingDescriptor = boarding
+    status.vtxoBoardingDescriptorHash = spendingEnrollmentHash(status.spendingDescriptor)
+    status.vtxoBoardingAddress = boarding.address
+    status.vtxoBoardingScript = boarding.script
+  }
   const kit = buildRecoveryKit(buildSpendingRecoveryDescriptor(status.spendingDescriptor))
   return recoveryArchiveFixture(kit, status, vaultPolicyV1ScriptFromStatus(status))
 }

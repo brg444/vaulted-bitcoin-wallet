@@ -1,11 +1,8 @@
 import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from './spendingEnrollment'
-import { LIGHT_PROFILE } from './light/contract'
-import { requireLightStatus } from './light/status'
 import { readBounded } from './bounded'
 import { POLICY_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
 import { authorizerWalletHref, requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
-import { isConnectorTemplate } from './program/connector'
 import type { ConnectorCapability } from './program/connectorEnroll'
 import { SAVINGS_TEMPLATE } from './program/constants'
 import { bindStatusToLocalPin } from './pin'
@@ -230,18 +227,14 @@ export function requireStatusIdentity(
   if (!status || typeof status !== 'object') throw new Error('status is not an object')
   if (!status.vaultId || String(status.vaultId).trim() === '') throw new Error('vault id required')
   if (status.vaultId !== expected) throw new Error('status vault id does not match')
-  requireReleaseNetwork(status.network)
-  if (status.templateVersion === LIGHT_PROFILE) return requireLightStatus(status)
-  if (
-    status.templateVersion !== SPENDING_ONLY_TEMPLATE &&
-    status.templateVersion !== SAVINGS_TEMPLATE &&
-    status.templateVersion !== LEDGER_NATIVE_TEMPLATE &&
-    !isConnectorTemplate(status.templateVersion)
-  )
+  const network = requireReleaseNetwork(status.network)
+  if (status.templateVersion !== SPENDING_ONLY_TEMPLATE && status.templateVersion !== LEDGER_NATIVE_TEMPLATE)
     throw new Error('template version is not this release')
+  if (status.connectorEnrollment || status.lightDescriptor || status.lightDescriptorHash)
+    throw new Error('status contains a retired account program')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
-  const selected = validateSpendingPolicy(status.spendingPolicy)
-  if (spendingPolicyDigest(selected) !== status.spendingPolicyDigest) {
+  const selected = validateSpendingPolicy(status.spendingPolicy, network)
+  if (spendingPolicyDigest(selected, network) !== status.spendingPolicyDigest) {
     throw new Error('status spending policy digest does not match')
   }
   if (

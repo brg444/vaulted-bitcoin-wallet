@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { POLICY_VERSION } from './constants'
 import { pinEnrolledStatus } from './pin'
 import { SAVINGS_TEMPLATE } from './program/constants'
@@ -13,9 +13,21 @@ import {
   vaultStatusPath,
 } from './status'
 import type { VaultStatusWire } from './types'
-import { CURRENT_SPENDING_POLICY_CAPABILITIES, defaultSpendingPolicy, spendingPolicyDigest } from './spendingPolicy'
+import { CURRENT_SPENDING_POLICY_CAPABILITIES } from './spendingPolicy'
+import { ledgerRecoveryFixture } from './recovery/testdata/ledger'
+import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
+import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 
-const VAULT_ID = 'vault-test-current'
+let standard: CompatibleStatusWire
+let advanced: CompatibleStatusWire
+let VAULT_ID: string
+
+beforeAll(async () => {
+  standard = (await ledgerRecoveryFixture(false)).status as CompatibleStatusWire
+  advanced = (await ledgerRecoveryFixture(true)).status as CompatibleStatusWire
+  advanced.recoveryKeyPub = advanced.recoveryPub
+  VAULT_ID = standard.vaultId
+})
 
 afterEach(() => {
   localStorage.clear()
@@ -25,44 +37,7 @@ afterEach(() => {
 type CompatibleStatusWire = VaultStatusWire & { recoveryPub?: string }
 
 function sampleStatus(over: Partial<CompatibleStatusWire> = {}): CompatibleStatusWire {
-  const spendingPolicy = defaultSpendingPolicy()
-  return {
-    enrolled: true,
-    network: 'mutinynet',
-    clientOrigin: 'https://vault.example',
-    rpId: 'vault.example',
-    vaultId: VAULT_ID,
-    templateVersion: SAVINGS_TEMPLATE,
-    policyVersion: POLICY_VERSION,
-    protectionTier: 'standard',
-    arkadeCosignerOrigin: 'https://mutinynet.arkade.sh',
-    arkadeCosignerVersion: '0.4.65',
-    savingsAddress: 'tb1ptest',
-    savingsScript: '5120' + 'aa'.repeat(32),
-    passkeyLoginAvailable: false,
-    enrollmentMode: 'invite',
-    periodAllowance: 100_000,
-    periodSpent: 0,
-    periodRemaining: 100_000,
-    txCap: 50_000,
-    absoluteFeeCap: 5_000,
-    feerateCapSatVb: 10,
-    spendingPolicy,
-    spendingPolicyDigest: spendingPolicyDigest(spendingPolicy),
-    vtxoVaultCosignerPub: '02' + '11'.repeat(32),
-    vtxoExitDelay: 4608,
-    vtxoExitDelayUnit: 'seconds',
-    spendingArkAddress: 'tark1spending',
-    spendingArkScript: '5120' + '22'.repeat(32),
-    vtxoDelegatePub: '02' + '33'.repeat(32),
-    vtxoBoardingActive: true,
-    vtxoBoardingProgram: 'vault-board-v1',
-    vtxoBoardingAddress: 'tb1pboarding',
-    vtxoBoardingScript: '5120' + '44'.repeat(32),
-    vtxoBoardingExitDelay: 604672,
-    vtxoBoardingExitDelayUnit: 'seconds',
-    ...over,
-  }
+  return { ...structuredClone(standard), ...over }
 }
 
 describe('status identity binding', () => {
@@ -73,21 +48,46 @@ describe('status identity binding', () => {
   })
 
   it('binds serialized status and the request path to an explicit vault', () => {
-    const raw = JSON.stringify(sampleStatus({ vaultId: 'tenant-b' }))
-    expect(parseStatusJson(raw, 'tenant-b').vaultId).toBe('tenant-b')
-    expect(() => parseStatusJson(raw, VAULT_ID)).toThrow(/vault id/)
+    const raw = JSON.stringify(sampleStatus())
+    expect(parseStatusJson(raw, VAULT_ID).vaultId).toBe(VAULT_ID)
+    expect(() => parseStatusJson(raw, 'tenant-b')).toThrow(/vault id/)
     expect(vaultStatusPath('tenant-b')).toBe('/v1/status?vault=tenant-b')
     expect(() => vaultStatusPath('')).toThrow(/vault id required/)
   })
 
-  it('accepts only the current Savings template', () => {
-    expect(() =>
-      requireStatusIdentity(sampleStatus({ templateVersion: 'phone-hww-recovery-staged-v5' }), VAULT_ID),
-    ).toThrow(/template version/)
-    expect(requireStatusIdentity(sampleStatus(), VAULT_ID).templateVersion).toBe(SAVINGS_TEMPLATE)
+  it('accepts retained Ledger and shared Spending identities', () => {
+    expect(requireStatusIdentity(sampleStatus(), VAULT_ID).templateVersion).toBe(LEDGER_NATIVE_TEMPLATE)
+    const spending = sharedSpendingStatus() as CompatibleStatusWire
+    expect(requireStatusIdentity(spending, spending.vaultId)).toMatchObject({
+      templateVersion: 'vaulted-spending-v1',
+      savingsAddress: '',
+      savingsScript: '',
+    })
   })
 
-  it('keeps mainnet disabled until the named Vault Program is released for it', () => {
+  it.each([false, true])('validates mainnet policy against its enrolled bounds, advanced=%s', async (advanced) => {
+    const status = (await ledgerRecoveryFixture(advanced, 'mainnet')).status as CompatibleStatusWire
+    expect(requireStatusIdentity(status, status.vaultId).spendingPolicyDigest).toBe(status.spendingPolicyDigest)
+  })
+
+  it.each([
+    'vaulted-light-v1',
+    'phone-hww-recovery-savings-v1',
+    'phone-connector-recovery-savings-v1',
+    'phone-connector-recovery-savings-v2',
+    'unknown',
+  ])('rejects retired or unknown account identity %s', (templateVersion) => {
+    expect(() => requireStatusIdentity(sampleStatus({ templateVersion }), VAULT_ID)).toThrow(/template version/)
+  })
+
+  it.each(['connectorEnrollment', 'lightDescriptor', 'lightDescriptorHash'])(
+    'rejects retired %s metadata on a retained account',
+    (field) => {
+      expect(() => requireStatusIdentity({ ...sampleStatus(), [field]: {} }, VAULT_ID)).toThrow(/retired account/)
+    },
+  )
+
+  it('rejects an unsupported network name', () => {
     expect(() => requireStatusIdentity(sampleStatus({ network: 'bitcoin' }), VAULT_ID)).toThrow(
       /unsupported Vault network/,
     )
@@ -99,19 +99,15 @@ describe('status identity binding', () => {
   })
 
   it('normalizes the server recoveryKeyPub field and rejects conflicting aliases', () => {
-    const recovery = `02${'bb'.repeat(32)}`
-    expect(
-      requireStatusIdentity(sampleStatus({ protectionTier: 'advanced', recoveryKeyPub: recovery }), VAULT_ID),
-    ).toMatchObject({
+    const recovery = advanced.recoveryKeyPub!
+    const wire = { ...structuredClone(advanced), recoveryPub: undefined }
+    expect(requireStatusIdentity(wire, wire.vaultId)).toMatchObject({
       recoveryPub: recovery,
       recoveryKeyPub: recovery,
     })
-    expect(() =>
-      requireStatusIdentity(
-        sampleStatus({ protectionTier: 'advanced', recoveryKeyPub: recovery, recoveryPub: `03${'cc'.repeat(32)}` }),
-        VAULT_ID,
-      ),
-    ).toThrow(/recovery key fields/)
+    expect(() => requireStatusIdentity({ ...wire, recoveryPub: `03${'cc'.repeat(32)}` }, VAULT_ID)).toThrow(
+      /recovery key fields/,
+    )
   })
 
   it('requires the protection tier to match recovery-key presence', () => {
@@ -162,7 +158,7 @@ describe('pingVaultService', () => {
     await expect(pingVaultService()).resolves.toBe(true)
   })
 
-  it('rejects a mainnet deployment before its Vault Program is released', async () => {
+  it('rejects public status with an unsupported network name', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(

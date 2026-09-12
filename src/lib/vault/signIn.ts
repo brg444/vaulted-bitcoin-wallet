@@ -1,5 +1,3 @@
-import { isConnectorTemplate } from './program/connector'
-import { loadConnectorEnrollmentPin, verifyConnectorStatus } from './program/connectorEnroll'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { deriveDirectP256, signDirectP256, zeroBytes } from './ceremony/directauth'
 import { vaultCosignerClient } from './cosignerClient'
@@ -150,14 +148,6 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
       const descriptor = ledgerEnrollmentFromStatus(status)
       validateLedgerSavingsEnrollmentSecrets(rec.ledgerSavings, descriptor.savings)
     } else if (rec.ledgerSavings) throw new Error('Ledger enrollment does not match this vault')
-    const connectorPin = loadConnectorEnrollmentPin(vaultId)
-    if (connectorPin) verifyConnectorStatus(status, connectorPin)
-    else if (isConnectorTemplate(status.templateVersion)) {
-      // A lost browser pin must come from the existing signed recovery binding,
-      // never from signing a replacement binding supplied by the service.
-      if (status.passkeyLoginAvailable) return (await signInWithPasskey(vaultId)).status
-      throw new Error('connector enrollment pin required before installing passkey sign-in')
-    }
     session = await beginPasskeySession('install-envelope', status, rec.credId)
     phoneSecret = await decryptPhoneSecret(session.prf, rec.nonce, rec.ciphertext)
     const ledgerBackup = ledgerAccessBackup(rec)
@@ -242,8 +232,7 @@ export async function unlockLocalEnrollment(
     throw new Error('deployment RP ID does not match this signing client host')
   }
   const live = await vaultCosignerClient.enrollment.status(rec.vaultId)
-  if (isConnectorTemplate(live.templateVersion) || live.templateVersion === LEDGER_NATIVE_TEMPLATE)
-    return signInWithPasskey(rec.vaultId, withRenewalAuth)
+  if (live.templateVersion === LEDGER_NATIVE_TEMPLATE) return signInWithPasskey(rec.vaultId, withRenewalAuth)
   pinEnrolledStatus(live)
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({
