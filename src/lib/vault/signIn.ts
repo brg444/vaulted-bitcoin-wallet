@@ -83,12 +83,15 @@ export async function beginPasskeySession(
   status: VaultStatus,
   allowCredentialId?: string,
   candidateTxid?: string,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted()
   const issued = await vaultCosignerClient.recovery.challenge({
     purpose,
     vaultId: status.vaultId,
     ...(candidateTxid ? { candidateTxid } : {}),
   })
+  signal?.throwIfAborted()
   const challenge = hexToBytes(issued.challenge)
   if (challenge.length !== 32) throw new Error('authorizer returned a malformed passkey challenge')
   const expectedCred = allowCredentialId || issued.allowCredentialId
@@ -106,7 +109,7 @@ export async function beginPasskeySession(
     },
     mode,
   )
-  const got = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null
+  const got = (await navigator.credentials.get({ publicKey, signal })) as PublicKeyCredential | null
   if (!got) throw new Error('The operation was aborted.')
   if (expectedCred && bytesToHex(new Uint8Array(got.rawId)) !== expectedCred) {
     throw new Error('passkey credential does not match this vault')
@@ -115,41 +118,54 @@ export async function beginPasskeySession(
   if (!prf || prf.length !== 32) {
     throw new Error('this passkey did not return its 32-byte PRF secret on this device')
   }
-  const derived = await deriveDirectP256(prf)
-  const credentialId = new Uint8Array(got.rawId)
-  const response = got.response as AuthenticatorAssertionResponse
-  const directProof = signDirectP256(derived.scalar, passkeyProofDigest(purpose, challenge, credentialId))
-  return {
-    prf,
-    scalar: derived.scalar,
-    derivedDirectPub: derived.pub,
-    credentialId,
-    assertion: {
-      challengeId: issued.challengeId,
-      credentialId: bytesToHex(credentialId),
-      clientDataJSON: bytesToHex(new Uint8Array(response.clientDataJSON)),
-      authenticatorData: bytesToHex(new Uint8Array(response.authenticatorData)),
-      signature: bytesToHex(new Uint8Array(response.signature)),
-      directProof: bytesToHex(directProof),
-    },
+  let derived: Awaited<ReturnType<typeof deriveDirectP256>> | undefined
+  let transferred = false
+  try {
+    signal?.throwIfAborted()
+    derived = await deriveDirectP256(prf)
+    signal?.throwIfAborted()
+    const credentialId = new Uint8Array(got.rawId)
+    const response = got.response as AuthenticatorAssertionResponse
+    const directProof = signDirectP256(derived.scalar, passkeyProofDigest(purpose, challenge, credentialId))
+    transferred = true
+    return {
+      prf,
+      scalar: derived.scalar,
+      derivedDirectPub: derived.pub,
+      credentialId,
+      assertion: {
+        challengeId: issued.challengeId,
+        credentialId: bytesToHex(credentialId),
+        clientDataJSON: bytesToHex(new Uint8Array(response.clientDataJSON)),
+        authenticatorData: bytesToHex(new Uint8Array(response.authenticatorData)),
+        signature: bytesToHex(new Uint8Array(response.signature)),
+        directProof: bytesToHex(directProof),
+      },
+    }
+  } finally {
+    if (!transferred) zeroBytes(prf, derived?.scalar as Uint8Array)
   }
 }
 
-export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultStatus> {
+export async function enablePasskeyLogin(rec: EnrollmentSecrets, signal?: AbortSignal): Promise<VaultStatus> {
+  signal?.throwIfAborted()
   rec = structuredClone(rec)
   let session: Awaited<ReturnType<typeof beginPasskeySession>> | undefined
   let phoneSecret: Uint8Array | undefined
   try {
     const vaultId = rec.vaultId
     if (!vaultId) throw new Error('vault id required')
-    const status = await vaultCosignerClient.enrollment.status(vaultId)
+    const status = await vaultCosignerClient.enrollment.status(vaultId, signal)
+    signal?.throwIfAborted()
     if (!status.enrolled) throw new Error('vault is not enrolled')
     if (status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
       const descriptor = ledgerEnrollmentFromStatus(status)
       validateLedgerSavingsEnrollmentSecrets(rec.ledgerSavings, descriptor.savings)
     } else if (rec.ledgerSavings) throw new Error('Ledger enrollment does not match this vault')
-    session = await beginPasskeySession('install-envelope', status, rec.credId)
+    session = await beginPasskeySession('install-envelope', status, rec.credId, undefined, signal)
+    signal?.throwIfAborted()
     phoneSecret = await decryptPhoneSecret(session.prf, rec.nonce, rec.ciphertext)
+    signal?.throwIfAborted()
     const ledgerBackup = ledgerAccessBackup(rec)
     if (rec.ledgerSavings) {
       const seed = await unlockLedgerPhoneSeed(
@@ -160,12 +176,14 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
       )
       zeroBytes(seed)
     }
+    signal?.throwIfAborted()
     const bindingResponse = await vaultCosignerClient.enrollment.binding({
       vaultId: status.vaultId,
       envelopeNonce: rec.nonce,
       envelopeCiphertext: rec.ciphertext,
       ...(ledgerBackup ? { ledgerSavings: ledgerBackup } : {}),
     })
+    signal?.throwIfAborted()
     assertRecoveryBindingMatchesStatus(bindingResponse.binding, status)
     if (
       ledgerBackup &&
@@ -186,6 +204,7 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
       derivedDirectPub: session.derivedDirectPub,
       phoneSecret,
     })
+    signal?.throwIfAborted()
     await vaultCosignerClient.enrollment.install({
       vaultId,
       challengeId: session.assertion.challengeId,
@@ -201,7 +220,9 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
       bindingDirectSig: bytesToHex(bindingDirectSig),
       bindingPhoneSig: bytesToHex(bindingPhoneSig),
     })
-    const live = await vaultCosignerClient.enrollment.status(vaultId)
+    signal?.throwIfAborted()
+    const live = await vaultCosignerClient.enrollment.status(vaultId, signal)
+    signal?.throwIfAborted()
     if (!live.passkeyLoginAvailable) {
       throw new Error('authorizer did not persist passkey sign-in recovery data')
     }
@@ -210,7 +231,9 @@ export async function enablePasskeyLogin(rec: EnrollmentSecrets): Promise<VaultS
     // on durable browser storage. The session coordinator persists it after
     // the verified session is already live.
     pinFromEnrolledStatus(live)
+    signal?.throwIfAborted()
     await provisionBoardingKey(phoneSecret, live)
+    signal?.throwIfAborted()
     return live
   } finally {
     zeroBytes(session?.prf as Uint8Array, session?.scalar as Uint8Array, phoneSecret as Uint8Array)
@@ -225,17 +248,22 @@ export async function unlockLocalEnrollment(
     canAuthorizeNew: boolean,
     enrollment: EnrollmentSecrets,
   ) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<{ enrollment: EnrollmentSecrets; status: VaultStatus }> {
-  const publicStatus = await vaultCosignerClient.enrollment.publicStatus()
+  signal?.throwIfAborted()
+  const publicStatus = await vaultCosignerClient.enrollment.publicStatus(signal)
+  signal?.throwIfAborted()
   const rpId = String(publicStatus.rpId || location.hostname).toLowerCase()
   if (rpId !== location.hostname.toLowerCase()) {
     throw new Error('deployment RP ID does not match this signing client host')
   }
-  const live = await vaultCosignerClient.enrollment.status(rec.vaultId)
-  if (live.templateVersion === LEDGER_NATIVE_TEMPLATE) return signInWithPasskey(rec.vaultId, withRenewalAuth)
+  const live = await vaultCosignerClient.enrollment.status(rec.vaultId, signal)
+  signal?.throwIfAborted()
+  if (live.templateVersion === LEDGER_NATIVE_TEMPLATE) return signInWithPasskey(rec.vaultId, withRenewalAuth, signal)
   pinEnrolledStatus(live)
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({
+    signal,
     publicKey: passkeyGetOptions(
       {
         challenge,
@@ -251,12 +279,16 @@ export async function unlockLocalEnrollment(
   const prf = prfFrom(got)
   if (!prf || prf.length !== 32) throw new Error('authenticator did not return PRF')
   try {
+    signal?.throwIfAborted()
     const secret = await decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
     try {
+      signal?.throwIfAborted()
       await provisionBoardingKey(secret, live)
+      signal?.throwIfAborted()
       if (withRenewalAuth) {
         const direct = await deriveDirectP256(prf)
         try {
+          signal?.throwIfAborted()
           if (
             bytesToHex(direct.pub) !== rec.phoneDirectP256 ||
             bytesToHex(direct.pub) !== live.phoneDirectP256 ||
@@ -284,6 +316,7 @@ export async function unlockLocalEnrollment(
           zeroBytes(direct.scalar)
         }
       }
+      signal?.throwIfAborted()
       return { enrollment: rec, status: live }
     } finally {
       zeroBytes(secret)
@@ -293,14 +326,17 @@ export async function unlockLocalEnrollment(
   }
 }
 
-export async function discoverVaultIdFromPasskey(): Promise<string> {
-  const publicStatus = await vaultCosignerClient.enrollment.publicStatus()
+export async function discoverVaultIdFromPasskey(signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted()
+  const publicStatus = await vaultCosignerClient.enrollment.publicStatus(signal)
+  signal?.throwIfAborted()
   const rpId = String(publicStatus.rpId || location.hostname).toLowerCase()
   if (rpId !== location.hostname.toLowerCase()) {
     throw new Error('deployment RP ID does not match this signing client host')
   }
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const got = (await navigator.credentials.get({
+    signal,
     publicKey: passkeyGetOptions(
       {
         challenge,
@@ -311,6 +347,7 @@ export async function discoverVaultIdFromPasskey(): Promise<string> {
     ),
   })) as PublicKeyCredential | null
   if (!got) throw new Error('The operation was aborted.')
+  signal?.throwIfAborted()
   const handle = (got.response as AuthenticatorAssertionResponse).userHandle
   if (!handle) throw new Error('this passkey is not tied to a vault')
   const vaultId = new TextDecoder().decode(new Uint8Array(handle)).trim()
@@ -326,22 +363,27 @@ export async function signInWithPasskey(
     canAuthorizeNew: boolean,
     enrollment: EnrollmentSecrets,
   ) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets }> {
   let session: Awaited<ReturnType<typeof beginPasskeySession>> | undefined
   let phoneSecret: Uint8Array | undefined
   try {
+    signal?.throwIfAborted()
     const id = String(vaultId || '').trim()
     if (!id) throw new Error('vault id required')
-    const status = await vaultCosignerClient.enrollment.status(id)
+    const status = await vaultCosignerClient.enrollment.status(id, signal)
+    signal?.throwIfAborted()
     if (!status.enrolled) throw new Error('this deployment has not been set up yet')
     if (!status.passkeyLoginAvailable) {
       throw new Error('passkey sign-in must first be enabled on the original enrolled device')
     }
-    session = await beginPasskeySession('recover', status)
+    session = await beginPasskeySession('recover', status, undefined, undefined, signal)
+    signal?.throwIfAborted()
     const recovered = await vaultCosignerClient.enrollment.recover({
       vaultId: status.vaultId,
       ...session.assertion,
     })
+    signal?.throwIfAborted()
     const parsed = parseRecoveryBinding(recovered.binding)
     if (bytesToHex(session.credentialId) !== parsed.credentialId) {
       throw new Error('selected passkey does not belong to this vault')
@@ -357,6 +399,7 @@ export async function signInWithPasskey(
     }
     assertRecoveryBindingMatchesStatus(parsed, status)
     phoneSecret = await decryptPhoneSecret(session.prf, recovered.envelopeNonce, recovered.envelopeCiphertext)
+    signal?.throwIfAborted()
     const verified = verifyRecoveryBindingSignatures({
       binding: recovered.binding,
       bindingDigestHex: recovered.bindingDigest,
@@ -386,7 +429,9 @@ export async function signInWithPasskey(
     // their pin shape here; persistence is best effort in the coordinator so
     // private browsing cannot turn a valid recovery into a failed login.
     pinFromEnrolledStatus(status)
+    signal?.throwIfAborted()
     await provisionBoardingKey(phoneSecret, status)
+    signal?.throwIfAborted()
     if (withRenewalSync)
       await withRenewalSync(
         status,
@@ -398,6 +443,7 @@ export async function signInWithPasskey(
         false,
         enrollment,
       )
+    signal?.throwIfAborted()
     return { status, enrollment }
   } finally {
     zeroBytes(session?.prf as Uint8Array, session?.scalar as Uint8Array, phoneSecret as Uint8Array)

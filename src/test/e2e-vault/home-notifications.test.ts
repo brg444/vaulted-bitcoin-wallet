@@ -10,11 +10,12 @@ function fixtureBody(): string {
     import React from '/node_modules/.vite/deps/react.js';
     import { ToastProvider } from '/src/components/Toast.tsx';
     import { VaultContext } from '/src/vault/context.ts';
+    import { VaultTestProvider } from '/src/test/fixtures/VaultTestProvider.tsx';
     import Home from '/src/screens/Vault/Home.tsx';
     export default function HomeFixture() {
       const current = React.useContext(VaultContext);
       return React.createElement(ToastProvider, null,
-        React.createElement(VaultContext.Provider, { value: {
+        React.createElement(VaultTestProvider, { value: {
           ...current, account: 'spend', balancesLoaded: true, history: [],
           navigate: () => {}, openTx: () => {}, refreshingBalance: false,
           positions: { spending: { availableSats: 12000, pendingSats: 0, totalSats: 12000 }, savings: { availableSats: 0, pendingSats: 0, totalSats: 0 } },

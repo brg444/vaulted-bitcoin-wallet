@@ -1,5 +1,6 @@
+import { renderVault as render } from '../../test/fixtures/renderVault'
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ToastProvider } from '../../components/Toast'
 import NativeNotifications from './NativeNotifications'

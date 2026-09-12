@@ -1,3 +1,4 @@
+import * as webauthn from './webauthn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VaultStatus } from './types'
 
@@ -173,4 +174,71 @@ describe('local vault unlock', () => {
     await expect(unlocked).resolves.toMatchObject({ status })
     expect(order).toEqual(['status', 'pin', 'credentials', 'decrypt', 'provision'])
   })
+})
+
+describe('local approval cancellation', () => {
+  it.each(['status', 'credential', 'boarding'] as const)(
+    'stops after cancellation at %s and wipes acquired secrets',
+    async (phase) => {
+      const abort = new AbortController()
+      const prf = new Uint8Array(32).fill(7),
+        phone = new Uint8Array(32).fill(3)
+      const encrypted = await envelope(prf, phone)
+      const status = {
+        enrolled: true,
+        templateVersion: SPENDING_ONLY_TEMPLATE,
+        vaultId: 'cancel-test',
+        rpId: location.hostname,
+        clientOrigin: location.origin,
+        network: 'mutinynet',
+      } as VaultStatus
+      mocks.publicStatus.mockResolvedValue(status)
+      mocks.status.mockImplementation(async () => {
+        if (phase === 'status') abort.abort()
+        return status
+      })
+      mocks.provision.mockReset().mockImplementation(async () => {
+        if (phase === 'boarding') abort.abort()
+      })
+      let acquiredPRF: Uint8Array<ArrayBuffer> | null = null
+      const originalPrf = webauthn.prfFrom
+      const prfSpy = vi.spyOn(webauthn, 'prfFrom').mockImplementation((credential) => {
+        acquiredPRF = originalPrf(credential)
+        return acquiredPRF
+      })
+      const get = vi.fn(async () => {
+        if (phase === 'credential') abort.abort()
+        return {
+          rawId: Uint8Array.of(1).buffer,
+          getClientExtensionResults: () => ({ prf: { results: { first: prf.buffer } } }),
+        }
+      })
+      Object.defineProperty(navigator, 'credentials', { configurable: true, value: { get } })
+      const renew = vi.fn()
+      await expect(
+        unlockLocalEnrollment(
+          {
+            vaultId: status.vaultId,
+            credId: '01',
+            webauthnP256: '02',
+            phoneDirectP256: '03',
+            phoneBip340Pub: '04',
+            ...encrypted,
+          },
+          renew,
+          abort.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+      expect(renew).not.toHaveBeenCalled()
+      if (phase === 'status') expect(get).not.toHaveBeenCalled()
+      else {
+        expect(get).toHaveBeenCalledWith(expect.objectContaining({ signal: abort.signal }))
+        expect(acquiredPRF).not.toBeNull()
+        expect(acquiredPRF!.every((b) => b === 0)).toBe(true)
+      }
+      if (phase !== 'boarding') expect(mocks.provision).not.toHaveBeenCalled()
+      else expect((mocks.provision.mock.calls[0][0] as Uint8Array).every((b) => b === 0)).toBe(true)
+      prfSpy.mockRestore()
+    },
+  )
 })

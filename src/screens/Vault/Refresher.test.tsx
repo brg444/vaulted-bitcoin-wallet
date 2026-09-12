@@ -1,6 +1,9 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultContent from './Content'
 
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: vi.fn().mockResolvedValue(false) }))
@@ -9,12 +12,12 @@ vi.mock('../../lib/haptics', () => ({ hapticSubtle: vi.fn() }))
 function setup() {
   const refreshBalance = vi.fn().mockResolvedValue(undefined)
   render(
-    <VaultContext.Provider value={{ refreshBalance } as unknown as VaultContextProps}>
+    <VaultTestProvider value={{ refreshBalance } as unknown as VaultContextProps}>
       <VaultContent>
         <p>Activity</p>
         <button>Payment</button>
       </VaultContent>
-    </VaultContext.Provider>,
+    </VaultTestProvider>,
   )
   return refreshBalance
 }

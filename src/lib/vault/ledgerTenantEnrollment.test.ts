@@ -20,7 +20,7 @@ import { ledgerFixturePRF, ledgerFixtureSeed, ledgerRecoveryFixture } from './re
 import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import { hashLedgerSavingsEnrollment } from './program/ledgerRecoveryDescriptor'
 import { scalarSecret } from './program/fixtures'
-import { activateBoardingKey, deleteBoardingKey, stageBoardingKey } from './vtxo/board'
+import { activateBoardingKey, deleteBoardingKey, stageBoardingKey, loadActiveBoardingKey } from './vtxo/board'
 import { generateLedgerPhoneSeed } from './ledgerPhoneBackup'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from './spendingPolicy'
 
@@ -291,6 +291,33 @@ describe('Ledger enrollment commitment and interruption recovery', () => {
     },
   )
 
+  it('persists the exact proposal when cancellation arrives while its response is in flight', async () => {
+    const f = await fixture(true),
+      abort = new AbortController()
+    const proposal = await prepareBegin(f)
+    proposal.mockImplementation(async () => {
+      abort.abort()
+      return {
+        vaultId: f.status.vaultId,
+        descriptor: f.composite,
+        descriptorHash: hashLedgerSavingsEnrollment(f.composite),
+      }
+    })
+    await expect(beginTenantEnrollment('original-token', roles(f), abort.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    const saved = loadStagedEnrollment()
+    expect(saved).toMatchObject({
+      vaultId: f.status.vaultId,
+      inviteToken: 'original-token',
+      descriptorHash: hashLedgerSavingsEnrollment(f.composite),
+      ledgerSavingsDescriptor: f.composite,
+    })
+    expect(saved?.ledgerSavingsDraft?.phoneSeedBackup).toBeDefined()
+    expect(loadEnrollment(localStorage, f.status.vaultId)).toBeNull()
+    await expect(loadActiveBoardingKey(f.status.vaultId)).rejects.toThrow('active vault-board-v1 key required')
+  })
+
   it('refuses finish and reconciliation until a matching registration is durably saved', async () => {
     const f = await fixture()
     saveStagedEnrollment(staged(f))
@@ -333,6 +360,30 @@ describe('Ledger enrollment commitment and interruption recovery', () => {
     )
     expect(createCredential).not.toHaveBeenCalled()
     expect(generateLedgerPhoneSeed).not.toHaveBeenCalled()
+  })
+
+  it('retains a committed registration when cancellation arrives with the finish response', async () => {
+    const f = await fixture(true),
+      abort = new AbortController()
+    await stageBoardingKey({ vaultId: f.status.vaultId, network: 'mutinynet', phoneSecret: scalarSecret(3) })
+    saveStagedEnrollment(staged(f))
+    vi.spyOn(vaultCosignerClient.enrollment, 'finish').mockImplementation(async () => {
+      abort.abort()
+      return f.status as never
+    })
+    const status = vi.spyOn(vaultCosignerClient.enrollment, 'status').mockResolvedValue(f.status)
+    await expect(
+      completeLedgerTenantEnrollment(f.enrollment.ledgerSavings.registration, localStorage, abort.signal),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(loadStagedEnrollment()?.ledgerSavings?.registration).toEqual(f.enrollment.ledgerSavings.registration)
+    expect(loadEnrollment(localStorage, f.status.vaultId)).toBeNull()
+    expect(status).not.toHaveBeenCalled()
+    await expect(loadActiveBoardingKey(f.status.vaultId)).rejects.toThrow('active vault-board-v1 key required')
+    await expect(reconcileStagedEnrollment()).resolves.toMatchObject({
+      enrollment: expect.objectContaining({ credId: f.enrollment.credId }),
+      status: f.status,
+    })
+    expect(createCredential).not.toHaveBeenCalled()
   })
 
   it('reconciles a crash after board-key activation before enrollment promotion', async () => {

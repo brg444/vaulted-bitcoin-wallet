@@ -1,9 +1,12 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RestArkProvider, RestEmulatorProvider } from '@arkade-os/sdk'
 import { Fiats } from '../../lib/types'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import LightningReceive from './LightningReceive'
 import { networkPins } from '../../lib/vault/networkPins'
 
@@ -96,9 +99,9 @@ function show(denomination?: {
     refreshBalance: async () => {},
   } as unknown as VaultContextProps
   return render(
-    <VaultContext.Provider value={value}>
+    <VaultTestProvider value={value}>
       <LightningReceive status={value.status!} onBack={() => {}} denomination={denomination} />
-    </VaultContext.Provider>,
+    </VaultTestProvider>,
   )
 }
 beforeEach(() => {
@@ -170,9 +173,9 @@ describe('Lightning receive screen', () => {
     )
     const status = { enrolled: true, vaultId: 'aa', network: 'mainnet' } as NonNullable<VaultContextProps['status']>
     const view = (current: typeof status) => (
-      <VaultContext.Provider value={{ status: current } as VaultContextProps}>
+      <VaultTestProvider value={{ status: current } as VaultContextProps}>
         <LightningReceive status={current} onBack={() => {}} />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     )
     const rendered = render(view(status))
     await create()
@@ -264,45 +267,45 @@ describe('Lightning receive screen', () => {
       refreshBalance: async () => {},
     } as unknown as VaultContextProps
     const { rerender } = render(
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <LightningReceive
           status={value.status!}
           onBack={() => {}}
           denomination={{ unit: 'usd', rate: null, rateStatus: 'unavailable', setUnit: async () => null }}
         />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     // No rate yet: sats entry stays canonical.
     await user.type(screen.getByRole('textbox', { name: 'Amount to receive (sats)' }), '331')
     rerender(
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <LightningReceive
           status={value.status!}
           onBack={() => {}}
           denomination={{ unit: 'usd', rate, rateStatus: 'ready', setUnit: async () => rate }}
         />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     expect(screen.getByRole('textbox', { name: 'Amount to receive (USD)' })).toHaveValue('0.33')
     const updatedRate = { ...rate, pricePerBtc: 200_000 }
     rerender(
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <LightningReceive
           status={value.status!}
           onBack={() => {}}
           denomination={{ unit: 'usd', rate: updatedRate, rateStatus: 'ready', setUnit: async () => updatedRate }}
         />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     expect(screen.getByRole('textbox', { name: 'Amount to receive (USD)' })).toHaveValue('0.66')
     rerender(
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <LightningReceive
           status={value.status!}
           onBack={() => {}}
           denomination={{ unit: 'sats', rate: updatedRate, rateStatus: 'ready', setUnit: async () => updatedRate }}
         />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     expect(screen.getByRole('textbox', { name: 'Amount to receive (sats)' })).toHaveValue('331')
   })

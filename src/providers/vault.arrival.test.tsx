@@ -1,3 +1,4 @@
+import { useSession } from '../vault/sessionContext'
 import { accountBalanceReads } from '../test/accountBalances'
 import { IDBFactory } from 'fake-indexeddb'
 import { act, render, screen, waitFor } from '@testing-library/react'
@@ -16,9 +17,10 @@ import { useContext } from 'react'
 
 function DebugProbe() {
   const vault = useContext(VaultContext)
+  const session = useSession()
   return (
     <div>
-      <span data-testid='dbg-vault'>{vault.status?.vaultId || 'none'}</span>
+      <span data-testid='dbg-vault'>{session.status?.vaultId || 'none'}</span>
       <span data-testid='dbg-history'>{vault.allHistory.length}</span>
       <span data-testid='dbg-screen'>{vault.screen}</span>
       <span data-testid='dbg-selected'>{vault.selectedTx?.txid || 'none'}</span>
@@ -54,14 +56,7 @@ vi.mock('../vault/useVaultBalances', () => ({
     olderHistory: [],
   }),
 }))
-vi.mock('../vault/useVaultSession', () => ({
-  useVaultSession: () => ({
-    enableOtherDevices: vi.fn().mockResolvedValue(undefined),
-    enroll: vi.fn().mockResolvedValue(undefined),
-    signIn: vi.fn().mockResolvedValue(undefined),
-    restoreRecoveryArchive: vi.fn().mockResolvedValue(undefined),
-  }),
-}))
+
 vi.mock('../vault/useRecoveryAlerts', () => ({ useRecoveryAlerts: () => '' }))
 vi.mock('../vault/useRecoveryKit', () => ({
   useRecoveryKit: () => ({

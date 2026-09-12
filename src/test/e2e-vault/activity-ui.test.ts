@@ -9,6 +9,7 @@ function fixtureBody(): string {
   return `
     import React from '/node_modules/.vite/deps/react.js';
     import { VaultContext } from '/src/vault/context.ts';
+    import { VaultTestProvider } from '/src/test/fixtures/VaultTestProvider.tsx';
     import Activity from '/src/screens/Vault/Activity.tsx';
     const base = [];
     base.push({ txid: 'pending-receive', type: 'received', amount: 12000, confirmed: false, account: 'spend' });
@@ -32,7 +33,7 @@ function fixtureBody(): string {
       const [extra, setExtra] = React.useState([]);
       const [olderState, setOlderState] = React.useState({ status: 'idle', error: '' });
       const allHistory = base.concat(extra);
-      return React.createElement(VaultContext.Provider, { value: {
+      return React.createElement(VaultTestProvider, { value: {
         ...current,
         allHistory,
         balancesLoaded: true,

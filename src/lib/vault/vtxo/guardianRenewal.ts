@@ -106,16 +106,23 @@ export async function authorizeSpendingRenewals(
   enrollment: EnrollmentSecrets,
   auth: VtxoSpendPasskey,
   canAuthorizeNew = true,
+  signal?: AbortSignal,
 ): Promise<SpendingRenewalJournal | null> {
+  signal?.throwIfAborted()
   const context = guardianRenewalContext(status),
     owner = Uint8Array.from(auth.phoneSecret)
   const epoch = epochs.get(status.vaultId) || 0
+  const requireAuthority = () => {
+    signal?.throwIfAborted()
+    if ((epochs.get(status.vaultId) || 0) !== epoch) throw new Error('Wallet locked during renewal authorization')
+  }
   try {
     if (hex.encode(schnorr.getPublicKey(owner)) !== context.ownerPub) throw new Error('Renewal owner changed')
     return await requireVaultLockManager(browserVaultLockManager()).request(
       `vaulted:renewal:${status.vaultId}`,
       { mode: 'exclusive' },
       async () => {
+        requireAuthority()
         const journal = await loadSpendingRenewals(status),
           errors: string[] = []
         try {
@@ -150,30 +157,37 @@ export async function authorizeSpendingRenewals(
                 c.commitmentTxIds?.includes(s.commitmentTxid!) &&
                 (s.receiverExpiresAt === undefined || c.expiresAt?.getTime() === s.receiverExpiresAt * 1000),
             )
-          const remote = await listSpendingRenewals(status, owner, async (page) => {
-            const missing = page.filter(
-              (s) =>
-                s.state === 'confirmed' &&
-                s.receiverTxid &&
-                s.receiverVout !== undefined &&
-                !live.has(`${s.receiverTxid}:${s.receiverVout}`),
-            )
-            if (missing.length)
-              for (const c of (
-                await indexer.getVtxos({
-                  outpoints: missing.map((s) => ({ txid: s.receiverTxid!, vout: s.receiverVout! })),
-                })
-              ).vtxos)
-                if (c.isSpent) spent.add(point(c))
-            for (const result of page) if (journal.operations[result.operationId]) remember(journal, result, status)
-            return page.filter(
-              (s) =>
-                !spendingRenewalTerminal(s.state) ||
-                (s.state === 'confirmed' &&
-                  !archivedReplacement(s) &&
-                  !(liveCovered && spent.has(`${s.receiverTxid}:${s.receiverVout}`))),
-            )
-          })
+          requireAuthority()
+          const remote = await listSpendingRenewals(
+            status,
+            owner,
+            async (page) => {
+              requireAuthority()
+              const missing = page.filter(
+                (s) =>
+                  s.state === 'confirmed' &&
+                  s.receiverTxid &&
+                  s.receiverVout !== undefined &&
+                  !live.has(`${s.receiverTxid}:${s.receiverVout}`),
+              )
+              if (missing.length)
+                for (const c of (
+                  await indexer.getVtxos({
+                    outpoints: missing.map((s) => ({ txid: s.receiverTxid!, vout: s.receiverVout! })),
+                  })
+                ).vtxos)
+                  if (c.isSpent) spent.add(point(c))
+              for (const result of page) if (journal.operations[result.operationId]) remember(journal, result, status)
+              return page.filter(
+                (s) =>
+                  !spendingRenewalTerminal(s.state) ||
+                  (s.state === 'confirmed' &&
+                    !archivedReplacement(s) &&
+                    !(liveCovered && spent.has(`${s.receiverTxid}:${s.receiverVout}`))),
+              )
+            },
+            signal,
+          )
           pruneSets(journal)
           const pendingSetIds = new Set(Object.values(journal.sets).flatMap((s) => s.plans.map((p) => p.operationId)))
           for (const [id, saved] of Object.entries(journal.operations))
@@ -186,10 +200,11 @@ export async function authorizeSpendingRenewals(
                 (liveCovered && spent.has(`${saved.status.receiverTxid}:${saved.status.receiverVout}`)))
             )
               delete journal.operations[id]
-          if ((epochs.get(status.vaultId) || 0) !== epoch) throw new Error('Wallet locked during renewal authorization')
+          requireAuthority()
           const sessions = new Map<string, SpendingRenewalRead>()
           reads.set(status.vaultId, sessions)
           for (const result of remote) {
+            requireAuthority()
             remember(journal, result, status)
             const read = spendingRenewalRead(status, result.operationId, owner)
             sessions.set(result.operationId, read)
@@ -201,6 +216,7 @@ export async function authorizeSpendingRenewals(
               }
           }
           await saveSpendingRenewals(status, journal)
+          requireAuthority()
           await retrySets(status, journal, errors)
           const reserved = new Set(
             listPersistedVtxoSpends(status.vaultId).flatMap((s) => (s.reservedInputs || []).map(point)),
@@ -231,14 +247,27 @@ export async function authorizeSpendingRenewals(
               continue
             try {
               await requireSpendingRenewalAncestry(status, coin, info, indexer)
-              const plan = await prepareSpendingDelegation(status, coin, info, capability, owner)
+              requireAuthority()
+              const plan = await prepareSpendingDelegation(
+                status,
+                coin,
+                info,
+                capability,
+                owner,
+                undefined,
+                undefined,
+                signal,
+              )
+              requireAuthority()
               if (JSON.stringify([...plans, plan]).length > 900000) break
               plans.push(plan)
             } catch (error) {
+              requireAuthority()
               errors.push(error instanceof Error ? error.message : 'Output authorization pending')
             }
           }
           if (plans.length && (epochs.get(status.vaultId) || 0) === epoch) {
+            requireAuthority()
             const set = signSpendingRenewalSet(
               status,
               plans.map((p) => p.request),
@@ -250,10 +279,12 @@ export async function authorizeSpendingRenewals(
               sessions.set(plan.request.operationId, spendingRenewalRead(status, plan.request.operationId, owner))
             }
             await saveSpendingRenewals(status, journal)
+            requireAuthority()
             await retrySets(status, journal, errors)
           }
           journal.checkedAt = new Date().toISOString()
         } catch (error) {
+          signal?.throwIfAborted()
           errors.push(error instanceof Error ? error.message : 'Automatic renewal unavailable')
         }
         journal.error = errors[0]

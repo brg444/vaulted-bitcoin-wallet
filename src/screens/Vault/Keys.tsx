@@ -1,3 +1,4 @@
+import { useSession } from '../../vault/sessionContext'
 import QgGuidance from './qg/QgGuidance'
 import { useContext, useState, type ReactNode } from 'react'
 import { Fingerprint, FileKey, Server, ShieldCheck } from 'lucide-react'
@@ -54,18 +55,8 @@ function SecurityTile({
 export default function VaultKeys() {
   const denomination = useBalanceDenomination()
   const money = (value: number) => formatMoney(value, denomination)
-  const {
-    busy,
-    spendingRenewals,
-    enablePasskeyLogin,
-    hasLocalEnrollment,
-    navigate,
-    openRecover,
-    savingsAddress,
-    setup,
-    spendingArkAddress,
-    status,
-  } = useContext(VaultContext)
+  const { enablePasskeyLogin, hasLocalEnrollment, setup, status } = useSession()
+  const { busy, spendingRenewals, navigate, openRecover, savingsAddress, spendingArkAddress } = useContext(VaultContext)
   const [view, setView] = useState<'overview' | 'keys' | 'limits' | 'renewal'>('overview')
   const phoneCovered = Boolean(status?.enrolled)
   const devicesCovered = Boolean(status?.passkeyLoginAvailable)

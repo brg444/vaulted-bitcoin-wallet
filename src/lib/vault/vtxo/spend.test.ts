@@ -586,7 +586,7 @@ describe('regular VTXO spend coordinator', () => {
         phoneSecret,
         scalar: hex.decode('03'.padStart(64, '0')),
       }))
-      const unlocker = createVtxoSpendUnlocker({} as never, status(), pending.bundleDigest, unlock)
+      const unlocker = () => createVtxoSpendUnlocker({} as never, status(), pending.bundleDigest, unlock)
       vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(currentOperatorInfo(pending))
       vi.spyOn(vaultCosignerClient.spending, 'operation').mockResolvedValue(reviewedOperation(pending) as never)
       vi.spyOn(vaultCosignerClient.spending, 'authorize').mockImplementation(async (request) => {
@@ -639,16 +639,16 @@ describe('regular VTXO spend coordinator', () => {
       try {
         if (interrupted) {
           authorizeCheckpoints.mockRejectedValueOnce(new Error('checkpoint response lost'))
-          await expect(sendVaultVtxo({} as never, status(), reviewedQuote(pending), () => unlocker)).rejects.toThrow(
+          await expect(sendVaultVtxo({} as never, status(), reviewedQuote(pending), unlocker)).rejects.toThrow(
             'checkpoint response lost',
           )
           expect(loadPersistedVtxoSpend('vault-a')?.stage).toBe('operator-submitted')
           expect(phoneSecret.every((byte) => byte === 0)).toBe(true)
           phoneSecret.set(hex.decode('01'.padStart(64, '0')))
         }
-        await expect(
-          sendVaultVtxo({} as never, status(), reviewedQuote(pending), () => unlocker),
-        ).resolves.toMatchObject({ txid: pending.arkTxid })
+        await expect(sendVaultVtxo({} as never, status(), reviewedQuote(pending), unlocker)).resolves.toMatchObject({
+          txid: pending.arkTxid,
+        })
         expect(unlock).toHaveBeenCalledTimes(interrupted ? 2 : 1)
         expect(submit).toHaveBeenCalledTimes(1)
         expect(authorizeCheckpoints).toHaveBeenCalledTimes(interrupted ? 2 : 1)
@@ -767,6 +767,42 @@ describe('regular VTXO spend coordinator', () => {
     expect([...phoneSecret]).toEqual(Array(32).fill(0))
     expect([...scalar]).toEqual(Array(32).fill(0))
   })
+
+  it.each(['dispose', 'abort'] as const)(
+    'wipes a late passkey result after %s and cannot reopen the unlocker',
+    async (action) => {
+      const phoneSecret = new Uint8Array(32).fill(7),
+        scalar = new Uint8Array(32).fill(8)
+      const auth = {
+        phoneSecret,
+        scalar,
+        assertion: { credentialId: 'aa', clientDataJSON: 'bb', authenticatorData: 'cc', signature: 'dd' },
+      }
+      let resolve!: (value: typeof auth) => void
+      const unlockPasskey = vi.fn(
+        () =>
+          new Promise<typeof auth>((r) => {
+            resolve = r
+          }),
+      )
+      const abort = new AbortController()
+      const unlocker = createVtxoSpendUnlocker({} as never, status(), '11'.repeat(32), unlockPasskey, abort.signal)
+      const first = unlocker.unlock(),
+        second = unlocker.unlock()
+      expect(unlockPasskey).toHaveBeenCalledTimes(1)
+      if (action === 'dispose') unlocker.dispose()
+      else abort.abort()
+      const checked = Promise.all([
+        expect(first).rejects.toMatchObject({ name: 'AbortError' }),
+        expect(second).rejects.toMatchObject({ name: 'AbortError' }),
+      ])
+      resolve(auth)
+      await checked
+      expect([...phoneSecret, ...scalar].every((b) => b === 0)).toBe(true)
+      await expect(unlocker.unlock()).rejects.toMatchObject({ name: 'AbortError' })
+      expect(unlockPasskey).toHaveBeenCalledTimes(1)
+    },
+  )
 
   it('requires the SDK callback bundle to be byte-identical to the persisted reservation before Face ID', async () => {
     sdkOperationAdapterMocks.submit.mockReset()

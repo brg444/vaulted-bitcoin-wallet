@@ -1,3 +1,4 @@
+import { useSession } from '../../../vault/sessionContext'
 import { useContext, useState } from 'react'
 import { prettyNumber } from '../../../lib/format'
 import { fingerprint } from '../../../lib/vault/hex'
@@ -10,7 +11,8 @@ function shortPub(pub: string) {
 }
 
 export default function VaultPlan() {
-  const { finishPlan, navigate, networkLabel, setup } = useContext(VaultContext)
+  const { finishPlan, setup } = useSession()
+  const { navigate, networkLabel } = useContext(VaultContext)
   const [consented, setConsented] = useState(false)
   const light = setup.protectionTier === 'light'
   const advanced = setup.protectionTier === 'advanced'

@@ -1,12 +1,15 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultTx from './Tx'
 
 function renderTx(selectedTx: VaultContextProps['selectedTx'], network = 'mutinynet') {
   const retryLightningRefund = vi.fn(async () => {})
   render(
-    <VaultContext.Provider
+    <VaultTestProvider
       value={
         {
           navigate: vi.fn(),
@@ -17,7 +20,7 @@ function renderTx(selectedTx: VaultContextProps['selectedTx'], network = 'mutiny
       }
     >
       <VaultTx />
-    </VaultContext.Provider>,
+    </VaultTestProvider>,
   )
   fireEvent.click(screen.getByText(/View (funding )?transaction$/))
   return { retryLightningRefund }

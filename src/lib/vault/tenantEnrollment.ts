@@ -110,22 +110,16 @@ export interface EnrollmentRoles {
   spendingPolicy: SpendingPolicy
 }
 
-export async function enrollWithPasskey(
-  enrollmentToken: string,
-  roles: EnrollmentRoles,
-): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets }> {
-  const started = await beginTenantEnrollment(enrollmentToken, roles)
-  return finishTenantEnrollment(started.enrollmentToken)
-}
-
 export async function beginTenantEnrollment(
   enrollmentToken: string,
   roles: EnrollmentRoles,
+  signal?: AbortSignal,
 ): Promise<{
   enrollment: EnrollmentSecrets
   ledgerDescriptor?: LedgerSavingsEnrollmentDescriptor
   enrollmentToken: string
 }> {
+  signal?.throwIfAborted()
   roles = structuredClone(roles)
   if (Object.hasOwn(roles, 'connector')) throw new Error('Unsupported Savings enrollment')
   if (roles.protectionTier !== 'light' && !roles.ledger)
@@ -138,7 +132,8 @@ export async function beginTenantEnrollment(
   const wantRecovery = protectionTier === 'advanced'
   const selectedPolicy = validateSpendingPolicy(roles.spendingPolicy)
   const selectedPolicyDigest = spendingPolicyDigest(selectedPolicy)
-  const publicStatus = await vaultCosignerClient.enrollment.publicStatus()
+  const publicStatus = await vaultCosignerClient.enrollment.publicStatus(signal)
+  signal?.throwIfAborted()
   if (publicStatus.vtxoBoardingProgram !== BOARDING_PROGRAM) {
     throw new Error('vault service does not advertise the required boarding program')
   }
@@ -178,6 +173,7 @@ export async function beginTenantEnrollment(
     if (publicStatus.enrollmentMode !== 'open') throw new Error('setup code required')
     token = await openEnrollmentToken()
   }
+  signal?.throwIfAborted()
   const start = await vaultCosignerClient.enrollment.start(token, {
     protectionTier,
     spendingPolicy: selectedPolicy,
@@ -193,7 +189,9 @@ export async function beginTenantEnrollment(
   ) {
     throw new Error('vault service changed the selected spending policy')
   }
+  signal?.throwIfAborted()
   const cred = (await navigator.credentials.create({
+    signal,
     publicKey: passkeyCreateOptions({
       rp: { name: 'Spending vault', id: start.rpId || rpId },
       user: {
@@ -210,7 +208,9 @@ export async function beginTenantEnrollment(
   if (!cred) throw new Error('The operation was aborted.')
   let prf = prfFrom(cred)
   if (!prf) {
+    signal?.throwIfAborted()
     const get = (await navigator.credentials.get({
+      signal,
       publicKey: passkeyGetOptions(
         {
           challenge: hexToBytes(start.challenge) as BufferSource,
@@ -224,11 +224,27 @@ export async function beginTenantEnrollment(
     })) as PublicKeyCredential | null
     prf = get ? prfFrom(get) : null
   }
-  if (!prf || prf.length !== 32) throw new Error('authenticator did not return PRF')
+  if (!prf || prf.length !== 32) {
+    prf?.fill(0)
+    throw new Error('authenticator did not return PRF')
+  }
+  if (signal?.aborted) {
+    prf.fill(0)
+    signal.throwIfAborted()
+  }
 
   const att = cred.response as AuthenticatorAttestationResponse
-  const webauthnP256 = await compressedES256(att)
-  const direct = await deriveDirectP256(prf)
+  let webauthnP256: Uint8Array
+  let direct: Awaited<ReturnType<typeof deriveDirectP256>>
+  try {
+    webauthnP256 = await compressedES256(att)
+    signal?.throwIfAborted()
+    direct = await deriveDirectP256(prf)
+    signal?.throwIfAborted()
+  } catch (error) {
+    prf.fill(0)
+    throw error
+  }
   const phoneSecret = crypto.getRandomValues(new Uint8Array(32))
   const phoneBip340Pub = secp256k1.getPublicKey(phoneSecret, true)
   const authData = att.getAuthenticatorData ? new Uint8Array(att.getAuthenticatorData()) : new Uint8Array()
@@ -240,6 +256,7 @@ export async function beginTenantEnrollment(
   let ledgerSavingsDraft: StagedEnrollment['ledgerSavingsDraft']
   const ledgerSeed = ledger ? generateLedgerPhoneSeed() : undefined
   try {
+    signal?.throwIfAborted()
     stagedBoard = await stageBoardingKey({ vaultId: start.vaultId, phoneSecret, network: publicStatus.network })
     const kek = await crypto.subtle.deriveKey(
       { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: HKDF_INFO },
@@ -292,6 +309,7 @@ export async function beginTenantEnrollment(
     // Restore the original short secret lifetime before yielding to either.
     if (!ledger) prf.fill(0)
     phoneSecret.fill(0)
+    signal?.throwIfAborted()
     proposed = await vaultCosignerClient.enrollment.propose(token, enrollmentRequest)
     if (spendingOnly) {
       spendingVerified = validateSpendingEnrollment(proposed.descriptor)
@@ -361,6 +379,7 @@ export async function beginTenantEnrollment(
       boardingDescriptor: spendingVerified.boarding,
     })
     saveLocalKit(buildRecoveryKit(buildSpendingRecoveryDescriptor(spendingVerified)))
+    signal?.throwIfAborted()
     return { enrollment, enrollmentToken: token }
   }
   if (ledgerVerified && ledgerSavingsDraft) {
@@ -379,6 +398,7 @@ export async function beginTenantEnrollment(
     }
     saveStagedEnrollment(staged)
     saveLocalKit(buildRecoveryKit(buildLedgerRecoveryDescriptor(ledgerVerified)))
+    signal?.throwIfAborted()
     return { enrollment, ledgerDescriptor: ledgerVerified, enrollmentToken: token }
   }
   throw new Error('Enrollment descriptor is missing')
@@ -407,9 +427,12 @@ function requireCurrentStagedEnrollment(staged: StagedEnrollment): void {
 export async function finishTenantEnrollment(
   enrollmentToken: string,
   storage: Storage = localStorage,
+  signal?: AbortSignal,
 ): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets }> {
+  signal?.throwIfAborted()
   const token = String(enrollmentToken || '').trim()
   if (!token) throw new Error('setup code required')
+  signal?.throwIfAborted()
   const staged = loadStagedEnrollment(storage)
   if (!staged?.vaultId || !staged.descriptorHash || !staged.boardingPub || !staged.boardingDescriptorHash) {
     throw new Error('finish setup first')
@@ -452,7 +475,9 @@ export async function finishTenantEnrollment(
     spendingPolicyDigest: staged.spendingPolicyDigest,
   }
   await vaultCosignerClient.enrollment.finish(token, finishRequest)
-  const live = await vaultCosignerClient.enrollment.status(staged.vaultId)
+  signal?.throwIfAborted()
+  const live = await vaultCosignerClient.enrollment.status(staged.vaultId, signal)
+  signal?.throwIfAborted()
   if (staged.ledgerSavings) {
     const descriptor = ledgerEnrollmentFromStatus(live)
     if (hashLedgerSavingsEnrollment(descriptor) !== staged.descriptorHash)
@@ -467,11 +492,13 @@ export async function finishTenantEnrollment(
   )
     throw new Error('Spending enrollment changed while completing setup')
   requireBoardingStatus(live, String(staged.boardingPub || ''))
+  signal?.throwIfAborted()
   await activateBoardingKey({
     vaultId: staged.vaultId,
     descriptorHash: String(live.vtxoBoardingDescriptorHash || staged.boardingDescriptorHash || ''),
     expectedBoardingPub: String(staged.boardingPub || ''),
   })
+  signal?.throwIfAborted()
   const pin = pinFromEnrolledStatus({
     ...live,
     savingsAddress: staged.savingsAddress || live.savingsAddress,
@@ -489,7 +516,9 @@ export async function finishTenantEnrollment(
 export async function completeLedgerTenantEnrollment(
   registration: LedgerSavingsRegistration,
   storage: Storage = localStorage,
+  signal?: AbortSignal,
 ): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets }> {
+  signal?.throwIfAborted()
   const staged = loadStagedEnrollment(storage)
   if (!staged?.ledgerSavingsDraft || !staged.ledgerSavingsDescriptor || !staged.inviteToken)
     throw new Error('Start Ledger Savings setup before registering its policy')
@@ -502,17 +531,22 @@ export async function completeLedgerTenantEnrollment(
     descriptor.savings,
   )
   saveStagedEnrollment({ ...staged, ledgerSavings }, storage)
-  return finishTenantEnrollment(staged.inviteToken, storage)
+  signal?.throwIfAborted()
+  return finishTenantEnrollment(staged.inviteToken, storage, signal)
 }
 
 export async function reconcileStagedEnrollment(
   storage: Storage = localStorage,
+  signal?: AbortSignal,
 ): Promise<{ status: VaultStatus; enrollment: EnrollmentSecrets } | null> {
+  signal?.throwIfAborted()
   const staged = loadStagedEnrollment(storage)
   if (!staged?.vaultId) return null
   requireCurrentStagedEnrollment(staged)
   if (!staged.boardingPub || !staged.boardingDescriptorHash) throw new Error('staged boarding setup is incomplete')
-  const live = await vaultCosignerClient.enrollment.status(staged.vaultId)
+  signal?.throwIfAborted()
+  const live = await vaultCosignerClient.enrollment.status(staged.vaultId, signal)
+  signal?.throwIfAborted()
   if (!live.enrolled) return null
   if (staged.ledgerSavingsDraft) {
     const descriptor = ledgerEnrollmentFromStatus(live)
@@ -528,11 +562,13 @@ export async function reconcileStagedEnrollment(
   )
     throw new Error('Spending enrollment changed while completing setup')
   requireBoardingStatus(live, String(staged.boardingPub || ''))
+  signal?.throwIfAborted()
   await activateBoardingKey({
     vaultId: staged.vaultId,
     descriptorHash: String(live.vtxoBoardingDescriptorHash || staged.boardingDescriptorHash || ''),
     expectedBoardingPub: String(staged.boardingPub || ''),
   })
+  signal?.throwIfAborted()
   if (staged.savingsAddress) {
     const pin = pinFromEnrolledStatus({
       ...live,

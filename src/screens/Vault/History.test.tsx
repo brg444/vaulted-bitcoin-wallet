@@ -1,9 +1,12 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { accountBalanceReads } from '../../test/accountBalances'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultHistory, { VaultHistoryList } from './History'
 
 function renderHistory(overrides: Partial<VaultContextProps>) {
@@ -16,9 +19,9 @@ function renderHistory(overrides: Partial<VaultContextProps>) {
   } as unknown as VaultContextProps
   render(
     <ToastProvider>
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <VaultHistory />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>,
   )
   return value

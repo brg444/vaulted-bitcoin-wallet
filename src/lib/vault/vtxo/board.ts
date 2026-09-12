@@ -426,6 +426,26 @@ async function loadActiveBoardingKeyFromDatabase(
   }
 }
 
+/** Revoke worker access while retaining the exact key needed to resume staged enrollment. */
+export async function suspendBoardingKey(vaultId: string): Promise<void> {
+  const db = await openKeyDatabase(vaultId)
+  let active: BoardingKeyRecord | undefined
+  try {
+    const transaction = db.transaction(KEY_STORE, 'readwrite')
+    const store = transaction.objectStore(KEY_STORE)
+    active = (await requestResult(store.get('active'))) as BoardingKeyRecord | undefined
+    if (active) {
+      const staged = await requestResult(store.getKey('staged'))
+      if (staged === undefined) store.put({ ...active, state: 'staged' }, 'staged')
+      store.delete('active')
+    }
+    await transactionDone(transaction)
+  } finally {
+    active?.secret?.fill(0)
+    db.close()
+  }
+}
+
 export async function deleteBoardingKey(vaultId: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase(databaseName(vaultId))

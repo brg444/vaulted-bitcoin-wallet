@@ -1,10 +1,13 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import { broadcastTx, fetchAddressUtxos, fetchTxHex } from '../../lib/vault/esplora'
 import { exportLedgerRecoveryJournal } from '../../lib/vault/ledgerRecoveryWallet'
 import { ledgerRecoveryFixture } from '../../lib/vault/recovery/testdata/ledger'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultRecover from './Recover'
 
 const boardingRecovery = vi.hoisted(() => ({
@@ -63,9 +66,9 @@ function renderKit(extra: Partial<VaultContextProps> = {}) {
   } as VaultContextProps
   return render(
     <ToastProvider>
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <VaultRecover />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>,
   )
 }

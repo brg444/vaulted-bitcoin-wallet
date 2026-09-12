@@ -1,7 +1,8 @@
 import { useCallback } from 'react'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
-import { unlockLocalEnrollment } from '../lib/vault/signIn'
+import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
+import { zeroBytes } from '../lib/vault/ceremony/directauth'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { loadLocalKit, saveLocalKit } from '../lib/vault/program/kitStore'
 import { kitMatchesLiveVault } from '../lib/vault/program/liveKit'
@@ -36,7 +37,7 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
 
   const backupRecoveryKit = useCallback(async () => {
     clearError()
-    if (enrollment && status?.enrolled) await unlockLocalEnrollment(enrollment)
+    if (enrollment && status?.enrolled) zeroBytes(await unlockPhoneBip340(enrollment, status))
     const kit = resolveKit()
     if (!kit) throw new Error('This vault has no recovery map. Add recovery on a new vault.')
     saveLocalKit(kit)
@@ -46,7 +47,7 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
 
   const restoreRecoveryKit = useCallback(async () => {
     clearError()
-    if (enrollment && status?.enrolled) await unlockLocalEnrollment(enrollment)
+    if (enrollment && status?.enrolled) zeroBytes(await unlockPhoneBip340(enrollment, status))
     const id = status?.vaultId || enrollment?.vaultId || ''
     const pulled = id ? await pullMapBackup(id) : null
     const kit =

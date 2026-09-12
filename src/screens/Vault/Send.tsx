@@ -1,3 +1,4 @@
+import { useSession } from '../../vault/sessionContext'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { useContext, useEffect, useRef, useState } from 'react'
@@ -58,6 +59,7 @@ function payloadFromScan(raw: string, allowLightning = true): { address: string;
 }
 
 export default function VaultSend({ denomination }: { denomination?: BalanceDenomination }) {
+  const { setup, status } = useSession()
   const {
     account,
     boardingAddress,
@@ -74,8 +76,6 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
     scanOnSend,
     setSpendDraft,
     spend,
-    setup,
-    status,
     positions,
   } = useContext(VaultContext)
   const { toast } = useToast()

@@ -1,13 +1,14 @@
-import { useContext, useMemo, useState } from 'react'
+import { useSession } from '../../../vault/sessionContext'
+import { useContext, useState } from 'react'
 import { VaultContext } from '../../../vault/context'
-import { loadStagedEnrollment } from '../../../lib/vault/enrollmentStore'
 import LedgerSavingsApproval from '../LedgerSavingsApproval'
 import WalletScreen from '../qg/WalletScreen'
 import { QgPrimary } from '../qg/QgScreen'
 import QgGuidance from '../qg/QgGuidance'
 
 export function LedgerHardware() {
-  const { connectLedgerKey, ledgerAvailable, busy, error, navigate } = useContext(VaultContext)
+  const { connectLedgerKey, ledgerAvailable } = useSession()
+  const { busy, error, navigate } = useContext(VaultContext)
   const supported = globalThis.isSecureContext && typeof navigator !== 'undefined' && 'hid' in navigator
   return (
     <WalletScreen
@@ -48,7 +49,8 @@ export function LedgerHardware() {
 }
 
 export function LedgerRecoveryKey() {
-  const { connectLedgerKey, applyLedgerRecovery, busy, error, navigate } = useContext(VaultContext)
+  const { connectLedgerKey, applyLedgerRecovery } = useSession()
+  const { busy, error, navigate } = useContext(VaultContext)
   const [value, setValue] = useState('')
   const supported = globalThis.isSecureContext && typeof navigator !== 'undefined' && 'hid' in navigator
   return (
@@ -102,15 +104,15 @@ export function LedgerRecoveryKey() {
 }
 
 export function LedgerEnrollmentRegistration() {
-  const { completeLedgerEnrollment, enroll, navigate, busy, error } = useContext(VaultContext)
-  const staged = useMemo(() => loadStagedEnrollment(), [])
-  if (!staged?.ledgerSavingsDraft)
+  const { completeLedgerEnrollment, enroll, pendingLedgerSetup } = useSession()
+  const { navigate, busy, error } = useContext(VaultContext)
+  if (!pendingLedgerSetup)
     return (
       <WalletScreen title='Set up Ledger' back={() => navigate('hardware')}>
         <p>Start Savings setup before registering the Ledger policy.</p>
       </WalletScreen>
     )
-  if (staged.ledgerSavings)
+  if (pendingLedgerSetup.registered)
     return (
       <WalletScreen
         title='Complete setup'
@@ -124,7 +126,7 @@ export function LedgerEnrollmentRegistration() {
   return (
     <LedgerSavingsApproval
       mode='register'
-      contract={staged.ledgerSavingsDraft.contract}
+      contract={pendingLedgerSetup.contract}
       onRegistered={completeLedgerEnrollment}
       onBack={() => navigate('plan')}
     />

@@ -8,6 +8,12 @@ const root = process.cwd()
 const config = ts.readConfigFile(resolve(root, 'tsconfig.json'), ts.sys.readFile)
 const options = ts.parseJsonConfigFileContent(config.config, ts.sys, root).options
 
+const files = (directory: string): string[] =>
+  readdirSync(resolve(root, directory), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`
+    return entry.isDirectory() ? files(path) : [path]
+  })
+
 function imports(path: string) {
   const filename = resolve(root, path)
   const ast = ts.createSourceFile(filename, readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true)
@@ -143,11 +149,6 @@ it('Qg presentation primitives have no transitive wallet state or Help-flow depe
 })
 
 it('wallet implementation modules have no runtime import cycle', () => {
-  const files = (directory: string): string[] =>
-    readdirSync(resolve(root, directory), { withFileTypes: true }).flatMap((entry) => {
-      const path = `${directory}/${entry.name}`
-      return entry.isDirectory() ? files(path) : [path]
-    })
   const paths = new Set(
     [...files('src'), ...files('api')].filter(
       (path) =>
@@ -167,6 +168,26 @@ it('wallet implementation modules have no runtime import cycle', () => {
     done.add(path)
   }
   for (const path of paths) visit(path, [])
+})
+
+it('session activation and mutation stay outside React consumers', () => {
+  for (const path of [...files('src/screens'), ...files('src/providers'), ...files('src/vault')]) {
+    if (!/\.tsx?$/.test(path) || /\.(test|fixture)\./.test(path)) continue
+    for (const target of imports(path)) {
+      expect(target, `${path} imports ${target}`).not.toMatch(
+        /src\/lib\/vault\/(signIn|tenantEnrollment|recovery\/restore|vtxo\/board)\.ts$/,
+      )
+    }
+    const source = readFileSync(resolve(root, path), 'utf8')
+    expect(source, path).not.toMatch(
+      /\b(setSessionLocked|saveSelectedVaultId|saveEnrollment|saveStagedEnrollment|loadStagedEnrollment|saveVaultPrivacyLock)\b/,
+    )
+  }
+  const controller = readFileSync(resolve(root, 'src/lib/vault/session.ts'), 'utf8')
+  expect(controller).not.toMatch(/from ['"]react['"]|from ['"].*\/(screens|providers|vault)\//)
+  const binding = readFileSync(resolve(root, 'src/vault/useVaultSession.ts'), 'utf8')
+  expect(binding).toContain('useSyncExternalStore')
+  expect(binding).not.toMatch(/useState|loadEnrollment|fetchVaultStatus|setInterval|addEventListener/)
 })
 
 it('balance state belongs to the controller and React only binds its external store', () => {

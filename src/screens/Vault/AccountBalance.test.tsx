@@ -1,3 +1,7 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
@@ -6,7 +10,6 @@ import { ToastProvider } from '../../components/Toast'
 import { Fiats } from '../../lib/types'
 import type { VaultBalanceUnit, VaultFiatDisplayRate } from '../../lib/vault/fiatDisplay'
 import { saveVaultBalanceUnit } from '../../lib/vault/prefs'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import AccountBalance from './AccountBalance'
 
 const RATE = { currency: Fiats.USD, pricePerBtc: 100_000 }
@@ -44,7 +47,7 @@ function renderBalance({
       })
     return (
       <ToastProvider>
-        <VaultContext.Provider
+        <VaultTestProvider
           value={
             {
               balanceUnit: current,
@@ -55,7 +58,7 @@ function renderBalance({
           }
         >
           <AccountBalance sats={sats} account='Spending' balancesLoaded />
-        </VaultContext.Provider>
+        </VaultTestProvider>
       </ToastProvider>
     )
   }

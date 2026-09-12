@@ -9,11 +9,12 @@ function fixtureBody(): string {
     import React from '/node_modules/.vite/deps/react.js';
     import { ToastProvider } from '/src/components/Toast.tsx';
     import { VaultContext } from '/src/vault/context.ts';
+    import { VaultTestProvider } from '/src/test/fixtures/VaultTestProvider.tsx';
     import Settings from '/src/screens/Vault/Settings.tsx';
     export default function SettingsFixture() {
       const current = React.useContext(VaultContext);
       return React.createElement(ToastProvider, null,
-        React.createElement(VaultContext.Provider, { value: {
+        React.createElement(VaultTestProvider, { value: {
           ...current, busy: false, liveNetwork: true, navigate: () => {},
           refreshBalance: async () => {}, reset: async () => {}, status: null,
         }}, React.createElement(Settings)));
@@ -25,6 +26,7 @@ for (const width of [320, 390]) {
   for (const theme of ['light', 'dark']) {
     test(`native notification settings at ${width}px in ${theme}`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 844 })
+      await page.emulateMedia({ colorScheme: theme === 'dark' ? 'dark' : 'light' })
       await mockEnrollmentAccess(page, 'open')
       await page.route('**/src/screens/Vault/Welcome.tsx*', (route) =>
         route.fulfill({ contentType: 'application/javascript', body: fixtureBody() }),
@@ -41,10 +43,10 @@ for (const width of [320, 390]) {
         }
       })
       await page.goto('/')
-      await page.evaluate((dark) => document.documentElement.classList.toggle('palette-dark', dark), theme === 'dark')
       await page.evaluate(() => window.localStorage.clear())
       await page.reload()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+      await expect(page.locator('html')).toHaveClass(theme === 'dark' ? /palette-dark/ : /^(?!.*palette-dark)/)
       // The native entry uses ordinary styling; the rejected banner controls are gone.
       await expect(page.getByTestId('settings-native-notifications')).toContainText('Device alerts')
       expect(

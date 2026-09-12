@@ -1,4 +1,5 @@
-import { act, render, waitFor } from '@testing-library/react'
+import { renderVault as render } from '../../test/fixtures/renderVault'
+import { act, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import Scanner from './Scanner'
 

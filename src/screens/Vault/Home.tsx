@@ -1,3 +1,4 @@
+import { useSession } from '../../vault/sessionContext'
 import WatchedSavings from './WatchedSavings'
 import PaymentNotice from './qg/PaymentNotice'
 import { useContext, useEffect, type ReactNode } from 'react'
@@ -9,9 +10,9 @@ import VaultHistory from './History'
 import PendingPayment from './qg/PendingPayment'
 
 export default function VaultHome({ children }: { children?: ReactNode }) {
+  const { status } = useSession()
   const {
     account,
-    status,
     spendingBitcoin,
     boardingAddress,
     canSend,

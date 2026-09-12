@@ -1,3 +1,4 @@
+import { useSession } from '../../vault/sessionContext'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { useContext, useState } from 'react'
@@ -14,18 +15,9 @@ import WalletScreen from './qg/WalletScreen'
 import { QgPrimary, QgTextButton } from './qg/QgScreen'
 
 export default function VaultReview({ denomination }: { denomination?: BalanceDenomination }) {
-  const {
-    account,
-    approveSend,
-    boardingAddress,
-    bitcoinOutputs,
-    busy,
-    error,
-    navigate,
-    resumingPayment,
-    spend,
-    status,
-  } = useContext(VaultContext)
+  const { status } = useSession()
+  const { account, approveSend, boardingAddress, bitcoinOutputs, busy, error, navigate, resumingPayment, spend } =
+    useContext(VaultContext)
   const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
   const denom = useBalanceDenomination(denomination)

@@ -134,12 +134,14 @@ export async function listSpendingRenewals(
   status: VaultStatus,
   owner: Uint8Array,
   retain: (page: SpendingRenewalStatus[]) => Promise<SpendingRenewalStatus[]> = async (page) => page,
+  signal?: AbortSignal,
 ) {
   const context = guardianRenewalContext(status),
     all: SpendingRenewalStatus[] = []
   if (hex.encode(schnorr.getPublicKey(owner)) !== context.ownerPub) throw new Error('Renewal list identity changed')
   let cursor = ''
   do {
+    signal?.throwIfAborted()
     const body = {
       program: context.program,
       descriptorHash: guardianRenewalContextDigest(status),

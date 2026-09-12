@@ -1,5 +1,5 @@
-import { useContext, type ComponentProps } from 'react'
-import { VaultContext } from '../../../vault/context'
+import { useSession } from '../../../vault/sessionContext'
+import { type ComponentProps } from 'react'
 import WalletHelp from './Help'
 import QgScreen from './QgScreen'
 
@@ -9,7 +9,7 @@ export default function WalletScreen({
   stepLabel,
   ...props
 }: Omit<ComponentProps<typeof QgScreen>, 'help'> & { help?: boolean }) {
-  const { setup } = useContext(VaultContext)
+  const { setup } = useSession()
   const advanced = setup?.protectionTier === 'advanced'
   const numberedStep = stepLabel?.match(/^(\d) of 6$/)
   const displayedStep = numberedStep

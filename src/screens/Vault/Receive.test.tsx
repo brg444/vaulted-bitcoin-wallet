@@ -1,3 +1,7 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { ledgerRecoveryFacts } from '../../lib/vault/recovery/testdata/helpers'
 import { sharedSpendingStatus } from '../../lib/vault/vtxo/testdata/sharedSpending'
 import {
@@ -9,7 +13,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
-import { VaultContext, type VaultAccount, type VaultContextProps } from '../../vault/context'
+import { type VaultAccount } from '../../vault/context'
 import VaultReceive from './Receive'
 
 const gates = vi.hoisted(() => ({ receive: false, address: false }))
@@ -59,11 +63,11 @@ function renderReceive(account: VaultAccount, light = false, views = 1) {
   } as unknown as VaultContextProps
   const rendered = render(
     <ToastProvider>
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         {Array.from({ length: views }, (_, key) => (
           <VaultReceive key={key} />
         ))}
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>,
   )
   return { ...rendered, refreshBalance }
@@ -81,9 +85,9 @@ function renderReceiveWithoutAddresses(account: VaultAccount) {
   } as unknown as VaultContextProps
   return render(
     <ToastProvider>
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <VaultReceive />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>,
   )
 }
@@ -306,9 +310,9 @@ describe('Receive arrival and contract changes', () => {
     } as unknown as VaultContextProps
     render(
       <ToastProvider>
-        <VaultContext.Provider value={value}>
+        <VaultTestProvider value={value}>
           <VaultReceive />
-        </VaultContext.Provider>
+        </VaultTestProvider>
       </ToastProvider>,
     )
 

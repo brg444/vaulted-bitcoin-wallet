@@ -8,6 +8,8 @@ import {
   boardingWorkerPins,
   activateBoardingKey,
   deleteBoardingKey,
+  loadActiveBoardingKey,
+  suspendBoardingKey,
   deriveBoardingKey,
   MUTINYNET_OPERATOR_SIGNER_PUB,
   requireBoardingDescriptor,
@@ -149,4 +151,28 @@ describe('vault-board-v1 program binding', () => {
       await deleteBoardingKey(vaultId)
     }
   })
+})
+
+describe('boarding key activation revocation', () => {
+  it.each(['mainnet', 'mutinynet'] as const)(
+    'preserves the exact staged key through suspension on %s',
+    async (network) => {
+      const vaultId = 'session-suspend-' + network
+      const phoneSecret = new Uint8Array(32).fill(11)
+      const staged = await stageBoardingKey({ vaultId, network, phoneSecret })
+      const activation = { vaultId, descriptorHash: 'ab'.repeat(32), expectedBoardingPub: staged.boardingPub }
+      await activateBoardingKey(activation)
+      const before = await loadActiveBoardingKey(vaultId)
+      await suspendBoardingKey(vaultId)
+      await expect(loadActiveBoardingKey(vaultId)).rejects.toThrow('active vault-board-v1 key required')
+      await suspendBoardingKey(vaultId)
+      await activateBoardingKey(activation)
+      const after = await loadActiveBoardingKey(vaultId)
+      expect(after).toEqual(before)
+      before.secret.fill(0)
+      after.secret.fill(0)
+      phoneSecret.fill(0)
+      await deleteBoardingKey(vaultId)
+    },
+  )
 })

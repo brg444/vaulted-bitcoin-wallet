@@ -1,6 +1,9 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../../test/fixtures/VaultTestProvider'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../../vault/context'
 import VaultPlan from './Plan'
 import VaultReady from './Ready'
 
@@ -18,11 +21,7 @@ function renderOnboard(screenName: 'plan' | 'ready', overrides: Partial<VaultCon
     },
     ...overrides,
   } as unknown as VaultContextProps
-  render(
-    <VaultContext.Provider value={value}>
-      {screenName === 'plan' ? <VaultPlan /> : <VaultReady />}
-    </VaultContext.Provider>,
-  )
+  render(<VaultTestProvider value={value}>{screenName === 'plan' ? <VaultPlan /> : <VaultReady />}</VaultTestProvider>)
 }
 
 describe('onboarding network labels', () => {

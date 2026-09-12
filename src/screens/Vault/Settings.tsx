@@ -1,3 +1,4 @@
+import { useSession } from '../../vault/sessionContext'
 import { useContext, useEffect, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { gitCommit } from '../../_gitCommit'
@@ -9,15 +10,12 @@ import { clearLogs, getLogs, type LogLine } from '../../lib/logs'
 import { Themes } from '../../lib/types'
 import {
   loadVaultHaptics,
-  loadVaultPrivacyLock,
   loadVaultTheme,
   resolveVaultTheme,
   saveVaultHaptics,
-  saveVaultPrivacyLock,
   saveVaultTheme,
   systemTheme,
 } from '../../lib/vault/prefs'
-import { setSessionLocked } from '../../lib/vault/enrollmentStore'
 import { useBalanceDenomination } from './AccountBalance'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
@@ -135,10 +133,11 @@ function ResetView({ onBack, onReset }: { onBack: () => void; onReset: () => voi
 
 export default function VaultSettings() {
   const context = useContext(VaultContext)
-  const { reset, setup } = context
+  const session = useSession()
+  const { reset, setup, privacyLock, setPrivacyLock } = session
   const denom = useBalanceDenomination()
   const money = { unit: denom.unit, rate: denom.rate }
-  const status = context.status
+  const status = session.status
   const busy = context.busy
   const liveNetwork = context.liveNetwork
   const balanceError = [context.accountReads.spend.error, context.accountReads.savings.error].filter(Boolean).join(' ')
@@ -150,14 +149,12 @@ export default function VaultSettings() {
   const [view, setView] = useState<View>('menu')
   const [theme, setTheme] = useState(loadVaultTheme)
   const [haptics, setHaptics] = useState(loadVaultHaptics)
-  const [privacyLock, setPrivacyLock] = useState(loadVaultPrivacyLock)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
   useEffect(() => {
     if (view !== 'menu') return
     setTheme(loadVaultTheme())
     setHaptics(loadVaultHaptics())
-    setPrivacyLock(loadVaultPrivacyLock())
   }, [view])
 
   if (view === 'theme') {
@@ -365,8 +362,6 @@ export default function VaultSettings() {
               onClick={() => {
                 const next = !privacyLock
                 setPrivacyLock(next)
-                saveVaultPrivacyLock(next)
-                setSessionLocked(next)
                 if (next) hapticLight()
               }}
             >

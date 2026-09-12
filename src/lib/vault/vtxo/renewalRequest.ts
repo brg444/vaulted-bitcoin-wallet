@@ -271,7 +271,9 @@ export async function prepareSpendingDelegation(
   owner: Uint8Array,
   now = Date.now(),
   operationId = hex.encode(crypto.getRandomValues(new Uint8Array(16))),
+  signal?: AbortSignal,
 ): Promise<SpendingDelegationPlan> {
+  signal?.throwIfAborted()
   owner = Uint8Array.from(owner)
   coin = structuredClone(coin)
   operatorInfo = structuredClone(operatorInfo)
@@ -342,6 +344,7 @@ export async function prepareSpendingDelegation(
       SingleKey.fromPrivateKey(owner),
     )
     const result = await manager.delegate([annotated], info.delegateAddress, new Date(validAt * 1000))
+    signal?.throwIfAborted()
     if (result.failed.length) throw result.failed[0].error
     if (!captured || result.delegated.length !== 1) throw new Error('SDK did not authorize the requested output')
     const stockProof = Transaction.fromPSBT(base64.decode(captured.intent.proof))
@@ -354,8 +357,10 @@ export async function prepareSpendingDelegation(
     const bounded = await SingleKey.fromPrivateKey(owner).sign(
       Intent.create(message, [annotated], [stockProof.getOutput(0)]),
     )
+    signal?.throwIfAborted()
     const deleteMessage: Intent.DeleteMessage = { type: 'delete', expire_at: 0 }
     const deletion = await SingleKey.fromPrivateKey(owner).sign(Intent.create(deleteMessage, [annotated], []))
+    signal?.throwIfAborted()
     const body = {
       program: d.program,
       descriptorHash: guardianRenewalContextDigest(descriptor),

@@ -1,3 +1,7 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { accountBalanceReads } from '../../test/accountBalances'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -7,7 +11,6 @@ import { ToastProvider } from '../../components/Toast'
 import { Fiats } from '../../lib/types'
 import type { VaultBalanceUnit, VaultFiatDisplayRate } from '../../lib/vault/fiatDisplay'
 import { saveVaultBalanceUnit } from '../../lib/vault/prefs'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultHome from './Home'
 
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.resolve(false) }))
@@ -66,7 +69,7 @@ function renderHome(overrides: Partial<VaultContextProps> & { balanceUnit?: Vaul
       })
     return (
       <ToastProvider>
-        <VaultContext.Provider
+        <VaultTestProvider
           value={
             {
               ...value,
@@ -78,7 +81,7 @@ function renderHome(overrides: Partial<VaultContextProps> & { balanceUnit?: Vaul
           }
         >
           <VaultHome />
-        </VaultContext.Provider>
+        </VaultTestProvider>
       </ToastProvider>
     )
   }

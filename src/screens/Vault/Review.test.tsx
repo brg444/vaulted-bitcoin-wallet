@@ -1,8 +1,11 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { Address, TEST_NETWORK } from '@scure/btc-signer'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultReview from './Review'
 import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 
@@ -19,9 +22,9 @@ function review(overrides: Partial<VaultContextProps> = {}) {
   } as unknown as VaultContextProps
   const tree = (state: VaultContextProps) => (
     <ToastProvider>
-      <VaultContext.Provider value={state}>
+      <VaultTestProvider value={state}>
         <VaultReview />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>
   )
   const result = render(tree(value))

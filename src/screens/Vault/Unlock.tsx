@@ -1,3 +1,4 @@
+import { useSession } from '../../vault/sessionContext'
 import { useContext } from 'react'
 import { Fingerprint } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
@@ -7,7 +8,8 @@ import WalletScreen from './qg/WalletScreen'
 import { QgPrimary } from './qg/QgScreen'
 
 export default function VaultUnlock() {
-  const { busy, error, signIn } = useContext(VaultContext)
+  const { signIn } = useSession()
+  const { busy, error } = useContext(VaultContext)
   const onPhone = isCoarsePhone()
 
   return (

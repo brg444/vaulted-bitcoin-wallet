@@ -7,25 +7,14 @@ import { useNativePaymentNotifications } from '../vault/useNativePaymentNotifica
 
 import { NOTIFY_WORKER_SCOPE } from '../lib/vault/nativeNotifications'
 import { parsePushNavScreen } from '../lib/vault/notificationEnvelope'
-import { disableBackgroundPush, isPushSubscribed, refreshBackgroundPush } from '../lib/vault/pushSubscription'
+import { isPushSubscribed, refreshBackgroundPush } from '../lib/vault/pushSubscription'
 import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import { sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
 import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
-import { clearSpendingRenewalReads } from '../lib/vault/vtxo/guardianRenewal'
 import { useRecoveryArchive } from '../vault/useRecoveryArchive'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
-import { reconcileStagedEnrollment, type EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
-import {
-  findStoredEnrollment,
-  loadEnrollment,
-  loadSelectedVaultId,
-  loadSessionLocked,
-  saveSelectedVaultId,
-  setSessionLocked,
-} from '../lib/vault/enrollmentStore'
-import { loadAddressPin, type AddressPin } from '../lib/vault/pin'
 import { zeroBytes } from '../lib/vault/ceremony/directauth'
 import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
 import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
@@ -63,32 +52,13 @@ import {
   vtxoSpendIsLivePending,
   type VaultVtxoSpendQuote,
 } from '../lib/vault/vtxo/spend'
-import { deleteBoardingKey } from '../lib/vault/vtxo/board'
 import { recoverMatureBoardingInputs } from '../lib/vault/vtxo/boardingRecovery'
-import { ensureVaultWalletWorker, shutdownVaultWalletWorker } from '../lib/vault/vtxo/walletWorker'
-import { fetchPublicStatus, fetchVaultStatus, type PublicAuthorizerStatus } from '../lib/vault/status'
-import {
-  clearSetupPlan,
-  emptySetupPlan,
-  loadSetupPlan,
-  planReady,
-  saveSetupPlan,
-  sameRole,
-  type VaultSetupPlan,
-} from '../lib/vault/setupPlan'
-import {
-  CURRENT_SPENDING_POLICY_CAPABILITIES,
-  validateSpendingPolicy,
-  type SpendingPolicy,
-} from '../lib/vault/spendingPolicy'
-import { requireProtectionTier, type ProtectionTier } from '../lib/vault/protectionTier'
+import { ensureVaultWalletWorker } from '../lib/vault/vtxo/walletWorker'
 import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
 import { useDisplayUnit } from '../lib/vault/useDisplayUnit'
 import { getPriceFeed } from '../lib/fiat'
 import { Fiats } from '../lib/types'
-import { loadVaultPrivacyLock } from '../lib/vault/prefs'
 
-import type { VaultStatus } from '../lib/vault/types'
 import {
   DEFAULT_SPEND_FEE_SATS,
   VaultContext,
@@ -100,8 +70,8 @@ import {
 import { useRecoveryKit } from '../vault/useRecoveryKit'
 import { useRecoveryAlerts } from '../vault/useRecoveryAlerts'
 import { useVaultBalances } from '../vault/useVaultBalances'
-import { useVaultSession } from '../vault/useVaultSession'
-import { ledgerSpendingPublicKey, parseLedgerAccountOrigin } from '../lib/vault/ledgerSetup'
+import { useVaultSession, sessionScreen } from '../vault/useVaultSession'
+import { sessionView, VaultSessionContext } from '../vault/sessionContext'
 import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 
 export { VaultContext } from '../vault/context'
@@ -123,35 +93,36 @@ export function reviewedVtxoQuoteMatchesDraft(quote: VaultVtxoSpendQuote | null,
   )
 }
 
-function storedEnrollment(): EnrollmentSecrets | null {
-  const selected = loadSelectedVaultId()
-  return selected ? loadEnrollment(localStorage, selected) : findStoredEnrollment()
-}
-
-function bootLocked(existing: EnrollmentSecrets | null = null): boolean {
-  try {
-    const enrollment = existing ?? storedEnrollment()
-    return Boolean(enrollment && (loadSessionLocked() || loadVaultPrivacyLock()))
-  } catch {
-    return false
-  }
-}
-
-function initialScreen(): VaultScreen {
-  return bootLocked() ? 'unlock' : 'welcome'
-}
-
 export function VaultProvider({ children }: { children: ReactNode }) {
-  const [screen, setScreen] = useState<VaultScreen>(initialScreen)
+  const {
+    session,
+    setup,
+    status,
+    deployment,
+    enrollment,
+    loaded,
+    initialStatusChecked,
+    locked,
+    addressPin,
+    pending,
+    transition,
+    error: sessionError,
+  } = useVaultSession()
+  const [screen, setScreen] = useState<VaultScreen>('welcome')
   const [recoverEntry, setRecoverEntry] = useState<'kit' | 'lost'>('kit')
   const [recoverExit, setRecoverExit] = useState<VaultScreen>('keys')
-  const [setup, setSetup] = useState<VaultSetupPlan>(emptySetupPlan)
-  const [status, setStatus] = useState<VaultStatus | null>(null)
-  const [deployment, setDeployment] = useState<PublicAuthorizerStatus | null>(null)
-  const [enrollment, setEnrollment] = useState<EnrollmentSecrets | null>(null)
-  const [error, setError] = useState('')
+  const [operationError, setOperationError] = useState('')
+  const error = operationError || sessionError
+  const setError = useCallback(
+    (message: string) => {
+      session.clearError()
+      setOperationError(message)
+    },
+    [session],
+  )
   const [paymentError, setPaymentError] = useState<BitcoinPaymentError | undefined>()
-  const [busy, setBusy] = useState(false)
+  const [paymentBusy, setPaymentBusy] = useState(false)
+  const busy = paymentBusy || (pending !== null && pending !== 'boot')
   const [spend, setSpend] = useState<VaultSpend>({ address: '', amount: 0, fee: 0 })
   const spendRef = useRef(spend)
   spendRef.current = spend
@@ -170,11 +141,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [lastTxKind, setLastTxKind] = useState<'onchain' | 'vtxo' | 'lightning' | ''>('')
   const [selectedTx, setSelectedTx] = useState<VaultHistoryItem | null>(null)
   const [txReturn, setTxReturn] = useState<VaultScreen>('home')
-  const [loaded, setLoaded] = useState(false)
-  const [initialStatusChecked, setInitialStatusChecked] = useState(false)
   const [account, setAccount] = useState<VaultAccount>('spend')
   const [scanOnSend, setScanOnSend] = useState(false)
-  const [locked, setLocked] = useState(() => bootLocked())
   useEffect(() => {
     if (bitcoinApproval.current && screen !== 'review') {
       bitcoinApproval.current.resolve(false)
@@ -188,7 +156,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const [addressPin, setAddressPin] = useState<AddressPin | null>(null)
   const [fiatDisplayRate, setFiatDisplayRate] = useState<VaultFiatDisplayRate | null>(null)
   const [fiatDisplayEnabled, setFiatDisplayEnabled] = useState(false)
 
@@ -224,140 +191,28 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   })
 
   useEffect(() => {
-    let existing: EnrollmentSecrets | null = null
-    let existingPin: AddressPin | null = null
-    try {
-      const plan = loadSetupPlan()
-      if (plan) {
-        setSetup(plan)
-        if (plan.complete) {
-          setScreen('passkey')
-        }
-      }
-      const selected = loadSelectedVaultId()
-      existing = selected ? loadEnrollment(localStorage, selected) : findStoredEnrollment()
-      if (existing?.vaultId) saveSelectedVaultId(existing.vaultId)
-      const pinId = existing?.vaultId || selected
-      existingPin = pinId ? loadAddressPin(localStorage, pinId) : null
-      setAddressPin(existingPin)
-      const sessionLocked = bootLocked(existing)
-      setLocked(sessionLocked)
-      if (existing) setEnrollment(existing)
-      if (existing && sessionLocked) {
-        setScreen('unlock')
-      } else if (existing && existingPin) {
-        setScreen('home')
-      } else if (existing) {
-        setSessionLocked(true)
-        setLocked(true)
-        setScreen('signin')
-      }
-    } catch {
-      clearSetupPlan()
-    } finally {
-      setLoaded(true)
+    if (!transition) return
+    setScreen(sessionScreen(transition.outcome))
+    setOperationError('')
+    if (transition.outcome === 'signed-out') {
+      setSpend({ address: '', amount: 0, fee: 0 })
+      setReviewedVtxoQuote(null)
+      setLightningQuote(null)
+      setLastSend(null)
+      setLastTxid('')
+      setLastTxKind('')
+      setAccount('spend')
+      setScanOnSend(false)
     }
-    const selectedId = existing?.vaultId || loadSelectedVaultId()
-    const boot = async () => {
-      try {
-        const recovered = await reconcileStagedEnrollment()
-        if (recovered && !loadSessionLocked()) {
-          setEnrollment(recovered.enrollment)
-          setStatus(recovered.status)
-          setAddressPin(loadAddressPin(localStorage, recovered.status.vaultId))
-          setScreen('home')
-          return
-        }
-        if (selectedId) {
-          const live = await fetchVaultStatus(undefined, selectedId)
-          setStatus(live)
-          setAddressPin(loadAddressPin(localStorage, live.vaultId))
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : ''
-        if (msg.includes('local pin') || msg.includes('not pinned locally')) {
-          setError(humanizeVaultError(err))
-        }
-      } finally {
-        setInitialStatusChecked(true)
-      }
-    }
-    void boot()
-  }, [])
-
+  }, [transition])
   useEffect(() => {
-    if (!['welcome', 'design', 'passkey', 'problem'].includes(screen)) return
-    const controller = new AbortController()
-    const refresh = () => {
-      void fetchPublicStatus(controller.signal)
-        .then(setDeployment)
-        .catch(() => {
-          if (!controller.signal.aborted) setDeployment(null)
-        })
-    }
-    refresh()
-    window.addEventListener('focus', refresh)
-    const interval = window.setInterval(refresh, 30_000)
-    return () => {
-      controller.abort()
-      window.removeEventListener('focus', refresh)
-      window.clearInterval(interval)
-    }
-  }, [screen])
-
+    session.observeDeployment(['welcome', 'design', 'passkey', 'problem'].includes(screen))
+    if (screen !== 'hardware' && screen !== 'recovery') session.cancelLedgerConnection()
+  }, [screen, session])
   useEffect(() => {
-    const persistLock = () => {
-      if (!loadVaultPrivacyLock()) return
-      if (!(enrollment || storedEnrollment())) return
-      setSessionLocked(true)
-    }
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') persistLock()
-    }
-    window.addEventListener('pagehide', persistLock)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      window.removeEventListener('pagehide', persistLock)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [enrollment])
-
-  useEffect(() => {
-    if (!status) return
-    const protectionTier = status.protectionTier
-    if (status.network === 'mutinynet' && account === 'savings') {
+    if (status?.network === 'mutinynet' && account === 'savings')
       setSpend((prev) => (prev.fee === LIVE_FEE ? prev : { ...prev, fee: LIVE_FEE }))
-    }
-    setSetup((prev) => {
-      const next = {
-        ...prev,
-        protectionTier,
-        recoveryPub: status.recoveryPub || status.recoveryKeyPub || '',
-        txCapSats: status.txCap || prev.txCapSats,
-        dailyLimitSats: status.periodAllowance || prev.dailyLimitSats,
-        absoluteFeeCapSats: status.absoluteFeeCap ?? prev.absoluteFeeCapSats,
-        feerateCapSatPerV: status.feerateCapSatVb || prev.feerateCapSatPerV,
-      }
-      if (
-        next.protectionTier === prev.protectionTier &&
-        next.recoveryPub === prev.recoveryPub &&
-        next.txCapSats === prev.txCapSats &&
-        next.dailyLimitSats === prev.dailyLimitSats &&
-        next.absoluteFeeCapSats === prev.absoluteFeeCapSats &&
-        next.feerateCapSatPerV === prev.feerateCapSatPerV
-      ) {
-        return prev
-      }
-      saveSetupPlan(next)
-      return next
-    })
-  }, [account, status])
-
-  const persist = useCallback((next: VaultSetupPlan) => {
-    setSetup(next)
-    saveSetupPlan(next)
-    return next
-  }, [])
+  }, [account, status?.network])
 
   const spendingArkAddress = status?.spendingArkAddress || ''
   const boardingAddress = status?.vtxoBoardingAddress || ''
@@ -400,7 +255,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     },
     [liveNetwork],
   )
-  const reportError = useCallback((message: string) => setError(message), [])
+  const reportError = setError
   const {
     accountReads,
     boardingError,
@@ -417,13 +272,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     enrollment,
     initialStatusChecked,
     locked,
-    setStatus,
+    setStatus: session.acceptStatus,
     status,
   })
   const spendingAvailableSats = positions.spending.availableSats
   const dailyLimit = status?.enrolled ? (status.periodAllowance ?? setup.dailyLimitSats) : setup.dailyLimitSats
   const dailyRemaining = status?.enrolled ? (status.periodRemaining ?? dailyLimit) : 0
-  const enrolled = Boolean(status?.enrolled)
   const networkLabel = activeNetwork === 'mainnet' ? 'Bitcoin' : liveNetwork ? 'Mutinynet' : 'Unavailable'
   const clearError = useCallback(() => reportError(''), [reportError])
 
@@ -553,169 +407,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const { backupRecoveryArchive, downloadRecoveryArchive, recoveryArchiveStatus, recoveryArchiveError } =
     useRecoveryArchive(enrollment, status, locked, acknowledgeBitcoinRecovery)
 
-  const acceptDesign = useCallback(
-    (tier?: 'light' | 'standard' | 'advanced') => {
-      if (import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true' && tier !== 'light') return
-      const draft = setup.complete ? emptySetupPlan() : setup
-      const protectionTier = tier || draft.protectionTier
-      persist({
-        ...draft,
-        acceptedDesign: true,
-        protectionTier,
-        ...(protectionTier === 'light' ? { hardwarePub: '', recoveryPub: '', ledger: undefined } : {}),
-        ...(protectionTier === 'standard'
-          ? { recoveryPub: '', ...(draft.ledger ? { ledger: { hardware: draft.ledger.hardware } } : {}) }
-          : {}),
-      })
-      setError('')
-      setScreen(protectionTier === 'light' ? 'conditions' : 'hardware')
-    },
-    [persist, setup],
-  )
-
-  const applyLedgerRecovery = useCallback(
-    (raw: string) => {
-      setError('')
-      try {
-        const network = status?.network || deployment?.network
-        if (!setup.ledger || (network !== 'mainnet' && network !== 'mutinynet'))
-          throw new Error('Connect your Savings Ledger first')
-        const recovery = parseLedgerAccountOrigin(raw, network)
-        const recoveryPub = ledgerSpendingPublicKey(recovery, network)
-        if (sameRole(recoveryPub, setup.hardwarePub)) throw new Error('Recovery must use a different wallet')
-        persist({ ...setup, recoveryPub, protectionTier: 'advanced', ledger: { ...setup.ledger, recovery } })
-        setScreen('conditions')
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      }
-    },
-    [deployment?.network, persist, setup, status?.network],
-  )
-
-  const ledgerSetupIdentity = useRef('')
-  ledgerSetupIdentity.current = JSON.stringify([setup, status?.vaultId, status?.network || deployment?.network, screen])
-  const connectLedgerKey = useCallback(
-    async (role: 'hardware' | 'recovery') => {
-      if (busy) return
-      setBusy(true)
-      setError('')
-      const requestIdentity = ledgerSetupIdentity.current
-      let session: Awaited<ReturnType<(typeof import('../lib/vault/ledgerClient'))['connectLedgerSavings']>> | undefined
-      try {
-        const network = status?.network || deployment?.network
-        if (network !== 'mainnet' && network !== 'mutinynet') throw new Error('Vault network is not ready yet')
-        if (
-          deployment?.ledgerSavingsCapability?.templateVersion !== LEDGER_NATIVE_TEMPLATE ||
-          deployment.ledgerSavingsCapability.version !== 1
-        )
-          throw new Error('Ledger Savings setup is not available on this deployment yet')
-        const client = await import('../lib/vault/ledgerClient')
-        session = await client.connectLedgerSavings()
-        const origin = await client.readLedgerSavingsAccount(session.app, network)
-        if (ledgerSetupIdentity.current !== requestIdentity)
-          throw new Error('Setup changed. Connect the Ledger again for the current setup.')
-        const key = ledgerSpendingPublicKey(origin, network)
-        if (role === 'recovery') {
-          if (!setup.ledger) throw new Error('Connect your Savings Ledger first')
-          if (sameRole(key, setup.hardwarePub)) throw new Error('Recovery must use a different wallet')
-          persist({
-            ...setup,
-            recoveryPub: key,
-            protectionTier: 'advanced',
-            ledger: { ...setup.ledger, recovery: origin },
-          })
-          setScreen('conditions')
-        } else {
-          persist({ ...setup, hardwarePub: key, recoveryPub: '', ledger: { hardware: origin } })
-          setScreen(setup.protectionTier === 'advanced' ? 'recovery' : 'conditions')
-        }
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      } finally {
-        await session?.close().catch(() => {})
-        setBusy(false)
-      }
-    },
-    [busy, deployment, persist, setup, status?.network],
-  )
-
-  const skipRecovery = useCallback(() => {
-    setError('')
-    persist({
-      ...setup,
-      protectionTier: 'standard',
-      recoveryPub: '',
-      ...(setup.ledger ? { ledger: { hardware: setup.ledger.hardware } } : {}),
-    })
-    setScreen('conditions')
-  }, [persist, setup])
-
-  const setProtectionTier = useCallback(
-    (tier: ProtectionTier) => {
-      setError('')
-      const selected = requireProtectionTier(tier)
-      persist({
-        ...setup,
-        protectionTier: selected,
-        ...(selected === 'standard'
-          ? { recoveryPub: '', ...(setup.ledger ? { ledger: { hardware: setup.ledger.hardware } } : {}) }
-          : {}),
-      })
-    },
-    [persist, setup],
-  )
-
   const confirmConditions = useCallback(() => {
     setError('')
     setScreen('plan')
-  }, [])
-
-  const setSpendingPolicy = useCallback(
-    (selected: SpendingPolicy) => {
-      setError('')
-      try {
-        const policy = validateSpendingPolicy(selected)
-        persist({
-          ...setup,
-          txCapSats: policy.txRecipientCapSats,
-          dailyLimitSats: policy.periodAllowanceSats,
-          absoluteFeeCapSats: policy.absoluteFeeCapSats,
-          feerateCapSatPerV: policy.feerateCapSatPerV,
-        })
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      }
-    },
-    [persist, setup],
-  )
-
-  const finishPlan = useCallback(() => {
-    setError('')
-    if (!planReady(setup)) {
-      setError('Finish setup first.')
-      return
-    }
-    setScreen('passkey')
-  }, [setup])
-
-  const sealPlan = useCallback(() => {
-    const next = persist({ ...setup, complete: true })
-    return next
-  }, [persist, setup])
-
-  const { enableOtherDevices, enroll, completeLedgerEnrollment, signIn, restoreRecoveryArchive } = useVaultSession({
-    enrollment,
-    reportError,
-    sealPlan,
-    setAddressPin,
-    setBusy,
-    setEnrollment,
-    setLocked,
-    setScreen,
-    setStatus,
-    setup,
-    status,
-  })
+  }, [setError])
 
   const clearSpendDraft = useCallback(
     (acct: VaultAccount = account) => {
@@ -758,7 +453,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const openPendingPayment = useCallback(
     async (operationId: string) => {
       if (!status?.enrolled) return
-      setBusy(true)
+      setPaymentBusy(true)
       setError('')
       try {
         const pending = loadPersistedVtxoSpendById(status.vaultId, operationId)
@@ -793,7 +488,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         consoleError(err, 'Open pending payment')
         setError(humanizeVaultError(err))
       } finally {
-        setBusy(false)
+        setPaymentBusy(false)
       }
     },
     [status],
@@ -803,7 +498,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const reviewLightningSpend = useCallback(async () => {
     if (lightningReviewInFlight.current) return
     lightningReviewInFlight.current = true
-    setBusy(true)
+    setPaymentBusy(true)
     let phase = 'validation'
     try {
       if (!status?.enrolled || !enrollment)
@@ -897,7 +592,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setError(humanizeVaultError(err))
     } finally {
       lightningReviewInFlight.current = false
-      setBusy(false)
+      setPaymentBusy(false)
     }
   }, [account, enrollment, setup.txCapSats, spend.address, spendingAvailableSats, status])
 
@@ -911,7 +606,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setPaymentError(undefined)
       setError('')
       setBitcoinOutputs(outputs)
-      setBusy(true)
+      setPaymentBusy(true)
       setLightningQuote(null)
       let approvedFee = 0
       let approvalAccepted = false
@@ -930,7 +625,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
               bitcoinApproval.current = { resolve, address: draft.address, amount: draft.amount, fee: plan.feeSats }
               setSpend({ ...draft, fee: plan.feeSats })
               setScreen('review')
-              setBusy(false)
+              setPaymentBusy(false)
             }).then((accepted) => {
               approvalAccepted = accepted
               return accepted
@@ -957,7 +652,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         if (approvalAccepted) setScreen('home')
       } finally {
         bitcoinApproval.current = null
-        setBusy(false)
+        setPaymentBusy(false)
       }
     },
     [enrollment, status, refreshBalance],
@@ -1008,7 +703,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setError('This Savings program is no longer supported.')
         return
       }
-      setBusy(true)
+      setPaymentBusy(true)
       try {
         const fee = await ledgerSavings.review(spend)
         if (spendRef.current.address !== spend.address || spendRef.current.amount !== spend.amount) {
@@ -1020,7 +715,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setError(humanizeVaultError(err))
       } finally {
-        setBusy(false)
+        setPaymentBusy(false)
       }
       return
     }
@@ -1042,7 +737,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setError('Sign in with the passkey that created this vault.')
       return
     }
-    setBusy(true)
+    setPaymentBusy(true)
     try {
       const preview = await previewVaultVtxoSend(status, spend.address, spend.amount, {
         replaceExisting: replaceExistingVtxoRef.current,
@@ -1066,7 +761,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setError(humanizeVaultError(err))
       return
     } finally {
-      setBusy(false)
+      setPaymentBusy(false)
     }
     setScreen('review')
   }, [
@@ -1125,7 +820,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const completeLedgerPayment = useCallback(
     async (candidateId: string, signedPsbt: string) => {
-      setBusy(true)
+      setPaymentBusy(true)
       setError('')
       try {
         const txid = await ledgerSavings.complete(candidateId, signedPsbt)
@@ -1135,7 +830,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         throw err
       } finally {
         await ledgerSavings.refresh().catch(() => {})
-        setBusy(false)
+        setPaymentBusy(false)
       }
     },
     [ledgerSavings.complete, ledgerSavings.refresh, finishBroadcast],
@@ -1150,12 +845,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         spend.address === approval.address &&
         spend.amount === approval.amount &&
         spend.fee === approval.fee
-      setBusy(matches)
+      setPaymentBusy(matches)
       if (!matches) setError('Payment details changed. Review the payment again.')
       approval.resolve(matches)
       return
     }
-    setBusy(true)
+    setPaymentBusy(true)
     setError('')
     try {
       if (account === 'savings') {
@@ -1340,7 +1035,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       )
       if (status?.vaultId) await refreshBalance(status.vaultId)
     } finally {
-      setBusy(false)
+      setPaymentBusy(false)
     }
   }, [
     account,
@@ -1357,34 +1052,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     spendingAvailableSats,
   ])
 
-  const reset = useCallback(() => {
-    if (status?.vaultId) {
-      clearSpendingRenewalReads(status.vaultId)
-      void shutdownVaultWalletWorker(status.vaultId)
-        .then(() => deleteBoardingKey(status.vaultId))
-        .catch(() => undefined)
-    }
-    // Push teardown is best effort and never blocks sign-out. Scope cleanup
-    // revokes the server subscription, drops the local handle, and
-    // preserves the device endpoint used by other wallets.
-    if (status) void disableBackgroundPush(status).catch(() => undefined)
-    setSessionLocked(true)
-    setLocked(true)
-    setError('')
-    setSpend({ address: '', amount: 0, fee: 0 })
-    setReviewedVtxoQuote(null)
-    setLightningQuote(null)
-    setLastSend(null)
-    setLastTxid('')
-    setLastTxKind('')
-    setAccount('spend')
-    setScanOnSend(false)
-    setScreen('welcome')
-  }, [status])
-
   const retryLightningRefund = useCallback(
     async (rfqId: string) => {
-      setBusy(true)
+      setPaymentBusy(true)
       setError('')
       let phoneSecret: Uint8Array | undefined
       try {
@@ -1413,7 +1083,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setError(humanizeVaultError(err))
       } finally {
         if (phoneSecret) zeroBytes(phoneSecret)
-        setBusy(false)
+        setPaymentBusy(false)
       }
     },
     [enrollment, refreshBalance, status],
@@ -1433,15 +1103,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       watchedSavings,
       updateWatchedSavings,
       watchedSavingsTotalSats: status?.protectionTier === 'light' ? positions.savings.totalSats : undefined,
-      acceptDesign,
       account,
       spendingRenewals,
       spendingBitcoin,
-      connectLedgerKey,
-      applyLedgerRecovery,
-      completeLedgerEnrollment,
-      setProtectionTier,
-      skipRecovery,
       downloadRecoveryKit,
       backupRecoveryKit,
       backupRecoveryArchive,
@@ -1452,7 +1116,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       boardingError,
       boardingAddress,
       restoreRecoveryKit,
-      restoreRecoveryArchive,
       hasRecoveryKit,
       initiateAlert,
       approveSend,
@@ -1461,19 +1124,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       ledgerPayment: ledgerSavings.view,
       completeLedgerPayment,
       confirmConditions,
-      setSpendingPolicy,
-      spendingPolicyCapabilities: deployment?.spendingPolicyCapabilities || CURRENT_SPENDING_POLICY_CAPABILITIES,
       dailyLimit,
       dailyRemaining,
       dailySpent: status?.enrolled ? (status.periodSpent ?? 0) : Math.max(0, dailyLimit - dailyRemaining),
-      enablePasskeyLogin: enableOtherDevices,
-      lightAvailable: Boolean(deployment?.supportedSetups?.includes('light')),
-      enrollmentMode: deployment?.enrollmentMode || 'loading',
-      ledgerAvailable:
-        deployment?.ledgerSavingsCapability?.version === 1 &&
-        deployment.ledgerSavingsCapability.templateVersion === LEDGER_NATIVE_TEMPLATE,
-      enroll,
-      enrolled,
       error,
       paymentError: paymentError?.message === error ? paymentError : undefined,
       dismissError: clearError,
@@ -1483,9 +1136,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       balanceUnit,
       balanceRateStatus,
       setBalanceUnit,
-      finishPlan,
-      hasLocalEnrollment: Boolean(enrollment),
-      locked,
       lastTxid,
       lastTxKind,
       history: recentAccountHistory(visibleHistory, account),
@@ -1536,7 +1186,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       spendingArkAddress,
       refreshBalance,
       retryLightningRefund,
-      reset,
       reviewSpend,
       bitcoinOutputs,
       resumingPayment,
@@ -1558,24 +1207,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setAccount: selectAccount,
       clearSpendDraft,
       setSpendDraft,
-      setup,
-      signIn,
       spend,
-      status,
       lastSend,
     }),
     [
       watchedSavings,
       updateWatchedSavings,
-      acceptDesign,
       account,
-      connectLedgerKey,
-      applyLedgerRecovery,
-      completeLedgerEnrollment,
       spendingRenewals,
       spendingBitcoin,
-      setProtectionTier,
-      skipRecovery,
       downloadRecoveryKit,
       backupRecoveryKit,
       backupRecoveryArchive,
@@ -1586,26 +1226,16 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       boardingError,
       boardingAddress,
       restoreRecoveryKit,
-      restoreRecoveryArchive,
       hasRecoveryKit,
       initiateAlert,
       approveSend,
       busy,
       confirmConditions,
-      setSpendingPolicy,
-      deployment?.spendingPolicyCapabilities,
-      deployment?.enrollmentMode,
-      deployment?.supportedSetups,
-      deployment?.ledgerSavingsCapability,
       ledgerSavings.view,
       completeLedgerPayment,
       dailyLimit,
       dailyRemaining,
-      enableOtherDevices,
       enrollment,
-      enroll,
-      signIn,
-      enrolled,
       error,
       paymentError,
       clearError,
@@ -1615,7 +1245,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       balanceUnit,
       balanceRateStatus,
       setBalanceUnit,
-      finishPlan,
       lastTxid,
       lastTxKind,
       visibleHistory,
@@ -1624,7 +1253,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       olderActivity,
       selectedTx,
       liveNetwork,
-      locked,
       lastSend,
       recoverEntry,
       recoverExit,
@@ -1636,7 +1264,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       recoverExit,
       refreshBalance,
       retryLightningRefund,
-      reset,
       reviewSpend,
       bitcoinOutputs,
       resumingPayment,
@@ -1651,7 +1278,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       selectAccount,
       clearSpendDraft,
       setSpendDraft,
-      setup,
       spend,
       spendingAvailableSats,
       status?.enrolled,
@@ -1659,5 +1285,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     ],
   )
 
-  return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+  const sessionValue = useMemo(
+    () => sessionView(session.getSnapshot(), session),
+    [session, setup, status, deployment, enrollment, locked],
+  )
+  return (
+    <VaultSessionContext.Provider value={sessionValue}>
+      <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+    </VaultSessionContext.Provider>
+  )
 }

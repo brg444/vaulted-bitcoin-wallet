@@ -31,24 +31,30 @@ export async function renewFromLocalUnlock(
   enrollment: EnrollmentSecrets,
   auth: VtxoSpendPasskey,
   canAuthorizeNew = true,
+  signal?: AbortSignal,
 ) {
   try {
-    await authorizeSpendingRenewals(status, enrollment, auth, canAuthorizeNew)
+    signal?.throwIfAborted()
+    await authorizeSpendingRenewals(status, enrollment, auth, canAuthorizeNew, signal)
   } catch (error) {
+    signal?.throwIfAborted()
     await recordFailure(status, error)
   }
 }
 
 /** Fresh sign-in has already consumed its login assertion; use a separate bounded ceremony. */
-export async function setupSpendingRenewals(status: VaultStatus, enrollment: EnrollmentSecrets) {
+export async function setupSpendingRenewals(status: VaultStatus, enrollment: EnrollmentSecrets, signal?: AbortSignal) {
   try {
+    signal?.throwIfAborted()
     const context = guardianRenewalContext(status)
     await spendingRenewalInfo(status)
     const { vtxos } = await new RestIndexerProvider(networkPins(status.network).operatorOrigin).getVtxos({
       scripts: [context.scriptPubKey],
       renewableOnly: true,
     })
+    signal?.throwIfAborted()
     const journal = await loadSpendingRenewals(status)
+    signal?.throwIfAborted()
     const reserved = new Set(
       listPersistedVtxoSpends(status.vaultId).flatMap((spend) =>
         (spend.reservedInputs || []).map((input) => `${input.txid}:${input.vout}`),
@@ -74,13 +80,20 @@ export async function setupSpendingRenewals(status: VaultStatus, enrollment: Enr
         }),
     )
     if (!needsAuthorization) return
-    const unlocker = createVtxoSpendUnlocker(enrollment, status, hex.encode(crypto.getRandomValues(new Uint8Array(32))))
+    const unlocker = createVtxoSpendUnlocker(
+      enrollment,
+      status,
+      hex.encode(crypto.getRandomValues(new Uint8Array(32))),
+      undefined,
+      signal,
+    )
     try {
-      await authorizeSpendingRenewals(status, enrollment, await unlocker.unlock())
+      await authorizeSpendingRenewals(status, enrollment, await unlocker.unlock(), true, signal)
     } finally {
       unlocker.dispose()
     }
   } catch (error) {
+    signal?.throwIfAborted()
     await recordFailure(status, error)
   }
 }

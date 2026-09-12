@@ -1,3 +1,7 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { accountBalanceReads } from '../../test/accountBalances'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -5,7 +9,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import type { VaultHistoryItem } from '../../lib/vault/history'
 import type { OlderActivityState } from '../../lib/vault/accountBalances'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultActivity, { filterActivity } from './Activity'
 
 const NOW = 1_700_000_200
@@ -59,9 +62,9 @@ function renderActivity(
   } as unknown as VaultContextProps
   const rendered = render(
     <ToastProvider>
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <VaultActivity />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>,
   )
   return { value, unmount: rendered.unmount }

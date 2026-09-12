@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { renderVault as render } from '../../test/fixtures/renderVault'
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ledgerPaymentFixture } from '../../test/ledgerSavingsFixture'
 import type { LedgerSavingsRegistration } from '../../lib/vault/ledgerClient'

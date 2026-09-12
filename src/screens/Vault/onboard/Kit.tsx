@@ -1,3 +1,4 @@
+import { useSession } from '../../../vault/sessionContext'
 import { useContext, useState } from 'react'
 import { Download, LockKeyhole } from 'lucide-react'
 import { useToast } from '../../../components/Toast'
@@ -18,7 +19,8 @@ function downloadJson(name: string, body: string) {
 }
 
 export default function VaultKit() {
-  const { downloadRecoveryKit, navigate, status } = useContext(VaultContext)
+  const { status } = useSession()
+  const { downloadRecoveryKit, navigate } = useContext(VaultContext)
   const [downloadRequested, setDownloadRequested] = useState(false)
   const { toast } = useToast()
 

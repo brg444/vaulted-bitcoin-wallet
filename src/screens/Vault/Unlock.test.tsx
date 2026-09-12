@@ -1,7 +1,10 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultUnlock from './Unlock'
 
 describe('Vault privacy unlock', () => {
@@ -9,9 +12,9 @@ describe('Vault privacy unlock', () => {
     const user = userEvent.setup()
     const signIn = vi.fn().mockResolvedValue(undefined)
     render(
-      <VaultContext.Provider value={{ busy: false, error: '', signIn } as unknown as VaultContextProps}>
+      <VaultTestProvider value={{ busy: false, error: '', signIn } as unknown as VaultContextProps}>
         <VaultUnlock />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
 
     expect(screen.getByRole('heading', { name: 'Unlock' })).toBeTruthy()

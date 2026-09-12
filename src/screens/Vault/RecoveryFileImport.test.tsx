@@ -1,6 +1,9 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import { buildRecoveryHeader } from '../../lib/vault/recovery/backupCodec'
 import { MAX_PORTABLE_RECOVERY_BYTES } from '../../lib/vault/recovery/portable'
 import { ledgerRecoveryFixture } from '../../lib/vault/recovery/testdata/ledger'
@@ -40,9 +43,9 @@ describe('local encrypted recovery backup import', () => {
         restoreRecoveryArchive,
       } as unknown as VaultContextProps
       render(
-        <VaultContext.Provider value={context}>
+        <VaultTestProvider value={context}>
           <Component />
-        </VaultContext.Provider>,
+        </VaultTestProvider>,
       )
       fireEvent.click(screen.getByRole('button', { name: 'Help' }))
       fireEvent.click(screen.getByRole('button', { name: 'Restore backup' }))

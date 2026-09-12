@@ -1,8 +1,11 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { accountBalanceReads } from '../../test/accountBalances'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultNavigation from './Navigation'
 
 if (typeof PointerEvent === 'undefined') {
@@ -31,9 +34,9 @@ function renderNav(overrides: Partial<VaultContextProps> = {}) {
     ...overrides,
   } as unknown as VaultContextProps
   render(
-    <VaultContext.Provider value={value}>
+    <VaultTestProvider value={value}>
       <VaultNavigation />
-    </VaultContext.Provider>,
+    </VaultTestProvider>,
   )
   return value
 }

@@ -1,9 +1,12 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { accountBalanceReads } from '../../test/accountBalances'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultSettings from './Settings'
 
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.resolve(false) }))
@@ -22,9 +25,9 @@ function renderSettings(overrides: Partial<VaultContextProps> = {}) {
   } as unknown as VaultContextProps
   render(
     <ToastProvider>
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <VaultSettings />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>,
   )
   return value
@@ -90,16 +93,18 @@ describe('Vault settings account boundaries', () => {
     expect(document.documentElement.classList.contains('palette-dark')).toBe(true)
   })
 
-  it('turns on passkey privacy lock from This browser', async () => {
-    const user = userEvent.setup()
-    renderSettings()
-    const toggle = screen.getByTestId('settings-privacy-lock')
-    expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await user.click(toggle)
-    expect(toggle).toHaveAttribute('aria-checked', 'true')
-    expect(localStorage.getItem('arkade-vault-privacy-lock')).toBe('1')
-    expect(localStorage.getItem('arkade-vault-v2:session-lock')).toBe('1')
-  })
+  it.each([false, true])(
+    'requests a privacy preference change from the session owner (enabled=%s)',
+    async (enabled) => {
+      const user = userEvent.setup()
+      const setPrivacyLock = vi.fn()
+      renderSettings({ privacyLock: enabled, setPrivacyLock })
+      const toggle = screen.getByTestId('settings-privacy-lock')
+      expect(toggle).toHaveAttribute('aria-checked', String(enabled))
+      await user.click(toggle)
+      expect(setPrivacyLock).toHaveBeenCalledExactlyOnceWith(!enabled)
+    },
+  )
 
   it('signs out from a Vaulted confirmation sheet', async () => {
     const user = userEvent.setup()

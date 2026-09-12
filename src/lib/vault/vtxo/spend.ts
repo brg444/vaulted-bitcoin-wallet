@@ -762,7 +762,9 @@ async function authorizeWithPasskey(
   enrollment: EnrollmentSecrets,
   status: VaultStatus,
   digestHex: string,
+  signal?: AbortSignal,
 ): Promise<VtxoSpendPasskey> {
+  signal?.throwIfAborted()
   const digest = requireHex(digestHex, 32, 'bundle digest')
   const rpId = String(status.rpId || '').toLowerCase()
   if (!rpId || rpId !== location.hostname.toLowerCase()) {
@@ -773,6 +775,7 @@ async function authorizeWithPasskey(
   }
   const credentialId = requireHex(enrollment.credId, enrollment.credId.length / 2, 'credential id')
   const credential = (await navigator.credentials.get({
+    signal,
     publicKey: deviceSigningOptions(
       {
         challenge: digest,
@@ -786,21 +789,27 @@ async function authorizeWithPasskey(
   if (!credential) throw new Error('The operation was aborted.')
   const prf = prfFrom(credential)
   if (!prf || prf.length !== 32) throw new Error('authenticator did not return PRF')
+  let phoneSecret: Uint8Array | undefined
+  let transferred = false
   let scalar: Uint8Array | undefined
   try {
+    signal?.throwIfAborted()
     const derived = await deriveDirectP256(prf)
     scalar = derived.scalar
     if (hex.encode(derived.pub) !== enrollment.phoneDirectP256 || hex.encode(derived.pub) !== status.phoneDirectP256) {
       throw new Error('passkey direct key does not match this vault')
     }
-    const phoneSecret = await unwrapPhoneSecret(prf, enrollment.nonce, enrollment.ciphertext)
+    signal?.throwIfAborted()
+    phoneSecret = await unwrapPhoneSecret(prf, enrollment.nonce, enrollment.ciphertext)
     const identity = SingleKey.fromPrivateKey(phoneSecret)
     if (hex.encode(await identity.compressedPublicKey()) !== enrollment.phoneBip340Pub) {
       zeroBytes(phoneSecret)
       throw new Error('phone key does not match this vault')
     }
+    signal?.throwIfAborted()
     const response = credential.response as AuthenticatorAssertionResponse
     const scalarCopy = new Uint8Array(scalar)
+    transferred = true
     return {
       assertion: {
         credentialId: enrollment.credId,
@@ -813,6 +822,7 @@ async function authorizeWithPasskey(
     }
   } finally {
     zeroBytes(prf, scalar as Uint8Array)
+    if (!transferred && phoneSecret) zeroBytes(phoneSecret)
   }
 }
 
@@ -824,17 +834,41 @@ export function createVtxoSpendUnlocker(
     enrollment: EnrollmentSecrets,
     status: VaultStatus,
     digestHex: string,
+    signal?: AbortSignal,
   ) => Promise<VtxoSpendPasskey> = authorizeWithPasskey,
+  signal?: AbortSignal,
 ) {
   let session: VtxoSpendPasskey | undefined
+  let pending: Promise<VtxoSpendPasskey> | undefined
+  let disposed = false
+  const requireOpen = () => {
+    signal?.throwIfAborted()
+    if (disposed) throw new DOMException('Signing approval ended', 'AbortError')
+  }
   return {
     async unlock() {
-      if (!session) session = await unlockPasskey(enrollment, status, digestHex)
-      return session
+      requireOpen()
+      if (session) return session
+      if (!pending)
+        pending = unlockPasskey(enrollment, status, digestHex, signal)
+          .then((auth) => {
+            try {
+              requireOpen()
+            } catch (error) {
+              zeroBytes(auth.phoneSecret, auth.scalar)
+              throw error
+            }
+            session = auth
+            return auth
+          })
+          .finally(() => {
+            pending = undefined
+          })
+      return pending
     },
     dispose() {
-      if (!session) return
-      zeroBytes(session.phoneSecret, session.scalar)
+      disposed = true
+      if (session) zeroBytes(session.phoneSecret, session.scalar)
       session = undefined
     },
   }

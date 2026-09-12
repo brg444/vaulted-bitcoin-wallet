@@ -1,6 +1,9 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../../test/fixtures/VaultTestProvider'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../../vault/context'
 import VaultPasskey from './Passkey'
 
 vi.mock('../../../lib/vault/webauthn', () => ({ isPlatformPasskeyAvailable: async () => true }))
@@ -9,13 +12,13 @@ describe('enrollment admission screen', () => {
   it('follows the server mode and requires an invite only when enabled', async () => {
     const enroll = vi.fn()
     const view = (mode: string) => (
-      <VaultContext.Provider
+      <VaultTestProvider
         value={
           { enrollmentMode: mode, enroll, busy: false, error: '', navigate: vi.fn() } as unknown as VaultContextProps
         }
       >
         <VaultPasskey />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     )
     const rendered = render(view('open'))
     const create = screen.getByRole('button', { name: 'Create Vault' })

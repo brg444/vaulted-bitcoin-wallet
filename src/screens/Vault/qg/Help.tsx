@@ -1,3 +1,4 @@
+import { useSession } from '../../../vault/sessionContext'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { CircleHelp, X } from 'lucide-react'
 import { VaultContext } from '../../../vault/context'
@@ -8,7 +9,8 @@ import InstallNotice from './InstallNotice'
 export const WalletHelpContext = createContext<{ light?: boolean; restore?: () => void }>({})
 
 export default function WalletHelp() {
-  const { busy, error, restoreRecoveryArchive, status } = useContext(VaultContext)
+  const { restoreRecoveryArchive, status } = useSession()
+  const { busy, error } = useContext(VaultContext)
   const wallet = useContext(WalletHelpContext)
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'menu' | 'restore' | 'access'>('menu')

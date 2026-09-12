@@ -1,3 +1,4 @@
+import { useSession } from '../vault/sessionContext'
 import { accountBalanceReads } from '../test/accountBalances'
 import {
   sharedSpendingEnrollment,
@@ -153,14 +154,6 @@ vi.mock('../vault/useVaultBalances', () => ({
   }),
 }))
 
-vi.mock('../vault/useVaultSession', () => ({
-  useVaultSession: () => ({
-    enableOtherDevices: vi.fn().mockResolvedValue(undefined),
-    enroll: vi.fn().mockResolvedValue(undefined),
-    signIn: vi.fn().mockResolvedValue(undefined),
-  }),
-}))
-
 vi.mock('../vault/useRecoveryAlerts', () => ({ useRecoveryAlerts: () => '' }))
 vi.mock('../vault/useRecoveryKit', () => ({
   useRecoveryKit: () => ({
@@ -211,13 +204,14 @@ const reviewed: VaultVtxoSpendQuote = {
 
 function Probe() {
   const vault = useContext(VaultContext)
+  const session = useSession()
   return (
     <div>
       <button onClick={() => vault.openPendingPayment('11'.repeat(16))}>Open pending</button>
       <span data-testid='screen'>{vault.screen}</span>
       <span data-testid='account'>{vault.account}</span>
       <span data-testid='scan'>{String(vault.scanOnSend)}</span>
-      <span data-testid='ready'>{String(Boolean(vault.status?.enrolled))}</span>
+      <span data-testid='ready'>{String(Boolean(session.status?.enrolled))}</span>
       <span data-testid='fee'>{vault.spend.fee}</span>
       <span data-testid='destination'>{vault.spend.address}</span>
       <span data-testid='error'>{vault.error}</span>
@@ -614,12 +608,13 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     const savedEnrollment = localStorage.getItem(`${ENROLL_STORE}:vault-a`)
     function SetupProbe() {
       const vault = useContext(VaultContext)
+      const session = useSession()
       return (
         <>
-          <span data-testid='old-vault'>{vault.status?.vaultId}</span>
-          <span data-testid='new-key'>{vault.setup.hardwarePub}</span>
+          <span data-testid='old-vault'>{session.status?.vaultId}</span>
+          <span data-testid='new-key'>{session.setup.hardwarePub}</span>
           <span data-testid='setup-screen'>{vault.screen}</span>
-          <button onClick={() => vault.acceptDesign('standard')}>Start another vault</button>
+          <button onClick={() => session.acceptDesign('standard')}>Start another vault</button>
           {vault.screen === 'hardware' ? <LedgerHardware /> : null}
         </>
       )

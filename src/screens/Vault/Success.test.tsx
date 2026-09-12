@@ -1,11 +1,14 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultSuccess from './Success'
 
 function renderSuccess(lastTxKind: VaultContextProps['lastTxKind'], network = 'mutinynet', account = 'savings') {
   render(
-    <VaultContext.Provider
+    <VaultTestProvider
       value={
         {
           account,
@@ -19,7 +22,7 @@ function renderSuccess(lastTxKind: VaultContextProps['lastTxKind'], network = 'm
       }
     >
       <VaultSuccess />
-    </VaultContext.Provider>,
+    </VaultTestProvider>,
   )
   fireEvent.click(screen.getByText(/View (funding )?transaction$/))
 }

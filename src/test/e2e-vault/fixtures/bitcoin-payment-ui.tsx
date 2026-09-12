@@ -1,3 +1,5 @@
+import { useSession } from '../../../vault/sessionContext'
+import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
 import PaymentNotice from '../../../screens/Vault/qg/PaymentNotice'
 import { BitcoinPaymentError, bitcoinPaymentRejected } from '../../../lib/vault/bitcoinPaymentError'
 import { useContext, useEffect, useState } from 'react'
@@ -16,6 +18,7 @@ import type { BitcoinPaymentJournal } from '../../../lib/vault/spendingBitcoinSt
 // vectors cover signed output authority. No payment is created by this view.
 export default function BitcoinPaymentUi() {
   const context = useContext(VaultContext)
+  const session = useSession()
   const [mode, setMode] = useState(1)
   useEffect(() => {
     const change = (event: Event) => setMode((event as CustomEvent<number>).detail)
@@ -23,7 +26,7 @@ export default function BitcoinPaymentUi() {
     return () => window.removeEventListener('bitcoin-payment-view', change)
   }, [])
   const reviewError = mode === 9 ? bitcoinPaymentRejected('INTERNAL_ERROR: example rejection') : undefined
-  const status = context.status
+  const status = session.status
   if (!status) return null
   const script = '0014' + '43'.repeat(20)
   const address = Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(script)))
@@ -52,7 +55,7 @@ export default function BitcoinPaymentUi() {
             Date.UTC(2026, 8, 9, 10, 15),
           )
     return (
-      <VaultContext.Provider
+      <VaultTestProvider
         value={{
           ...context,
           error: mode === 5 || mode === 7 ? paymentError.message : '',
@@ -76,7 +79,7 @@ export default function BitcoinPaymentUi() {
             openTx={() => setMode(4)}
           />
         </AccountHome>
-      </VaultContext.Provider>
+      </VaultTestProvider>
     )
   }
   if (mode === 3)
@@ -94,7 +97,7 @@ export default function BitcoinPaymentUi() {
     )
   if (mode === 4)
     return (
-      <VaultContext.Provider
+      <VaultTestProvider
         value={{
           ...context,
           selectedTx: history[0],
@@ -103,10 +106,10 @@ export default function BitcoinPaymentUi() {
         }}
       >
         <VaultTx />
-      </VaultContext.Provider>
+      </VaultTestProvider>
     )
   return (
-    <VaultContext.Provider
+    <VaultTestProvider
       value={{
         ...context,
         account: 'spend',
@@ -121,6 +124,6 @@ export default function BitcoinPaymentUi() {
       }}
     >
       <VaultReview />
-    </VaultContext.Provider>
+    </VaultTestProvider>
   )
 }

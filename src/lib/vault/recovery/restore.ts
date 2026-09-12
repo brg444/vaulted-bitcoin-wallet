@@ -26,7 +26,9 @@ export async function restoreVaultRecoveryFile(
   value: VaultRecoveryFile,
   phone: Uint8Array,
   ledgerSavingsSeed?: Uint8Array,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted()
   const candidate = JSON.parse(JSON.stringify(value)) as VaultRecoveryFile
   requireStatusIdentity(
     candidate?.archive?.status as Parameters<typeof requireStatusIdentity>[0],
@@ -38,7 +40,7 @@ export async function restoreVaultRecoveryFile(
     savings = ledgerSavingsSeed ? Uint8Array.from(ledgerSavingsSeed) : undefined
   try {
     return await navigator.locks.request(`vaulted:complete-recovery:${file.header.binding.descriptorHash}`, () =>
-      restoreLocked(file, spending, savings),
+      restoreLocked(file, spending, savings, signal),
     )
   } finally {
     spending.fill(0)
@@ -46,7 +48,13 @@ export async function restoreVaultRecoveryFile(
   }
 }
 
-async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerSavingsSeed?: Uint8Array) {
+async function restoreLocked(
+  file: VaultRecoveryFile,
+  phone: Uint8Array,
+  ledgerSavingsSeed?: Uint8Array,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted()
   const { status, enrollment } = file.header
   validateRecoveryJournals(status, file as VaultRecoveryFile & RecoveryJournals)
   if (hex.encode(schnorr.getPublicKey(phone)) !== file.header.kit.descriptor.keys.phoneBip340.slice(2))
@@ -77,7 +85,10 @@ async function restoreLocked(file: VaultRecoveryFile, phone: Uint8Array, ledgerS
   if (oldPin && oldPin.pinHash !== pin.pinHash) throw new Error('Recovery address pin differs from this device')
   // The key is derived from the original phone key and verified against the
   // saved enrollment before activation; no separate boarding secret is imported.
+  signal?.throwIfAborted()
   await provisionBoardingKey(phone, status)
+  // Once import begins, finish persisting its recovery evidence even if the caller locks.
+  // The session owner drains this operation before revoking the activated key.
   const contracts = new IndexedDBContractRepository(vaultWalletDatabase(status.vaultId))
   const swaps = new IndexedDbAssetSwapRepository(vaultLightningSwapStorageName(status.vaultId))
   try {

@@ -1,7 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { renderVault as render } from '../../../test/fixtures/renderVault'
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../../test/fixtures/VaultTestProvider'
+import { fireEvent, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import WalletScreen from './WalletScreen'
-import { VaultContext, type VaultContextProps } from '../../../vault/context'
 
 it('keeps an in-progress form mounted while Help opens and closes', () => {
   const dismiss = vi.fn()
@@ -25,13 +29,11 @@ it('keeps an in-progress form mounted while Help opens and closes', () => {
 
 it('renders onboarding progress from the current protection choice without changing the layout labels', () => {
   const view = (advanced: boolean, stepLabel: string) => (
-    <VaultContext.Provider
-      value={{ setup: { protectionTier: advanced ? 'advanced' : 'standard' } } as VaultContextProps}
-    >
+    <VaultTestProvider value={{ setup: { protectionTier: advanced ? 'advanced' : 'standard' } } as VaultContextProps}>
       <WalletScreen title='Review setup' stepLabel={stepLabel}>
         <p>Review your choices</p>
       </WalletScreen>
-    </VaultContext.Provider>
+    </VaultTestProvider>
   )
   const { rerender } = render(view(false, '5 of 6'))
   expect(screen.getByText('4 of 6')).toBeVisible()

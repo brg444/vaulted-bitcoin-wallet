@@ -1,7 +1,10 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../../test/fixtures/VaultTestProvider'
 import { ledgerRecoveryFacts } from '../../../lib/vault/recovery/testdata/helpers'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../../vault/context'
 import RecoveryExplanation from '../qg/RecoveryExplanation'
 import VaultKit from './Kit'
 import VaultReady from './Ready'
@@ -44,9 +47,9 @@ describe('onboarding guidance', () => {
     localStorage.setItem(`vaulted-backup-confirmed:${kit.descriptorHash}`, 'confirmed-by-user')
     const context = value()
     render(
-      <VaultContext.Provider value={context}>
+      <VaultTestProvider value={context}>
         <VaultKit />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Download Recovery Kit' }))
     expect(context.navigate).not.toHaveBeenCalled()
@@ -59,16 +62,16 @@ describe('onboarding guidance', () => {
   it('allows deferring backup without claiming it is complete', () => {
     const context = value()
     const { rerender } = render(
-      <VaultContext.Provider value={context}>
+      <VaultTestProvider value={context}>
         <VaultKit />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'I’ll save a separate copy later' }))
     expect(context.navigate).toHaveBeenCalledWith('home')
     rerender(
-      <VaultContext.Provider value={context}>
+      <VaultTestProvider value={context}>
         <VaultReady />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     expect(screen.getByTestId('backup-status')).toHaveTextContent('Save a recovery package outside this device')
     expect(screen.queryByText('Loss recovery is ready')).toBeNull()
@@ -83,9 +86,9 @@ describe('onboarding guidance', () => {
         }),
     )
     render(
-      <VaultContext.Provider value={value()}>
+      <VaultTestProvider value={value()}>
         <VaultPasskey />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     expect(screen.getByText('Checking passkey support…')).toBeTruthy()
     expect(screen.queryByText('Device supports passkeys')).toBeNull()

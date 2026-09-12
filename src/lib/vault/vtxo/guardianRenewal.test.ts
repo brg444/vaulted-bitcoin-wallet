@@ -177,6 +177,18 @@ describe('automatic renewal authorization ceremony boundaries', () => {
     expect(mocks.ancestry).not.toHaveBeenCalled()
     expect(result?.operations).toEqual({})
   })
+  it('propagates cancellation during ancestry verification before producing a new signed set', async () => {
+    const f = environment(vectors[1].status),
+      abort = new AbortController()
+    mocks.ancestry.mockImplementation(async () => abort.abort())
+    await expect(authorizeSpendingRenewals(f.status, f.enrollment, f.auth, true, abort.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(f.schedules()).toBe(0)
+    const journal = await loadSpendingRenewals(f.status)
+    expect(journal.sets).toEqual({})
+    expect(journal.error).toBeUndefined()
+  })
   it('stops new authorizations when the wallet locks during ancestry verification', async () => {
     const f = environment(vectors[1].status)
     mocks.ancestry.mockImplementation(async () => clearSpendingRenewalReads(f.status.vaultId))

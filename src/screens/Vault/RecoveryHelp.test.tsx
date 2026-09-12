@@ -1,7 +1,10 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ledgerRecoveryFixture } from '../../lib/vault/recovery/testdata/ledger'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import RecoveryHelp from './RecoveryHelp'
 import VaultWelcome from './Welcome'
 import VaultUnlock from './Unlock'
@@ -39,9 +42,9 @@ describe('access and recovery guidance', () => {
   it.each([VaultWelcome, VaultUnlock, VaultSignIn])('opens and leaves help without authenticating', (Component) => {
     const value = context()
     render(
-      <VaultContext.Provider value={value}>
+      <VaultTestProvider value={value}>
         <Component />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Help' }))
     fireEvent.click(screen.getByRole('button', { name: 'Access and recovery help' }))
@@ -85,9 +88,9 @@ describe('access and recovery guidance', () => {
   it.each([false, true])('offers only the enrolled Ledger recovery keys (advanced=%s)', (hasRecovery) => {
     const fixture = hasRecovery ? advanced : standard
     render(
-      <VaultContext.Provider value={context(fixture)}>
+      <VaultTestProvider value={context(fixture)}>
         <VaultRecover />
-      </VaultContext.Provider>,
+      </VaultTestProvider>,
     )
     expect(screen.getByRole('heading', { name: 'Recover Ledger Savings' })).toBeVisible()
     const claimant = screen.getByRole('combobox', { name: 'Recovery claimant' })

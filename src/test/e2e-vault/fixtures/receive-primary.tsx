@@ -1,3 +1,4 @@
+import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
 import React, { useContext } from 'react'
 import { createRoot } from 'react-dom/client'
 import { bech32 } from '@scure/base'
@@ -59,7 +60,7 @@ function ReceiveFixture() {
   const defaults = useContext(VaultContext)
   return (
     <ToastProvider>
-      <VaultContext.Provider
+      <VaultTestProvider
         value={{
           ...defaults,
           status,
@@ -83,7 +84,7 @@ function ReceiveFixture() {
         >
           <VaultReceive />
         </div>
-      </VaultContext.Provider>
+      </VaultTestProvider>
     </ToastProvider>
   )
 }

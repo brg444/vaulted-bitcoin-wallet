@@ -1,14 +1,17 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultApp from '../../VaultApp'
 import { emptySetupPlan } from '../../lib/vault/setupPlan'
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: vi.fn() }))
 it('routes Light through the common setup action without a separate app', async () => {
   const acceptDesign = vi.fn()
   render(
-    <VaultContext.Provider
+    <VaultTestProvider
       value={
         {
           screen: 'design',
@@ -20,7 +23,7 @@ it('routes Light through the common setup action without a separate app', async 
       }
     >
       <VaultApp />
-    </VaultContext.Provider>,
+    </VaultTestProvider>,
   )
   await userEvent.click(screen.getByRole('button', { name: /^Light/ }))
   expect(acceptDesign).toHaveBeenCalledExactlyOnceWith('light')

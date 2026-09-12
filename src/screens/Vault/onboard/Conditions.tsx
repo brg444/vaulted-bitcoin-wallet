@@ -1,3 +1,4 @@
+import { useSession } from '../../../vault/sessionContext'
 import { useContext, useMemo, useState } from 'react'
 import { Clock3 } from 'lucide-react'
 import ErrorMessage from '../../../components/Error'
@@ -20,8 +21,8 @@ function displaySats(raw: string) {
 }
 
 export default function VaultConditions() {
-  const { confirmConditions, error, navigate, setSpendingPolicy, setup, spendingPolicyCapabilities } =
-    useContext(VaultContext)
+  const { setSpendingPolicy, setup, spendingPolicyCapabilities } = useSession()
+  const { confirmConditions, error, navigate } = useContext(VaultContext)
   const setupPolicy = setupSpendingPolicy(setup)
   const [txCap, setTxCap] = useState(String(setupPolicy.txRecipientCapSats))
   const [allowance, setAllowance] = useState(String(setupPolicy.periodAllowanceSats))

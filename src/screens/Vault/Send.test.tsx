@@ -1,3 +1,7 @@
+import {
+  VaultTestProvider,
+  type VaultTestContextProps as VaultContextProps,
+} from '../../test/fixtures/VaultTestProvider'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
@@ -6,7 +10,6 @@ import { Fiats } from '../../lib/types'
 import { ToastProvider } from '../../components/Toast'
 import type { VaultBalanceUnit, VaultFiatDisplayRate } from '../../lib/vault/fiatDisplay'
 import { saveVaultBalanceUnit } from '../../lib/vault/prefs'
-import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultSend from './Send'
 
 vi.mock('../../lib/haptics', () => ({
@@ -77,7 +80,7 @@ function renderSend(overrides: Partial<VaultContextProps> & { balanceUnit?: Vaul
       })
     return (
       <ToastProvider>
-        <VaultContext.Provider
+        <VaultTestProvider
           value={
             {
               ...value,
@@ -89,7 +92,7 @@ function renderSend(overrides: Partial<VaultContextProps> & { balanceUnit?: Vaul
           }
         >
           <VaultSend />
-        </VaultContext.Provider>
+        </VaultTestProvider>
       </ToastProvider>
     )
   }
@@ -205,7 +208,7 @@ describe('Vault send scanner origin', () => {
       const [unit, setUnit] = useState<VaultBalanceUnit>('usd')
       return (
         <ToastProvider>
-          <VaultContext.Provider
+          <VaultTestProvider
             value={
               {
                 account: 'spend',
@@ -243,7 +246,7 @@ describe('Vault send scanner origin', () => {
             <button type='button' onClick={() => setSpend({ address: 'tark1scanned', amount: 331, fee: 0 })}>
               simulate-small-scan
             </button>
-          </VaultContext.Provider>
+          </VaultTestProvider>
         </ToastProvider>
       )
     }
