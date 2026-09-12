@@ -110,9 +110,10 @@ export default function AccountHome({
             denomination={denomination}
           />
         ) : null}
-        {balancesLoaded && pendingSats > 0 ? (
+        {pendingSats > 0 ? (
           <p className='qg-available'>
-            {formatMoney(availableSats, money)} available · {formatMoney(pendingSats, money)} pending
+            {balancesLoaded ? `${formatMoney(availableSats, money)} available · ` : ''}
+            {formatMoney(pendingSats, money)} pending
           </p>
         ) : null}
         {description ? <div className={styles.description}>{description}</div> : null}

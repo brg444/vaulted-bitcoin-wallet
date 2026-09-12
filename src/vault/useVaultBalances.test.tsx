@@ -473,27 +473,15 @@ describe('useVaultBalances', () => {
       }
       return []
     })
+    const recovered = deferred<Awaited<ReturnType<typeof fetchVaultWalletVtxoSnapshot>>>()
     mockedSnapshot
       .mockRejectedValueOnce(
         new AggregateError([new Error('SDK worker did not register the Spending contract')], 'teardown failed'),
       )
-      .mockResolvedValueOnce({
-        balance: 0,
-        boardingBalance: 33_458,
-        history: [
-          {
-            txid: 'b8ed',
-            type: 'received',
-            amount: 33_458,
-            confirmed: false,
-            account: 'spend',
-            activity: 'boarding',
-          },
-        ],
-      })
+      .mockReturnValueOnce(recovered.promise)
     const { result } = setupHook()
     await act(async () => result.current.refreshBalance())
-    expect(result.current.accountReads.spend.loaded).toBe(true)
+    expect(result.current.accountReads.spend.loaded).toBe(false)
     expect(result.current.positions.savings.totalSats).toBe(20_000)
     expect(result.current.positions.spending).toEqual({
       availableSats: 0,
@@ -512,6 +500,16 @@ describe('useVaultBalances', () => {
     ])
 
     await waitFor(() => expect(mockedWorkerRevive).toHaveBeenCalledWith(STATUS))
+    await act(async () => {
+      recovered.resolve({
+        balance: 0,
+        boardingBalance: 33_458,
+        history: [
+          { txid: 'b8ed', type: 'received', amount: 33_458, confirmed: false, account: 'spend', activity: 'boarding' },
+        ],
+      })
+    })
+    expect(result.current.accountReads.spend.loaded).toBe(true)
     expect(result.current.history.filter((item) => item.txid === 'b8ed')).toHaveLength(1)
     expect(result.current.positions.spending.pendingSats).toBe(33_458)
     expect(result.current.accountReads.spend.error).toBe('')
@@ -1121,4 +1119,26 @@ it('hydrates an unknown Savings balance separately from a saved Spending balance
   expect(result.current.accountReads.spend.loaded).toBe(true)
   expect(result.current.accountReads.savings.loaded).toBe(false)
   expect(result.current.snapshotFresh).toBe(false)
+})
+
+it.each([0, 33_458])('keeps Spending unknown after a boarding-only read of %i sats', async (boardingSats) => {
+  mockedSnapshot.mockRejectedValue(new Error('Spending SDK unavailable'))
+  mockedUtxos.mockImplementation(async (address) =>
+    address === STATUS.vtxoBoardingAddress && boardingSats > 0
+      ? [{ txid: 'deposit', vout: 0, value: boardingSats, status: { confirmed: true } }]
+      : [],
+  )
+  const revive = deferred<Awaited<ReturnType<typeof reviveVaultWalletWorker>>>()
+  mockedWorkerRevive.mockReturnValue(revive.promise)
+  const { result, unmount } = setupHook()
+  await act(async () => result.current.refreshBalance())
+  expect(result.current.accountReads.spend).toMatchObject({ loaded: false, fresh: false })
+  expect(result.current.positions.spending).toEqual({
+    availableSats: 0,
+    pendingSats: boardingSats,
+    totalSats: boardingSats,
+  })
+  expect(loadBalanceSnapshot(STATUS.vaultId)?.loaded?.spend).toBe(false)
+  unmount()
+  revive.resolve(undefined as never)
 })

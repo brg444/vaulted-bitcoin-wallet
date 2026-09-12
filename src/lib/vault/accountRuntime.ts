@@ -11,7 +11,7 @@ export interface VaultAccountRuntime {
   previous: Promise<void>
   connection?: WalletConnection
   initialization?: Promise<WalletConnection>
-  replacement?: Promise<WalletConnection>
+  replacement?: { phase: 'draining' | 'connecting'; promise: Promise<WalletConnection> }
   closeConnection?: () => Promise<void>
   disposal?: Promise<void>
 }
@@ -46,7 +46,7 @@ export function disposeVaultAccountRuntime(account: VaultAccountRuntime): Promis
   account.disposal = (async () => {
     await drain
     await account.initialization?.catch(() => undefined)
-    await account.replacement?.catch(() => undefined)
+    await account.replacement?.promise.catch(() => undefined)
     await account.closeConnection?.()
   })()
   retiring = Promise.all([retiring, account.disposal]).then(() => undefined)

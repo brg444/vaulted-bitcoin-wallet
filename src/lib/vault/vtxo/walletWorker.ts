@@ -174,11 +174,15 @@ export async function shutdownVaultWalletWorker(vaultId: string): Promise<void> 
   if (!id) return
   const account = activeVaultAccountRuntime(id)
   if (account) {
-    const connected = Boolean(account.connection || account.initialization || account.replacement)
+    account.closeConnection ??= () => stopRegisteredVaultWorker(id)
     await disposeVaultAccountRuntime(account)
-    if (connected) return
+    return
   }
-  const registration = await navigator.serviceWorker.getRegistration(vaultWalletWorkerScope(id))
+  await stopRegisteredVaultWorker(id)
+}
+
+async function stopRegisteredVaultWorker(vaultId: string): Promise<void> {
+  const registration = await navigator.serviceWorker.getRegistration(vaultWalletWorkerScope(vaultId))
   if (!registration) return
   const worker = registration.active || registration.waiting || registration.installing
   if (worker) await ServiceWorkerWallet.stop(worker, VAULT_WORKER_STOP_TIMEOUT_MS)
@@ -379,11 +383,17 @@ export async function ensureVaultWalletWorker(status: VaultStatus): Promise<Wall
   const account = vaultAccountRuntime(status)
   if (account.connection) return account.connection
   if (account.initialization) return account.initialization
-  if (account.replacement) return account.replacement
+  // A draining task may reach its first SDK read after replacement begins.
+  // Waiting for replacement here would make it wait for its own completion.
+  if (account.replacement?.phase === 'draining') throw new Error('Vault SDK connection is being replaced')
+  if (account.replacement) return account.replacement.promise
   return connectAccountWallet(status, account)
 }
 
 async function connectAccountWallet(status: VaultStatus, account: VaultAccountRuntime): Promise<WalletConnection> {
+  // Failed SDK initialization can leave a registered worker without a connection.
+  // Keep its STOP inside account retirement so the next owner waits for cleanup.
+  account.closeConnection = () => stopRegisteredVaultWorker(status.vaultId)
   const promise = (async () => {
     await account.previous
     if (account.disposed) throw new Error('Vault account closed during worker initialization')
@@ -437,21 +447,29 @@ export async function reloadVaultWalletWorker(status: VaultStatus) {
 export async function reviveVaultWalletWorker(status: VaultStatus): Promise<WalletConnection> {
   const account = vaultAccountRuntime(status)
   if (account.connection?.boardingSettle) return account.connection
-  if (account.replacement) return account.replacement
-  const promise = account.maintenance.withPaused(async () => {
+  if (account.replacement) return account.replacement.promise
+  const drain = Boolean(account.connection || account.initialization)
+  const reconnect = async () => {
     await account.initialization?.catch(() => undefined)
+    replacement.phase = 'connecting'
     const previous = account.connection
     account.connection = undefined
     await account.closeConnection?.()
     if (previous) account.closeConnection = undefined
     if (account.disposed) throw new Error('Vault account closed during worker replacement')
     return connectAccountWallet(status, account)
-  })
-  account.replacement = promise
+  }
+  const replacement: NonNullable<VaultAccountRuntime['replacement']> = {
+    phase: drain ? 'draining' : 'connecting',
+    // A failed cold start has no SDK connection for maintenance to release.
+    // Its retry must remain independent of an ongoing recovery capture.
+    promise: drain ? account.maintenance.withPaused(reconnect) : reconnect(),
+  }
+  account.replacement = replacement
   try {
-    return await promise
+    return await replacement.promise
   } finally {
-    if (account.replacement === promise) account.replacement = undefined
+    if (account.replacement === replacement) account.replacement = undefined
   }
 }
 

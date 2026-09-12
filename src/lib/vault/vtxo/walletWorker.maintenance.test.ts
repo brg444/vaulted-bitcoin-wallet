@@ -37,7 +37,7 @@ let finishReceipts: (error?: Error) => void
 beforeEach(() => {
   localStorage.clear()
   const worker = { state: 'activated' }
-  const registration = { active: worker, update: vi.fn(), unregister: vi.fn() }
+  const registration = { active: worker, update: vi.fn(), unregister: vi.fn().mockResolvedValue(true) }
   vi.stubGlobal('navigator', {
     serviceWorker: {
       register: vi.fn().mockResolvedValue(registration),
@@ -133,6 +133,116 @@ it('runs account maintenance while SDK initialization is pending', async () => {
   await starting
   expect(account.connection?.wallet).toBe(wallet)
   await savings.dispose()
+})
+
+it('stops an orphan registration before retrying a failed SDK initialization', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const wallet = mockWallet()
+  const stop = vi.spyOn(ServiceWorkerWallet, 'stop').mockResolvedValue(undefined)
+  const creation = vi
+    .spyOn(ServiceWorkerWallet, 'create')
+    .mockRejectedValueOnce(new Error('Operator unavailable during SDK initialization'))
+    .mockResolvedValueOnce(wallet as never)
+  await expect(ensureVaultWalletWorker(status)).rejects.toThrow('Operator unavailable')
+  const registration = await vi.mocked(navigator.serviceWorker.register).mock.results[0].value
+  vi.mocked(navigator.serviceWorker.getRegistration).mockResolvedValue(registration)
+  await reviveVaultWalletWorker(status)
+  expect(stop).toHaveBeenCalledWith(registration.active, 60_000)
+  expect(stop.mock.invocationCallOrder[0]).toBeLessThan(creation.mock.invocationCallOrder[1])
+  expect((await ensureVaultWalletWorker(status)).wallet).toBe(wallet)
+})
+
+it('drains failed initialization and its orphan worker before a locked account can reopen', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  let rejectCreation!: (error: Error) => void
+  let finishStop!: () => void
+  const stop = vi
+    .spyOn(ServiceWorkerWallet, 'stop')
+    .mockImplementation(() => new Promise<void>((resolve) => (finishStop = resolve)))
+  const wallet = mockWallet()
+  const creation = vi
+    .spyOn(ServiceWorkerWallet, 'create')
+    .mockImplementationOnce(() => new Promise((_, reject) => (rejectCreation = reject)))
+    .mockResolvedValueOnce(wallet as never)
+  const starting = ensureVaultWalletWorker(status)
+  const failed = expect(starting).rejects.toThrow('Operator unavailable')
+  await vi.waitFor(() => expect(creation).toHaveBeenCalledOnce())
+  const registration = await vi.mocked(navigator.serviceWorker.register).mock.results[0].value
+  vi.mocked(navigator.serviceWorker.getRegistration).mockResolvedValue(registration)
+  const closing = shutdownVaultWalletWorker(status.vaultId)
+  const reopened = ensureVaultWalletWorker(status)
+  rejectCreation(new Error('Operator unavailable during SDK initialization'))
+  await failed
+  await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce())
+  expect(creation).toHaveBeenCalledOnce()
+  finishStop()
+  await closing
+  expect((await reopened).wallet).toBe(wallet)
+  expect(creation).toHaveBeenCalledTimes(2)
+})
+
+it('finishes a late SDK read from draining maintenance before reconnecting after a cold failure', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  vi.spyOn(ServiceWorkerWallet, 'stop').mockResolvedValue(undefined)
+  let rejectCreation!: (error: Error) => void
+  const creation = vi
+    .spyOn(ServiceWorkerWallet, 'create')
+    .mockImplementationOnce(() => new Promise((_, reject) => (rejectCreation = reject)))
+    .mockResolvedValueOnce(mockWallet() as never)
+  const failed = expect(ensureVaultWalletWorker(status)).rejects.toThrow('Operator unavailable')
+  await vi.waitFor(() => expect(creation).toHaveBeenCalledOnce())
+  const account = vaultAccountRuntime(status)
+  let read!: () => void
+  let escape!: () => void
+  let readFinished = false
+  const gate = new Promise<void>((resolve) => (read = resolve))
+  const rescue = new Promise<void>((resolve) => (escape = resolve))
+  const task = account.maintenance.observe(
+    'recovery-archive',
+    async () => {
+      await gate
+      await Promise.race([ensureVaultWalletWorker(status).catch(() => undefined), rescue])
+      readFinished = true
+    },
+    { intervalMs: 30_000 },
+  )
+  const flight = task.refresh()
+  const replacing = reviveVaultWalletWorker(status)
+  rejectCreation(new Error('Operator unavailable'))
+  await failed
+  read()
+  try {
+    await vi.waitFor(() => expect(readFinished).toBe(true), { timeout: 200 })
+  } finally {
+    escape()
+    await Promise.all([flight, replacing])
+    await task.dispose()
+  }
+  expect(creation).toHaveBeenCalledTimes(2)
+})
+
+it('retries a failed cold start while independent recovery capture remains pending', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const wallet = mockWallet()
+  vi.spyOn(ServiceWorkerWallet, 'create')
+    .mockRejectedValueOnce(new Error('Operator unavailable'))
+    .mockResolvedValueOnce(wallet as never)
+  await expect(ensureVaultWalletWorker(status)).rejects.toThrow('Operator unavailable')
+  let finishCapture!: () => void
+  const capture = vi.fn(() => new Promise<void>((resolve) => (finishCapture = resolve)))
+  const task = vaultAccountRuntime(status).maintenance.observe('recovery-archive', capture, { intervalMs: 30_000 })
+  const flight = task.refresh()
+  await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce())
+  let reconnected = false
+  const reconnecting = reviveVaultWalletWorker(status).then(() => (reconnected = true))
+  try {
+    await vi.waitFor(() => expect(reconnected).toBe(true), { timeout: 200 })
+    expect((await ensureVaultWalletWorker(status)).wallet).toBe(wallet)
+  } finally {
+    finishCapture()
+    await Promise.all([flight, reconnecting])
+    await task.dispose()
+  }
 })
 
 it('drains account consumers before one shared SDK replacement and preserves their task owners', async () => {

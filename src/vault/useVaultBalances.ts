@@ -443,7 +443,7 @@ export function useVaultBalances({
               try {
                 const utxos = await fetchAddressUtxos(boardingAddress)
                 if (!active()) return
-                publishAccount(id, 'spend', { loaded: true }, (current) => ({
+                publishAccount(id, 'spend', { loaded: false }, (current) => ({
                   ...current,
                   boardingBalance: boardingUtxoBalance(utxos),
                   history: mergeVaultHistory(

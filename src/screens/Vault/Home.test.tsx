@@ -91,6 +91,22 @@ describe('Vault home account boundaries', () => {
     localStorage.removeItem('arkade-vault-balance-unit')
   })
 
+  it('shows a known deposit without asserting an available Spending balance before the SDK is ready', () => {
+    renderHome({
+      canSend: false,
+      accountReads: accountBalanceReads({ loaded: false, fresh: false }),
+      positions: {
+        spending: { availableSats: 0, pendingSats: 33_458, totalSats: 33_458 },
+        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+      },
+    })
+    expect(screen.getByTestId('vault-balance')).toHaveTextContent('—')
+    expect(screen.getByText('₿33,458 pending')).toBeVisible()
+    expect(screen.queryByText(/available/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Receive' })).toBeEnabled()
+  })
+
   it('keeps an authorized payment reachable even when available balance is zero', async () => {
     const user = userEvent.setup()
     const openPendingPayment = vi.fn().mockResolvedValue(undefined)
