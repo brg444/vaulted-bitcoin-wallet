@@ -8,7 +8,7 @@ import { bitcoinDustSats } from './bitcoin'
 import { verifyDirectP256 } from './ceremony/directauth'
 import type { LedgerSavingsContract } from './ledgerSavings'
 import { familyClaimants, type Claimant } from './program/constants'
-import { taggedHash } from './program/context'
+import { taggedHash } from './taggedHash'
 import { buildLedgerNativeFamily } from './program/ledgerNativeFamily'
 import {
   ledgerAccountKey,
@@ -22,7 +22,7 @@ import {
   ledgerSavingsGuardianParent,
   LEDGER_RECOVERY_BRANCH,
 } from './program/ledgerNativeKeys'
-import { tapLeafForScript } from './program/spend'
+import { tapLeafForScript } from './savingsTree'
 import { requireExactDefaultTapscriptSignatures } from './taprootSignatures'
 
 const TX_OPTS = { version: 2, lockTime: 0, allowUnknownInputs: true, allowUnknownOutputs: true } as const

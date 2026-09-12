@@ -33,7 +33,7 @@ const fixtures = (['mainnet', 'mutinynet'] as const).flatMap((network) => {
   return [
     light,
     ...(['standard', 'advanced'] as const).flatMap((tier) =>
-      [SAVINGS_TEMPLATE].map((templateVersion) => {
+      [LEDGER_NATIVE_TEMPLATE].map((templateVersion) => {
         const policy = { ...defaultSpendingPolicy(network), txRecipientCapSats: 12000, periodAllowanceSats: 35000 }
         const script = new VaultPolicyV1Script({
           network,
@@ -79,7 +79,7 @@ const fixtures = (['mainnet', 'mutinynet'] as const).flatMap((network) => {
 })
 
 describe('shared Spending renewal identity', () => {
-  it.each(['phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2'])(
+  it.each([SAVINGS_TEMPLATE, 'phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2'])(
     'rejects the retired renewal program %s',
     (templateVersion) => {
       expect(() => guardianRenewalContext({ ...fixtures[1], templateVersion })).toThrow('Unsupported renewal program')
@@ -151,7 +151,17 @@ describe('shared Spending renewal identity', () => {
       descriptorHash: guardianRenewalContextDigest(status),
     }))
     expect(vectors).toEqual(
-      expectedVectors.filter((v) => v.status.templateVersion !== 'phone-connector-recovery-savings-v1'),
+      expectedVectors
+        .filter((v) => v.status.templateVersion !== 'phone-connector-recovery-savings-v1')
+        .map((v) =>
+          v.status.templateVersion === SAVINGS_TEMPLATE
+            ? {
+                ...v,
+                name: v.name.replace(SAVINGS_TEMPLATE, LEDGER_NATIVE_TEMPLATE),
+                status: { ...v.status, templateVersion: LEDGER_NATIVE_TEMPLATE },
+              }
+            : v,
+        ),
     )
     expect(vectors).toHaveLength(6)
   })

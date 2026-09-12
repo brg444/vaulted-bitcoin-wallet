@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ledgerRecoveryFacts, sharedSpendingRecoveryFixture } from '../recovery/testdata/helpers'
 import { buildRecoveryKit, inspectRecoveryKit, parseRecoveryKit } from './kit'
-import { buildVaultProgramDescriptor } from './descriptor'
-import { PROGRAM_FIXTURE } from './fixtures'
 
 describe('retained Recovery Kits', () => {
   it.each(['mainnet', 'mutinynet'] as const)('rebuilds both Ledger protection levels on %s', (network) => {
@@ -32,8 +30,7 @@ describe('retained Recovery Kits', () => {
     }
   })
   it('rejects historical direct-hardware, Light and connector kits without rebuilding them', () => {
-    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
-    // A complete former descriptor proves rejection is due to retirement, not missing fields.
+    const descriptor = { schema: 'arkade-vault/savings-v1', templateVersion: 'phone-hww-recovery-savings-v1' }
     expect(() => buildRecoveryKit(descriptor as never)).toThrow('Unsupported Recovery Kit descriptor')
     for (const version of [1, 2, 3, 6])
       expect(() => parseRecoveryKit({ name: 'arkade-recovery-kit', version, descriptor })).toThrow('version')

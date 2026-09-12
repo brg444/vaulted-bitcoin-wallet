@@ -1,8 +1,8 @@
 import { p2tr } from '@scure/btc-signer'
 import { vaultAddressNetwork } from '../addressNetwork'
-import { checksigScript } from '../savingsTree'
+import { checksigScript, encodeScriptInt, tapTreeFromScripts } from '../savingsTree'
 import { spendingPolicyDigest, validateSpendingPolicy, type SpendingPolicy } from '../spendingPolicy'
-import { familyClaimants, type Claimant } from './constants'
+import { PROGRAM_CSV, familyClaimants, type Claimant } from './constants'
 import {
   ledgerAccountExpression,
   ledgerAccountKey,
@@ -16,8 +16,6 @@ import {
   type LedgerSavingsKeyContext,
 } from './ledgerNativeKeys'
 import { buildLedgerNativeSavings } from './ledgerNativePolicy'
-import { pushInt } from './script'
-import { pendingDelay, pendingGuardians, tapTreeFromScripts } from './trees'
 
 const andKeys = (keys: string[]) =>
   keys.reduceRight((rest, key) => (rest ? `and_v(v:pk(${key}),${rest})` : `pk(${key})`), '')
@@ -49,7 +47,7 @@ export function buildLedgerNativeFamily(context: LedgerSavingsKeyContext, rawPol
     ledgerRecoveryChild(account(role), use).publicKey!.slice(1)
   const recovery = Object.fromEntries(
     claimants.map((claimant) => {
-      const guardians = pendingGuardians(claimant, Boolean(context.recovery))
+      const guardians = familyClaimants(Boolean(context.recovery)).filter((role) => role !== claimant)
       const quarantineInternal = ledgerRecoveryInternalParent(context, claimant, 'quarantine')
       const quarantineScript = checksigScript(guardians.map((role) => pub(role, 'quarantine')))
       const quarantinePayment = p2tr(
@@ -70,7 +68,7 @@ export function buildLedgerNativeFamily(context: LedgerSavingsKeyContext, rawPol
       // and_v(v:pk(claimant),older(delay)): ordinary Miniscript, same CSV rights.
       // The old CSV/DROP spelling and OP_RETURN padding remain legacy-only.
       const claimKey = pub(claimant, 'claim')
-      const claim = new Uint8Array([0x20, ...claimKey, 0xad, ...pushInt(pendingDelay(claimant)), 0xb2])
+      const claim = new Uint8Array([0x20, ...claimKey, 0xad, ...encodeScriptInt(PROGRAM_CSV[claimant]), 0xb2])
       const clawbacks = guardians.map((guardian) =>
         checksigScript([
           pub(guardian, 'clawback'),
@@ -89,7 +87,7 @@ export function buildLedgerNativeFamily(context: LedgerSavingsKeyContext, rawPol
       const pendingPolicy = policy(
         `Vaulted ${claimant} wait`,
         [
-          `and_v(v:pk(@${userIndex(claimant)}/<4;5>/*),older(${pendingDelay(claimant)}))`,
+          `and_v(v:pk(@${userIndex(claimant)}/<4;5>/*),older(${PROGRAM_CSV[claimant]}))`,
           ...guardians.map((guardian) => {
             const branch = ledgerGuardianClawbackBranch(context, claimant, guardian)
             return andKeys([`@${userIndex(guardian)}/<6;7>/*`, `@${guardianIndex}/<${branch};${branch + 1}>/*`])
@@ -107,7 +105,7 @@ export function buildLedgerNativeFamily(context: LedgerSavingsKeyContext, rawPol
         {
           claimant,
           guardians,
-          delay: pendingDelay(claimant),
+          delay: PROGRAM_CSV[claimant],
           pending: { ...pendingPayment, walletPolicy: pendingPolicy, claim, clawbacks, cancel },
           quarantine: { ...quarantinePayment, walletPolicy: quarantinePolicy, admin: quarantineScript },
         },

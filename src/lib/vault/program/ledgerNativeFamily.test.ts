@@ -17,9 +17,8 @@ import {
 } from './ledgerNativeKeys'
 import vectors from './ledger-family-vectors.json'
 import { PROGRAM_CSV, familyClaimants } from './constants'
-import { checksigScript } from '../savingsTree'
+import { checksigScript, tapLeafForScript } from '../savingsTree'
 import { scalarSecret } from './fixtures'
-import { tapLeafForScript } from './spend'
 
 describe('complete Ledger native recovery family', () => {
   for (const vector of vectors) {

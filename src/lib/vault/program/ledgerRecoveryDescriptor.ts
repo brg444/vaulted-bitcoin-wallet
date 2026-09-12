@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/nist.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
-import { DUST_SATS, POLICY_VERSION } from '../constants'
+import { DUST_SATS, POLICY_VERSION, type VaultNetwork } from '../constants'
 import type { LedgerSavingsContract } from '../ledgerSavings'
 import { networkPins } from '../networkPins'
 import { requireProtectionTierMatchesRecovery } from '../protectionTier'
@@ -11,7 +11,7 @@ import type { BoardingDescriptor, VaultStatus } from '../types'
 import { requireBoardingDescriptor } from '../vtxo/board'
 import { VaultPolicyV1Script } from '../vtxo/script'
 import { PROGRAM_CSV, TRANSITION_SEQUENCE, familyClaimants, type FamilyKey } from './constants'
-import type { ProgramTreeRef, VaultProgramDescriptor } from './descriptor'
+import type { RecoveryPolicy } from './recoveryTypes'
 import { canonicalLedgerValue, validateLedgerSavingsContract, ledgerRecoveryFamily } from './ledgerEnrollment'
 import { LEDGER_NATIVE_TEMPLATE, ledgerAccountKey, ledgerSavingsContextDigest } from './ledgerNativeKeys'
 
@@ -42,16 +42,38 @@ export interface LedgerSavingsEnrollmentDescriptor {
   boarding: BoardingDescriptor
 }
 
-export interface LedgerRecoveryDescriptor
-  extends Omit<VaultProgramDescriptor, 'schema' | 'tweaks' | 'arkadeCosigner' | 'p2a'> {
+interface ProgramTreeRef {
+  script: string
+  address: string
+}
+
+export interface LedgerRecoveryDescriptor {
   schema: typeof LEDGER_RECOVERY_SCHEMA
+  network: VaultNetwork
+  vaultId: string
+  templateVersion: typeof LEDGER_NATIVE_TEMPLATE
+  policyVersion: typeof POLICY_VERSION
+  protectionTier: 'standard' | 'advanced'
   /** These keys remain the enrolled Spending identities; Savings uses ledgerSavings origins. */
-  keys: VaultProgramDescriptor['keys']
+  keys: {
+    phoneBip340: string
+    phoneDirectP256: string
+    hardware: string
+    recovery?: string
+    vaultCosignerBase: string
+    arkadeCosignerBase: string
+  }
+  csv: { hardware: number; phone: number; recovery: number }
+  policy: RecoveryPolicy
+  transitionSequence: number
   ledgerSavings: LedgerSavingsContract
   spendingAuthorities: LedgerSpendingAuthorities
   boarding: BoardingDescriptor
   enrollmentDescriptorHash: string
+  savings: ProgramTreeRef
   savingsChange: ProgramTreeRef
+  pending: Record<FamilyKey, ProgramTreeRef & { delay: number }>
+  quarantine: Record<FamilyKey, ProgramTreeRef & { guardians: readonly string[] }>
 }
 
 function compressed(value: string, label: string, direct = false): string {

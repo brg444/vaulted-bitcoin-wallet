@@ -8,7 +8,7 @@ import {
 import { expect, test as base, type BrowserContext, type CDPSession, type Page, type Route } from '@playwright/test'
 import { ArkAddress, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
-import { PROGRAM_FIXTURE } from '../../../lib/vault/program/fixtures'
+import { FIXTURE_IDENTITIES } from '../../../lib/vault/program/fixtures'
 import { recoveryBindingDigest } from '../../../lib/vault/passkeyBinding'
 import { bytesToHex } from '../../../lib/vault/hex'
 import { POLICY_VERSION } from '../../../lib/vault/constants'
@@ -46,7 +46,7 @@ const OPERATOR_PORT = process.env.VAULT_E2E_OPERATOR_PORT || '18888'
 const ORIGIN = `${process.env.HTTPS === 'true' ? 'https' : 'http'}://localhost:${APP_PORT}`
 const RP_ID = 'localhost'
 const INVITE = 'e2e-passkey-invite-0000000000000000'
-const VAULT_ID = PROGRAM_FIXTURE.vaultId
+const VAULT_ID = FIXTURE_IDENTITIES.vaultId
 const AUTHORIZER_CONTROL = `http://127.0.0.1:${OPERATOR_PORT}/__vault_e2e_authorizer`
 
 type CDPCredential = {
@@ -175,7 +175,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         network: 'mutinynet',
         enrollTemplate: SAVINGS_TEMPLATE,
         arkadeOrigin: 'configured',
-        arkadeVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
+        arkadeVersion: FIXTURE_IDENTITIES.arkadeCosigner.version,
       }),
     )
     await this.page.route('**/v1/**', async (route) => this.handle(route))
@@ -240,10 +240,10 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       protectionTier: 'light',
       externalOwnerWalletPub: '',
       spendingDescriptor: descriptor,
-      vaultCosignerBasePub: PROGRAM_FIXTURE.vaultCosignerBase,
-      arkadeCosignerBasePub: PROGRAM_FIXTURE.arkadeCosignerBase,
-      arkadeCosignerOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
-      arkadeCosignerVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
+      vaultCosignerBasePub: FIXTURE_IDENTITIES.vaultCosignerBase,
+      arkadeCosignerBasePub: FIXTURE_IDENTITIES.arkadeCosignerBase,
+      arkadeCosignerOrigin: FIXTURE_IDENTITIES.arkadeCosigner.origin,
+      arkadeCosignerVersion: FIXTURE_IDENTITIES.arkadeCosigner.version,
       savingsAddress: '',
       savingsScript: '',
       periodAllowance: spendingPolicy.periodAllowanceSats,
@@ -258,7 +258,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       phoneDirectP256: proposed?.phoneDirectP256,
       passkeyLoginAvailable: this.passkeyLoginAvailable,
       enrollmentMode: this.enrolled ? 'closed' : 'token',
-      vtxoVaultCosignerPub: PROGRAM_FIXTURE.vaultCosignerBase,
+      vtxoVaultCosignerPub: FIXTURE_IDENTITIES.vaultCosignerBase,
       vtxoExitDelay: Number(VAULT_POLICY_V1_EXIT_DELAY),
       vtxoExitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
       spendingArkAddress: descriptor?.address || '',
@@ -383,7 +383,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         {
           name: BOARDING_PROGRAM,
           boardingPubKey: hex.decode(body.vaultBoardingBip340Pub),
-          cosignerPubKey: hex.decode(PROGRAM_FIXTURE.vaultCosignerBase).slice(1),
+          cosignerPubKey: hex.decode(FIXTURE_IDENTITIES.vaultCosignerBase).slice(1),
           recoveryPubKey: hex.decode(body.phoneBip340Pub).slice(1),
         },
         hex.decode(MUTINYNET_OPERATOR_SIGNER_PUB).slice(1),
@@ -396,7 +396,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         network: 'mutinynet',
         boardingPub: `02${body.vaultBoardingBip340Pub}`,
         recoveryPhonePub: body.phoneBip340Pub,
-        vaultBoardCosignerPub: PROGRAM_FIXTURE.vaultCosignerBase,
+        vaultBoardCosignerPub: FIXTURE_IDENTITIES.vaultCosignerBase,
         operatorPub: MUTINYNET_OPERATOR_SIGNER_PUB,
         exitDelay: BOARDING_EXIT_DELAY,
         exitDelayUnit: BOARDING_EXIT_DELAY_UNIT,
@@ -405,7 +405,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       }
       const spending = new VaultPolicyV1Script({
         userPub: xonly(body.phoneBip340Pub),
-        vtxoVaultCosignerPub: xonly(PROGRAM_FIXTURE.vaultCosignerBase),
+        vtxoVaultCosignerPub: xonly(FIXTURE_IDENTITIES.vaultCosignerBase),
         arkdServerPub: xonly(MUTINYNET_OPERATOR_SIGNER_PUB),
         delegatePub: xonly(VAULT_POLICY_V1_PINNED_DELEGATE),
         exitDelay: VAULT_POLICY_V1_EXIT_DELAY,
@@ -422,7 +422,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
         protectionTier: 'light',
         phonePub: body.phoneBip340Pub,
         phoneDirectP256: body.phoneDirectP256,
-        cosignerPub: PROGRAM_FIXTURE.vaultCosignerBase,
+        cosignerPub: FIXTURE_IDENTITIES.vaultCosignerBase,
         operatorPub: MUTINYNET_OPERATOR_SIGNER_PUB,
         delegatePub: VAULT_POLICY_V1_PINNED_DELEGATE,
         exitMode: 'device',

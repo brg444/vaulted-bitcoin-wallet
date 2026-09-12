@@ -1,9 +1,8 @@
 import { hex } from '@scure/base'
 import { p2tr } from '@scure/btc-signer'
 import { vaultAddressNetwork } from '../addressNetwork'
-import { checksigScript } from '../savingsTree'
+import { checksigScript, tapTreeFromScripts } from '../savingsTree'
 import { familyClaimants } from './constants'
-import { tapTreeFromScripts } from './trees'
 import {
   ledgerAccountExpression,
   ledgerAccountKey,

@@ -4,7 +4,7 @@ import {
   validateSpendingEnrollment,
   type SpendingEnrollmentDescriptor,
 } from '../spendingEnrollment'
-import type { VaultProgramDescriptor } from './descriptor'
+import type { RecoveryPolicy } from './recoveryTypes'
 
 export const SPENDING_RECOVERY_SCHEMA = 'vaulted-spending/recovery-v1' as const
 export interface SpendingRecoveryDescriptor {
@@ -14,7 +14,7 @@ export interface SpendingRecoveryDescriptor {
   vaultId: string
   protectionTier: 'light'
   keys: { phoneBip340: string; phoneDirectP256: string }
-  policy: VaultProgramDescriptor['policy']
+  policy: RecoveryPolicy
   enrollment: SpendingEnrollmentDescriptor
 }
 

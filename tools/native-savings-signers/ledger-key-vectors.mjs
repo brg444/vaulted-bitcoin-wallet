@@ -16,7 +16,7 @@ const vite = await createServer({
 try {
   const keys = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
   const { buildLedgerNativeSavings } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativePolicy.ts')
-  const { PROGRAM_FIXTURE_FAMILY } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
+  const { FIXTURE_IDENTITIES } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
   const { defaultSpendingPolicy, spendingPolicyDigest } = await vite.ssrLoadModule('/src/lib/vault/spendingPolicy.ts')
   const rows = []
   for (const network of ['mutinynet', 'mainnet'])
@@ -32,13 +32,13 @@ try {
       const input = {
         templateVersion: keys.LEDGER_NATIVE_TEMPLATE,
         network,
-        vaultId: PROGRAM_FIXTURE_FAMILY.vaultId,
+        vaultId: FIXTURE_IDENTITIES.vaultId,
         policyDigest: spendingPolicyDigest(policy, network),
         phone: account(0x43),
         hardware: account(0x42),
         ...(advanced ? { recovery: account(0x44) } : {}),
-        phoneDirectP256: PROGRAM_FIXTURE_FAMILY.phoneDirectP256,
-        vaultCosignerBase: PROGRAM_FIXTURE_FAMILY.vaultCosignerBase,
+        phoneDirectP256: FIXTURE_IDENTITIES.phoneDirectP256,
+        vaultCosignerBase: FIXTURE_IDENTITIES.vaultCosignerBase,
       }
       const children = (parent, branches) =>
         branches.map((i) => hex.encode(keys.ledgerSavingsChild(parent, i).publicKey))

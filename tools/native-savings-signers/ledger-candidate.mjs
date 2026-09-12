@@ -32,7 +32,7 @@ const child = (hd, branch) => hd.deriveChild(branch).deriveChild(0)
 const xonly = (hd) => hd.publicKey.slice(1)
 const rows = []
 try {
-  const { PROGRAM_FIXTURE_FAMILY } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
+  const { FIXTURE_IDENTITIES } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
   const { buildLedgerNativeFamily } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeFamily.ts')
   const { signLedgerSavingsWithPhone } = await vite.ssrLoadModule('/src/lib/vault/ledgerSavings.ts')
   const { LEDGER_NATIVE_TEMPLATE } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
@@ -41,13 +41,13 @@ try {
     const input = {
       templateVersion: LEDGER_NATIVE_TEMPLATE,
       network: 'mutinynet',
-      vaultId: PROGRAM_FIXTURE_FAMILY.vaultId,
+      vaultId: FIXTURE_IDENTITIES.vaultId,
       policyDigest: spendingPolicyDigest(defaultSpendingPolicy('mutinynet'), 'mutinynet'),
       phone: origin(p),
       hardware: origin(h),
       ...(tier === 'advanced' ? { recovery: origin(r) } : {}),
-      phoneDirectP256: PROGRAM_FIXTURE_FAMILY.phoneDirectP256,
-      vaultCosignerBase: PROGRAM_FIXTURE_FAMILY.vaultCosignerBase,
+      phoneDirectP256: FIXTURE_IDENTITIES.phoneDirectP256,
+      vaultCosignerBase: FIXTURE_IDENTITIES.vaultCosignerBase,
     }
     const { walletPolicy, receive, change } = buildLedgerNativeFamily(input, defaultSpendingPolicy('mutinynet'))
     const { descriptorTemplate: template, keysInfo: keys } = walletPolicy

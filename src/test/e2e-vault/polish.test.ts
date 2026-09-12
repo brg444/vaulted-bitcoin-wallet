@@ -2,7 +2,7 @@ import { expectWalletLayout } from './fixtures/layout'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { PROGRAM_FIXTURE } from '../../lib/vault/program/fixtures'
+import { FIXTURE_IDENTITIES } from '../../lib/vault/program/fixtures'
 
 test.beforeEach(async ({ page }) => {
   await mockEnrollmentAccess(page)
@@ -44,7 +44,7 @@ test('@polish welcome is accessible and visually stable', async ({ page }) => {
         ciphertext: '33'.repeat(48),
       })
     },
-    { fixture: PROGRAM_FIXTURE, modulePath: ENROLLMENT_MODULE },
+    { fixture: FIXTURE_IDENTITIES, modulePath: ENROLLMENT_MODULE },
   )
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Sign in with your passkey' })).toBeVisible()

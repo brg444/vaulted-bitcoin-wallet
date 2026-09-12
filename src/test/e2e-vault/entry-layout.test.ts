@@ -19,7 +19,7 @@ for (const viewport of [
         await page.evaluate(
           async ([storePath, fixturePath]) => {
             const store = await import(/* @vite-ignore */ storePath)
-            const { PROGRAM_FIXTURE: fixture } = await import(/* @vite-ignore */ fixturePath)
+            const { FIXTURE_IDENTITIES: fixture } = await import(/* @vite-ignore */ fixturePath)
             // A locked enrollment needs no live status, address pin, or network policy.
             store.saveEnrollment({
               vaultId: fixture.vaultId,

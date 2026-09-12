@@ -1,6 +1,6 @@
 import type { EsploraUtxo } from '../esplora'
 import { familyKeysFor, type FamilyKey } from './constants'
-import type { VaultProgramDescriptor } from './descriptor'
+import type { LedgerRecoveryDescriptor } from './ledgerRecoveryDescriptor'
 
 export const WATCH_SEEN_STORE = 'arkade-vault-savings-v1-watch-seen-v1'
 
@@ -37,7 +37,7 @@ export function saveSeenOutpoints(vaultId: string, seen: Iterable<string>, stora
 }
 
 export async function pollPendingInitiates(input: {
-  descriptor: Pick<VaultProgramDescriptor, 'keys' | 'pending'>
+  descriptor: Pick<LedgerRecoveryDescriptor, 'keys' | 'pending'>
   fetchUtxos: (address: string) => Promise<EsploraUtxo[]>
   seen: Set<string>
 }): Promise<{ alerts: InitiateAlert[]; seen: Set<string> }> {

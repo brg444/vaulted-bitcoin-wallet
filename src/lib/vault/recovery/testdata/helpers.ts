@@ -16,7 +16,7 @@ import { buildRecoveryKit, type RecoveryKit } from '../../program/kit'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../../spendingPolicy'
 import { networkPins } from '../../networkPins'
 import { BOARDING_PROGRAM, BOARDING_SCHEMA, BOARDING_TEMPLATE } from '../../vtxo/board'
-import { scalarSecret, compressedFromScalar, PROGRAM_FIXTURE } from '../../program/fixtures'
+import { scalarSecret, compressedFromScalar, FIXTURE_IDENTITIES } from '../../program/fixtures'
 import vectors from '../../program/ledger-key-vectors.json'
 
 import type { BoardingFinalRequest } from '../../cosignerClient'
@@ -103,10 +103,10 @@ export function ledgerRecoveryFacts(
     phoneDirectP256: context.phoneDirectP256,
     externalOwnerWalletPub: hardwarePub,
     recoveryPub,
-    vaultCosignerBasePub: PROGRAM_FIXTURE.vaultCosignerBase,
-    arkadeCosignerBasePub: PROGRAM_FIXTURE.arkadeCosignerBase,
-    arkadeCosignerOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
-    arkadeCosignerVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
+    vaultCosignerBasePub: FIXTURE_IDENTITIES.vaultCosignerBase,
+    arkadeCosignerBasePub: FIXTURE_IDENTITIES.arkadeCosignerBase,
+    arkadeCosignerOrigin: FIXTURE_IDENTITIES.arkadeCosigner.origin,
+    arkadeCosignerVersion: FIXTURE_IDENTITIES.arkadeCosigner.version,
     savingsAddress: '',
     savingsScript: '',
     spendingPolicy,

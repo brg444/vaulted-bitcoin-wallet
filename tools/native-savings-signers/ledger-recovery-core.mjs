@@ -63,7 +63,7 @@ try {
     ledgerGuardianClawbackChild,
     ledgerSavingsChild,
   } = await vite.ssrLoadModule('/src/lib/vault/program/ledgerNativeKeys.ts')
-  const { tapLeafForScript } = await vite.ssrLoadModule('/src/lib/vault/program/spend.ts')
+  const { tapLeafForScript } = await vite.ssrLoadModule('/src/lib/vault/savingsTree.ts')
   const { scalarSecret } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
   const vectors = JSON.parse(
     readFileSync(new URL('../../src/lib/vault/program/ledger-key-vectors.json', import.meta.url)),

@@ -151,6 +151,33 @@ describe('independent Ledger Savings recovery transactions', () => {
     changed.updateInput(0, { tapLeafScript: [leaf] }, true)
     expect(() => validateSavingsRecovery({ ...file, psbt: hex.encode(changed.toPSBT()) })).toThrow()
   })
+  it.each(kitVectors.cases)(
+    'requires every remaining cancellation key on $network advanced=$advanced',
+    async ({ advanced, network }) => {
+      const { kit } = await ledgerRecoveryFixture(advanced, network as 'mainnet' | 'mutinynet')
+      const roles: Claimant[] = advanced ? ['phone', 'hardware', 'recovery'] : ['phone', 'hardware']
+      for (const claimant of roles) {
+        const file = fixture({ program: 'pending-cancel', claimant }, kit)
+        const required = roles.filter((role) => role !== claimant)
+        expect(validateSavingsRecovery(file).signers).toEqual(required)
+        expect(() => acceptSavingsRecoverySignature(file, file.psbt, claimant)).toThrow('not required')
+        let signed = file
+        for (const role of required) {
+          expect(() => finalizeSavingsRecovery(signed)).toThrow('Every required')
+          const psbt = partial(signed, role)
+          const invalid = Transaction.fromPSBT(hex.decode(psbt), opts)
+          const inputs = (invalid as unknown as { inputs: ReturnType<Transaction['getInput']>[] }).inputs
+          inputs[0].tapScriptSig = inputs[0].tapScriptSig!.map(([key]) => [key, new Uint8Array(64)])
+          expect(() => acceptSavingsRecoverySignature(signed, hex.encode(invalid.toPSBT()), role)).toThrow(
+            /Invalid signature/,
+          )
+          signed = acceptSavingsRecoverySignature(signed, psbt, role)
+        }
+        expect(validateSavingsRecovery(signed).complete).toBe(true)
+        expect(finalizeSavingsRecovery(signed).txid).toMatch(/^[0-9a-f]{64}$/)
+      }
+    },
+  )
   it('resumes exact signed bytes after lost broadcast response and checks maturity again after a reorg', async () => {
     const file = sign(
       fixture({ program: 'pending-claim', claimant: 'hardware' }, (await ledgerRecoveryFixture(true)).kit),

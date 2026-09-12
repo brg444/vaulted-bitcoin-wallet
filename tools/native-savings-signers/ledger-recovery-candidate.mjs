@@ -47,7 +47,7 @@ try {
     '/src/lib/vault/ledgerRecovery.ts',
   )
   const normalFixtures = JSON.parse(readFileSync(new URL('./evidence/ledger-candidate-inputs.json', import.meta.url)))
-  const { tapLeafForScript } = await vite.ssrLoadModule('/src/lib/vault/program/spend.ts')
+  const { tapLeafForScript } = await vite.ssrLoadModule('/src/lib/vault/savingsTree.ts')
   const { scalarSecret } = await vite.ssrLoadModule('/src/lib/vault/program/fixtures.ts')
   const contexts = JSON.parse(
     readFileSync(new URL('../../src/lib/vault/program/ledger-family-vectors.json', import.meta.url)),

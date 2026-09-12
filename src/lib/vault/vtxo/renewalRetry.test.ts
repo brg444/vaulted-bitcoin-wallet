@@ -7,8 +7,9 @@ import vector from './testdata/renewal-set-v1.json'
 import { loadSpendingRenewals, saveSpendingRenewals } from './renewalStore'
 import { validateSpendingSchedule } from './renewalRequest'
 import { refreshSpendingRenewals, clearSpendingRenewalReads } from './guardianRenewal'
+import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
 
-const status = vector.status as VaultStatus
+const status = { ...vector.status, templateVersion: LEDGER_NATIVE_TEMPLATE } as VaultStatus
 const enrollment = { vaultId: status.vaultId } as EnrollmentSecrets
 beforeEach(() => {
   vi.stubGlobal('indexedDB', new IDBFactory())

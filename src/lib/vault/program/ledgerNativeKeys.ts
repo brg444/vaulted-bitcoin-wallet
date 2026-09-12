@@ -5,7 +5,7 @@ import { HDKey } from '@scure/bip32'
 import { requireSupportedVaultNetwork, type VaultNetwork } from '../network'
 import { TAPROOT_NUMS_XONLY, xOnlyFromCompressed } from '../savingsTree'
 import { type Claimant, familyClaimants } from './constants'
-import { taggedHash } from './context'
+import { taggedHash } from '../taggedHash'
 
 // A new contract identity, deliberately absent from the live template registry.
 export const LEDGER_NATIVE_TEMPLATE = 'phone-ledger-guardian-savings-v1'

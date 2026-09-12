@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildVaultProgramDescriptor } from './descriptor'
-import { PROGRAM_FIXTURE } from './fixtures'
+import { ledgerRecoveryFacts } from '../recovery/testdata/helpers'
 import { alertCopy, outpointId, pollPendingInitiates } from './watch'
 
-describe('Savings pending watcher', () => {
+describe.each(['mainnet', 'mutinynet'] as const)('Ledger Savings pending watcher on %s', (network) => {
   it('alerts the first time a pending coin appears and does not repeat', async () => {
-    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
+    const descriptor = ledgerRecoveryFacts(true, network).kit.descriptor
     const coin = { txid: 'aa'.repeat(32), vout: 0, value: 20_000, status: { confirmed: true, block_height: 10 } }
     const first = await pollPendingInitiates({
       descriptor,
@@ -25,7 +24,7 @@ describe('Savings pending watcher', () => {
   })
 
   it('announces a phone-initiated Savings output once and does not repeat', async () => {
-    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
+    const descriptor = ledgerRecoveryFacts(true, network).kit.descriptor
     const coin = { txid: 'bb'.repeat(32), vout: 1, value: 18_000, status: { confirmed: true, block_height: 12 } }
     const first = await pollPendingInitiates({
       descriptor,
@@ -44,11 +43,7 @@ describe('Savings pending watcher', () => {
   })
 
   it('polls only the Standard phone and hardware families', async () => {
-    const descriptor = buildVaultProgramDescriptor({
-      ...PROGRAM_FIXTURE,
-      protectionTier: 'standard',
-      recoveryPub: undefined,
-    })
+    const descriptor = ledgerRecoveryFacts(false, network).kit.descriptor
     const addresses: string[] = []
     const result = await pollPendingInitiates({
       descriptor,

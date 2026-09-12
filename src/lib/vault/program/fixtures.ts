@@ -18,11 +18,8 @@ export function scalarSecret(n: number): Uint8Array {
 /** NIST P-256 sample from the program conformance fixture. Not a secp256k1 key. */
 export const FIXTURE_PHONE_DIRECT_P256 = '02c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721'
 
-export const PROGRAM_FIXTURE = {
+export const FIXTURE_IDENTITIES = {
   vaultId: 'aabbccddeeff00112233445566778899',
-  network: 'mutinynet' as const,
-  templateVersion: 'phone-hww-recovery-savings-v1' as const,
-  protectionTier: 'advanced' as const,
   phonePub: compressedFromScalar(3),
   hardwarePub: compressedFromScalar(4),
   recoveryPub: compressedFromScalar(5),
@@ -33,18 +30,4 @@ export const PROGRAM_FIXTURE = {
     origin: 'https://operator.example',
     version: 'savings-v1-fixture',
   },
-}
-
-export const PROGRAM_FIXTURE_FAMILY = {
-  vaultId: PROGRAM_FIXTURE.vaultId,
-  phonePub: PROGRAM_FIXTURE.phonePub,
-  hardwarePub: PROGRAM_FIXTURE.hardwarePub,
-  recoveryPub: PROGRAM_FIXTURE.recoveryPub,
-  phoneDirectP256: PROGRAM_FIXTURE.phoneDirectP256,
-  vaultCosignerBase: PROGRAM_FIXTURE.vaultCosignerBase,
-  arkadeCosignerBase: PROGRAM_FIXTURE.arkadeCosignerBase,
-  network: PROGRAM_FIXTURE.network,
-  templateVersion: PROGRAM_FIXTURE.templateVersion,
-  absoluteFeeCapSats: 5_000,
-  feerateCapSatPerV: 10,
 }

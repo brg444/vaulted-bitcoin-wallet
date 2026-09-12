@@ -21,7 +21,7 @@ import {
 } from './ledgerNativeKeys'
 import { deriveLedgerPhoneAccount } from '../ledgerPhoneBackup'
 import { canonicalLedgerValue, ledgerRecoveryFamily } from './ledgerEnrollment'
-import { tapLeafForScript } from './spend'
+import { tapLeafForScript } from '../savingsTree'
 
 const options = { version: 2, lockTime: 0, allowUnknownInputs: true, allowUnknownOutputs: true } as const
 export type SavingsRecoveryPath =

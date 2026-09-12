@@ -12,7 +12,7 @@ import {
   saveSetupPlan,
   SETUP_STORE_KEY,
 } from './setupPlan'
-import { PROGRAM_FIXTURE } from './program/fixtures'
+import { FIXTURE_IDENTITIES } from './program/fixtures'
 
 const context = vectors.find((v) => v.input.network === 'mutinynet' && v.input.recovery)!.input
 const ledger = { hardware: context.hardware }
@@ -23,7 +23,7 @@ afterEach(() => localStorage.clear())
 
 describe('vault setup plan', () => {
   it('accepts hardware without recovery, and rejects the same key as recovery', () => {
-    expect(parseCompressedPub(PROGRAM_FIXTURE.hardwarePub)).toBe(PROGRAM_FIXTURE.hardwarePub)
+    expect(parseCompressedPub(FIXTURE_IDENTITIES.hardwarePub)).toBe(FIXTURE_IDENTITIES.hardwarePub)
     expect(sameRole(FORBIDDEN_PUBLIC_KEY_2G, FORBIDDEN_PUBLIC_KEY_G)).toBe(false)
     const noRecovery = {
       ...emptySetupPlan(),
@@ -59,8 +59,8 @@ describe('vault setup plan', () => {
   })
 
   it('keeps the public generator points distinct from ordinary fixture keys', () => {
-    expect(FORBIDDEN_PUBLIC_KEY_G).not.toBe(PROGRAM_FIXTURE.hardwarePub)
-    expect(FORBIDDEN_PUBLIC_KEY_2G).not.toBe(PROGRAM_FIXTURE.hardwarePub)
+    expect(FORBIDDEN_PUBLIC_KEY_G).not.toBe(FIXTURE_IDENTITIES.hardwarePub)
+    expect(FORBIDDEN_PUBLIC_KEY_2G).not.toBe(FIXTURE_IDENTITIES.hardwarePub)
   })
 
   it('round-trips the complete configurable policy shape', () => {
@@ -93,7 +93,7 @@ describe('vault setup plan', () => {
   it('requires the selected protection tier to match recovery-key presence', () => {
     const base = { ...emptySetupPlan(), acceptedDesign: true, hardwarePub, ledger }
     expect(planReady({ ...base, protectionTier: 'advanced' })).toBe(false)
-    expect(planReady({ ...base, protectionTier: 'standard', recoveryPub: PROGRAM_FIXTURE.recoveryPub })).toBe(false)
+    expect(planReady({ ...base, protectionTier: 'standard', recoveryPub: FIXTURE_IDENTITIES.recoveryPub })).toBe(false)
     expect(
       planReady({
         ...base,
@@ -129,7 +129,7 @@ describe('retired setup rejection', () => {
     },
   )
   it('rejects a substituted Ledger Spending key', () => {
-    const plan = { ...emptySetupPlan(), acceptedDesign: true, hardwarePub: PROGRAM_FIXTURE.hardwarePub, ledger }
+    const plan = { ...emptySetupPlan(), acceptedDesign: true, hardwarePub: FIXTURE_IDENTITIES.hardwarePub, ledger }
     saveSetupPlan(plan)
     expect(loadSetupPlan()).toBeNull()
     expect(planReady(plan)).toBe(false)
