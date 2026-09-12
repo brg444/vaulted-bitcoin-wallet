@@ -3,6 +3,7 @@ import type { VaultHistoryItem } from './history'
 export const BALANCE_STORE = 'arkade-vault-v2:balance-snapshot'
 
 export type StoredBalanceSnapshot = {
+  walletIdentity?: string
   watchedSavingsAddress?: string
   loaded?: { spend: boolean; savings: boolean }
   boardingBalance: number
@@ -29,6 +30,7 @@ function parseSnapshot(raw: string | null): StoredBalanceSnapshot | null {
   try {
     const rec = JSON.parse(raw) as StoredBalanceSnapshot
     if (
+      (rec.walletIdentity !== undefined && typeof rec.walletIdentity !== 'string') ||
       (rec.watchedSavingsAddress !== undefined && typeof rec.watchedSavingsAddress !== 'string') ||
       (rec.loaded !== undefined &&
         (typeof rec.loaded?.spend !== 'boolean' || typeof rec.loaded?.savings !== 'boolean')) ||

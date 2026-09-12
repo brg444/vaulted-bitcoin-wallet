@@ -161,3 +161,16 @@ it('balance state belongs to the controller and React only binds its external st
   expect(hook).toContain('useSyncExternalStore')
   expect(hook).not.toMatch(/fetchVault|saveBalanceSnapshot|setTimeout|setInterval|reconcilePersisted/)
 })
+
+it('balance observations and primary Receive use account maintenance without local timers', () => {
+  for (const path of ['src/lib/vault/accountBalances.ts', 'src/screens/Vault/Receive.tsx']) {
+    const source = readFileSync(resolve(root, path), 'utf8')
+    expect(source).not.toMatch(/setTimeout|setInterval|window\.addEventListener/)
+  }
+  const controller = readFileSync(resolve(root, 'src/lib/vault/accountBalances.ts'), 'utf8')
+  expect(controller).toContain("observe('spending-balance'")
+  expect(controller).toContain("observe('savings-balance'")
+  const receive = readFileSync(resolve(root, 'src/screens/Vault/Receive.tsx'), 'utf8')
+  expect(receive).toContain('requestCadence')
+  expect(receive).not.toContain('refreshBalance')
+})

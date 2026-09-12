@@ -3,6 +3,7 @@ import {
   sharedSpendingEnrollment,
   sharedSpendingStatusForNetwork,
 } from '../lib/vault/vtxo/testdata/sharedSpending'
+import { activeVaultAccountRuntime, disposeVaultAccountRuntime, vaultAccountRuntime } from '../lib/vault/accountRuntime'
 import { StrictMode } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -19,7 +20,8 @@ import {
 } from '../lib/vault/vtxo/walletWorker'
 import { loadBalanceSnapshot, saveBalanceSnapshot } from '../lib/vault/balanceStore'
 import {
-  createVaultBalanceController,
+  vaultBalanceController,
+  type VaultBalanceController,
   type VaultBalancesOptions,
   boardingUtxoBalance,
   confirmedUtxoBalance,
@@ -104,10 +106,14 @@ beforeEach(() => {
   mockedWorkerEvents.mockReturnValue(() => undefined)
 })
 
-const controllers = new Set<ReturnType<typeof createVaultBalanceController>>()
-afterEach(() => {
+const controllers = new Set<VaultBalanceController>()
+afterEach(async () => {
   for (const controller of controllers) controller.dispose()
   controllers.clear()
+  for (const id of [STATUS.vaultId, sharedSpendingStatus().vaultId, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']) {
+    const account = activeVaultAccountRuntime(id)
+    if (account) await disposeVaultAccountRuntime(account)
+  }
   vi.useRealTimers()
 })
 
@@ -124,7 +130,7 @@ function controllerOptions(overrides: Partial<VaultBalancesOptions> = {}): Vault
   }
 }
 function standaloneController(options = controllerOptions()) {
-  const controller = createVaultBalanceController(options)
+  const controller = vaultBalanceController(options)!
   controllers.add(controller)
   return controller
 }
@@ -512,7 +518,7 @@ describe('useVaultBalances', () => {
         ],
       })
     })
-    expect(result.current.accountReads.spend.loaded).toBe(true)
+    await waitFor(() => expect(result.current.accountReads.spend.loaded).toBe(true))
     expect(result.current.history.filter((item) => item.txid === 'b8ed')).toHaveLength(1)
     expect(result.current.positions.spending.pendingSats).toBe(33_458)
     expect(result.current.accountReads.spend.error).toBe('')
@@ -581,7 +587,7 @@ describe('useVaultBalances', () => {
     mockedSnapshot.mockResolvedValueOnce({ balance: 12_000, history: [] })
     const { result } = setupHook(false, null, true, enrollment, false)
 
-    await waitFor(() => expect(mockedStatus).toHaveBeenCalledWith(undefined, STATUS.vaultId))
+    await waitFor(() => expect(mockedStatus).toHaveBeenCalledWith(expect.any(AbortSignal), STATUS.vaultId))
     await waitFor(() => expect(result.current.accountReads.spend.loaded).toBe(true))
     expect(result.current.positions.spending.availableSats).toBe(12_000)
   })
@@ -623,7 +629,7 @@ it('refreshes fresh Light Spending through the same pinned status and worker as 
   const { result, setStatus } = setupHook(false, status, true, sharedSpendingEnrollment())
   await waitFor(() => expect(result.current.positions.spending.totalSats).toBe(14000))
   expect(setStatus).toHaveBeenCalledWith(status)
-  expect(mockedStatus).toHaveBeenCalledWith(undefined, status.vaultId)
+  expect(mockedStatus).toHaveBeenCalledWith(expect.any(AbortSignal), status.vaultId)
   expect(fetchVaultStatusUnpinned).not.toHaveBeenCalled()
   expect(mockedSnapshot).toHaveBeenCalledWith(status)
   expect(mockedUtxos).not.toHaveBeenCalled()
@@ -645,9 +651,13 @@ it('keeps watched Savings scoped to the selected address when an earlier request
   const status = sharedSpendingStatus()
   mockedStatus.mockResolvedValue(status)
   const old = deferred<Awaited<ReturnType<typeof fetchAddressUtxos>>>()
-  mockedUtxos.mockImplementation(async (address) =>
-    address === 'tb1pfirst' ? old.promise : [{ txid: 'new', vout: 0, value: 8000, status: { confirmed: true } }],
-  )
+  mockedUtxos.mockImplementation(async (address, signal) => {
+    if (address !== 'tb1pfirst') return [{ txid: 'new', vout: 0, value: 8000, status: { confirmed: true } }]
+    return new Promise((resolve, reject) => {
+      signal!.addEventListener('abort', () => reject(signal!.reason), { once: true })
+      old.promise.then(resolve, reject)
+    })
+  })
   const pin = saveAddressPin(pinFromEnrolledStatus(status))
   const setStatus = vi.fn()
   const enrollment = sharedSpendingEnrollment()
@@ -664,8 +674,9 @@ it('keeps watched Savings scoped to the selected address when an earlier request
       }),
     { initialProps: { address: 'tb1pfirst' } },
   )
-  await waitFor(() => expect(mockedUtxos).toHaveBeenCalledWith('tb1pfirst'))
+  await waitFor(() => expect(mockedUtxos).toHaveBeenCalledWith('tb1pfirst', expect.any(AbortSignal)))
   rerender({ address: 'tb1psecond' })
+  expect(mockedUtxos.mock.calls.find(([address]) => address === 'tb1pfirst')?.[1]?.aborted).toBe(true)
   await waitFor(() => expect(result.current.positions.savings.totalSats).toBe(8000))
   await act(async () => old.resolve([{ txid: 'old', vout: 0, value: 999999, status: { confirmed: true } }]))
   expect(result.current.positions.savings.totalSats).toBe(8000)
@@ -1201,9 +1212,11 @@ describe('balance controller ownership', () => {
     const controller = standaloneController()
     expect(controller.getSnapshot().positions.spending.availableSats).toBe(7000)
     const mainnet = sharedSpendingStatusForNetwork('mainnet', { vaultId: STATUS.vaultId })
-    controller.update(controllerOptions({ status: mainnet, addressPin: pinFromEnrolledStatus(mainnet) }))
-    expect(controller.getSnapshot().positions.spending.availableSats).toBe(9000)
-    expect(controller.getSnapshot().snapshotFresh).toBe(false)
+    const selected = standaloneController(
+      controllerOptions({ status: mainnet, addressPin: pinFromEnrolledStatus(mainnet) }),
+    )
+    expect(selected.getSnapshot().positions.spending.availableSats).toBe(9000)
+    expect(selected.getSnapshot().snapshotFresh).toBe(false)
   })
 
   it('keeps Spending available while rejecting a cache for a different watched Savings address', () => {
@@ -1232,10 +1245,55 @@ describe('balance controller ownership', () => {
       vaultId: STATUS.vaultId,
       phoneSecret: new Uint8Array(32).fill(42),
     })
-    controller.update(controllerOptions({ status: replacement, addressPin: pinFromEnrolledStatus(replacement) }))
+    const selected = standaloneController(
+      controllerOptions({ status: replacement, addressPin: pinFromEnrolledStatus(replacement) }),
+    )
     old.resolve({ balance: 900000, history: [] })
     await pending
-    expect(controller.getSnapshot().accountReads.spend.loaded).toBe(false)
+    expect(selected.getSnapshot().accountReads.spend.loaded).toBe(false)
+    expect(selected.getSnapshot().positions.spending.availableSats).toBe(0)
+  })
+
+  it('rejects a completed cached observation after replacing the signing identity', async () => {
+    mockedSnapshot.mockResolvedValue({ balance: 7000, history: [] })
+    const controller = standaloneController()
+    await controller.refreshBalance()
+    expect(loadBalanceSnapshot(STATUS.vaultId, STATUS.network)?.walletIdentity).toBe(vaultAccountRuntime(STATUS).key)
+    const replacement = sharedSpendingStatusForNetwork('mutinynet', {
+      vaultId: STATUS.vaultId,
+      phoneSecret: new Uint8Array(32).fill(42),
+    })
+    const selected = standaloneController(
+      controllerOptions({ status: replacement, addressPin: pinFromEnrolledStatus(replacement) }),
+    )
+    expect(selected.getSnapshot().accountReads.spend.loaded).toBe(false)
+    expect(selected.getSnapshot().positions.spending.availableSats).toBe(0)
+  })
+
+  it('keeps account replacement outside the balance controller update command', () => {
+    const controller = standaloneController()
+    const other = sharedSpendingStatusForNetwork('mutinynet', { vaultId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' })
+    expect(() => controller.update(controllerOptions({ status: other }))).toThrow(
+      'Balance inputs must belong to their account runtime',
+    )
+    expect(activeVaultAccountRuntime(STATUS.vaultId)?.balances).toBe(controller)
+    expect(activeVaultAccountRuntime(other.vaultId)).toBeUndefined()
+  })
+
+  it('drains the balance SDK read before account teardown closes the connection', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof fetchVaultWalletVtxoSnapshot>>>()
+    mockedSnapshot.mockReturnValue(pending.promise)
+    const controller = standaloneController()
+    const account = vaultAccountRuntime(STATUS)
+    const close = vi.fn().mockResolvedValue(undefined)
+    account.closeConnection = close
+    const read = controller.refreshBalance()
+    await vi.waitFor(() => expect(mockedSnapshot).toHaveBeenCalledOnce())
+    const dispose = disposeVaultAccountRuntime(account)
+    expect(close).not.toHaveBeenCalled()
+    pending.resolve({ balance: 7000, history: [] })
+    await Promise.all([read, dispose])
+    expect(close).toHaveBeenCalledOnce()
     expect(controller.getSnapshot().positions.spending.availableSats).toBe(0)
   })
 
@@ -1249,5 +1307,101 @@ describe('balance controller ownership', () => {
     mockedSnapshot.mockClear()
     window.dispatchEvent(new Event('focus'))
     expect(mockedSnapshot).not.toHaveBeenCalled()
+  })
+})
+
+describe('account-owned balance scheduling', () => {
+  it('shares one controller and one read across concurrent UI demand and keeps state after views detach', async () => {
+    vi.useFakeTimers()
+    const options = controllerOptions()
+    const controller = standaloneController(options)
+    expect(vaultBalanceController({ ...options })).toBe(controller)
+    const account = vaultAccountRuntime(STATUS)
+    expect(account.balances).toBe(controller)
+    const leaveFirst = controller.retain(),
+      leaveSecond = controller.retain()
+    const first = account.maintenance.requestCadence('spending-balance', 5000)
+    const second = account.maintenance.requestCadence('spending-balance', 5000)
+    mockedSnapshot.mockResolvedValue({ balance: 7000, history: [] })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(mockedSnapshot).toHaveBeenCalledOnce()
+    expect(mockedStatus).toHaveBeenCalledOnce()
+    // JSDOM dispatches storage events on a separate zero-delay timer.
+    await vi.advanceTimersByTimeAsync(1)
+    expect(vi.getTimerCount()).toBe(1)
+    first()
+    second()
+    leaveFirst()
+    leaveSecond()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(vaultBalanceController(options)).toBe(controller)
+    expect(controller.getSnapshot().positions.spending.availableSats).toBe(7000)
+  })
+
+  it('backs off failed Savings reads to thirty seconds without stalling Spending', async () => {
+    vi.useFakeTimers()
+    mockedUtxos.mockRejectedValue(new Error('Savings offline'))
+    mockedSnapshot.mockResolvedValue({ balance: 7000, history: [] })
+    const controller = standaloneController()
+    await controller.refreshBalance()
+    expect(controller.getSnapshot().positions.spending.availableSats).toBe(7000)
+    let calls = 1
+    expect(mockedUtxos).toHaveBeenCalledTimes(calls)
+    let completedAt = Date.now()
+    for (const delay of [0, 2000, 4000, 8000, 16000, 30000, 30000]) {
+      if (delay) {
+        await vi.advanceTimersByTimeAsync(completedAt + delay - Date.now() - 1)
+        expect(mockedUtxos).toHaveBeenCalledTimes(calls)
+        await vi.advanceTimersByTimeAsync(1)
+      } else await vi.advanceTimersByTimeAsync(0)
+      completedAt = Date.now()
+      expect(mockedUtxos).toHaveBeenCalledTimes(++calls)
+      // Flush the cache write's JSDOM storage event before counting clocks.
+      await vi.advanceTimersByTimeAsync(1)
+      expect(vi.getTimerCount()).toBe(1)
+    }
+    expect(mockedSnapshot).toHaveBeenCalledOnce()
+    expect(mockedWorkerRevive).not.toHaveBeenCalled()
+  })
+
+  it('retains hidden Receive demand and resumes it through the shared visibility event', async () => {
+    vi.useFakeTimers()
+    const visible = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    try {
+      const controller = standaloneController()
+      const leave = controller.retain()
+      const release = vaultAccountRuntime(STATUS).maintenance.requestCadence('spending-balance', 5000)
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(mockedSnapshot).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+      visible.mockReturnValue('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(150)
+      expect(mockedSnapshot).toHaveBeenCalledOnce()
+      release()
+      leave()
+    } finally {
+      visible.mockRestore()
+    }
+  })
+
+  it('recovers a cold SDK failure when revival uses the actual scheduler drain', async () => {
+    vi.useFakeTimers()
+    const reconnect = vi.fn()
+    mockedWorkerRevive.mockImplementation(async () => {
+      await vaultAccountRuntime(STATUS).maintenance.withPaused(async () => {
+        reconnect()
+      })
+      return {} as Awaited<ReturnType<typeof reviveVaultWalletWorker>>
+    })
+    mockedSnapshot.mockRejectedValueOnce(new Error('cold failure')).mockResolvedValue({ balance: 7000, history: [] })
+    const controller = standaloneController()
+    await controller.refreshBalance()
+    expect(controller.getSnapshot().accountReads.spend.loaded).toBe(false)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reconnect).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(150)
+    expect(controller.getSnapshot().positions.spending.availableSats).toBe(7000)
+    expect(controller.getSnapshot().accountReads.spend.loaded).toBe(true)
   })
 })

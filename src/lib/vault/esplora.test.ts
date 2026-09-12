@@ -5,6 +5,7 @@ import {
   confirmedSpendables,
   ESPLORA_TX_PAGE_SIZE,
   fetchAddressTxs,
+  fetchAddressUtxos,
   fetchOlderAddressTxs,
   type EsploraTx,
   type EsploraUtxo,
@@ -42,6 +43,52 @@ function transaction(txid: string, confirmed = true): EsploraTx {
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('cancelled account observations', () => {
+  it('aborts a pending coin read without publishing an empty balance', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      expect(init?.signal).toBe(controller.signal)
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const result = expect(fetchAddressUtxos('tb1psavings', controller.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    controller.abort()
+    await result
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('cancels later history pages without returning a partial successful observation', async () => {
+    const controller = new AbortController()
+    const first = Array.from({ length: ESPLORA_TX_PAGE_SIZE }, (_, index) => transaction(`tx-${index}`))
+    let secondStarted!: () => void
+    const started = new Promise<void>((resolve) => (secondStarted = resolve))
+    const fetchMock = vi
+      .fn((_url: string, init?: RequestInit) => {
+        expect(init?.signal).toBe(controller.signal)
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+          secondStarted()
+        })
+      })
+      .mockImplementationOnce(async (_url, init) => {
+        expect(init?.signal).toBe(controller.signal)
+        return new Response(JSON.stringify(first), { status: 200 })
+      })
+    vi.stubGlobal('fetch', fetchMock)
+    const result = expect(fetchAddressTxs('tb1psavings', controller.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    await started
+    controller.abort()
+    await result
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
 
 describe('fetchAddressTxs', () => {
   it('loads subsequent confirmed pages while retaining first-page mempool activity', async () => {

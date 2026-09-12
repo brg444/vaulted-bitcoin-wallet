@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { activeVaultAccountRuntime, disposeVaultAccountRuntime, vaultAccountRuntime } from './accountRuntime'
+import {
+  activeVaultAccountRuntime,
+  disposeVaultAccountRuntime,
+  vaultAccountRuntime,
+  selectedVaultAccountRuntime,
+} from './accountRuntime'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 
 const status = sharedSpendingStatus()
@@ -48,4 +53,15 @@ it('invalidates old task authority on a network round trip and drains it before 
   expect(publish).not.toHaveBeenCalled()
   const current = third.maintenance.observe('recovery-archive', async () => 'current', { intervalMs: 30_000 })
   expect(await current.refresh()).toBe('current')
+})
+
+it('binds restored status to the selected owner without replacing its tasks or creating an SDK wallet', async () => {
+  const selected = selectedVaultAccountRuntime(status.vaultId)
+  expect(selected.enrolled).toBe(false)
+  const read = selected.maintenance.observe('spending-balance', async () => 'ready', { intervalMs: Infinity })
+  expect(vaultAccountRuntime(status)).toBe(selected)
+  expect(selected.enrolled).toBe(true)
+  expect(selected.network).toBe(status.network)
+  expect(selected.connection).toBeUndefined()
+  expect(await read.refresh()).toBe('ready')
 })

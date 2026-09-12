@@ -10,7 +10,13 @@ import {
 } from './history'
 import { loadAddressPin, requireStatusMatchesPin, type AddressPin } from './pin'
 import { fetchVaultStatus } from './status'
-import { vaultWalletRuntimeKey } from './accountRuntime'
+import {
+  selectedVaultAccountRuntime,
+  vaultAccountRuntime,
+  vaultWalletRuntimeKey,
+  type VaultAccountRuntime,
+} from './accountRuntime'
+import type { VaultMaintenanceTask } from './accountMaintenance'
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import type { VaultStatus } from './types'
 import {
@@ -58,8 +64,6 @@ function cachedAccountReads(snapshot: VaultBalanceSnapshot | null): AccountBalan
     savings: { ...EMPTY_ACCOUNT_BALANCE_READS.savings, loaded: loaded.savings },
   }
 }
-
-type AccountFlight = { version: number; promise: Promise<void> }
 
 const FIRST_SNAPSHOT_RETRY_MS = 2_000
 const FIRST_SNAPSHOT_RETRY_MAX_MS = 30_000
@@ -160,29 +164,36 @@ export function savingsUtxoBalance(
 }
 
 /** Owns balance readiness, cached observations and bounded activity paging. */
-export function createVaultBalanceController(initialOptions: VaultBalancesOptions) {
+function createVaultBalanceController(initialOptions: VaultBalancesOptions, account: VaultAccountRuntime) {
   let options = initialOptions
   let status = options.status
   let addressPin = options.addressPin
-  let enrollment = options.enrollment
   let watchedAddress = options.watchedSavingsAddress || ''
   let locked = options.locked
-  const accountId = () => status?.vaultId || enrollment?.vaultId || addressPin?.vaultId || ''
-  const network = () => status?.network || addressPin?.network || ''
-  let scopeId = accountId()
-  let scopeNetwork = network()
+  const accountId = () => account.vaultId
+  const network = () => account.network
   let refreshVersion = 0
   let disposed = false
   let started = false
-  let accountFlights: Partial<Record<keyof AccountBalanceReads, AccountFlight>> = {}
-  let statusFlight: { version: number; id: string; promise: Promise<VaultStatus> } | null = null
-  let retryTimer = 0
-  let retryAttempt = 0
-  let eventTimer = 0
+  let statusFlight: { version: number; id: string; promise: Promise<VaultStatus>; controller: AbortController } | null =
+    null
+  let users = 0
+  let tasks:
+    | {
+        spend: VaultMaintenanceTask<void>
+        savings: VaultMaintenanceTask<void>
+        sync: VaultMaintenanceTask<void>
+        reconnect: VaultMaintenanceTask<void>
+      }
+    | undefined
+  const retryAttempts = { spend: 0, savings: 0 }
+  const retryDelays = { spend: Infinity, savings: Infinity }
+  let reconnectNeeded = false
   let workerKey = ''
   let unsubscribeWorker: (() => void) | undefined
   const hydrate = () => {
-    const cached = loadBalanceSnapshot(scopeId, scopeNetwork)
+    const cached = loadBalanceSnapshot(accountId(), network())
+    if (cached?.walletIdentity && account.enrolled && cached.walletIdentity !== account.key) return null
     if (
       !cached ||
       (status?.protectionTier || addressPin?.protectionTier) !== 'light' ||
@@ -228,24 +239,20 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
     olderActivity = next
     publish()
   }
-  const clearSnapshotRetry = () => {
-    retryAttempt = 0
-    window.clearTimeout(retryTimer)
-  }
-
   const publishAccount = (
     id: string,
-    account: keyof AccountBalanceReads,
+    name: keyof AccountBalanceReads,
     read: Partial<AccountBalanceRead>,
     update?: (current: VaultBalanceSnapshot) => VaultBalanceSnapshot,
   ) => {
-    const nextReads = { ...reads, [account]: { ...reads[account], ...read } }
+    const nextReads = { ...reads, [name]: { ...reads[name], ...read } }
     reads = nextReads
     if (update) {
       const next = {
         ...update(balances),
         loaded: { spend: nextReads.spend.loaded, savings: nextReads.savings.loaded },
         watchedSavingsAddress: watchedAddress,
+        walletIdentity: account.key,
       }
       balances = next
       saveBalanceSnapshot(id, network(), next)
@@ -253,84 +260,63 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
     publish()
   }
 
-  const scheduleSnapshotRetry = (vaultId: string, revive = false) => {
-    if (!vaultId || locked) return
-    window.clearTimeout(retryTimer)
-    const delay =
-      retryAttempt === 0
-        ? revive || !reads.spend.loaded || !reads.savings.loaded
-          ? 0
-          : FIRST_SNAPSHOT_RETRY_MS
-        : Math.min(FIRST_SNAPSHOT_RETRY_MS * 2 ** (retryAttempt - 1), FIRST_SNAPSHOT_RETRY_MAX_MS)
-    retryAttempt = Math.min(retryAttempt + 1, 4)
-    const version = refreshVersion
-    retryTimer = window.setTimeout(() => {
-      if (locked || version !== refreshVersion) return
-      const current = status
-      if (revive && current?.enrolled && current.vaultId === vaultId) {
-        void reviveVaultWalletWorker(current)
-          .catch((error) => consoleError(error, 'wallet VTXO worker revive'))
-          .finally(() => {
-            if (!locked && !disposed && version === refreshVersion) void refreshBalance(vaultId)
-          })
-      } else void refreshBalance(vaultId)
-    }, delay)
+  const clearRetry = (name: keyof AccountBalanceReads) => {
+    retryAttempts[name] = 0
+    retryDelays[name] = Infinity
   }
-
-  const refreshBalance = async (vaultId?: string) => {
-    if (locked || disposed) return
+  const retry = (name: keyof AccountBalanceReads) => {
+    const attempt = retryAttempts[name]++
+    retryDelays[name] =
+      attempt === 0 && !reads[name].loaded
+        ? 0
+        : Math.min(FIRST_SNAPSHOT_RETRY_MS * 2 ** Math.min(Math.max(0, attempt - 1), 4), FIRST_SNAPSHOT_RETRY_MAX_MS)
+  }
+  const readStatus = (): Promise<VaultStatus> => {
     const version = refreshVersion
-    const id = String(vaultId || status?.vaultId || enrollment?.vaultId || addressPin?.vaultId || '').trim()
-    const active = () =>
-      version === refreshVersion &&
-      !locked &&
-      !disposed &&
-      (status?.vaultId || enrollment?.vaultId || addressPin?.vaultId || '') === id
-    if (!id || !active()) return
+    const id = accountId()
+    if (statusFlight?.version === version) return statusFlight.promise
+    const pin = addressPin?.vaultId === id ? addressPin : loadAddressPin(localStorage, id)
+    const controller = new AbortController()
+    const promise = fetchVaultStatus(controller.signal, id)
+      .then((fetched) => {
+        const live = pin ? requireStatusMatchesPin(fetched, pin) : fetched
+        if (live.vaultId !== id || (network() && live.network !== network()))
+          throw new Error('Balance status does not match the selected account')
+        if (disposed || account.disposed || version !== refreshVersion)
+          throw new DOMException('Account observation ended', 'AbortError')
+        if (vaultAccountRuntime(live) !== account) throw new DOMException('Account identity changed', 'AbortError')
+        if (balances.walletIdentity && balances.walletIdentity !== account.key) {
+          balances = EMPTY_BALANCES
+          reads = cachedAccountReads(null)
+          olderHistory = []
+          olderActivity = { status: 'idle', error: '' }
+          publish()
+        }
+        status = live
+        options.setStatus(live)
+        if (started) syncWorker()
+        return live
+      })
+      .finally(() => {
+        if (statusFlight?.promise === promise) statusFlight = null
+      })
+    statusFlight = { version, id, promise, controller }
+    return promise
+  }
+  const readAccount = async (name: keyof AccountBalanceReads, signal: AbortSignal) => {
+    if (locked || disposed || account.disposed) return
+    const version = refreshVersion
+    const id = accountId()
+    const active = () => !signal.aborted && !disposed && !account.disposed && !locked && version === refreshVersion
+    publishAccount(id, name, { refreshing: true, fresh: false })
     try {
-      let flight = statusFlight
-      if (!flight || flight.version !== version || flight.id !== id) {
-        const memoryPin = addressPin
-        const pin = memoryPin?.vaultId === id ? memoryPin : loadAddressPin(localStorage, id)
-        const promise = fetchVaultStatus(undefined, id).then((fetched) =>
-          pin ? requireStatusMatchesPin(fetched, pin) : fetched,
-        )
-        flight = { version, id, promise }
-        statusFlight = flight
-      }
-      let liveStatus: VaultStatus
-      try {
-        liveStatus = await flight.promise
-      } finally {
-        if (statusFlight === flight) statusFlight = null
-      }
+      const liveStatus = await readStatus()
       if (!active()) return
-      if (liveStatus.vaultId !== id || (network() && liveStatus.network !== network()))
-        throw new Error('Balance status does not match the selected account')
-      status = liveStatus
-      scopeNetwork = liveStatus.network
-      options.setStatus(liveStatus)
-      if (started) syncWorker()
-      const memoryPin = addressPin
-      const pin = memoryPin?.vaultId === id ? memoryPin : loadAddressPin(localStorage, id)
+      const pin = addressPin?.vaultId === id ? addressPin : loadAddressPin(localStorage, id)
       const savingsAddress = liveStatus.protectionTier === 'light' ? watchedAddress : pin?.savingsAddress || ''
       const spendingAddress = liveStatus.spendingArkAddress || ''
       const boardingAddress = liveStatus.vtxoBoardingAddress || ''
-      const runAccount = (account: keyof AccountBalanceReads, run: () => Promise<void>) => {
-        const current = accountFlights[account]
-        if (current?.version === version) return current.promise
-        publishAccount(id, account, { refreshing: true, fresh: false })
-        const next: AccountFlight = { version, promise: Promise.resolve() }
-        next.promise = Promise.resolve()
-          .then(run)
-          .finally(() => {
-            if (accountFlights[account] === next) delete accountFlights[account]
-            if (active()) publishAccount(id, account, { refreshing: false })
-          })
-        accountFlights[account] = next
-        return next.promise
-      }
-      const savingsTask = runAccount('savings', async () => {
+      if (name === 'savings') {
         try {
           let savings = { balance: 0, spendable: 0, history: [] as VaultHistoryItem[] }
           if (liveStatus.templateVersion === LEDGER_NATIVE_TEMPLATE) {
@@ -338,8 +324,8 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
             savings = { balance: value.totalSats, spendable: value.availableSats, history: value.history }
           } else if (liveStatus.protectionTier === 'light' && savingsAddress) {
             const [utxos, transactions] = await Promise.all([
-              fetchAddressUtxos(savingsAddress),
-              fetchAddressTxs(savingsAddress),
+              fetchAddressUtxos(savingsAddress, signal),
+              fetchAddressTxs(savingsAddress, signal),
             ])
             const balance = savingsUtxoBalance(utxos, transactions, savingsAddress)
             savings = {
@@ -349,6 +335,7 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
             }
           }
           if (!active()) return
+          clearRetry('savings')
           publishAccount(id, 'savings', { loaded: true, fresh: true, error: '' }, (current) => ({
             ...current,
             savingsSats: savings.balance,
@@ -363,16 +350,16 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
           if (!active()) return
           consoleError(error, 'Vault Savings balance refresh')
           publishAccount(id, 'savings', { fresh: false, error: 'Could not refresh Savings. Try again.' })
-          scheduleSnapshotRetry(id)
+          retry('savings')
         }
-      })
-      const spendingTask = runAccount('spend', async () => {
+      } else {
         try {
           const spending: VaultWalletVtxoSnapshot =
             spendingAddress && liveStatus.enrolled
               ? await fetchVaultWalletVtxoSnapshot(liveStatus)
               : { balance: 0, boardingBalance: 0, history: [] }
           if (!active()) return
+          clearRetry('spend')
           publishAccount(id, 'spend', { loaded: true, fresh: true, error: '' }, (current) => ({
             ...current,
             boardingBalance: spending.boardingBalance || 0,
@@ -392,7 +379,7 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
           // supplies available Spending funds or overrides an SDK snapshot.
           if (!reads.spend.loaded && boardingAddress) {
             try {
-              const utxos = await fetchAddressUtxos(boardingAddress)
+              const utxos = await fetchAddressUtxos(boardingAddress, signal)
               if (!active()) return
               publishAccount(id, 'spend', { loaded: false }, (current) => ({
                 ...current,
@@ -408,27 +395,40 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
           }
           if (!active()) return
           publishAccount(id, 'spend', { fresh: false, error: 'Could not refresh Spending. Try again.' })
-          scheduleSnapshotRetry(id, needsRevive)
+          retry('spend')
+          if (needsRevive) {
+            reconnectNeeded = true
+            tasks?.reconnect.request(retryDelays.spend)
+            retryDelays.spend = Infinity
+          }
         }
-      })
-      await Promise.all([savingsTask, spendingTask])
-      if (active() && reads.spend.fresh && reads.savings.fresh) clearSnapshotRetry()
+      }
     } catch (error) {
       if (!active()) return
       consoleError(error, 'Vault status refresh')
-      for (const account of ['spend', 'savings'] as const)
-        publishAccount(id, account, { fresh: false, error: 'Could not verify this wallet. Try refreshing again.' })
-      scheduleSnapshotRetry(id)
+      publishAccount(id, name, { fresh: false, error: 'Could not verify this wallet. Try refreshing again.' })
+      retry(name)
+    } finally {
+      if (active()) publishAccount(id, name, { refreshing: false })
+    }
+  }
+  const refreshBalance = async (vaultId?: string) => {
+    if (locked || disposed || account.disposed || !accountId() || (vaultId && vaultId !== accountId())) return
+    const current = ensureTasks()
+    try {
+      await Promise.all([current.spend.refresh(), current.savings.refresh()])
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
     }
   }
 
   const loadOlderActivity = (): Promise<OlderActivityResult> => {
-    if (locked || disposed) return Promise.resolve({ added: 0, exhausted: false })
+    if (locked || disposed || account.disposed) return Promise.resolve({ added: 0, exhausted: false })
     const version = refreshVersion
     const liveFlight = olderFlight
     if (liveFlight?.version === version) return liveFlight.promise
     const promise = (async (): Promise<OlderActivityResult> => {
-      const requestId = String(status?.vaultId || enrollment?.vaultId || addressPin?.vaultId || '').trim()
+      const requestId = accountId()
       const requestNetwork = status?.network || ''
       const memoryPin = addressPin
       const pin =
@@ -447,7 +447,7 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
       try {
         const { transactions, exhausted } = await fetchOlderAddressTxs(savingsAddress, cursor)
         if (stale()) return { added: 0, exhausted: false }
-        const currentId = String(status?.vaultId || enrollment?.vaultId || addressPin?.vaultId || '').trim()
+        const currentId = accountId()
         if (currentId !== requestId || (status && status.network !== requestNetwork)) {
           return { added: 0, exhausted: false }
         }
@@ -472,7 +472,7 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
         return { added: unseen.length, exhausted: done }
       } catch (error) {
         if (stale()) return { added: 0, exhausted: false }
-        const currentId = String(status?.vaultId || enrollment?.vaultId || addressPin?.vaultId || '').trim()
+        const currentId = accountId()
         if (currentId !== requestId) {
           return { added: 0, exhausted: false }
         }
@@ -494,15 +494,18 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
     try {
       const result = await reconcilePersistedVtxoSpend(current)
       if (locked || version !== refreshVersion) return
-      if (result.kind === 'receipt-finalized') await refreshBalance(current.vaultId)
+      if (result.kind === 'receipt-finalized') {
+        tasks?.spend.request()
+        tasks?.savings.request()
+      }
     } catch (error) {
       consoleError(error, 'VTXO spend recovery')
     }
   }
 
   const refreshFromEvent = () => {
-    window.clearTimeout(eventTimer)
-    eventTimer = window.setTimeout(() => void refreshBalance(), 200)
+    tasks?.spend.request()
+    tasks?.savings.request()
   }
   const syncWorker = () => {
     const key = !locked && status?.enrolled && status.spendingArkAddress ? vaultWalletRuntimeKey(status) : ''
@@ -512,26 +515,76 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
     workerKey = key
     if (key && status) unsubscribeWorker = subscribeVaultWalletEvents(status, refreshFromEvent)
   }
-  const onFocus = () => {
-    if (locked || disposed || !options.initialStatusChecked || !accountId()) return
-    const version = refreshVersion
-    if (status?.enrolled) {
-      void reloadVaultWalletWorker(status)
-        .catch((error) => consoleError(error, 'wallet VTXO worker reload'))
-        .finally(() => {
-          if (locked || disposed || version !== refreshVersion) return
-          void recoverVtxoSpend()
-          void refreshBalance()
-        })
-    } else void refreshBalance()
+  const ensureTasks = () => {
+    if (tasks) return tasks
+    const observe = account.maintenance.observe
+    tasks = {
+      spend: observe('spending-balance', (signal) => readAccount('spend', signal), {
+        intervalMs: () => retryDelays.spend,
+        events: ['wallet', 'vaulted-savings-setup'],
+      }),
+      savings: observe('savings-balance', (signal) => readAccount('savings', signal), {
+        intervalMs: () => retryDelays.savings,
+        events: ['wallet', 'vaulted-savings-setup'],
+      }),
+      sync: observe(
+        'wallet-sync',
+        async (signal) => {
+          if (locked || !options.initialStatusChecked) return
+          const version = refreshVersion
+          try {
+            const live = status || (await readStatus())
+            await reloadVaultWalletWorker(live)
+            if (signal.aborted || version !== refreshVersion) return
+            await recoverVtxoSpend()
+          } catch (error) {
+            consoleError(error, 'wallet VTXO worker reload')
+          } finally {
+            if (!signal.aborted && version === refreshVersion) refreshFromEvent()
+          }
+        },
+        { intervalMs: Infinity },
+      ),
+      reconnect: observe(
+        'wallet-reconnect',
+        async (signal) => {
+          if (!reconnectNeeded || locked || !status?.enrolled) return
+          const version = refreshVersion
+          reconnectNeeded = false
+          try {
+            await reviveVaultWalletWorker(status)
+          } catch (error) {
+            consoleError(error, 'wallet VTXO worker revive')
+          } finally {
+            if (!signal.aborted && version === refreshVersion) refreshFromEvent()
+          }
+        },
+        { intervalMs: Infinity, events: [] },
+      ),
+    }
+    return tasks
   }
-  const initialRead = () => {
-    if (!locked && options.initialStatusChecked && accountId()) {
+  const stop = () => {
+    started = false
+    refreshVersion++
+    statusFlight?.controller.abort()
+    for (const task of Object.values(tasks || {})) void task.dispose()
+    tasks = undefined
+    unsubscribeWorker?.()
+    unsubscribeWorker = undefined
+    workerKey = ''
+  }
+  const start = () => {
+    if (started || disposed || account.disposed || locked) return
+    started = true
+    ensureTasks()
+    syncWorker()
+    if (options.initialStatusChecked) {
       void refreshBalance()
-      void recoverVtxoSpend()
+      tasks?.sync.request()
     }
   }
-  return {
+  const controller = {
     getSnapshot: () => snapshot,
     subscribe: (listener: () => void) => {
       listeners.add(listener)
@@ -542,42 +595,30 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
     refreshBalance,
     loadOlderActivity,
     update(next: VaultBalancesOptions) {
+      if (disposed || account.disposed) return
+      const nextId = next.status?.vaultId || next.enrollment?.vaultId || next.addressPin?.vaultId || ''
+      const nextNetwork = next.status?.network || next.addressPin?.network || ''
+      if (
+        nextId !== account.vaultId ||
+        (nextNetwork && account.network && nextNetwork !== account.network) ||
+        (next.status?.enrolled && account.enrolled && vaultWalletRuntimeKey(next.status) !== account.key)
+      )
+        throw new Error('Balance inputs must belong to their account runtime')
       const oldLocked = locked
       const oldWatched = watchedAddress
       const oldChecked = options.initialStatusChecked
-      const previousIdentity = status?.enrolled ? vaultWalletRuntimeKey(status) : ''
-      const nextId = next.status?.vaultId || next.enrollment?.vaultId || next.addressPin?.vaultId || ''
       options = next
-      status = next.status || (status?.vaultId === nextId ? status : null)
+      status = next.status || status
       addressPin = next.addressPin
-      enrollment = next.enrollment
       locked = next.locked
       watchedAddress = next.watchedSavingsAddress || ''
-      const currentIdentity = status?.enrolled ? vaultWalletRuntimeKey(status) : ''
-      const changedIdentity = Boolean(
-        scopeId === accountId() &&
-          scopeNetwork === network() &&
-          previousIdentity &&
-          currentIdentity &&
-          previousIdentity !== currentIdentity,
-      )
-      const changedAccount = scopeId !== accountId() || scopeNetwork !== network() || changedIdentity
       const changedWatch = oldWatched !== watchedAddress
-      const changedScope = changedAccount || changedWatch || oldLocked !== locked
-      if (changedScope) {
-        refreshVersion++
-        window.clearTimeout(retryTimer)
-        window.clearTimeout(eventTimer)
-        retryAttempt = 0
-        accountFlights = {}
+      if (changedWatch || oldLocked !== locked) {
+        stop()
+        clearRetry('spend')
+        clearRetry('savings')
+        reconnectNeeded = false
         statusFlight = null
-        if (changedAccount) {
-          scopeId = accountId()
-          scopeNetwork = network()
-          const cached = changedIdentity ? null : hydrate()
-          balances = cached || EMPTY_BALANCES
-          reads = cachedAccountReads(cached)
-        }
         if (changedWatch && status?.protectionTier === 'light') {
           reads = { ...reads, savings: { ...EMPTY_ACCOUNT_BALANCE_READS.savings } }
           balances = {
@@ -588,7 +629,7 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
             history: balances.history.filter((item) => item.account !== 'savings'),
           }
         }
-        if (changedAccount || changedWatch) olderHistory = []
+        if (changedWatch) olderHistory = []
         olderActivity = { status: 'idle', error: '' }
         reads = {
           spend: { ...reads.spend, fresh: false, refreshing: false },
@@ -596,33 +637,56 @@ export function createVaultBalanceController(initialOptions: VaultBalancesOption
         }
         publish()
       }
+      if (users) start()
       if (started) {
         syncWorker()
-        if (changedScope || (!oldChecked && next.initialStatusChecked)) initialRead()
+        if (!oldChecked && next.initialStatusChecked) {
+          void refreshBalance()
+          tasks?.sync.request()
+        }
       }
     },
-    start() {
-      if (started) return
-      disposed = false
-      started = true
-      syncWorker()
-      window.addEventListener('focus', onFocus)
-      window.addEventListener('online', onFocus)
-      window.addEventListener('vaulted-savings-setup', refreshFromEvent)
-      initialRead()
+    retain() {
+      users++
+      start()
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        if (--users === 0) stop()
+      }
     },
     dispose() {
       disposed = true
-      started = false
-      refreshVersion++
-      window.clearTimeout(retryTimer)
-      window.clearTimeout(eventTimer)
-      unsubscribeWorker?.()
-      unsubscribeWorker = undefined
-      workerKey = ''
-      window.removeEventListener('focus', onFocus)
-      window.removeEventListener('online', onFocus)
-      window.removeEventListener('vaulted-savings-setup', refreshFromEvent)
+      stop()
     },
   }
+  return controller
+}
+
+export type VaultBalanceController = ReturnType<typeof createVaultBalanceController>
+
+export function vaultBalanceController(options: VaultBalancesOptions): VaultBalanceController | undefined {
+  const id = options.status?.vaultId || options.enrollment?.vaultId || options.addressPin?.vaultId || ''
+  if (!id) return undefined
+  const account = options.status?.enrolled
+    ? vaultAccountRuntime(options.status)
+    : selectedVaultAccountRuntime(id, options.addressPin?.network)
+  if (!account.balances) account.balances = createVaultBalanceController(options, account)
+  return account.balances
+}
+
+export const EMPTY_BALANCE_VIEW = {
+  accountReads: EMPTY_ACCOUNT_BALANCE_READS,
+  boardingError: '',
+  snapshotFresh: false,
+  history: [] as VaultHistoryItem[],
+  olderHistory: [] as VaultHistoryItem[],
+  olderActivity: { status: 'idle', error: '' } as OlderActivityState,
+  positions: vaultAccountPositions({
+    boardingSats: 0,
+    savingsAvailableSats: 0,
+    savingsTotalSats: 0,
+    spendingAvailableSats: 0,
+  }),
 }

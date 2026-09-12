@@ -1,8 +1,9 @@
 import SpendingReceive from './SpendingReceive'
+import { vaultAccountRuntime, vaultWalletRuntimeKey } from '../../lib/vault/accountRuntime'
 import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import LightningReceive from './LightningReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { KeyRound, Share2, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import QrCode from '../../components/QrCode'
@@ -37,43 +38,26 @@ function AddressRow({
   )
 }
 
-/** Visible receive polling, matching the Lightning invoice screen cadence. */
+/** The open Receive view requests this cadence from its account owner. */
 const RECEIVE_POLL_MS = 5000
 
 export default function VaultReceive() {
-  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status, refreshBalance } =
-    useContext(VaultContext)
+  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress, status } = useContext(VaultContext)
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'
   const [view, setView] = useState<'receive' | 'lightning'>('receive')
+  const statusRef = useRef(status)
+  statusRef.current = status
+  const scope = status?.enrolled ? vaultWalletRuntimeKey(status) : ''
   useEffect(() => {
-    // A payment arriving while the request screen is open must surface
-    // without waiting for a worker event, focus change, or manual refresh.
-    // Polling reuses the ordinary balance refresh, so detection, baseline,
-    // and dedup behave exactly as elsewhere. The Lightning invoice screen
-    // polls on its own; skip while it owns the view.
-    if (view !== 'receive') return
-    let stopped = false
-    let inFlight = false
-    const poll = () => {
-      if (stopped || inFlight || document.visibilityState !== 'visible') return
-      inFlight = true
-      void refreshBalance()
-        .catch(() => {
-          // Balance refresh reports through context state.
-        })
-        .finally(() => {
-          inFlight = false
-        })
-    }
-    poll()
-    const timer = window.setInterval(poll, RECEIVE_POLL_MS)
-    return () => {
-      stopped = true
-      window.clearInterval(timer)
-    }
-  }, [view, refreshBalance])
+    const current = statusRef.current
+    if (view !== 'receive' || !current?.enrolled) return
+    return vaultAccountRuntime(current).maintenance.requestCadence(
+      account === 'spend' ? 'spending-balance' : 'savings-balance',
+      RECEIVE_POLL_MS,
+    )
+  }, [view, account, scope])
   const unified = useMemo(
     () =>
       boardingAddress && spendingArkAddress

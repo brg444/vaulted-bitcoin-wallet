@@ -39,10 +39,11 @@ export interface EsploraTx {
 export const ESPLORA_TX_PAGE_SIZE = 25
 const MAX_ESPLORA_TX_PAGES = Math.ceil(RECENT_HISTORY_LIMIT / ESPLORA_TX_PAGE_SIZE)
 
-async function fetchAddressTxPage(address: string, cursor: string): Promise<EsploraTx[]> {
+async function fetchAddressTxPage(address: string, cursor: string, signal?: AbortSignal): Promise<EsploraTx[]> {
   const encodedAddress = encodeURIComponent(address)
   const suffix = cursor ? `/chain/${encodeURIComponent(cursor)}` : ''
-  const res = await fetch(`${esploraBase()}/address/${encodedAddress}/txs${suffix}`)
+  const url = `${esploraBase()}/address/${encodedAddress}/txs${suffix}`
+  const res = await (signal ? fetch(url, { signal }) : fetch(url))
   return esploraJson<EsploraTx[]>(res, 'Could not load activity')
 }
 
@@ -55,12 +56,12 @@ function mergeAddressTx(accumulated: Map<string, EsploraTx>, transactions: Esplo
   }
 }
 
-export async function fetchAddressTxs(address: string): Promise<EsploraTx[]> {
+export async function fetchAddressTxs(address: string, signal?: AbortSignal): Promise<EsploraTx[]> {
   const byTxid = new Map<string, EsploraTx>()
   const cursors = new Set<string>()
   let cursor = ''
   for (let page = 0; page < MAX_ESPLORA_TX_PAGES; page += 1) {
-    const transactions = await fetchAddressTxPage(address, cursor)
+    const transactions = await fetchAddressTxPage(address, cursor, signal)
     mergeAddressTx(byTxid, transactions)
     const confirmed = transactions.filter((transaction) => transaction.status.confirmed)
     if (confirmed.length < ESPLORA_TX_PAGE_SIZE) break
@@ -110,8 +111,9 @@ export async function fetchOlderAddressTxs(
   return { transactions: [...byTxid.values()], exhausted: false }
 }
 
-export async function fetchAddressUtxos(address: string): Promise<EsploraUtxo[]> {
-  const res = await fetch(`${esploraBase()}/address/${address}/utxo`)
+export async function fetchAddressUtxos(address: string, signal?: AbortSignal): Promise<EsploraUtxo[]> {
+  const url = `${esploraBase()}/address/${address}/utxo`
+  const res = await (signal ? fetch(url, { signal }) : fetch(url))
   return esploraJson<EsploraUtxo[]>(res, 'Could not load coins')
 }
 

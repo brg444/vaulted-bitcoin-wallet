@@ -1,3 +1,10 @@
+import { ledgerRecoveryFacts } from '../../lib/vault/recovery/testdata/helpers'
+import { sharedSpendingStatus } from '../../lib/vault/vtxo/testdata/sharedSpending'
+import {
+  vaultAccountRuntime,
+  activeVaultAccountRuntime,
+  disposeVaultAccountRuntime,
+} from '../../lib/vault/accountRuntime'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,11 +37,19 @@ vi.mock('../../components/QrCode', () => ({
   ),
 }))
 
-function renderReceive(account: VaultAccount, lightning = false, light = false) {
+const protectedStatus = ledgerRecoveryFacts().status
+const lightStatus = sharedSpendingStatus()
+function renderReceive(account: VaultAccount, light = false, views = 1) {
   const refreshBalance = vi.fn().mockResolvedValue(undefined)
+  const status = light ? lightStatus : protectedStatus
+  vaultAccountRuntime(status).maintenance.observe(
+    account === 'spend' ? 'spending-balance' : 'savings-balance',
+    refreshBalance,
+    { intervalMs: Infinity },
+  )
   const value = {
     account,
-    ...(lightning ? { status: { network: 'mainnet', vaultId: 'fixture-vault' } } : {}),
+    status,
     boardingAddress: light ? '' : 'tb1qboarding',
     liveNetwork: true,
     navigate: () => {},
@@ -45,7 +60,9 @@ function renderReceive(account: VaultAccount, lightning = false, light = false) 
   const rendered = render(
     <ToastProvider>
       <VaultContext.Provider value={value}>
-        <VaultReceive />
+        {Array.from({ length: views }, (_, key) => (
+          <VaultReceive key={key} />
+        ))}
       </VaultContext.Provider>
     </ToastProvider>,
   )
@@ -71,7 +88,11 @@ function renderReceiveWithoutAddresses(account: VaultAccount) {
   )
 }
 
-afterEach(() => {
+afterEach(async () => {
+  for (const status of [protectedStatus, lightStatus]) {
+    const owner = activeVaultAccountRuntime(status.vaultId)
+    if (owner) await disposeVaultAccountRuntime(owner)
+  }
   Reflect.deleteProperty(navigator, 'share')
   Reflect.deleteProperty(navigator, 'canShare')
 })
@@ -105,7 +126,7 @@ describe('Vault receive', () => {
   it('keeps Light receiving usable when Lightning is disabled and no Bitcoin deposit address exists', async () => {
     const share = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { share, canShare: () => true })
-    renderReceive('spend', false, true)
+    renderReceive('spend', true)
     expect(screen.getByTestId('receive-qr')).toHaveTextContent('tark1spending')
     expect(screen.queryByTestId('receive-bitcoin-address')).toBeNull()
     await userEvent.click(screen.getByTestId('receive-share'))
@@ -162,7 +183,8 @@ describe('Vault receive', () => {
     vi.useFakeTimers()
     try {
       const { refreshBalance, unmount } = renderReceive('spend')
-      // Immediate refresh on open plus the visible interval.
+      // Initial demand is coalesced by the account scheduler.
+      await vi.advanceTimersByTimeAsync(150)
       expect(refreshBalance).toHaveBeenCalledTimes(1)
       await vi.advanceTimersByTimeAsync(5000)
       expect(refreshBalance).toHaveBeenCalledTimes(2)
@@ -208,6 +230,7 @@ describe('Vault receive', () => {
       expect(maxConcurrent).toBeLessThanOrEqual(1)
       expect(refreshBalance.mock.calls.length).toBeGreaterThan(1)
       unmount()
+      await vi.advanceTimersByTimeAsync(20_000)
     } finally {
       vi.useRealTimers()
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'prerender' })
@@ -218,7 +241,7 @@ describe('Vault receive', () => {
     gates.receive = true
     gates.address = true
     const user = userEvent.setup()
-    renderReceive('spend', true)
+    renderReceive('spend')
     expect(screen.getByText('alex@ln.getvaulted.xyz')).toBeVisible()
     expect(screen.getByTestId('primary-lightning')).toHaveAttribute('data-primary', 'true')
     await user.click(screen.getByRole('button', { name: 'Create invoice' }))
@@ -230,7 +253,7 @@ describe('Vault receive', () => {
   it('keeps Lightning out of Savings even when both gates are enabled', () => {
     gates.receive = true
     gates.address = true
-    renderReceive('savings', true)
+    renderReceive('savings')
     expect(screen.queryByTestId('primary-lightning')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Create invoice' })).toBeNull()
     expect(screen.getByTestId('receive-qr')).toHaveTextContent('tb1qsavings')
@@ -238,14 +261,14 @@ describe('Vault receive', () => {
 
   it('retains invoice receive when reusable Lightning addresses are disabled', () => {
     gates.receive = true
-    renderReceive('spend', true)
+    renderReceive('spend')
     expect(screen.queryByTestId('primary-lightning')).toBeNull()
     expect(screen.getByRole('button', { name: 'Create invoice' })).toBeVisible()
   })
 
   it('respects the Lightning receive gate even with reusable addresses enabled', () => {
     gates.address = true
-    renderReceive('spend', true)
+    renderReceive('spend')
     expect(screen.queryByTestId('primary-lightning')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Create invoice' })).toBeNull()
   })
@@ -257,7 +280,7 @@ it('shares the destination for the selected receiving method', async () => {
   const share = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'share', { configurable: true, value: share })
   const user = userEvent.setup()
-  renderReceive('spend', true)
+  renderReceive('spend')
   await user.click(screen.getByRole('button', { name: 'Share address' }))
   expect(share).toHaveBeenLastCalledWith({ title: 'Vaulted Lightning address', text: 'alex@ln.getvaulted.xyz' })
   await user.click(screen.getByTestId('receive-method-fast'))
@@ -304,4 +327,21 @@ describe('Receive arrival and contract changes', () => {
     expect(screen.getByTestId('receive-arkade-address')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'View details' })).not.toBeInTheDocument()
   })
+})
+
+it('shares one account cadence across two Receive views', async () => {
+  vi.useFakeTimers()
+  try {
+    const { refreshBalance, unmount } = renderReceive('spend', false, 2)
+    await vi.advanceTimersByTimeAsync(150)
+    expect(refreshBalance).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(1)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(refreshBalance).toHaveBeenCalledTimes(2)
+    unmount()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(refreshBalance).toHaveBeenCalledTimes(2)
+  } finally {
+    vi.useRealTimers()
+  }
 })

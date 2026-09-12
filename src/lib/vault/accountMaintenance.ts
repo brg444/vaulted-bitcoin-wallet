@@ -1,4 +1,8 @@
 export type VaultMaintenanceName =
+  | 'spending-balance'
+  | 'savings-balance'
+  | 'wallet-sync'
+  | 'wallet-reconnect'
   | 'lightning-observer'
   | 'spending-renewals'
   | 'bitcoin-payment'
@@ -7,14 +11,14 @@ export type VaultMaintenanceName =
 
 export interface VaultMaintenanceTask<T> {
   refresh: () => Promise<T>
-  request: () => void
+  request: (delayMs?: number) => void
   isDisposed: () => boolean
   dispose: () => Promise<void>
 }
 
 interface Observation {
   run: (signal: AbortSignal) => Promise<unknown>
-  intervalMs: number
+  intervalMs: number | (() => number)
   events: readonly string[]
   failed?: (error: unknown) => void
   requested?: () => void
@@ -44,7 +48,10 @@ export function createVaultAccountMaintenance(
   let resume: Promise<void> | undefined
   let releasePause: (() => void) | undefined
   const visible = () => !disposed && !paused && isVisible()
-  const interval = (task: Task) => Math.min(task.observation?.intervalMs ?? Infinity, ...task.cadences.values())
+  const interval = (task: Task) => {
+    const own = task.observation?.intervalMs ?? Infinity
+    return Math.min(typeof own === 'function' ? own() : own, ...task.cadences.values())
+  }
   const taskFor = (name: VaultMaintenanceName) => {
     let task = tasks.get(name)
     if (!task) {
@@ -110,12 +117,13 @@ export function createVaultAccountMaintenance(
     return promise
   }
 
-  const request = (task: Task) => {
+  const request = (task: Task, delayMs = 150) => {
+    if (!Number.isFinite(delayMs) || delayMs < 0) throw new Error('Nonnegative maintenance delay required')
     if (disposed || !task.observation) return
     if (task.flight?.observation === task.observation && !task.observation.trailing) return
     task.observation.requested?.()
     task.dirty = true
-    task.due = Math.min(task.due, Date.now() + 150)
+    task.due = Math.min(task.due, Date.now() + delayMs)
     arm()
   }
 
@@ -156,7 +164,7 @@ export function createVaultAccountMaintenance(
       name: VaultMaintenanceName,
       run: (signal: AbortSignal) => Promise<T>,
       options: {
-        intervalMs: number
+        intervalMs: number | (() => number)
         events?: readonly string[]
         failed?: (error: unknown) => void
         requested?: () => void
@@ -184,8 +192,8 @@ export function createVaultAccountMaintenance(
       if (task.cadences.size) request(task)
       return {
         refresh: () => refresh(task, observation) as Promise<T>,
-        request: () => {
-          if (task.observation === observation) request(task)
+        request: (delayMs) => {
+          if (task.observation === observation) request(task, delayMs)
         },
         isDisposed: () => observation.controller.signal.aborted,
         dispose: async () => {
@@ -208,7 +216,13 @@ export function createVaultAccountMaintenance(
       paused++
       arm()
       try {
-        await Promise.allSettled([...tasks.values()].flatMap((task) => (task.flight ? [task.flight.promise] : [])))
+        // The reconnect task drives replacement and never consumes wallet state.
+        // Waiting on it here would make replacement wait on its own caller.
+        await Promise.allSettled(
+          [...tasks.entries()].flatMap(([name, task]) =>
+            name !== 'wallet-reconnect' && task.flight ? [task.flight.promise] : [],
+          ),
+        )
         return await run()
       } finally {
         paused--

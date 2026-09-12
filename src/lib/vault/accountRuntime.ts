@@ -1,11 +1,15 @@
 import { createVaultAccountMaintenance, type VaultAccountMaintenance } from './accountMaintenance'
 import { vaultOperatorOrigin } from './networkPins'
 import type { VaultStatus } from './types'
+import type { VaultBalanceController } from './accountBalances'
 import type { WalletConnection } from './vtxo/walletWorker'
 
 export interface VaultAccountRuntime {
   key: string
   vaultId: string
+  network: string
+  enrolled: boolean
+  balances?: VaultBalanceController
   maintenance: VaultAccountMaintenance
   listeners: Set<() => void>
   disposed: boolean
@@ -43,6 +47,7 @@ export function disposeVaultAccountRuntime(account: VaultAccountRuntime): Promis
   if (account.disposal) return account.disposal
   account.disposed = true
   account.listeners.clear()
+  account.balances?.dispose()
   if (current === account) current = undefined
   const drain = account.maintenance.dispose()
   account.disposal = (async () => {
@@ -57,18 +62,42 @@ export function disposeVaultAccountRuntime(account: VaultAccountRuntime): Promis
   return account.disposal
 }
 
-/** Scheduling exists before SDK availability; this is the SDK connection's owner. */
-export function vaultAccountRuntime(status: VaultStatus): VaultAccountRuntime {
-  const key = vaultWalletRuntimeKey(status)
-  if (current?.key === key && !current.disposed) return current
+/** A selected account can recover status before its SDK identity is available. */
+export function selectedVaultAccountRuntime(vaultId: string, network = ''): VaultAccountRuntime {
+  if (!vaultId.trim()) throw new Error('Selected vault required for account state')
+  if (
+    current?.vaultId === vaultId &&
+    !current.disposed &&
+    (!network || !current.network || current.network === network)
+  ) {
+    if (!current.network && network) current.network = network
+    return current
+  }
   if (current) void disposeVaultAccountRuntime(current).catch(() => undefined)
   current = {
-    key,
-    vaultId: status.vaultId,
-    maintenance: createVaultAccountMaintenance(status.vaultId),
+    key: JSON.stringify(['selected', vaultId, network]),
+    vaultId,
+    network,
+    enrolled: false,
+    maintenance: createVaultAccountMaintenance(vaultId),
     listeners: new Set(),
     disposed: false,
     previous: retiring,
   }
   return current
+}
+
+/** Status binds the selected owner once; signing-identity changes replace it. */
+export function vaultAccountRuntime(status: VaultStatus): VaultAccountRuntime {
+  const key = vaultWalletRuntimeKey(status)
+  if (current?.key === key && !current.disposed) return current
+  if (
+    current &&
+    (current.enrolled || current.vaultId !== status.vaultId || (current.network && current.network !== status.network))
+  )
+    void disposeVaultAccountRuntime(current).catch(() => undefined)
+  const account = selectedVaultAccountRuntime(status.vaultId, status.network)
+  account.key = key
+  account.enrolled = true
+  return account
 }

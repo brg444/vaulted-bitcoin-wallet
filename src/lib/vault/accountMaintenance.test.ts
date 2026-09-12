@@ -264,3 +264,57 @@ it('rejects a second task owner and ignores journal events addressed to another 
   await vi.advanceTimersByTimeAsync(150)
   expect(work).toHaveBeenCalledOnce()
 })
+
+it('lets reconnection drain wallet consumers without waiting on its own task', async () => {
+  const scheduler = owner()
+  const reading = deferred<void>(),
+    stopping = deferred<void>()
+  const read = scheduler.observe('spending-balance', () => reading.promise, { intervalMs: Infinity })
+  const closed = vi.fn()
+  const reconnect = scheduler.observe(
+    'wallet-reconnect',
+    () =>
+      scheduler.withPaused(async () => {
+        closed()
+        await stopping.promise
+      }),
+    { intervalMs: Infinity, events: [] },
+  )
+  const consumer = read.refresh()
+  await Promise.resolve()
+  const replacement = reconnect.refresh()
+  await Promise.resolve()
+  expect(closed).not.toHaveBeenCalled()
+  reading.resolve()
+  await consumer
+  await vi.advanceTimersByTimeAsync(0)
+  expect(closed).toHaveBeenCalledOnce()
+  const fresh = vi.fn(async () => 42)
+  const savings = scheduler.observe('savings-balance', fresh, { intervalMs: Infinity })
+  const queued = savings.refresh()
+  await Promise.resolve()
+  expect(fresh).not.toHaveBeenCalled()
+  stopping.resolve()
+  await replacement
+  expect(await queued).toBe(42)
+  expect(fresh).toHaveBeenCalledOnce()
+})
+
+it('schedules bounded retry demand and dynamic intervals on its existing clock', async () => {
+  const scheduler = owner()
+  let next = 1000
+  const run = vi.fn(async () => undefined)
+  const task = scheduler.observe('savings-balance', run, { intervalMs: () => next })
+  await task.refresh()
+  expect(vi.getTimerCount()).toBe(1)
+  next = Infinity
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(run).toHaveBeenCalledTimes(2)
+  expect(vi.getTimerCount()).toBe(0)
+  task.request(4000)
+  await vi.advanceTimersByTimeAsync(3999)
+  expect(run).toHaveBeenCalledTimes(2)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(run).toHaveBeenCalledTimes(3)
+  expect(vi.getTimerCount()).toBe(0)
+})
