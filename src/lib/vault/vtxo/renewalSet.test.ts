@@ -14,7 +14,6 @@ import {
   spendingRenewalSetDigest,
   validateSpendingRenewalSet,
 } from './renewalSet'
-import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
 
 const owner = new Uint8Array(32).fill(1),
   scalar = new Uint8Array(32).fill(7)
@@ -50,12 +49,7 @@ describe('bounded all-program renewal sets using the installed SDK', () => {
   it('verifies the fixed cross-language set signature and digest', () => {
     expect(hex.encode(spendingRenewalSetDigest(setVector.set))).toBe(setVector.digest)
     expect(spendingRenewalSetBody(setVector.set)).toEqual(setVector.body)
-    expect(
-      validateSpendingRenewalSet(setVector.set, {
-        ...setVector.status,
-        templateVersion: LEDGER_NATIVE_TEMPLATE,
-      } as VaultStatus),
-    ).toEqual(setVector.set)
+    expect(validateSpendingRenewalSet(setVector.set, setVector.status as VaultStatus)).toEqual(setVector.set)
   })
   it.each(vectors)('prepares finite same-script authority for $name', async (vector) => {
     const f = await fixture(vector.status)

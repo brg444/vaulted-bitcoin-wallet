@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { POLICY_VERSION } from './constants'
-import { SAVINGS_TEMPLATE } from './program/constants'
+import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import {
   addressPinStoreKey,
   bindStatusToLocalPin,
@@ -63,7 +63,7 @@ function sampleStatus(over: Partial<VaultStatus> = {}): VaultStatus {
     clientOrigin: 'https://vault.example',
     rpId: 'vault.example',
     vaultId: VAULT_ID,
-    templateVersion: SAVINGS_TEMPLATE,
+    templateVersion: LEDGER_NATIVE_TEMPLATE,
     policyVersion: POLICY_VERSION,
     protectionTier: 'standard',
     savingsAddress: 'tb1psavings',

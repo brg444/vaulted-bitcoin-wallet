@@ -18,7 +18,6 @@ import { getLogs } from '../lib/logs'
 import { ENROLL_STORE, SELECTED_VAULT_STORE, SESSION_LOCK_STORE } from '../lib/vault/enrollmentStore'
 import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP } from '../lib/vault/lightningTestUtils'
 import { MUTINYNET_LIGHTNING_SOLVER } from '../lib/vault/lightningConfig'
-import { SAVINGS_TEMPLATE } from '../lib/vault/program/constants'
 import { emptySetupPlan, SETUP_STORE_KEY } from '../lib/vault/setupPlan'
 import type { VaultStatus } from '../lib/vault/types'
 import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
@@ -186,7 +185,7 @@ const status: VaultStatus = {
   clientOrigin: 'https://vault.test',
   rpId: 'vault.test',
   vaultId: 'vault-a',
-  templateVersion: SAVINGS_TEMPLATE,
+  templateVersion: LEDGER_NATIVE_TEMPLATE,
   policyVersion: POLICY_VERSION,
   protectionTier: 'standard',
   savingsAddress: '',
@@ -386,26 +385,28 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     expect(mocks.ledgerApprove).not.toHaveBeenCalled()
   })
 
-  it.each([SAVINGS_TEMPLATE, 'phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2', 'unknown'])(
-    'rejects retired or unknown Savings before signing: %s',
-    async (templateVersion) => {
-      expect(templateVersion).not.toBe(LEDGER_NATIVE_TEMPLATE)
-      await openLedgerSavings(templateVersion)
-      fireEvent.click(screen.getByText('Review'))
-      await waitFor(() =>
-        expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
-      )
-      fireEvent.click(screen.getByText('Approve'))
-      await waitFor(() =>
-        expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
-      )
-      expect(mocks.ledgerReview).not.toHaveBeenCalled()
-      expect(mocks.ledgerApprove).not.toHaveBeenCalled()
-      expect(mocks.unlock).not.toHaveBeenCalled()
-      expect(mocks.send).not.toHaveBeenCalled()
-      expect(mocks.bitcoinSend).not.toHaveBeenCalled()
-    },
-  )
+  it.each([
+    'phone-hww-recovery-savings-v1',
+    'phone-connector-recovery-savings-v1',
+    'phone-connector-recovery-savings-v2',
+    'unknown',
+  ])('rejects retired or unknown Savings before signing: %s', async (templateVersion) => {
+    expect(templateVersion).not.toBe(LEDGER_NATIVE_TEMPLATE)
+    await openLedgerSavings(templateVersion)
+    fireEvent.click(screen.getByText('Review'))
+    await waitFor(() =>
+      expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
+    )
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() =>
+      expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
+    )
+    expect(mocks.ledgerReview).not.toHaveBeenCalled()
+    expect(mocks.ledgerApprove).not.toHaveBeenCalled()
+    expect(mocks.unlock).not.toHaveBeenCalled()
+    expect(mocks.send).not.toHaveBeenCalled()
+    expect(mocks.bitcoinSend).not.toHaveBeenCalled()
+  })
 
   it('uses shared Bitcoin review and keeps Light Savings watch-only', async () => {
     const record = { enrollment: sharedSpendingEnrollment(), descriptor: sharedSpendingDescriptor }

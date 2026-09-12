@@ -19,7 +19,6 @@ import {
   type SpendingPolicy,
   validateSpendingPolicy,
 } from '../../../lib/vault/spendingPolicy'
-import { SAVINGS_TEMPLATE } from '../../../lib/vault/program/constants'
 import type {
   VaultEnrollStartResponse,
   VaultMutationSuccess,
@@ -129,7 +128,7 @@ function publicStatus() {
     network: 'mutinynet',
     clientOrigin: ORIGIN,
     rpId: RP_ID,
-    templateVersion: SAVINGS_TEMPLATE,
+    templateVersion: SPENDING_ONLY_TEMPLATE,
     policyVersion: POLICY_VERSION,
     enrollmentMode: 'token',
     spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
@@ -171,9 +170,9 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
     await this.page.route('**/ready', (route) =>
       json(route, {
         ok: true,
-        schema: 4,
+        schema: 12,
         network: 'mutinynet',
-        enrollTemplate: SAVINGS_TEMPLATE,
+        enrollTemplate: SPENDING_ONLY_TEMPLATE,
         arkadeOrigin: 'configured',
         arkadeVersion: FIXTURE_IDENTITIES.arkadeCosigner.version,
       }),

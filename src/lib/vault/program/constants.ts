@@ -1,6 +1,3 @@
-export const PROGRAM_SCHEMA = 'arkade-vault/savings-v1'
-export const SAVINGS_TEMPLATE = 'phone-hww-recovery-savings-v1'
-
 export const PROGRAM_CSV = {
   hardware: 6,
   phone: 144,

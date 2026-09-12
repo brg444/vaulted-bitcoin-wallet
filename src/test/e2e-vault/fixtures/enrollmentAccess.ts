@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { POLICY_VERSION } from '../../../lib/vault/constants'
-import { SAVINGS_TEMPLATE } from '../../../lib/vault/program/constants'
+import { SPENDING_ONLY_TEMPLATE } from '../../../lib/vault/spendingEnrollment'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../../../lib/vault/spendingPolicy'
 import { BOARDING_PROGRAM } from '../../../lib/vault/vtxo/board'
 
@@ -14,7 +14,7 @@ export async function mockEnrollmentAccess(page: Page, initial: 'open' | 'token'
         network: 'mutinynet',
         clientOrigin: url.origin,
         rpId: url.hostname,
-        templateVersion: SAVINGS_TEMPLATE,
+        templateVersion: SPENDING_ONLY_TEMPLATE,
         policyVersion: POLICY_VERSION,
         enrollmentMode: mode,
         supportedSetups: ['light'],

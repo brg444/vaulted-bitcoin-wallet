@@ -663,9 +663,9 @@ describe('gateway response cache policy', () => {
         new Response(
           JSON.stringify({
             ok: true,
-            schema: 1,
+            schema: 12,
             network: 'mainnet',
-            enrollTemplate: 'phone-hww-recovery-savings-v1',
+            enrollTemplate: 'vaulted-spending-v1',
             arkadeOrigin: privateOrigin,
             arkadeVersion: 'v1',
             debugEndpoint: privateOrigin,
@@ -679,9 +679,9 @@ describe('gateway response cache policy', () => {
     expect(result.response.statusCode).toBe(200)
     expect(JSON.parse(String(result.body()))).toEqual({
       ok: true,
-      schema: 1,
+      schema: 12,
       network: 'mainnet',
-      enrollTemplate: 'phone-hww-recovery-savings-v1',
+      enrollTemplate: 'vaulted-spending-v1',
       arkadeOrigin: 'configured',
       arkadeVersion: 'v1',
     })

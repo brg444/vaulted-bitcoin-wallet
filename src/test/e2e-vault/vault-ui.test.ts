@@ -7,7 +7,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { decodeVaultBip21 } from '../../lib/vault/bip21'
 import { POLICY_VERSION } from '../../lib/vault/constants'
-import { SAVINGS_TEMPLATE } from '../../lib/vault/program/constants'
+import { SPENDING_ONLY_TEMPLATE } from '../../lib/vault/spendingEnrollment'
 import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../../lib/vault/spendingPolicy'
 import { BOARDING_PROGRAM } from '../../lib/vault/vtxo/board'
@@ -164,9 +164,9 @@ async function installRoutes(page: Page, getStatus: () => VaultStatus | undefine
   await page.route('**/ready', (route) =>
     json(route, {
       ok: true,
-      schema: 11,
+      schema: 12,
       network: 'mutinynet',
-      enrollTemplate: SAVINGS_TEMPLATE,
+      enrollTemplate: SPENDING_ONLY_TEMPLATE,
       arkadeOrigin: OPERATOR_ORIGIN,
       arkadeVersion: 'e2e',
     }),
@@ -181,7 +181,7 @@ async function installRoutes(page: Page, getStatus: () => VaultStatus | undefine
       network: 'mutinynet',
       clientOrigin: APP_ORIGIN,
       rpId: 'localhost',
-      templateVersion: SAVINGS_TEMPLATE,
+      templateVersion: SPENDING_ONLY_TEMPLATE,
       policyVersion: POLICY_VERSION,
       enrollmentMode: 'token',
       supportedSetups: ['light', 'standard', 'advanced'],

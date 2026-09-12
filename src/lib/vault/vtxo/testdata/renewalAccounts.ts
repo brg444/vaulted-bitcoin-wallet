@@ -14,9 +14,9 @@ export const renewalAccounts = (['mainnet', 'mutinynet'] as const).flatMap((netw
     }),
   },
   ...expectedVectors
-    .filter((v) => v.status.network === network && v.status.templateVersion === 'phone-hww-recovery-savings-v1')
+    .filter((v) => v.status.network === network && v.status.templateVersion === LEDGER_NATIVE_TEMPLATE)
     .map((v) => ({
       name: `${network}-${v.context.protectionTier}-${LEDGER_NATIVE_TEMPLATE}`,
-      status: { ...v.status, templateVersion: LEDGER_NATIVE_TEMPLATE } as VaultStatus,
+      status: v.status as VaultStatus,
     })),
 ])

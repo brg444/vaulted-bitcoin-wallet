@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 import expectedVectors from './testdata/renewal-context-v1.json'
 import { sharedSpendingStatusForNetwork } from './testdata/sharedSpending'
 import { networkPins } from '../networkPins'
-import { SAVINGS_TEMPLATE } from '../program/constants'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../spendingPolicy'
 import type { VaultStatus } from '../types'
 import { VaultPolicyV1Script } from './script'
@@ -70,7 +69,7 @@ const fixtures = (['mainnet', 'mutinynet'] as const).flatMap((network) => {
 describe('shared Spending renewal identity', () => {
   it.each([
     'vaulted-light-v1',
-    SAVINGS_TEMPLATE,
+    'phone-hww-recovery-savings-v1',
     'phone-connector-recovery-savings-v1',
     'phone-connector-recovery-savings-v2',
   ])('rejects the retired renewal program %s', (templateVersion) => {
@@ -123,16 +122,13 @@ describe('shared Spending renewal identity', () => {
     expect(guardianRenewalContextDigest(fixtures[1])).not.toBe(guardianRenewalContextDigest(fixtures[2]))
   })
 
-  it.each(expectedVectors.filter((vector) => vector.status.templateVersion === SAVINGS_TEMPLATE))(
-    'Ledger Spending preserves the existing $name context bytes and digest',
-    (vector) => {
-      const status = { ...vector.status, templateVersion: LEDGER_NATIVE_TEMPLATE } as VaultStatus
-      expect(guardianRenewalContext(status)).toEqual(vector.context)
-      expect(guardianRenewalContextDigest(status)).toBe(vector.descriptorHash)
-      expect(() => guardianRenewalContext({ ...status, spendingArkScript: '5120' + '11'.repeat(32) })).toThrow()
-      expect(() => guardianRenewalContext({ ...status, spendingPolicyDigest: '00'.repeat(32) })).toThrow()
-    },
-  )
+  it.each(expectedVectors)('Ledger Spending preserves the existing $name context bytes and digest', (vector) => {
+    const status = vector.status as VaultStatus
+    expect(guardianRenewalContext(status)).toEqual(vector.context)
+    expect(guardianRenewalContextDigest(status)).toBe(vector.descriptorHash)
+    expect(() => guardianRenewalContext({ ...status, spendingArkScript: '5120' + '11'.repeat(32) })).toThrow()
+    expect(() => guardianRenewalContext({ ...status, spendingPolicyDigest: '00'.repeat(32) })).toThrow()
+  })
 
   it('matches the cross-language vectors', () => {
     const vectors = fixtures
@@ -143,19 +139,7 @@ describe('shared Spending renewal identity', () => {
         context: guardianRenewalContext(status),
         descriptorHash: guardianRenewalContextDigest(status),
       }))
-    expect(vectors).toEqual(
-      expectedVectors
-        .filter((v) => v.status.templateVersion === SAVINGS_TEMPLATE)
-        .map((v) =>
-          v.status.templateVersion === SAVINGS_TEMPLATE
-            ? {
-                ...v,
-                name: v.name.replace(SAVINGS_TEMPLATE, LEDGER_NATIVE_TEMPLATE),
-                status: { ...v.status, templateVersion: LEDGER_NATIVE_TEMPLATE },
-              }
-            : v,
-        ),
-    )
+    expect(vectors).toEqual(expectedVectors)
     expect(vectors).toHaveLength(4)
   })
 })

@@ -1,9 +1,8 @@
 import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from './spendingEnrollment'
 import { readBounded } from './bounded'
-import { POLICY_VERSION } from './constants'
+import { POLICY_VERSION, RUNTIME_SCHEMA_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
 import { authorizerWalletHref, requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
-import { SAVINGS_TEMPLATE } from './program/constants'
 import { bindStatusToLocalPin } from './pin'
 import type { VaultStatus, VaultStatusWire } from './types'
 import {
@@ -107,7 +106,7 @@ export async function fetchPublicStatus(signal?: AbortSignal): Promise<PublicAut
       }
     }
   }
-  if (body.templateVersion !== SAVINGS_TEMPLATE) throw new Error('template version is not this release')
+  if (body.templateVersion !== SPENDING_ONLY_TEMPLATE) throw new Error('template version is not this release')
   if (body.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   body.spendingPolicyCapabilities = requireCurrentSpendingPolicyCapabilities(body.spendingPolicyCapabilities)
   return body
@@ -143,7 +142,10 @@ function requireReadyStatus(value: unknown): VaultReadyStatus {
     } catch {
       throw new VaultReadinessResponseError('unsupported readiness network')
     }
-    if (status.enrollTemplate !== SAVINGS_TEMPLATE) {
+    if (status.schema !== RUNTIME_SCHEMA_VERSION) {
+      throw new VaultReadinessResponseError('readiness schema is not this release')
+    }
+    if (status.enrollTemplate !== SPENDING_ONLY_TEMPLATE) {
       throw new VaultReadinessResponseError('readiness template is not this release')
     }
     if (!status.arkadeOrigin || !status.arkadeVersion) {

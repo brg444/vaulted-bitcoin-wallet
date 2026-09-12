@@ -5,7 +5,7 @@ import { ToastProvider } from '../components/Toast'
 import { pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
 import { ENROLL_STORE, SELECTED_VAULT_STORE } from '../lib/vault/enrollmentStore'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../lib/vault/spendingPolicy'
-import { SAVINGS_TEMPLATE } from '../lib/vault/program/constants'
+import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import type { VaultStatus } from '../lib/vault/types'
 import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
@@ -101,7 +101,7 @@ const STATUS: VaultStatus = {
   clientOrigin: 'https://vault.test',
   rpId: 'vault.test',
   vaultId: 'vault-a',
-  templateVersion: SAVINGS_TEMPLATE,
+  templateVersion: LEDGER_NATIVE_TEMPLATE,
   policyVersion: 'policy-v1',
   protectionTier: 'standard',
   savingsAddress: 'tb1psavings',

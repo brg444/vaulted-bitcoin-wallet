@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { POLICY_VERSION } from './constants'
 import { vaultCosignerClient, type VaultEnrollmentRequest, type VaultSessionAssertion } from './cosignerClient'
-import { SAVINGS_TEMPLATE } from './program/constants'
+import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES, defaultSpendingPolicy, spendingPolicyDigest } from './spendingPolicy'
 
@@ -62,7 +62,7 @@ describe('VaultCosignerClient route compatibility', () => {
             network: 'mutinynet',
             clientOrigin: 'https://vault.example',
             rpId: 'vault.example',
-            templateVersion: SAVINGS_TEMPLATE,
+            templateVersion: SPENDING_ONLY_TEMPLATE,
             policyVersion: POLICY_VERSION,
             protectionTier: 'standard',
             enrollmentMode: 'invite',

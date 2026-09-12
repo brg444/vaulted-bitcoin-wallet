@@ -5,7 +5,7 @@ import { ToastProvider } from '../../components/Toast'
 import ledgerVectors from '../../lib/vault/program/ledger-key-vectors.json'
 import { VaultProvider } from '../../providers/vault'
 import VaultApp from '../../VaultApp'
-import { SAVINGS_TEMPLATE } from '../../lib/vault/program/constants'
+import { SPENDING_ONLY_TEMPLATE } from '../../lib/vault/spendingEnrollment'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../../lib/vault/spendingPolicy'
 
 vi.mock('../../lib/vault/status', async (original) => ({
@@ -14,7 +14,7 @@ vi.mock('../../lib/vault/status', async (original) => ({
     network: 'mutinynet',
     clientOrigin: location.origin,
     rpId: location.hostname,
-    templateVersion: SAVINGS_TEMPLATE,
+    templateVersion: SPENDING_ONLY_TEMPLATE,
     policyVersion: 'vault-spending-policy-v1',
     enrollmentMode: 'open',
     spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,

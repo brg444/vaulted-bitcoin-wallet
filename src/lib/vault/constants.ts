@@ -2,6 +2,7 @@ import { configuredReleaseNetwork } from './network'
 export { SUPPORTED_NETWORKS, isSupportedVaultNetwork, requireSupportedVaultNetwork, type VaultNetwork } from './network'
 
 export const POLICY_VERSION = 'vault-spending-policy-v1'
+export const RUNTIME_SCHEMA_VERSION = 12
 
 export const TX_RECIPIENT_CAP_SATS = 50_000
 export const PERIOD_ALLOWANCE_SATS = 100_000

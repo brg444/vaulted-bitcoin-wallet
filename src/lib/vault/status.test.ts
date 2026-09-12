@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { POLICY_VERSION } from './constants'
 import { pinEnrolledStatus } from './pin'
-import { SAVINGS_TEMPLATE } from './program/constants'
+import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 import {
   fetchPublicStatus,
   fetchVaultReadiness,
@@ -32,6 +32,8 @@ beforeAll(async () => {
 afterEach(() => {
   localStorage.clear()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  vi.resetModules()
 })
 
 type CompatibleStatusWire = VaultStatusWire & { recoveryPub?: string }
@@ -136,6 +138,37 @@ describe('status identity binding', () => {
 })
 
 describe('pingVaultService', () => {
+  it.each(['mainnet', 'mutinynet'])('accepts the shared Spending handshake in the %s release', async (network) => {
+    vi.stubEnv('VITE_VAULT_RELEASE_NETWORK', network)
+    const { fetchPublicStatus: fetchStatus } = await import('./status')
+    const { CURRENT_SPENDING_POLICY_CAPABILITIES: capabilities } = await import('./spendingPolicy')
+    const current = {
+      network,
+      clientOrigin: 'https://vault.example',
+      rpId: 'vault.example',
+      templateVersion: SPENDING_ONLY_TEMPLATE,
+      policyVersion: POLICY_VERSION,
+      enrollmentMode: 'token',
+      spendingPolicyCapabilities: capabilities,
+      supportedSetups: ['light', 'standard', 'advanced'],
+      ledgerSavingsCapability: { version: 1, templateVersion: LEDGER_NATIVE_TEMPLATE },
+    }
+    const fetch = vi.fn(async () => new Response(JSON.stringify(current), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(fetchStatus()).resolves.toEqual(current)
+    for (const templateVersion of [
+      'vaulted-light-v1',
+      'phone-hww-recovery-savings-v1',
+      'phone-connector-recovery-savings-v1',
+      'phone-connector-recovery-savings-v2',
+      LEDGER_NATIVE_TEMPLATE,
+      'unknown',
+    ]) {
+      fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...current, templateVersion }), { status: 200 }))
+      await expect(fetchStatus()).rejects.toThrow('template version is not this release')
+    }
+  })
+
   it('is online when public status answers this release', async () => {
     vi.stubGlobal(
       'fetch',
@@ -146,7 +179,7 @@ describe('pingVaultService', () => {
               network: 'mutinynet',
               clientOrigin: 'https://vault.example',
               rpId: 'vault.example',
-              templateVersion: SAVINGS_TEMPLATE,
+              templateVersion: SPENDING_ONLY_TEMPLATE,
               policyVersion: POLICY_VERSION,
               enrollmentMode: 'invite',
               spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
@@ -168,7 +201,7 @@ describe('pingVaultService', () => {
               network: 'bitcoin',
               clientOrigin: 'https://vault.example',
               rpId: 'vault.example',
-              templateVersion: SAVINGS_TEMPLATE,
+              templateVersion: SPENDING_ONLY_TEMPLATE,
               policyVersion: POLICY_VERSION,
               enrollmentMode: 'invite',
               spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
@@ -195,9 +228,9 @@ describe('pingVaultService', () => {
 describe('Vault readiness', () => {
   const ready = {
     ok: true,
-    schema: 7,
+    schema: 12,
     network: 'mutinynet',
-    enrollTemplate: SAVINGS_TEMPLATE,
+    enrollTemplate: SPENDING_ONLY_TEMPLATE,
     arkadeOrigin: 'https://mutinynet.arkade.sh',
     arkadeVersion: '0.4.65',
   }
@@ -208,6 +241,29 @@ describe('Vault readiness', () => {
       vi.fn(async () => new Response(JSON.stringify(ready), { status: 200 })),
     )
     await expect(fetchVaultReadiness()).resolves.toEqual({ state: 'ready', status: ready })
+  })
+
+  it.each(['mainnet', 'mutinynet'])('binds %s readiness to the current schema and shared Spending', async (network) => {
+    vi.stubEnv('VITE_VAULT_RELEASE_NETWORK', network)
+    const { fetchVaultReadiness: fetchReady } = await import('./status')
+    const current = { ...ready, network }
+    const fetch = vi.fn(async () => new Response(JSON.stringify(current), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(fetchReady()).resolves.toEqual({ state: 'ready', status: current })
+    for (const schema of [0, 9, 11, 13]) {
+      fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...current, schema }), { status: 200 }))
+      await expect(fetchReady()).rejects.toThrow('readiness schema is not this release')
+    }
+    for (const enrollTemplate of [
+      'vaulted-light-v1',
+      'phone-hww-recovery-savings-v1',
+      'phone-connector-recovery-savings-v1',
+      'phone-connector-recovery-savings-v2',
+      LEDGER_NATIVE_TEMPLATE,
+    ]) {
+      fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...current, enrollTemplate }), { status: 200 }))
+      await expect(fetchReady()).rejects.toThrow('readiness template is not this release')
+    }
   })
 
   it('keeps a structured 503 error out of the display state', async () => {
