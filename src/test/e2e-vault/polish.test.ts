@@ -1,5 +1,4 @@
 import { expectWalletLayout } from './fixtures/layout'
-import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
@@ -26,10 +25,10 @@ async function expectNoBlockingAxeViolations(page: Page) {
 test('@polish welcome is accessible and visually stable', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('Everyday spending.', { exact: false })).toBeVisible()
-  await expect(page.getByText('Setup needs an invite and a compatible hardware wallet.')).toBeVisible()
+  await expect(page.getByText('A hardware wallet is optional with Light.')).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('welcome.png', { animations: 'disabled', fullPage: true })
+  await expect(page).toHaveScreenshot('welcome-with-spending.png', { animations: 'disabled', fullPage: true })
 
   await page.evaluate(
     async ({ fixture, modulePath }) => {
@@ -59,10 +58,10 @@ test('@polish welcome is accessible and visually stable', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Choose your Vault' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-how-it-works.png', { animations: 'disabled', fullPage: true })
+  await expect(page).toHaveScreenshot('protection-choice.png', { animations: 'disabled', fullPage: true })
 })
 
-test('@polish every onboarding decision is accessible and visually stable', async ({ context, page }) => {
+test('@polish shared Spending setup and Ledger entry are accessible and visually stable', async ({ context, page }) => {
   const cdp = await context.newCDPSession(page)
   await cdp.send('WebAuthn.enable')
   await cdp.send('WebAuthn.addVirtualAuthenticator', {
@@ -80,49 +79,49 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
   await page.getByRole('button', { name: 'Get started' }).click()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-protection-choice.png', { animations: 'disabled' })
-  await page.getByRole('button', { name: /^Advanced/ }).click()
-  await expect(page.getByRole('heading', { name: 'Hardware key', exact: true })).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'Wallet descriptor' })).toHaveCount(0)
-  await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-hardware-options.png', { animations: 'disabled', fullPage: true })
-  await page.getByRole('button', { name: 'Paste', exact: true }).click()
-  const hardwarePub = page.getByTestId('hardware-pub')
-  await hardwarePub.fill(CONNECTOR_TEST_DESCRIPTOR)
-  await hardwarePub.blur()
-  await expectNoBlockingAxeViolations(page)
-  await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-hardware.png', { animations: 'disabled', fullPage: true })
-
-  await page.getByRole('button', { name: 'Use this hardware key' }).click()
-  await expect(page.getByTestId('recovery-pub')).toBeVisible()
-  await expectNoBlockingAxeViolations(page)
-  await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-protection-advanced.png', { animations: 'disabled', fullPage: true })
-  await page.getByRole('button', { name: 'Change protection' }).click()
-  await page.getByRole('button', { name: /^Standard/ }).click()
-  await page.getByRole('button', { name: 'Use this hardware key' }).click()
+  for (const protection of ['Standard', 'Advanced']) {
+    await page.getByRole('button', { name: new RegExp(`^${protection}`) }).click()
+    await expect(page.getByRole('heading', { name: 'Protect Savings with Ledger' })).toBeVisible()
+    await expect(page.getByRole('textbox')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Connect Ledger' })).toBeDisabled()
+    await expect(
+      page.getByRole('status', { name: '' }).filter({ hasText: 'Ledger Savings setup is unavailable' }),
+    ).toBeVisible()
+    await expectNoBlockingAxeViolations(page)
+    await expectWalletLayout(page)
+    await expect(page).toHaveScreenshot(`ledger-entry-${protection.toLowerCase()}.png`, {
+      animations: 'disabled',
+      fullPage: true,
+    })
+    await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  }
+  await page.getByRole('button', { name: /^Light/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Spending limits', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-spending-limits.png', {
+  await expect(page).toHaveScreenshot('spending-limits.png', {
     animations: 'disabled',
     fullPage: true,
   })
   await expect(page.getByTestId('policy-tx-cap')).toBeVisible()
+  await page.getByTestId('policy-tx-cap').fill('125000')
+  await page.getByTestId('policy-period-allowance').fill('375000')
+  await page.getByTestId('policy-period-allowance').blur()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-spending-limits-custom.png', {
+  await expect(page).toHaveScreenshot('spending-limits-custom.png', {
     animations: 'disabled',
     fullPage: true,
   })
   await page.getByRole('button', { name: 'Review setup' }).click()
 
   await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
+  await expect(page.getByText('125,000 sats', { exact: true })).toBeVisible()
+  await expect(page.getByText('375,000 sats', { exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-review.png', { animations: 'disabled', fullPage: true })
+  await expect(page).toHaveScreenshot('spending-review.png', { animations: 'disabled', fullPage: true })
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: 'Continue' }).click()
 
@@ -130,7 +129,7 @@ test('@polish every onboarding decision is accessible and visually stable', asyn
   await expect(page.getByTestId('enrollment-token')).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('onboarding-device.png', { animations: 'disabled', fullPage: true })
+  await expect(page).toHaveScreenshot('spending-device.png', { animations: 'disabled', fullPage: true })
 })
 
 test('@polish render failures are safe, accessible, and visually stable', async ({ page }) => {

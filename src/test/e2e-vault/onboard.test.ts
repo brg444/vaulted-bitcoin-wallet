@@ -1,4 +1,3 @@
-import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import { expect, test, type Page } from '@playwright/test'
 
@@ -7,12 +6,7 @@ async function setupToThisDevice(page: Page) {
   await expect(page.getByRole('heading', { name: /Everyday spending/ })).toBeVisible()
   await page.getByRole('button', { name: 'Get started' }).click()
 
-  await page.getByRole('button', { name: /^Standard/ }).click()
-
-  await expect(page.getByRole('heading', { name: 'Add your hardware key' })).toBeVisible()
-  await page.getByRole('button', { name: 'Paste', exact: true }).click()
-  await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
-  await page.getByRole('button', { name: 'Use this hardware key' }).click()
+  await page.getByRole('button', { name: /^Light/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Set your spending limits' })).toBeVisible()
   await page.getByRole('button', { name: 'Review setup' }).click()

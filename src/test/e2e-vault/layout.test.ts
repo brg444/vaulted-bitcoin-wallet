@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
-import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import { expectWalletLayout } from './fixtures/layout'
 
 for (const width of [320, 375]) {
@@ -13,29 +12,33 @@ for (const width of [320, 375]) {
       await expectWalletLayout(page, true)
       await page.getByRole('button', { name: 'Get started', exact: true }).click()
       await expectWalletLayout(page, true)
-      await page.getByRole('button', { name: /^Standard/ }).click()
-      await expectWalletLayout(page, true)
-      await expect(page.getByRole('textbox', { name: 'Wallet descriptor' })).toHaveCount(0)
-      await page.getByRole('button', { name: 'Paste', exact: true }).click()
-      const descriptor = page.getByRole('textbox', { name: 'Wallet descriptor' })
-      await descriptor.fill(CONNECTOR_TEST_DESCRIPTOR)
-      const style = await descriptor.evaluate((el) => {
-        const css = getComputedStyle(el)
+      for (const protection of ['Standard', 'Advanced']) {
+        await page.getByRole('button', { name: new RegExp(`^${protection}`) }).click()
+        await expect(page.getByRole('heading', { name: 'Protect Savings with Ledger' })).toBeVisible()
+        await expect(page.getByRole('textbox')).toHaveCount(0)
+        await expect(page.getByRole('button', { name: 'Connect Ledger' })).toBeVisible()
+        await expectWalletLayout(page)
+        await page.getByRole('button', { name: 'Go back', exact: true }).click()
+      }
+      await page.getByRole('button', { name: /^Light/ }).click()
+      const paymentLimit = page.getByRole('textbox', { name: 'Per payment', exact: true })
+      await page.getByRole('textbox', { name: 'Rolling 24-hour limit', exact: true }).fill('375000')
+      await paymentLimit.fill('125000')
+      const style = await paymentLimit.evaluate((el) => {
+        const input = getComputedStyle(el)
+        const field = getComputedStyle(el.parentElement!)
         return {
-          font: parseFloat(css.fontSize),
-          border: css.borderTopStyle,
-          borderColor: css.borderTopColor,
-          expectedBorder: css.getPropertyValue('--qg-muted').trim(),
-          background: css.backgroundColor,
+          font: parseFloat(input.fontSize),
+          border: field.borderTopStyle,
+          borderColor: field.borderTopColor,
         }
       })
       expect(style.font).toBeGreaterThanOrEqual(16)
       expect(style.border).toBe('solid')
       expect(style.borderColor).toBe(theme === 'dark' ? 'rgb(170, 163, 173)' : 'rgb(105, 97, 89)')
       await expectWalletLayout(page)
-      await page.getByRole('button', { name: 'Use this hardware key' }).click()
-      await expectWalletLayout(page, true)
       await page.getByRole('button', { name: 'Review setup', exact: true }).click()
+      await expect(page.getByText('125,000 sats', { exact: true })).toBeVisible()
       await expectWalletLayout(page)
       await page.getByRole('checkbox').check()
       await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()
@@ -59,19 +62,18 @@ test('enlarged text and a short keyboard viewport preserve input and action acce
   await expectWalletLayout(page)
   await page.getByRole('button', { name: 'Get started', exact: true }).click()
   await expectWalletLayout(page)
-  await page.getByRole('button', { name: /^Standard/ }).click()
-  await expectWalletLayout(page)
-  await page.getByRole('button', { name: 'Paste', exact: true }).click()
+  await page.getByRole('button', { name: /^Light/ }).click()
   await expectWalletLayout(page)
   await page.evaluate(() => {
     document.documentElement.style.fontSize = ''
   })
   await page.setViewportSize({ width: 375, height: 360 })
-  const descriptor = page.getByRole('textbox', { name: 'Wallet descriptor' })
-  await descriptor.focus()
-  await descriptor.fill(CONNECTOR_TEST_DESCRIPTOR)
-  await expect(descriptor).toBeInViewport()
+  const paymentLimit = page.getByRole('textbox', { name: 'Per payment', exact: true })
+  await page.getByRole('textbox', { name: 'Rolling 24-hour limit', exact: true }).fill('375000')
+  await paymentLimit.focus()
+  await paymentLimit.fill('125000')
+  await expect(paymentLimit).toBeInViewport()
   await expectWalletLayout(page)
-  await page.getByRole('button', { name: 'Use this hardware key', exact: true }).click()
+  await page.getByRole('button', { name: 'Review setup', exact: true }).click()
   await expectWalletLayout(page)
 })

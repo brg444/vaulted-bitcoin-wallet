@@ -17,6 +17,7 @@ export async function mockEnrollmentAccess(page: Page, initial: 'open' | 'token'
         templateVersion: SAVINGS_TEMPLATE,
         policyVersion: POLICY_VERSION,
         enrollmentMode: mode,
+        supportedSetups: ['light'],
         spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
         vtxoBoardingProgram: BOARDING_PROGRAM,
       }),

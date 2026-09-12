@@ -1,7 +1,6 @@
 import { mockVaultBalances, openLight } from './fixtures/light-ui'
 import { expectWalletLayout } from './fixtures/layout'
 import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
-import { CONNECTOR_TEST_DESCRIPTOR } from './fixtures/connector'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test'
 import { readFile, writeFile } from 'node:fs/promises'
@@ -1449,14 +1448,17 @@ for (const theme of ['light', 'dark'] as const) {
     await page.evaluate((dark) => document.documentElement.classList.toggle('palette-dark', dark), theme === 'dark')
     await page.screenshot({ path: testInfo.outputPath('welcome.png'), animations: 'disabled' })
     await page.getByRole('button', { name: 'Get started' }).click()
-    await page.getByRole('button', { name: /^Advanced/ }).click()
-    await page.getByRole('button', { name: 'Paste', exact: true }).click()
-    await page.getByTestId('hardware-pub').fill(CONNECTOR_TEST_DESCRIPTOR)
-    await page.getByRole('button', { name: 'Use this hardware key' }).click()
-    await expect(page.getByRole('heading', { name: 'Recovery key', exact: true })).toBeVisible()
-    await page.screenshot({ path: testInfo.outputPath('protection.png'), animations: 'disabled' })
-    await expect(page.getByTestId('recovery-pub')).toBeVisible()
-    await page.screenshot({ path: testInfo.outputPath('protection-advanced.png'), animations: 'disabled' })
+    for (const protection of ['Standard', 'Advanced']) {
+      await page.getByRole('button', { name: new RegExp(`^${protection}`) }).click()
+      await expect(page.getByRole('heading', { name: 'Protect Savings with Ledger' })).toBeVisible()
+      await expect(page.getByRole('textbox')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Connect Ledger' })).toBeVisible()
+      await page.screenshot({
+        path: testInfo.outputPath(`ledger-${protection.toLowerCase()}.png`),
+        animations: 'disabled',
+      })
+      await page.getByRole('button', { name: 'Go back', exact: true }).click()
+    }
   })
 }
 
