@@ -104,7 +104,7 @@ test('fresh Light enrolls with shared boarding, reloads and recovers its Spendin
       expect(state!.status.templateVersion).toBe('vaulted-spending-v1')
       expect(state!.status.vtxoBoardingActive).toBe(true)
       expect(state!.status.vtxoBoardingAddress).toMatch(/^tb1p/)
-      expect(state!.status.lightDescriptor).toBeUndefined()
+      expect('lightDescriptor' in state!.status).toBe(false)
       expect(state!.status.passkeyLoginAvailable).toBe(true)
       await save('enrollment-status.json', state!.status)
       await page.getByRole('button', { name: 'Receive', exact: true }).click()

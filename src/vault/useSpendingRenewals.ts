@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { VaultStatus } from '../lib/vault/types'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
-import { LIGHT_PROFILE } from '../lib/vault/light/contract'
 import { clearSpendingRenewalReads, refreshSpendingRenewals } from '../lib/vault/vtxo/guardianRenewal'
 import {
   loadSpendingRenewals,
@@ -24,7 +23,7 @@ export function useSpendingRenewals(status: VaultStatus | null, enrollment: Enro
       running = false
     const load = async () => {
       const current = latest.current.status
-      if (!current?.enrolled || current.templateVersion === LIGHT_PROFILE) return
+      if (!current?.enrolled) return
       try {
         const saved = await loadSpendingRenewals(current)
         if (active) setJournal(saved)
@@ -34,13 +33,7 @@ export function useSpendingRenewals(status: VaultStatus | null, enrollment: Enro
     }
     const refresh = async () => {
       const current = latest.current
-      if (
-        running ||
-        !current.status?.enrolled ||
-        !current.enrollment ||
-        current.status.templateVersion === LIGHT_PROFILE
-      )
-        return
+      if (running || !current.status?.enrolled || !current.enrollment) return
       running = true
       try {
         const saved = await refreshSpendingRenewals(current.status, current.enrollment)

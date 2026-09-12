@@ -14,9 +14,8 @@ hardware compatibility or eliminate browser and service compromise risks.
   bound to one persisted operation.
 - Unknown submission outcomes reconcile against retained evidence. Inputs remain reserved and new payment authority remains unavailable solely
   because a request timed out.
-- Connector v2 verifies both hardware `SIGHASH_SINGLE` approvals and canonical
-  transaction layout in the wallet, Guardian, and Emulator. Imported signatures
-  cannot change the requested recipient or protected change.
+- Ledger Savings requires phone and Ledger approval of the complete normal
+  payment. Imported signatures cannot change the recipient or Savings change.
 - Per-vault worker scopes and storage isolate wallet identities. The worker
   boarding key stays scoped to the named program and fixed Spending destination.
 - Backup transport uses purpose-bound passkey sessions, authenticated records,
@@ -29,11 +28,11 @@ The gateway secret authenticates the web deployment to that service; user
 passkeys and transaction proofs provide separate authorization. Tenant and
 operation identifiers on capability-based read routes must remain private.
 
-Connector Savings relies on its online cosigners to enforce the external signer
-and transaction policy. The device key plus both online signing keys can bypass
-that policy. Bitcoin validates signatures and scripts but does not execute the
-Emulator's Arkade Script program. Older direct-hardware Savings has a different
-normal-spend leaf; app updates preserve the enrolled family.
+Normal Ledger Savings needs both the phone and Ledger keys. Its recovery
+leaves use a remaining user authority and the Guardian. Compromise of that
+user key together with the Guardian can bypass the pending stage through the
+recovery leaf. Device review of a normal payment cannot protect another
+signing path. See [Ledger recovery](ledger-guide.md) for those limits.
 
 A compromised web origin can attack an unlocked browser session. Passkeys do
 not protect the user from malicious application code running after unlock.

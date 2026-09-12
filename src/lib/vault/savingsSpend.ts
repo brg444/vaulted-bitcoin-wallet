@@ -1,6 +1,3 @@
-import { LIGHT_PROFILE } from './light/contract'
-import { unlockLightOwnerKey } from './light/keyBackup'
-import { requireLightStatus } from './light/status'
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
 import { bitcoinDustSats, scriptHexFromAddress } from './bitcoin'
@@ -135,16 +132,6 @@ async function unlockVaultPrf(rec: EnrollmentSecrets, status: VaultStatus): Prom
   return prf
 }
 
-async function spendingPhoneFromPrf(rec: EnrollmentSecrets, status: VaultStatus, prf: Uint8Array<ArrayBuffer>) {
-  if (status.templateVersion === LIGHT_PROFILE) {
-    const valid = requireLightStatus(status)
-    if (rec.vaultId !== valid.vaultId || rec.phoneBip340Pub !== valid.phoneBip340Pub)
-      throw new Error('Light enrollment does not match this vault')
-    return unlockLightOwnerKey(rec.lightKeyBackup, prf, 'passkey-prf', valid.lightDescriptor!)
-  }
-  return decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
-}
-
 function ledgerEnrollmentForUnlock(rec: EnrollmentSecrets, status: VaultStatus) {
   if (
     status.templateVersion !== LEDGER_NATIVE_TEMPLATE ||
@@ -168,7 +155,7 @@ export async function unlockPhoneBip340(rec: EnrollmentSecrets, status: VaultSta
   status = structuredClone(status)
   const prf = await unlockVaultPrf(rec, status)
   try {
-    return await spendingPhoneFromPrf(rec, status, prf)
+    return await decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
   } finally {
     zeroBytes(prf)
   }
@@ -203,7 +190,7 @@ export async function unlockVaultPhoneKeys(
   const prf = await unlockVaultPrf(rec, status)
   let spendingPhone: Uint8Array | undefined
   try {
-    spendingPhone = await spendingPhoneFromPrf(rec, status, prf)
+    spendingPhone = await decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
     if (
       enrolled &&
       (hex.encode(secp256k1.getPublicKey(spendingPhone, true)) !== rec.phoneBip340Pub ||

@@ -10,8 +10,8 @@ capabilities also depend on the connected Guardian and wallet build settings.
 | [Security](security.md)                            | Enforced checks and remaining trust assumptions                       |
 | [Recovery with saved files](emergency-recovery.md) | Backups, required keys, delays, and the recovery companion            |
 | [Light](light.md)                                  | Passkey setup, Spending, watch-only Savings, and owner recovery       |
-| [Automatic backup](light-automatic-backup.md)      | Encryption, synchronization, freshness, and passkey access            |
-| [Delegated renewal](light-delegated-renewal.md)    | Bounded renewal authority and recovery-data reconciliation            |
+| [Automatic backup](backup.md)      | Encryption, synchronization, freshness, and passkey access            |
+| [Delegated renewal](spending-renewal.md)    | Bounded renewal authority and recovery-data reconciliation            |
 | [Boarding](boarding.md)                            | Confirmed onchain deposits entering Spending                          |
 | [Ledger Savings](ledger-guide.md)            | Ledger registration, payment approval, and recovery                   |
 | [Lightning send](lightning.md)                     | Funding, payment state, and refunds                                   |

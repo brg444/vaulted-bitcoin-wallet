@@ -63,7 +63,8 @@ confirmation, ambiguous responses, restart, fee funding, timelock maturity, and
 recovery from saved data. Local fixtures alone cannot establish these outcomes
 on a deployed network.
 
-[Ledger tests](../tools/native-savings-signers/README.md),
-[Light qualification tools](../tools/light-qualification/README.md), and
-[renewal tools](../tools/guardian-delegation-qualification/README.md) document
-reproducible setups. Keep private keys and credentials out of test reports.
+[Ledger tests](../tools/native-savings-signers/README.md) document the retained
+signer setup. Shared Spending renewal tests cover both networks and every
+protection level, including native MuSig ancestry import and offline archive
+capture. Funded settlement requires separate qualification. Keep private keys
+and credentials out of test reports.

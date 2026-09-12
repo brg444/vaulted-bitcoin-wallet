@@ -12,9 +12,9 @@ enrolled script, receiver value, delegate key, fee, and dispatch deadline.
 Registration authority has a finite lifetime. A separate input-scoped deletion
 proof permits cleanup without authorizing a payment.
 
-Ordinary unlock, restoration, enrollment, and payment ceremonies can authorize
-eligible renewal work before the owner key is cleared. Recovery-only backup
-opening does not authorize renewals. Reserved payment inputs are excluded;
+An eligible local unlock can authorize renewal work before the owner key is
+cleared. A fresh sign-in whose assertion was already consumed uses a separate
+bounded setup ceremony. Recovery-only backup opening does not authorize renewals. Reserved payment inputs are excluded;
 new change waits for a subsequent owner ceremony. Work beyond the current
 scheduling budget remains pending for a subsequent owner ceremony.
 
@@ -50,7 +50,6 @@ The original passkey and complete saved paths remain necessary for the
 corresponding recovery flow.
 
 The server's [shared Spending API](https://github.com/brg444/arkade-runtime/blob/main/docs/spending-delegated-renewal.md)
-and [execution contract](https://github.com/brg444/arkade-runtime/blob/main/docs/light-delegated-renewal.md)
-describe request formats, limits, and durable states. Local SDK fixtures cover
+describes request formats, limits, and durable states. Local SDK fixtures cover
 request construction and validation, while live network settlement and physical
 signer compatibility require separate checks.

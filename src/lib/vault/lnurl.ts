@@ -9,7 +9,6 @@ import {
 } from '@arkade-os/sdk'
 import { exitArchiveProviders, packExitArchive } from './recovery/exitArchive'
 import { vaultExitRepository } from './vtxo/exitRepository'
-import { lightExitRepository } from './light/exitRepository'
 import { paymentHashOf, registerLockupContract, type AssetSwapRepository, type RfqQuote } from '@arkade-os/swap'
 import { authorizerBase } from './status'
 import { readBounded } from './bounded'
@@ -93,7 +92,7 @@ export function validateLightningAddress(value: LightningAddress, status: VaultS
   const descriptor =
     status.templateVersion === SPENDING_ONLY_TEMPLATE
       ? spendingEnrollmentHash(requireSpendingEnrollmentStatus(status))
-      : status.lightDescriptorHash
+      : undefined
   if (
     !/^v[0-9a-f]{16}$/.test(value.id) ||
     (name !== value.id && !validLightningName(name)) ||
@@ -302,9 +301,7 @@ async function receiveGraphCached(status: VaultStatus, value: unknown) {
   if (!value || typeof value !== 'object') return false
   const marker = value as { txid: string; vout: number }
   if (!/^[0-9a-f]{64}$/.test(marker.txid) || !Number.isSafeInteger(marker.vout) || marker.vout < 0) return false
-  const cache = status.lightDescriptor
-    ? lightExitRepository(status.lightDescriptor)
-    : vaultExitRepository(status.vaultId, status.network!)
+  const cache = vaultExitRepository(status.vaultId, status.network!)
   try {
     const branch = await cache.getBranch(marker)
     return (
@@ -358,9 +355,7 @@ async function importReceiveGraph(
     transactions: graph.transactions,
   }
   const local = exitArchiveProviders(archive, binding)
-  const cache = status.lightDescriptor
-    ? lightExitRepository(status.lightDescriptor)
-    : vaultExitRepository(status.vaultId, status.network!)
+  const cache = vaultExitRepository(status.vaultId, status.network!)
   try {
     const resolver = createExitChainResolver({ indexer: local.indexerProvider, repository: cache })
     await resolver.getVtxoChain(coin)

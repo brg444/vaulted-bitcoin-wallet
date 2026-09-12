@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { lightBackupScheduler } from './backupScheduler'
+import { recoveryBackupScheduler } from './backupScheduler'
 
 afterEach(() => vi.useRealTimers())
 describe('payment-driven backup scheduling', () => {
@@ -16,7 +16,7 @@ describe('payment-driven backup scheduling', () => {
       )
       .mockResolvedValue(undefined)
     const failed = vi.fn()
-    const scheduler = lightBackupScheduler(work, failed)
+    const scheduler = recoveryBackupScheduler(work, failed)
     scheduler.request()
     scheduler.request()
     scheduler.request()
@@ -34,7 +34,7 @@ describe('payment-driven backup scheduling', () => {
     vi.useFakeTimers()
     const work = vi.fn().mockRejectedValueOnce(new Error('missing checkpoint')).mockResolvedValue(undefined)
     const failed = vi.fn()
-    const scheduler = lightBackupScheduler(work, failed)
+    const scheduler = recoveryBackupScheduler(work, failed)
     scheduler.request()
     await vi.advanceTimersByTimeAsync(150)
     expect(failed).toHaveBeenCalledOnce()

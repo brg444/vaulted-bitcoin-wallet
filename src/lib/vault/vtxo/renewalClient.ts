@@ -3,8 +3,7 @@ import { hex } from '@scure/base'
 import { readBounded } from '../bounded'
 import { authorizerBase } from '../status'
 import type { VaultStatus } from '../types'
-import { guardianDelegationTerminal, validateDelegationStatusForBinding } from '../light/delegationClient'
-import type { GuardianDelegationStatus } from '../light/delegationStore'
+import { spendingRenewalTerminal, validateRenewalStatusBinding, type SpendingRenewalStatus } from './renewalStatus'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './renewalContext'
 import {
   canonicalHex,
@@ -15,8 +14,8 @@ import {
 } from './renewalRequest'
 import { validateSpendingRenewalSet, type SpendingRenewalSet } from './renewalSet'
 
-export { guardianDelegationTerminal }
-export type SpendingRenewalStatus = GuardianDelegationStatus & { program: string }
+export { spendingRenewalTerminal }
+export type { SpendingRenewalStatus }
 export interface SpendingRenewalRead {
   program: string
   descriptorHash: string
@@ -63,7 +62,7 @@ export function validateSpendingRenewalStatus(
   expectedId?: string,
 ): SpendingRenewalStatus {
   const context = guardianRenewalContext(status)
-  return validateDelegationStatusForBinding(
+  return validateRenewalStatusBinding(
     raw,
     {
       program: context.program,

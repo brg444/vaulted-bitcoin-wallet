@@ -15,7 +15,7 @@ vi.mock('../recovery/finalization', () => ({ retainFinalizationRecovery: vi.fn()
 import { retainFinalizationRecovery } from '../recovery/finalization'
 import { POLICY_VERSION } from '../constants'
 import { networkPins } from '../networkPins'
-import { SAVINGS_TEMPLATE } from '../program/constants'
+import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
 import type { VaultStatus } from '../types'
 import golden from './testdata/vault-policy-v1-tree.json'
 import {
@@ -162,7 +162,7 @@ function status(): VaultStatus {
     clientOrigin: 'https://vault.test',
     rpId: 'vault.test',
     vaultId: 'vault-a',
-    templateVersion: SAVINGS_TEMPLATE,
+    templateVersion: LEDGER_NATIVE_TEMPLATE,
     policyVersion: POLICY_VERSION,
     protectionTier: 'standard',
     savingsAddress: '',

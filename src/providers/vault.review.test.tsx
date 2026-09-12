@@ -69,8 +69,6 @@ vi.mock('../lib/vault/ledgerClient', async (original) => ({
   readLedgerSavingsAccount: mocks.readLedgerAccount,
 }))
 
-vi.mock('../lib/vault/light/guardianDelegation', () => ({ authorizeGuardianRenewals: mocks.authorizeRenewals }))
-
 vi.mock('../lib/vault/spendingBitcoinFunding', async (original) => ({
   ...(await original<typeof import('../lib/vault/spendingBitcoinFunding')>()),
   sendSpendingToBitcoin: mocks.bitcoinSend,

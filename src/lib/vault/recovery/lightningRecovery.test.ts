@@ -41,10 +41,10 @@ function destination(network: 'mainnet' | 'mutinynet') {
   ).address!
 }
 const signer =
-  (key = 3) =>
+  (secret = scalarSecret(3)) =>
   async ({ psbt }: { psbt: string }) => {
     const tx = Transaction.fromPSBT(hex.decode(psbt))
-    tx.sign(scalarSecret(key))
+    tx.sign(secret)
     return hex.encode(tx.toPSBT())
   }
 async function prepared() {
@@ -72,7 +72,7 @@ describe('saved sender-only Lightning recovery through the current SDK', () => {
             light: tier === 'light',
           })
           const chain = onchain()
-          const sign = vi.fn(signer(tier === 'light' ? 1 : 3))
+          const sign = vi.fn(signer(tier === 'light' ? new Uint8Array(32).fill(7) : scalarSecret(3)))
           const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Operator and Guardian unavailable'))
           try {
             const file = await prepareLightningRecovery(

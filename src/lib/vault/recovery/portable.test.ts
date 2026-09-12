@@ -176,6 +176,24 @@ describe('protected package checks', () => {
       vi.unstubAllGlobals()
     }
   })
+  it.each(['vaulted-light-recovery-package', 'vaulted-light-backup', 'vaulted-light-recovery'])(
+    'rejects retired %s before passkey, network or storage access',
+    async (name) => {
+      const { checkProtectedRecoveryPackage } = await import('./packageCheck')
+      const signing = await import('../savingsSpend')
+      const unlock = vi.spyOn(signing, 'unlockVaultPhoneKeys')
+      const network = vi.spyOn(globalThis, 'fetch')
+      const { IDBFactory } = await import('fake-indexeddb')
+      const storage = vi.spyOn(IDBFactory.prototype, 'open')
+      await expect(
+        checkProtectedRecoveryPackage({ name, version: 1 }, { vaultId: 'ab'.repeat(16), network: 'mutinynet' }),
+      ).rejects.toThrow()
+      expect(unlock).not.toHaveBeenCalled()
+      expect(network).not.toHaveBeenCalled()
+      expect(storage).not.toHaveBeenCalled()
+    },
+  )
+
   it('rejects another wallet before prompting and rejects a public/protected generation mismatch', async () => {
     const { file, key } = await fixture()
     const pkg = await createPortableRecoveryPackage(file, key)

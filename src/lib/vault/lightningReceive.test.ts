@@ -453,7 +453,7 @@ it.each(['light', 'standard', 'advanced'] as const)(
         destination,
         async ({ psbt }) => {
           const tx = Transaction.fromPSBT(hex.decode(psbt))
-          tx.sign(scalarSecret(tier === 'light' ? 1 : 3))
+          tx.sign(tier === 'light' ? new Uint8Array(32).fill(7) : scalarSecret(3))
           return hex.encode(tx.toPSBT())
         },
         limits,

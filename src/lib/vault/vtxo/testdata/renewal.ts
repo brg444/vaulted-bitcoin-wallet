@@ -2,9 +2,11 @@ import { getNetwork, type ArkInfo, type VirtualCoin } from '@arkade-os/sdk'
 import { p2tr } from '@scure/btc-signer'
 import { hex } from '@scure/base'
 import { networkPins } from '../../networkPins'
-import { testDescriptor } from './helpers'
-import { lightDelegationAddress, type GuardianDelegateInfo } from '../delegationRequest'
-export function delegationFixture(d = testDescriptor, now = Date.now()) {
+import type { VaultStatus } from '../../types'
+import { guardianRenewalContext, guardianRenewalContextDigest } from '../renewalContext'
+import { spendingDelegationAddress } from '../renewalRequest'
+export function renewalFixture(status: VaultStatus, now = Date.now()) {
+  const d = guardianRenewalContext(status)
   const pins = networkPins(d.network)
   const coin = {
     txid: '11'.repeat(32),
@@ -31,14 +33,17 @@ export function delegationFixture(d = testDescriptor, now = Date.now()) {
       txFeeRate: '1',
     },
   } as ArkInfo
-  const capability: GuardianDelegateInfo = {
-    enabled: true,
-    version: 1,
-    maxInputs: 1,
+  const capability = {
+    enabled: true as const,
+    version: 1 as const,
+    maxInputs: 1 as const,
+    maxPlans: 50 as const,
+    program: d.program,
+    descriptorHash: guardianRenewalContextDigest(status),
     maxScheduleSeconds: 2592000,
     pubkey: '02' + d.cosignerPub,
     fee: '0',
-    delegateAddress: lightDelegationAddress(d),
+    delegateAddress: spendingDelegationAddress(status),
   }
   return { d, coin, info, capability }
 }

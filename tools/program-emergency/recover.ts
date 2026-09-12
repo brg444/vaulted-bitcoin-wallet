@@ -24,7 +24,7 @@ import {
   validateVaultRecoveryFile,
   type VaultRecoveryFile,
 } from '../../src/lib/vault/recovery/backupCodec'
-import { requireConfirmedLightRecovery } from '../../src/lib/vault/light/recovery'
+import { requireConfirmedRecovery } from '../../src/lib/vault/recovery/execution'
 import { unlockPhoneBip340, unlockVaultPhoneKeys } from '../../src/lib/vault/savingsSpend'
 import { connectLedgerSavings } from '../../src/lib/vault/ledgerClient'
 import { signLedgerSavingsRecoveryWithDevice } from '../../src/lib/vault/program/ledgerRecoveryDevice'
@@ -977,7 +977,7 @@ el('execute').onclick = () =>
                 feeWallet,
                 controller.signal,
               )
-      await requireConfirmedLightRecovery(executor.pkg, executor, (event) => {
+      await requireConfirmedRecovery(executor.pkg, executor, (event) => {
         el('events').textContent += JSON.stringify(event) + '\n'
       })
       controller.signal.throwIfAborted()

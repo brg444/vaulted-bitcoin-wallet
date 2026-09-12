@@ -35,13 +35,15 @@ import {
   markVaultSettlementStreamParticipating,
   waitForVaultSettlementStream,
 } from './vtxo/settlementEventSource'
-import { flattenTree, serializeLightRenewalForfeit, serializeLightRenewalTree } from './light/renewal'
-import type {
-  LightRenewalFinalEvidence,
-  LightRenewalResponse,
-  LightRenewalRegisterRequest,
-  LightRenewalOperationRequest,
-} from './light/renewalTypes'
+import {
+  flattenTree,
+  serializeBitcoinForfeit,
+  serializeBitcoinBatchTree,
+  type BitcoinBatchFinalEvidence,
+  type BitcoinPaymentResponse,
+  type BitcoinRegisterRequest,
+  type BitcoinOperationRequest,
+} from './bitcoinBatchEvidence'
 import type { VaultStatus } from './types'
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import { networkPins } from './networkPins'
@@ -67,21 +69,21 @@ const terminal = (state: string) => ['released', 'cancelled', 'rejected'].includ
 const post = <T>(phase: string, body: unknown): Promise<T> => vaultPost(`/v1/vtxo/bitcoin/${phase}`, body)
 // The shared Guardian batch response omits receiverVout when it is zero.
 // Output identity and value are still checked against the retained signed tree.
-export function normalizeBitcoinResponse(response: LightRenewalResponse): LightRenewalResponse {
+export function normalizeBitcoinResponse(response: BitcoinPaymentResponse): BitcoinPaymentResponse {
   return response.receiverTxid && response.receiverVout === undefined ? { ...response, receiverVout: 0 } : response
 }
 const responsePost = (phase: string, body: unknown) =>
-  post<LightRenewalResponse>(phase, body).then(normalizeBitcoinResponse)
+  post<BitcoinPaymentResponse>(phase, body).then(normalizeBitcoinResponse)
 export const bitcoinPaymentClient = {
   prepare: (body: NonNullable<BitcoinPaymentJournal['prepareRequest']>) => {
     if (Object.hasOwn(body, 'reserveCount')) throw new Error('Unsupported Bitcoin payment request')
     validateBitcoinOutputs(body.outputs)
     return post<SpendingBitcoinPrepared>('prepare', body)
   },
-  register: (body: LightRenewalRegisterRequest) => responsePost('register', body),
-  final: (body: LightRenewalOperationRequest & { evidence: LightRenewalFinalEvidence }) => responsePost('final', body),
-  status: (body: LightRenewalOperationRequest) => responsePost('status', body),
-  release: (body: LightRenewalOperationRequest & { deleteIntent?: BitcoinPaymentJournal['deleteIntent'] }) =>
+  register: (body: BitcoinRegisterRequest) => responsePost('register', body),
+  final: (body: BitcoinOperationRequest & { evidence: BitcoinBatchFinalEvidence }) => responsePost('final', body),
+  status: (body: BitcoinOperationRequest) => responsePost('status', body),
+  release: (body: BitcoinOperationRequest & { deleteIntent?: BitcoinPaymentJournal['deleteIntent'] }) =>
     responsePost('release', body),
 }
 export async function supportsSpendingBitcoin(status: VaultStatus) {
@@ -92,7 +94,7 @@ export async function supportsSpendingBitcoin(status: VaultStatus) {
     throw new Error('Spending funding capability does not match this vault')
   return true
 }
-export async function checkSpendingBitcoin(status: VaultStatus): Promise<LightRenewalResponse | null> {
+export async function checkSpendingBitcoin(status: VaultStatus): Promise<BitcoinPaymentResponse | null> {
   return withVtxoSendLock(status.vaultId, async () => {
     const journal = readSpendingBitcoin(status)
     if (!journal) return null
@@ -131,7 +133,7 @@ export async function checkSpendingBitcoin(status: VaultStatus): Promise<LightRe
   })
 }
 /** Explicit cancellation also works before the expiry cleanup runs. */
-export async function cancelSpendingBitcoin(status: VaultStatus): Promise<LightRenewalResponse | null> {
+export async function cancelSpendingBitcoin(status: VaultStatus): Promise<BitcoinPaymentResponse | null> {
   return withVtxoSendLock(status.vaultId, async () => {
     const journal = readSpendingBitcoin(status)
     if (!journal) return null
@@ -147,12 +149,12 @@ export async function cancelSpendingBitcoin(status: VaultStatus): Promise<LightR
   })
 }
 class SpendingBitcoinProvider extends RestArkProvider {
-  finalEvidence?: Omit<LightRenewalFinalEvidence, 'ownerForfeitPsbt'>
+  finalEvidence?: Omit<BitcoinBatchFinalEvidence, 'ownerForfeitPsbt'>
   constructor(
     url: string,
     private journal: BitcoinPaymentJournal,
     private status: VaultStatus,
-    private authorization: Pick<LightRenewalRegisterRequest, 'assertion' | 'directSig'>,
+    private authorization: Pick<BitcoinRegisterRequest, 'assertion' | 'directSig'>,
     private signal: AbortSignal,
     private coinExpiresAt: Date,
   ) {
@@ -164,7 +166,7 @@ class SpendingBitcoinProvider extends RestArkProvider {
     const saved = readSpendingBitcoin(this.status)
     if (!saved || saved.operationId !== this.journal.operationId) throw new Error('Bitcoin payment journal changed')
     this.journal = saved
-    const evidence = { ...this.finalEvidence, ownerForfeitPsbt: serializeLightRenewalForfeit(forfeits[0]) }
+    const evidence = { ...this.finalEvidence, ownerForfeitPsbt: serializeBitcoinForfeit(forfeits[0]) }
     this.journal = { ...this.journal, stage: 'finalizing', final: evidence }
     saveBitcoinPayment(this.journal)
     const result = await bitcoinPaymentClient.final({
@@ -244,7 +246,7 @@ export async function sendSpendingToBitcoin(
   outputs: BitcoinPaymentOutput[],
   approve: (plan: SpendingBitcoinPlan) => Promise<boolean>,
   progress: (message: string) => void,
-): Promise<LightRenewalResponse> {
+): Promise<BitcoinPaymentResponse> {
   outputs = validateBitcoinOutputs(outputs)
   const bound = status
   const context = guardianRenewalContext(status)
@@ -462,7 +464,7 @@ export async function sendSpendingToBitcoin(
           batchId: event.id,
           batchExpiry,
           commitmentPsbt: event.commitmentTx,
-          vtxoTree: serializeLightRenewalTree(tree, unsignedTree),
+          vtxoTree: serializeBitcoinBatchTree(tree, unsignedTree),
           connectors: flattenTree(connectors),
         }
         await finalize(event, tree, connectors)
@@ -525,7 +527,7 @@ export async function sendSpendingToBitcoin(
   })
 }
 
-function retainBitcoinOutcome(status: VaultStatus, result: LightRenewalResponse) {
+function retainBitcoinOutcome(status: VaultStatus, result: BitcoinPaymentResponse) {
   const journal = readSpendingBitcoin(status)
   if (!journal) return
   if (terminal(result.state)) clearBitcoinPayment(journal)

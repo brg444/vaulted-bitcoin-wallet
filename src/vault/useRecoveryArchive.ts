@@ -10,7 +10,7 @@ import {
 } from '../lib/vault/recovery/cloudBackup'
 import { buildRecoveryHeader, encryptRecoveryBackup, recoveryBackupKey } from '../lib/vault/recovery/backupCodec'
 import { kitFromFacts } from '../lib/vault/program/kitBackup'
-import { lightBackupScheduler } from '../lib/vault/light/backupScheduler'
+import { recoveryBackupScheduler } from '../lib/vault/recovery/backupScheduler'
 import { subscribeVaultWalletEvents } from '../lib/vault/vtxo/walletWorker'
 import { createPortableRecoveryPackage } from '../lib/vault/recovery/portable'
 import { recordRecoveryFileCopy } from '../lib/vault/recovery/packageCheck'
@@ -61,7 +61,7 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
   useEffect(() => {
     if (!enrollment || !status?.enrolled || locked) return
     let active = true
-    const scheduler = lightBackupScheduler(
+    const scheduler = recoveryBackupScheduler(
       async () => {
         if (document.visibilityState !== 'hidden') await capture()
       },

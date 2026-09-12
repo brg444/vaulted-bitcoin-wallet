@@ -4,9 +4,7 @@ import { schnorr } from '@noble/curves/secp256k1.js'
 import { hex } from '@scure/base'
 import { describe, expect, it } from 'vitest'
 import expectedVectors from './testdata/renewal-context-v1.json'
-import { buildLightDescriptor, defaultLightPolicy } from '../light/contract'
-import { lightTestStatus } from '../light/testdata/helpers'
-import { requireLightStatus } from '../light/status'
+import { sharedSpendingStatusForNetwork } from './testdata/sharedSpending'
 import { networkPins } from '../networkPins'
 import { SAVINGS_TEMPLATE } from '../program/constants'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../spendingPolicy'
@@ -17,19 +15,10 @@ import { guardianRenewalContext, guardianRenewalContextDigest } from './renewalC
 const pub = (n: number) => schnorr.getPublicKey(new Uint8Array(32).fill(n))
 const fixtures = (['mainnet', 'mutinynet'] as const).flatMap((network) => {
   const pins = networkPins(network)
-  const light = requireLightStatus(
-    lightTestStatus(
-      buildLightDescriptor({
-        network,
-        vaultId: 'ab'.repeat(32),
-        ownerPub: hex.encode(pub(1)),
-        cosignerPub: hex.encode(pub(2)),
-        operatorPub: pins.operatorSignerPub.slice(2),
-        exitDelaySeconds: pins.policyExitDelay,
-        spendingPolicy: defaultLightPolicy(network),
-      }),
-    ),
-  )
+  const light = sharedSpendingStatusForNetwork(network, {
+    phoneSecret: new Uint8Array(32).fill(1),
+    cosignerSecret: new Uint8Array(32).fill(2),
+  })
   return [
     light,
     ...(['standard', 'advanced'] as const).flatMap((tier) =>
@@ -79,12 +68,14 @@ const fixtures = (['mainnet', 'mutinynet'] as const).flatMap((network) => {
 })
 
 describe('shared Spending renewal identity', () => {
-  it.each([SAVINGS_TEMPLATE, 'phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2'])(
-    'rejects the retired renewal program %s',
-    (templateVersion) => {
-      expect(() => guardianRenewalContext({ ...fixtures[1], templateVersion })).toThrow('Unsupported renewal program')
-    },
-  )
+  it.each([
+    'vaulted-light-v1',
+    SAVINGS_TEMPLATE,
+    'phone-connector-recovery-savings-v1',
+    'phone-connector-recovery-savings-v2',
+  ])('rejects the retired renewal program %s', (templateVersion) => {
+    expect(() => guardianRenewalContext({ ...fixtures[1], templateVersion })).toThrow('Unsupported renewal program')
+  })
 
   it.each(fixtures)('binds $network $protectionTier $templateVersion to the complete original tree', (status) => {
     const context = guardianRenewalContext(status)
@@ -120,8 +111,8 @@ describe('shared Spending renewal identity', () => {
     },
   )
 
-  it('retains the distinct Light descriptor ID contract', () => {
-    expect(() => guardianRenewalContext({ ...fixtures[0], vaultId: 'ab'.repeat(16) })).toThrow()
+  it('requires the exact current Spending enrollment identity', () => {
+    expect(() => guardianRenewalContext({ ...fixtures[0], vaultId: 'cd'.repeat(16) })).toThrow()
   })
 
   it('rejects tier, policy, and unnamed program substitutions', () => {
@@ -144,15 +135,17 @@ describe('shared Spending renewal identity', () => {
   )
 
   it('matches the cross-language vectors', () => {
-    const vectors = fixtures.map((status) => ({
-      name: `${status.network}-${status.protectionTier}-${status.templateVersion}`,
-      status,
-      context: guardianRenewalContext(status),
-      descriptorHash: guardianRenewalContextDigest(status),
-    }))
+    const vectors = fixtures
+      .filter((status) => status.protectionTier !== 'light')
+      .map((status) => ({
+        name: `${status.network}-${status.protectionTier}-${status.templateVersion}`,
+        status,
+        context: guardianRenewalContext(status),
+        descriptorHash: guardianRenewalContextDigest(status),
+      }))
     expect(vectors).toEqual(
       expectedVectors
-        .filter((v) => v.status.templateVersion !== 'phone-connector-recovery-savings-v1')
+        .filter((v) => v.status.templateVersion === SAVINGS_TEMPLATE)
         .map((v) =>
           v.status.templateVersion === SAVINGS_TEMPLATE
             ? {
@@ -163,6 +156,6 @@ describe('shared Spending renewal identity', () => {
             : v,
         ),
     )
-    expect(vectors).toHaveLength(6)
+    expect(vectors).toHaveLength(4)
   })
 })

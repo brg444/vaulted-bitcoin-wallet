@@ -23,8 +23,6 @@ const RATE_LIMIT = 60
 const LOCAL_CACHE_CONTROL = 'no-store, max-age=0'
 
 const FLAT_AUTHORIZER_PATHS: Record<string, string> = {
-  '/api/v1/connector-operation': '/v1/connector/operation',
-  '/api/v1/connector-withdraw-authorize': '/v1/connector/withdraw/authorize',
   '/api/v1/vtxo-operation': '/v1/vtxo/operation',
   '/api/v1/vtxo-reserve': '/v1/vtxo/reserve',
   '/api/v1/vtxo-abort': '/v1/vtxo/abort',
@@ -32,6 +30,53 @@ const FLAT_AUTHORIZER_PATHS: Record<string, string> = {
   '/api/v1/vtxo-checkpoints-authorize': '/v1/vtxo/checkpoints/authorize',
   '/api/v1/vtxo-finalize': '/v1/vtxo/finalize',
 }
+
+// Wallet-facing paths from the retained compiled runtime profile.
+const AUTHORIZER_PATHS = new Set([
+  '/health',
+  '/ready',
+  '/v1/clawback',
+  '/v1/enroll/finish',
+  '/v1/enroll/propose',
+  '/v1/enroll/session',
+  '/v1/enroll/start',
+  '/v1/initiate',
+  '/v1/invite',
+  '/v1/lnurl/challenge',
+  '/v1/lnurl/register',
+  '/v1/lnurl/revoke',
+  '/v1/map',
+  '/v1/passkey/binding',
+  '/v1/passkey/challenge',
+  '/v1/passkey/install',
+  '/v1/passkey/recover',
+  '/v1/recovery-archive/challenge',
+  '/v1/recovery-archive/open',
+  '/v1/recovery-archive/read',
+  '/v1/recovery-archive/write',
+  '/v1/status',
+  '/v1/vtxo/abort',
+  '/v1/vtxo/authorize',
+  '/v1/vtxo/bitcoin/final',
+  '/v1/vtxo/bitcoin/info',
+  '/v1/vtxo/bitcoin/prepare',
+  '/v1/vtxo/bitcoin/register',
+  '/v1/vtxo/bitcoin/release',
+  '/v1/vtxo/bitcoin/status',
+  '/v1/vtxo/board/final',
+  '/v1/vtxo/board/prepare',
+  '/v1/vtxo/board/register',
+  '/v1/vtxo/board/release',
+  '/v1/vtxo/checkpoints/authorize',
+  '/v1/vtxo/delegate/cancel',
+  '/v1/vtxo/delegate/info',
+  '/v1/vtxo/delegate/list',
+  '/v1/vtxo/delegate/schedule',
+  '/v1/vtxo/delegate/status',
+  '/v1/vtxo/finalize',
+  '/v1/vtxo/operation',
+  '/v1/vtxo/reserve',
+])
 
 const BOARD_PHASES = new Set(['prepare', 'register', 'release', 'final'])
 
@@ -54,7 +99,7 @@ export function allowAuthorizerPath(path: string): boolean {
   // can select a different upstream route after URL/ServeMux normalization.
   if (/[\\%?#\u0000-\u0020\u007f]/.test(path) || path.includes('//') || /(?:^|\/)\.{1,2}(?:\/|$)/.test(path))
     return false
-  return path === '/health' || path === '/ready' || path === '/v1' || path.startsWith('/v1/')
+  return AUTHORIZER_PATHS.has(path)
 }
 
 function requestHost(hostHeader: string | string[] | undefined): string {
@@ -115,8 +160,6 @@ function requestVaultId(method: string | undefined, pathAndQuery: string, body?:
     if (/[;#\u0000-\u0020\u007f]/.test(search) || /%(?![0-9a-f]{2})/i.test(search)) return null
     const query = new URLSearchParams('?' + search)
     // Match the Guardian read handlers; ignored aliases must not change the bucket.
-    if (path === '/v1/connector/operation')
-      return guardianTrimSpace(query.get('vaultId') || '') || guardianTrimSpace(query.get('vault') || '')
     if (path === '/v1/vtxo/operation') return guardianTrimSpace(query.get('vaultId') || '')
     if (path === '/v1/status') return guardianTrimSpace(query.get('vault') || '')
     if (path === '/v1/map') return query.get('vault') || ''
@@ -210,10 +253,7 @@ export function publicAuthorizerPath(url = ''): string {
     if (route === 'ready') return '/ready'
     if (route === 'enroll-session') return '/v1/enroll/session'
     const phase = params.get('phase') || ''
-    if (
-      (route === 'savings-setup' || route === 'bitcoin') &&
-      new Set(['info', 'prepare', 'register', 'final', 'status', 'release']).has(phase)
-    ) {
+    if (route === 'bitcoin' && new Set(['info', 'prepare', 'register', 'final', 'status', 'release']).has(phase)) {
       const vaultId = params.get('vaultId')
       return (
         `/v1/vtxo/${route}/${phase}` + (phase === 'info' && vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : '')
@@ -221,17 +261,9 @@ export function publicAuthorizerPath(url = ''): string {
     }
     if (route === 'vtxo-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
       return `/v1/vtxo/delegate/${phase}`
-    if (route === 'light-delegate' && new Set(['info', 'schedule', 'status', 'list', 'cancel']).has(phase))
-      return `/v1/light/delegate/${phase}`
-    if (route === 'light-renew' && new Set(['prepare', 'register', 'final', 'status', 'release']).has(phase))
-      return `/v1/light/renew/${phase}`
-    if (route === 'light-backup' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
-      return `/v1/light/backup/${phase}`
     if (route === 'lnurl' && new Set(['challenge', 'register', 'revoke']).has(phase)) return `/v1/lnurl/${phase}`
     if (route === 'recovery-archive' && new Set(['challenge', 'open', 'read', 'write']).has(phase))
       return `/v1/recovery-archive/${phase}`
-    if (route === 'light-enroll' && new Set(['start', 'propose', 'finish']).has(phase))
-      return `/v1/light/enroll/${phase}`
     if (route === 'board' && BOARD_PHASES.has(phase)) return `/v1/vtxo/board/${phase}`
     return raw + q
   }
@@ -353,10 +385,7 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
 
   let body: Buffer | undefined
   try {
-    body = await readBoundedRequest(
-      req,
-      /^\/v1\/(light\/backup|recovery-archive)\/write$/.test(pathOnly) ? 3_100_000 : MAX_GATEWAY_BYTES,
-    )
+    body = await readBoundedRequest(req, pathOnly === '/v1/recovery-archive/write' ? 3_100_000 : MAX_GATEWAY_BYTES)
   } catch {
     jsonError(res, 413, 'API request too large')
     return
@@ -396,9 +425,9 @@ export default async function handler(req: VercelLikeReq, res: VercelLikeRes) {
   try {
     payload = await readBoundedUpstream(
       upstream,
-      pathOnly === '/v1/light/delegate/status' || pathOnly === '/v1/vtxo/delegate/status'
+      pathOnly === '/v1/vtxo/delegate/status'
         ? 12_500_000
-        : /^\/v1\/(light\/backup|recovery-archive)\/(open|read|write)$/.test(pathOnly)
+        : /^\/v1\/recovery-archive\/(open|read|write)$/.test(pathOnly)
           ? 3_100_000
           : MAX_GATEWAY_BYTES,
     )

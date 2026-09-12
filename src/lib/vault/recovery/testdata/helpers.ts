@@ -22,7 +22,7 @@ import vectors from '../../program/ledger-key-vectors.json'
 import type { BoardingFinalRequest } from '../../cosignerClient'
 import { p2tr } from '@scure/btc-signer'
 import { packExitArchive } from '../exitArchive'
-import { sharedSpendingStatus } from '../../vtxo/testdata/sharedSpending'
+import { sharedSpendingStatus, sharedSpendingStatusForNetwork } from '../../vtxo/testdata/sharedSpending'
 import { spendingEnrollmentHash } from '../../spendingEnrollment'
 import { buildSpendingRecoveryDescriptor } from '../../program/spendingRecoveryDescriptor'
 import { vaultPolicyV1ScriptFromStatus } from '../../vtxo/spend'
@@ -168,8 +168,8 @@ export function ledgerRecoveryFacts(
   return { ...recoveryArchiveFixture(kit, status, spending), composite, family, board: boardingTree }
 }
 
-export function sharedSpendingRecoveryFixture(derivedBoardingPub?: string) {
-  const status = sharedSpendingStatus()
+export function sharedSpendingRecoveryFixture(derivedBoardingPub?: string, network?: 'mainnet' | 'mutinynet') {
+  const status = network ? sharedSpendingStatusForNetwork(network) : sharedSpendingStatus()
   if (derivedBoardingPub) {
     const prior = status.vtxoBoardingDescriptor!
     const board = createBoardingProgramScript(

@@ -23,7 +23,7 @@ import { networkPins } from '../networkPins'
 import { scriptHexFromAddress } from '../bitcoin'
 import { requireExitArchiveInfo } from '../recovery/exitArchive'
 import type { VaultStatus } from '../types'
-import { spendingScriptFromStatus } from './spend'
+import { vaultPolicyV1ScriptFromStatus } from './spend'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './renewalContext'
 
 export interface SpendingDelegateInfo extends DelegateInfo {
@@ -64,7 +64,7 @@ export function spendingDelegationAddress(status: VaultStatus) {
   const d = guardianRenewalContext(status)
   return new ArkAddress(
     hex.decode(d.operatorPub),
-    spendingScriptFromStatus(status).tweakedPublicKey,
+    vaultPolicyV1ScriptFromStatus(status).tweakedPublicKey,
     networkPins(d.network).arkHrp,
   ).encode()
 }
@@ -145,7 +145,7 @@ export function validateSpendingSchedule(r: SpendingScheduleRequest, descriptor:
   )
     throw new Error('Saved Guardian authorization changed')
   const message = JSON.parse(r.intent.message) as Intent.RegisterMessage
-  const script = spendingScriptFromStatus(descriptor)
+  const script = vaultPolicyV1ScriptFromStatus(descriptor)
   if (
     message.type !== 'register' ||
     !Number.isSafeInteger(message.valid_at) ||
@@ -322,7 +322,7 @@ export async function prepareSpendingDelegation(
     const expiresAt = Math.floor(Math.min(expiry / 1000 - 60, validAt + 86400))
     if (validAt <= Math.floor(now / 1000) || expiresAt <= validAt)
       throw new Error('Insufficient renewal scheduling window')
-    const script = spendingScriptFromStatus(descriptor)
+    const script = vaultPolicyV1ScriptFromStatus(descriptor)
     const annotated = {
       ...coin,
       contractScript: d.scriptPubKey,

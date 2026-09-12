@@ -1,14 +1,11 @@
 import { IndexedDBContractRepository } from '@arkade-os/sdk'
 import { IndexedDbAssetSwapRepository } from '@arkade-os/swap'
 import type { VaultStatus } from '../types'
-import { LIGHT_PROFILE, lightDescriptorDigest } from '../light/contract'
-import { lightExitRepository } from '../light/exitRepository'
-import { requireLightStatus } from '../light/status'
 import { vaultExitRepository } from '../vtxo/exitRepository'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 import { vaultLightningSwapStorageName } from '../lightningLifecycle'
 import {
-  spendingScriptFromStatus,
+  vaultPolicyV1ScriptFromStatus,
   exportSpendingRecoveryJournal,
   validateSpendingRecoveryJournal,
   type SpendingRecoveryJournal,
@@ -40,17 +37,14 @@ export interface RecoveryJournals {
   ledgerRecoveryJournal?: LedgerRecoveryJournal
 }
 export function recoveryLightningBinding(status: VaultStatus) {
-  const light = status.templateVersion === LIGHT_PROFILE ? requireLightStatus(status) : null
-  const kit = light ? null : kitFromFacts({ status })
-  if (!light && !kit) throw new Error('Missing recovery descriptor')
+  const kit = kitFromFacts({ status })
+  if (!kit) throw new Error('Missing recovery descriptor')
   return {
     vaultId: status.vaultId,
     network: status.network,
     phonePub: String(status.phoneBip340Pub || ''),
-    spendingScript: hex.encode(spendingScriptFromStatus(status).pkScript),
-    descriptorHash: light
-      ? lightDescriptorDigest(light.lightDescriptor!)
-      : vaultRecoveryBinding(kit!, status).descriptorHash,
+    spendingScript: hex.encode(vaultPolicyV1ScriptFromStatus(status).pkScript),
+    descriptorHash: vaultRecoveryBinding(kit, status).descriptorHash,
   }
 }
 export function validateRecoveryJournals(status: VaultStatus, data: RecoveryJournals) {
@@ -71,10 +65,7 @@ export async function captureRecoveryJournals(
 ): Promise<RecoveryJournals> {
   const contracts = new IndexedDBContractRepository(vaultWalletDatabase(status.vaultId))
   const swaps = new IndexedDbAssetSwapRepository(vaultLightningSwapStorageName(status.vaultId))
-  const virtualTxRepository =
-    status.templateVersion === LIGHT_PROFILE
-      ? lightExitRepository(requireLightStatus(status).lightDescriptor!)
-      : vaultExitRepository(status.vaultId, status.network)
+  const virtualTxRepository = vaultExitRepository(status.vaultId, status.network)
   try {
     const spendingJournal = await exportSpendingRecoveryJournal(status)
     const lightningJournal = await captureLightningRecoveryJournal({

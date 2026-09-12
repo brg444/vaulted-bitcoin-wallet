@@ -3,12 +3,11 @@ import { hex } from '@scure/base'
 import type { VaultStatus } from '../types'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
 import { networkPins } from '../networkPins'
-import { LIGHT_PROFILE } from '../light/contract'
 import { guardianRenewalContext } from './renewalContext'
 import { authorizeSpendingRenewals } from './guardianRenewal'
 import { createVtxoSpendUnlocker, listPersistedVtxoSpends, type VtxoSpendPasskey } from './spend'
 import { loadSpendingRenewals, saveSpendingRenewals } from './renewalStore'
-import { spendingRenewalInfo, guardianDelegationTerminal } from './renewalClient'
+import { spendingRenewalInfo, spendingRenewalTerminal } from './renewalClient'
 import { browserVaultLockManager, requireVaultLockManager } from './lock'
 
 async function recordFailure(status: VaultStatus, error: unknown) {
@@ -42,7 +41,6 @@ export async function renewFromLocalUnlock(
 
 /** Fresh sign-in has already consumed its login assertion; use a separate bounded ceremony. */
 export async function setupSpendingRenewals(status: VaultStatus, enrollment: EnrollmentSecrets) {
-  if (status.templateVersion === LIGHT_PROFILE) return
   try {
     const context = guardianRenewalContext(status)
     await spendingRenewalInfo(status)
@@ -71,7 +69,7 @@ export async function setupSpendingRenewals(status: VaultStatus, enrollment: Enr
           return (
             input?.txid === coin.txid &&
             input.vout === coin.vout &&
-            (!saved.status || !guardianDelegationTerminal(saved.status.state) || saved.status.state === 'confirmed')
+            (!saved.status || !spendingRenewalTerminal(saved.status.state) || saved.status.state === 'confirmed')
           )
         }),
     )

@@ -10,7 +10,6 @@ needed for its own signing or transaction role.
 | Scoped worker   | Persistent SDK wallet, contract and transaction repositories, VTXO updates, and boarding coordination                        |
 | Guardian        | Authenticated enrollment, policy ledger, constrained service signatures, recovery archives, and authorized renewal execution |
 | Arkade Operator | VTXO indexing, collaborative transactions, and Batch Output coordination                                                     |
-| Emulator        | Independently evaluates the named Savings connector program before providing its constrained signature                       |
 
 ## Source map
 
@@ -27,16 +26,15 @@ layout and accessibility checks.
 
 ## Keys and worker ownership
 
-A passkey PRF unwraps the device or Light owner key for a bounded operation.
+A passkey PRF unwraps the enrolled phone key for a bounded operation.
 The page clears unlocked key material afterward. Hardware and recovery keys
 stay in external signers; requests and replies exchange validated PSBTs.
 
 Each enrolled wallet uses scoped worker messages and isolated IndexedDB
-repositories. For full-wallet boarding, a separate deterministic key is
-provisioned after PRF unlock and remains in the worker's scoped storage. It
-cannot authorize an arbitrary recipient: boarding requires the Guardian and
-Operator and pays the enrolled Spending program. The Light worker holds public
-wallet data and rejects owner-signing requests.
+repositories. A separate boarding key is provisioned after PRF unlock and
+remains in the worker's scoped storage. Boarding requires the Guardian and
+Operator and pays the enrolled Spending program. The worker holds no phone
+signing key.
 
 The vendored SDK owns Wallet, Contract Manager, VTXO state, intent persistence,
 and batch coordination. Vaulted adapters enforce named program boundaries.
@@ -52,10 +50,10 @@ required pending-transaction proof. Ambiguous responses reconcile the exact
 operation and transaction; an unknown outcome does not authorize a replacement
 payment.
 
-Savings retains the enrollment-specific transaction and partial signatures.
-Connector v2 requests hardware approval first, then persists the completed
-candidate before device and service approval. [Programs](program.md) describes
-v1 compatibility and the v2 commitment rules.
+Ledger Savings retains the exact reviewed transaction through phone and Ledger
+approval. Imported signatures must match that candidate before submission;
+normal Savings approval does not use a signer reserve or a separate evaluator.
+See [programs](program.md) for the retained recovery authority.
 
 Outbound Lightning uses `@arkade-os/swap` for quotes, VHTLCs, and payment state.
 Funding passes through ordinary Spending authorization, while refunds require
@@ -73,5 +71,5 @@ session cannot authorize payment. Capture, revision checks, and the last
 complete archive prevent an incomplete update from silently replacing a
 complete copy. A closed browser cannot continuously upload new encrypted data.
 
-See [security](security.md), [backup synchronization](light-automatic-backup.md),
+See [security](security.md), [backup synchronization](backup.md),
 and [dependencies](upstream-alignment.md) for the corresponding boundaries.

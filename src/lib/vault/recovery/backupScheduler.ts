@@ -1,5 +1,5 @@
 /** Coalesce bursts, but never lose a receive/spend event during an upload. */
-export function lightBackupScheduler(work: () => Promise<void>, failed: (error: unknown) => void) {
+export function recoveryBackupScheduler(work: () => Promise<void>, failed: (error: unknown) => void) {
   let running = false
   let dirty = false
   let disposed = false

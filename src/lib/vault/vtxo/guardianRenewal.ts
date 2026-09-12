@@ -4,8 +4,7 @@ import { hex } from '@scure/base'
 import type { VaultStatus } from '../types'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
 import { networkPins } from '../networkPins'
-import { LIGHT_PROFILE } from '../light/contract'
-import { withoutRecovery } from '../light/delegationClient'
+import { withoutRecovery } from './renewalStatus'
 import { captureVaultRecoveryFile } from '../recovery/capture'
 import { validateExitArchive } from '../recovery/exitArchive'
 import { kitFromFacts } from '../program/kitBackup'
@@ -16,7 +15,7 @@ import { prepareSpendingDelegation, type SpendingDelegationPlan } from './renewa
 import { signSpendingRenewalSet } from './renewalSet'
 import { loadSpendingRenewals, saveSpendingRenewals, type SpendingRenewalJournal } from './renewalStore'
 import {
-  guardianDelegationTerminal,
+  spendingRenewalTerminal,
   listSpendingRenewals,
   requireSpendingRenewalMatchesPlan,
   spendingRenewalInfo,
@@ -53,7 +52,7 @@ function remember(journal: SpendingRenewalJournal, result: SpendingRenewalStatus
       'receiverSats',
     ] as const)
       if (prior[key] !== result[key]) throw new Error('Renewal history identity changed')
-    if (guardianDelegationTerminal(prior.state) && prior.state !== result.state)
+    if (spendingRenewalTerminal(prior.state) && prior.state !== result.state)
       throw new Error('Renewal history moved backward')
     for (const key of ['commitmentTxid', 'receiverTxid', 'receiverVout', 'receiverExpiresAt'] as const)
       if (prior[key] !== undefined && prior[key] !== result[key])
@@ -108,7 +107,6 @@ export async function authorizeSpendingRenewals(
   auth: VtxoSpendPasskey,
   canAuthorizeNew = true,
 ): Promise<SpendingRenewalJournal | null> {
-  if (status.templateVersion === LIGHT_PROFILE) throw new Error('Light retains its existing renewal lifecycle')
   const context = guardianRenewalContext(status),
     owner = Uint8Array.from(auth.phoneSecret)
   const epoch = epochs.get(status.vaultId) || 0
@@ -170,7 +168,7 @@ export async function authorizeSpendingRenewals(
             for (const result of page) if (journal.operations[result.operationId]) remember(journal, result, status)
             return page.filter(
               (s) =>
-                !guardianDelegationTerminal(s.state) ||
+                !spendingRenewalTerminal(s.state) ||
                 (s.state === 'confirmed' &&
                   !archivedReplacement(s) &&
                   !(liveCovered && spent.has(`${s.receiverTxid}:${s.receiverVout}`))),
@@ -182,7 +180,7 @@ export async function authorizeSpendingRenewals(
             if (
               saved.status &&
               !pendingSetIds.has(id) &&
-              guardianDelegationTerminal(saved.status.state) &&
+              spendingRenewalTerminal(saved.status.state) &&
               (saved.status.state !== 'confirmed' ||
                 archivedReplacement(saved.status) ||
                 (liveCovered && spent.has(`${saved.status.receiverTxid}:${saved.status.receiverVout}`)))
@@ -226,7 +224,7 @@ export async function authorizeSpendingRenewals(
                 return (
                   input &&
                   point(input) === point(coin) &&
-                  (!s.status || !guardianDelegationTerminal(s.status.state) || s.status.state === 'confirmed')
+                  (!s.status || !spendingRenewalTerminal(s.status.state) || s.status.state === 'confirmed')
                 )
               })
             )

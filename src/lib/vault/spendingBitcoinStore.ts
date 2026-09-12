@@ -5,7 +5,7 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
 import { renewalSigningJson } from './vtxo/renewalJson'
-import type { LightRenewalFinalEvidence, LightRenewalResponse } from './light/renewalTypes'
+import type { BitcoinBatchFinalEvidence, BitcoinPaymentResponse } from './bitcoinBatchEvidence'
 import type { VaultStatus } from './types'
 
 export interface BitcoinPaymentOutput {
@@ -53,8 +53,8 @@ export interface BitcoinPaymentJournal {
   stage: 'preparing' | 'prepared' | 'registering' | 'registered' | 'finalizing' | 'submitted' | 'confirmed'
   plan?: SpendingBitcoinPrepared
   deleteIntent?: { proof: string; message: string }
-  final?: LightRenewalFinalEvidence
-  receipt?: LightRenewalResponse
+  final?: BitcoinBatchFinalEvidence
+  receipt?: BitcoinPaymentResponse
   prepareRequest?: {
     vaultId: string
     operationId: string
@@ -164,7 +164,7 @@ export function clearBitcoinPayment(j: BitcoinPaymentJournal) {
     window.dispatchEvent(new Event(BITCOIN_PAYMENT_EVENT))
   }
 }
-export function validateBitcoinReceipt(r: LightRenewalResponse, j: BitcoinPaymentJournal, status: VaultStatus) {
+export function validateBitcoinReceipt(r: BitcoinPaymentResponse, j: BitcoinPaymentJournal, status: VaultStatus) {
   if (
     !['submitted', 'confirmed', 'uncertain'].includes(r.state) ||
     !canonicalHex(r.commitmentTxid, 32) ||

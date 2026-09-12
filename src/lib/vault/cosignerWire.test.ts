@@ -1,5 +1,4 @@
 import { ledgerRecoveryFixture } from './recovery/testdata/ledger'
-import type { LightDescriptor, LightPolicy } from './light/contract'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { VaultErrorResponse } from './api'
 import {
@@ -22,8 +21,6 @@ type ExpectedVaultStatusWire = {
   spendingDescriptor?: import('./spendingEnrollment').SpendingEnrollmentDescriptor
   ledgerSavings?: { context: LedgerSavingsKeyContext; spendingPolicy: SpendingPolicy; descriptorHash: string }
 
-  lightDescriptor?: LightDescriptor
-  lightDescriptorHash?: string
   enrolled: boolean
   network: string
   clientOrigin: string
@@ -49,7 +46,7 @@ type ExpectedVaultStatusWire = {
   txCap: number
   absoluteFeeCap: number
   feerateCapSatVb: number
-  spendingPolicy: SpendingPolicy | LightPolicy
+  spendingPolicy: SpendingPolicy
   spendingPolicyDigest: string
   phoneBip340Pub?: string
   phoneDirectP256?: string

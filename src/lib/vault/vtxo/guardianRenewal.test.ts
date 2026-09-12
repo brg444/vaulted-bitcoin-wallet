@@ -4,8 +4,8 @@ import { RestArkProvider, RestIndexerProvider } from '@arkade-os/sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { p256 } from '@noble/curves/nist.js'
 import { hex } from '@scure/base'
-import { buildLightDescriptor, defaultLightPolicy } from '../light/contract'
-import { delegationFixture } from '../light/testdata/delegation'
+import { renewalFixture } from './testdata/renewal'
+import { renewalAccounts as vectors } from './testdata/renewalAccounts'
 import type { VaultStatus } from '../types'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './renewalContext'
@@ -15,22 +15,6 @@ import { authorizeSpendingRenewals, clearSpendingRenewalReads } from './guardian
 import { loadSpendingRenewals } from './renewalStore'
 import { setupSpendingRenewals } from './renewalCeremony'
 import * as spending from './spend'
-import expectedVectors from './testdata/renewal-context-v1.json'
-import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
-
-// Reuse independent tree/digest inputs for retained Ledger Spending. The
-// account template is outside the unchanged renewal context encoding.
-const vectors = expectedVectors
-  .filter((v) => v.status.templateVersion !== 'phone-connector-recovery-savings-v1')
-  .map((v) =>
-    v.context.protectionTier === 'light'
-      ? v
-      : {
-          ...v,
-          name: `${v.status.network}-${v.context.protectionTier}-${LEDGER_NATIVE_TEMPLATE}`,
-          status: { ...v.status, templateVersion: LEDGER_NATIVE_TEMPLATE },
-        },
-  )
 
 const mocks = vi.hoisted(() => ({ ancestry: vi.fn() }))
 vi.mock('./renewalRecovery', async (original) => ({
@@ -67,15 +51,7 @@ function environment(raw: unknown) {
   status.clientOrigin = location.origin
   clearSpendingRenewalReads(status.vaultId)
   const context = guardianRenewalContext(status)
-  const f = delegationFixture(
-    buildLightDescriptor({
-      ...context,
-      // This helper supplies transaction fixtures, not the Spending enrollment identity.
-      vaultId: 'ab'.repeat(32),
-      exitDelaySeconds: status.vtxoExitDelay!,
-      spendingPolicy: defaultLightPolicy(context.network),
-    }),
-  )
+  const f = renewalFixture(status)
   const coins = [f.coin, { ...f.coin, txid: '33'.repeat(32) }].map((coin) => ({
     ...coin,
     script: context.scriptPubKey,
@@ -185,17 +161,14 @@ describe('automatic renewal authorization ceremony boundaries', () => {
     expect((await loadSpendingRenewals(f.status)).error).toBeUndefined()
     expect(f.schedules()).toBe(0)
   })
-  it.each(vectors.filter((v) => v.context.protectionTier !== 'light'))(
-    'submits one bounded set for $name',
-    async (vector) => {
-      const f = environment(vector.status)
-      const result = await authorizeSpendingRenewals(f.status, f.enrollment, f.auth)
-      expect(result?.error).toBeUndefined()
-      expect(f.schedules()).toBe(1)
-      expect(Object.values(result!.operations).map((s) => s.status?.state)).toEqual(['armed', 'armed'])
-      expect(f.auth.phoneSecret.some((b) => b !== 0)).toBe(true)
-    },
-  )
+  it.each(vectors)('submits one bounded set for $name', async (vector) => {
+    const f = environment(vector.status)
+    const result = await authorizeSpendingRenewals(f.status, f.enrollment, f.auth)
+    expect(result?.error).toBeUndefined()
+    expect(f.schedules()).toBe(1)
+    expect(Object.values(result!.operations).map((s) => s.status?.state)).toEqual(['armed', 'armed'])
+    expect(f.auth.phoneSecret.some((b) => b !== 0)).toBe(true)
+  })
   it('does not schedule new authority using a consumed recovery-login assertion', async () => {
     const f = environment(vectors[1].status)
     const result = await authorizeSpendingRenewals(f.status, f.enrollment, f.auth, false)

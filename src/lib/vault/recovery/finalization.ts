@@ -10,9 +10,6 @@ import {
 import { base64, hex } from '@scure/base'
 import { vaultArkServer, type PersistedVtxoSpend } from '../vtxo/spend'
 import type { VaultStatus } from '../types'
-import { LIGHT_PROFILE, lightDescriptorDigest } from '../light/contract'
-import { requireLightStatus } from '../light/status'
-import { lightExitRepository } from '../light/exitRepository'
 import { vaultExitRepository } from '../vtxo/exitRepository'
 import { normalizeRecoveryChain, packExitArchive, validateExitArchive, type ExitArchive } from './exitArchive'
 import { recoveryFileStore } from './fileStore'
@@ -22,13 +19,12 @@ import { recoveryFileStore } from './fileStore'
 export async function retainFinalizationRecovery(status: VaultStatus, pending: PersistedVtxoSpend) {
   if (!pending.operatorArkPsbt || !pending.checkpointPsbts?.length || !pending.reservedInputs?.length)
     throw new Error('Signed recovery evidence is unavailable before finalization')
-  const light = status.templateVersion === LIGHT_PROFILE ? requireLightStatus(status).lightDescriptor! : undefined
-  const repository = light ? lightExitRepository(light) : vaultExitRepository(status.vaultId, status.network)
-  const script = light?.scriptPubKey ?? String(status.spendingArkScript)
+  const repository = vaultExitRepository(status.vaultId, status.network)
+  const script = String(status.spendingArkScript)
   const binding = {
     network: status.network,
     scriptPubKey: script,
-    descriptorHash: light ? lightDescriptorDigest(light) : status.vaultId,
+    descriptorHash: status.vaultId,
   }
   try {
     const indexer = new RestIndexerProvider(vaultArkServer(status.network))

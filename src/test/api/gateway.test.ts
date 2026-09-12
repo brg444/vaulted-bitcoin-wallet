@@ -59,7 +59,7 @@ function expectLocalNoStore(result: ReturnType<typeof gatewayResponse>) {
 }
 
 describe('same-origin authorizer gateway', () => {
-  it.each(['/api/v1/enroll/session', '/api/v1/light/enroll/start', '/api/v1/status'])(
+  it.each(['/api/v1/enroll/session', '/api/v1/enroll/start', '/api/v1/status'])(
     'keeps %s available with Light-only enrollment',
     async (url) => {
       vi.stubEnv('AUTHORIZER_ORIGIN', 'https://guardian.example')
@@ -117,7 +117,7 @@ describe('same-origin authorizer gateway', () => {
     ['default', defaultDeployment],
     ['mainnet', mainnetDeployment],
   ] as const)('routes %s deployment delegation requests through the bounded gateway', (_network, config) => {
-    for (const program of ['light', 'vtxo']) {
+    for (const program of ['vtxo']) {
       const routeIndex = config.rewrites.findIndex((route) => route.source === `/v1/${program}/delegate/:phase`)
       expect(routeIndex).toBeGreaterThanOrEqual(0)
       expect(routeIndex).toBeLessThan(config.rewrites.findIndex((route) => route.source === '/v1/:path*'))
@@ -133,18 +133,18 @@ describe('same-origin authorizer gateway', () => {
   it.each([
     ['default', defaultDeployment],
     ['mainnet', mainnetDeployment],
-  ] as const)('routes %s signer funding and preserves the enrollment query', (_network, config) => {
-    const index = config.rewrites.findIndex((route) => route.source === '/v1/vtxo/savings-setup/:phase')
+  ] as const)('routes %s Bitcoin payments and preserves the enrollment query', (_network, config) => {
+    const index = config.rewrites.findIndex((route) => route.source === '/v1/vtxo/bitcoin/:phase')
     expect(index).toBeGreaterThanOrEqual(0)
     expect(index).toBeLessThan(config.rewrites.findIndex((route) => route.source === '/v1/:path*'))
     for (const phase of ['info', 'prepare', 'register', 'final', 'status', 'release']) {
       const url = config.rewrites[index].destination.replace(':phase', phase)
-      expect(publicAuthorizerPath(url)).toBe(`/v1/vtxo/savings-setup/${phase}`)
+      expect(publicAuthorizerPath(url)).toBe(`/v1/vtxo/bitcoin/${phase}`)
     }
-    expect(publicAuthorizerPath('/api/gateway?route=savings-setup&phase=info&vaultId=vault%2Bid')).toBe(
-      '/v1/vtxo/savings-setup/info?vaultId=vault%2Bid',
+    expect(publicAuthorizerPath('/api/gateway?route=bitcoin&phase=info&vaultId=vault%2Bid')).toBe(
+      '/v1/vtxo/bitcoin/info?vaultId=vault%2Bid',
     )
-    expect(publicAuthorizerPath('/api/gateway?route=savings-setup&phase=sign')).not.toContain('/v1/')
+    expect(publicAuthorizerPath('/api/gateway?route=bitcoin&phase=sign')).not.toContain('/v1/')
   })
 
   it('maps function URLs back to authorizer paths', () => {
@@ -175,52 +175,56 @@ describe('same-origin authorizer gateway', () => {
     )
   })
 
-  it('routes only the three supported Light enrollment phases', () => {
-    for (const phase of ['start', 'propose', 'finish']) {
-      const path = publicAuthorizerPath(`/api/gateway?route=light-enroll&phase=${phase}`)
-      expect(path).toBe(`/v1/light/enroll/${phase}`)
-      expect(allowAuthorizerPath(path)).toBe(true)
-    }
-    for (const phase of ['', 'unknown', '../start', 'start/extra']) {
-      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-enroll&phase=${phase}`))).toBe(false)
-    }
-  })
-
-  it('routes only the five named Light renewal phases', () => {
-    for (const phase of ['prepare', 'register', 'final', 'status', 'release']) {
-      expect(publicAuthorizerPath(`/api/gateway?route=light-renew&phase=${phase}`)).toBe(`/v1/light/renew/${phase}`)
-    }
-    for (const phase of ['', 'sign', '../final', 'final/extra']) {
-      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-renew&phase=${phase}`))).toBe(false)
-    }
-  })
   it('routes only the five native Guardian delegation phases', () => {
     for (const phase of ['info', 'schedule', 'list', 'status', 'cancel'])
-      expect(publicAuthorizerPath(`/api/gateway?route=light-delegate&phase=${phase}`)).toBe(
-        `/v1/light/delegate/${phase}`,
-      )
+      expect(publicAuthorizerPath(`/api/gateway?route=vtxo-delegate&phase=${phase}`)).toBe(`/v1/vtxo/delegate/${phase}`)
     for (const phase of ['', 'sign', '../schedule', 'status/extra'])
-      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=light-delegate&phase=${phase}`))).toBe(false)
+      expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=vtxo-delegate&phase=${phase}`))).toBe(false)
   })
 
-  it('preserves connector operation queries and all four Light backup aliases', () => {
-    expect(publicAuthorizerPath('/api/v1/connector-operation?vaultId=a&operationId=b')).toBe(
-      '/v1/connector/operation?vaultId=a&operationId=b',
-    )
-    expect(publicAuthorizerPath('/api/v1/connector-withdraw-authorize?operationId=b')).toBe(
-      '/v1/connector/withdraw/authorize?operationId=b',
-    )
+  it('routes all four retained recovery archive phases', () => {
     for (const phase of ['challenge', 'open', 'read', 'write']) {
       expect(publicAuthorizerPath(`/api/gateway?route=recovery-archive&phase=${phase}`)).toBe(
         `/v1/recovery-archive/${phase}`,
       )
-      expect(publicAuthorizerPath(`/api/gateway?route=light-backup&phase=${phase}`)).toBe(`/v1/light/backup/${phase}`)
     }
     for (const phase of ['', 'delete', '../write', 'write/extra'])
       expect(allowAuthorizerPath(publicAuthorizerPath(`/api/gateway?route=recovery-archive&phase=${phase}`))).toBe(
         false,
       )
-    expect(allowAuthorizerPath(publicAuthorizerPath('/api/gateway?route=light-backup&phase=sign'))).toBe(false)
+  })
+
+  it.each([
+    '/v1/light/enroll/start',
+    '/v1/light/renew/final',
+    '/v1/light/delegate/status',
+    '/v1/light/backup/write',
+    '/v1/connector/operation',
+    '/v1/connector/withdraw/authorize',
+    '/v1/vtxo/savings-setup/prepare',
+    '/api/v1/connector-operation',
+    '/api/v1/connector-withdraw-authorize',
+    '/api/gateway?route=light-enroll&phase=start',
+    '/api/gateway?route=light-renew&phase=final',
+    '/api/gateway?route=light-delegate&phase=status',
+    '/api/gateway?route=light-backup&phase=write',
+    '/api/gateway?route=savings-setup&phase=prepare',
+    '/v1/unknown-program/sign',
+    '/v1',
+  ])('rejects retired or unregistered gateway route %s before upstream access', async (url) => {
+    vi.stubEnv('AUTHORIZER_ORIGIN', 'https://guardian.example')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const result = gatewayResponse()
+      await gatewayHandler(gatewayRequest({ method: 'POST', url, body: '{}' }), result.response)
+      expect(result.response.statusCode).toBe(404)
+      expectLocalNoStore(result)
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('only proxies health, readiness, and /v1', () => {
@@ -260,25 +264,23 @@ describe('same-origin authorizer gateway', () => {
 
   it.each([
     ['POST', '/api/v1/passkey/challenge', JSON.stringify({ vaultId: '  victim\t' })],
-    ['POST', '/api/v1/light/backup/challenge', JSON.stringify({ VaultID: '\u0085victim\u0085' })],
+    ['POST', '/api/v1/recovery-archive/challenge', JSON.stringify({ VaultID: '\u0085victim\u0085' })],
     ['GET', '/api/v1/vtxo-operation?vaultId=%20victim%09', ''],
     ['GET', '/api/v1/status?vault=%C2%85victim%C2%85', ''],
-    ['GET', '/api/v1/connector-operation?vaultId=%20%09&vault=%C2%85victim%C2%85', ''],
+    ['GET', '/api/v1/vtxo-operation?vaultId=%C2%85victim%C2%85&vault=ignored', ''],
     ['GET', '/api/v1/map?vault=%20victim%20', '', ' victim '],
     ['GET', '/api/v1/map?vault=victim?question', '', 'victim?question'],
     ['GET', '/api/v1/status??vault=decoy&vault=victim', ''],
     ['GET', '/api/v1/map??vault=decoy&vault=victim', ''],
     ['GET', '/api/v1/vtxo-operation??vaultId=decoy&vaultId=victim', ''],
-    ['GET', '/api/v1/connector-operation??vaultId=decoy&vaultId=victim', ''],
     ['GET', '/api/v1/map?vault=victim%3Bvalue', '', 'victim;value'],
     ['POST', '/api/v1/passkey/challenge', JSON.stringify({ vaultId: '\ufeffvictim\ufeff' }), '\ufeffvictim\ufeff'],
     ['GET', '/api/v1/status?vault=%EF%BB%BFvictim%EF%BB%BF', '', '\ufeffvictim\ufeff'],
     ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"vaultId":"victim"}'],
     ['POST', '/api/v1/passkey/challenge?vault=decoy', '{"VaultID":"victim"}'],
-    ['POST', '/api/v1/light/backup/challenge?vaultId=decoy', '{"vaultId":"victim"}'],
+    ['POST', '/api/v1/recovery-archive/challenge?vaultId=decoy', '{"vaultId":"victim"}'],
     ['GET', '/api/v1/status?vault=victim&vaultId=decoy', '{"vaultId":"decoy"}'],
     ['GET', '/api/v1/map?vault=victim&vaultId=decoy', ''],
-    ['GET', '/api/v1/connector-operation?vault=decoy&vaultId=victim', ''],
     ['GET', '/api/v1/vtxo-operation?vault=decoy&vaultId=victim', ''],
   ])('charges the actual Guardian vault for %s %s', async (method, url, body, expectedVault = 'victim') => {
     vi.stubEnv('AUTHORIZER_ORIGIN', 'https://authorizer.example')
@@ -471,22 +473,17 @@ describe('gateway response cache policy', () => {
     expect(result.body()?.toString()).toBe(JSON.stringify({ ok: false, arkadeOrigin: 'configured' }))
   })
 
-  it('allows large backup payloads without increasing connector or challenge request limits', async () => {
+  it('allows large backup payloads without increasing payment or challenge request limits', async () => {
     const body = 'a'.repeat(MAX_GATEWAY_BYTES + 1)
     const fetchMock = vi.fn().mockImplementation(async () => new Response('{}'))
     vi.stubGlobal('fetch', fetchMock)
-    for (const url of [
-      '/v1/light/backup/write?request=1',
-      '/api/gateway?route=light-backup&phase=write',
-      '/v1/recovery-archive/write?request=1',
-      '/api/gateway?route=recovery-archive&phase=write',
-    ]) {
+    for (const url of ['/v1/recovery-archive/write?request=1', '/api/gateway?route=recovery-archive&phase=write']) {
       const result = gatewayResponse()
       await gatewayHandler(gatewayRequest({ method: 'POST', url, body }), result.response)
       expect(result.response.statusCode).toBe(200)
     }
     fetchMock.mockClear()
-    for (const url of ['/api/v1/connector-withdraw-authorize', '/v1/light/backup/challenge', '/v1/light/backup/open']) {
+    for (const url of ['/api/v1/vtxo-authorize', '/v1/recovery-archive/challenge', '/v1/recovery-archive/open']) {
       const result = gatewayResponse()
       await gatewayHandler(gatewayRequest({ method: 'POST', url, body }), result.response)
       expect(result.response.statusCode).toBe(413)
@@ -503,18 +500,15 @@ describe('gateway response cache policy', () => {
     for (const phase of ['open', 'read', 'write']) {
       const result = gatewayResponse()
       await gatewayHandler(
-        gatewayRequest({ method: 'POST', url: `/v1/light/backup/${phase}?request=1`, body: '{}' }),
+        gatewayRequest({ method: 'POST', url: `/v1/recovery-archive/${phase}?request=1`, body: '{}' }),
         result.response,
       )
       expect(result.response.statusCode).toBe(200)
       expect(result.body()?.length).toBe(payload.length)
     }
-    const connector = gatewayResponse()
-    await gatewayHandler(
-      gatewayRequest({ url: '/api/v1/connector-operation?vaultId=a&operationId=b' }),
-      connector.response,
-    )
-    expect(connector.response.statusCode).toBe(502)
+    const payment = gatewayResponse()
+    await gatewayHandler(gatewayRequest({ url: '/api/v1/vtxo-operation?vaultId=a&operationId=b' }), payment.response)
+    expect(payment.response.statusCode).toBe(502)
   })
 
   it('forwards open enrollment through the flat gateway without a user invite', async () => {
@@ -538,9 +532,9 @@ describe('gateway response cache policy', () => {
   })
 
   it.each([
-    ['GET', '/api/v1/connector-operation?vaultId=x&operationId=y', '/v1/connector/operation?vaultId=x&operationId=y'],
-    ['POST', '/api/v1/connector-withdraw-authorize', '/v1/connector/withdraw/authorize'],
-  ])('forwards the connector %s request with its operation identity and body', async (method, url, target) => {
+    ['GET', '/api/v1/vtxo-operation?vaultId=x&operationId=y', '/v1/vtxo/operation?vaultId=x&operationId=y'],
+    ['POST', '/api/v1/vtxo-authorize', '/v1/vtxo/authorize'],
+  ])('forwards the Spending %s request with its operation identity and body', async (method, url, target) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { headers: { 'Cache-Control': 'no-store' } }))
     vi.stubGlobal('fetch', fetchMock)
     const result = gatewayResponse()

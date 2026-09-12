@@ -49,45 +49,18 @@ describe('Vercel worker caching', () => {
     expect(readFileSync('api/gateway.ts', 'utf8')).toContain('./authorizer/[...path].js')
   })
 
-  it.each(['vercel.json', 'vercel.mainnet.json'])(
-    'routes Light enrollment through the existing gateway in %s',
-    (file) => {
-      const config = JSON.parse(readFileSync(file, 'utf8')) as {
-        rewrites: { source: string; destination: string }[]
-      }
-      expect(config.rewrites).toContainEqual({
-        source: '/v1/light/renew/:phase',
-        destination: '/api/gateway?route=light-renew&phase=:phase',
-      })
-      expect(config.rewrites).toContainEqual({
-        source: '/v1/light/enroll/:phase',
-        destination: '/api/gateway?route=light-enroll&phase=:phase',
-      })
-      expect(config.rewrites).toContainEqual({
-        source: '/v1/recovery-archive/:phase',
-        destination: '/api/gateway?route=recovery-archive&phase=:phase',
-      })
-      expect(config.rewrites).toContainEqual({
-        source: '/v1/light/backup/:phase',
-        destination: '/api/gateway?route=light-backup&phase=:phase',
-      })
-    },
-  )
-
-  it.each(['vercel.json', 'vercel.mainnet.json'])(
-    'routes connector authorization and operation reads through flat functions in %s',
-    (file) => {
-      const config = JSON.parse(readFileSync(file, 'utf8'))
-      expect(config.rewrites).toContainEqual({
-        source: '/v1/connector/operation',
-        destination: '/api/v1/connector-operation',
-      })
-      expect(config.rewrites).toContainEqual({
-        source: '/v1/connector/withdraw/authorize',
-        destination: '/api/v1/connector-withdraw-authorize',
-      })
-    },
-  )
+  it.each(['vercel.json', 'vercel.mainnet.json'])('publishes only retained program rewrites in %s', (file) => {
+    const config = JSON.parse(readFileSync(file, 'utf8')) as { rewrites: { source: string; destination: string }[] }
+    expect(config.rewrites).toContainEqual({
+      source: '/v1/recovery-archive/:phase',
+      destination: '/api/gateway?route=recovery-archive&phase=:phase',
+    })
+    expect(config.rewrites).toContainEqual({
+      source: '/v1/vtxo/bitcoin/:phase',
+      destination: '/api/gateway?route=bitcoin&phase=:phase',
+    })
+    expect(config.rewrites.some((entry) => /\/v1\/(light|connector)\/|savings-setup/.test(entry.source))).toBe(false)
+  })
 
   it('routes readiness through the authorizer gateway', () => {
     const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {

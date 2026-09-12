@@ -4,8 +4,8 @@ import { base64, hex } from '@scure/base'
 import { describe, expect, it } from 'vitest'
 import setVector from './testdata/renewal-set-v1.json'
 import type { VaultStatus } from '../types'
-import { buildLightDescriptor, defaultLightPolicy } from '../light/contract'
-import { delegationFixture } from '../light/testdata/delegation'
+import { renewalFixture } from './testdata/renewal'
+import { renewalAccounts as vectors } from './testdata/renewalAccounts'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './renewalContext'
 import { prepareSpendingDelegation, spendingDelegationAddress, validateSpendingSchedule } from './renewalRequest'
 import {
@@ -14,22 +14,7 @@ import {
   spendingRenewalSetDigest,
   validateSpendingRenewalSet,
 } from './renewalSet'
-import expectedVectors from './testdata/renewal-context-v1.json'
 import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
-
-// Reuse independent tree/digest inputs for retained Ledger Spending. The
-// account template is outside the unchanged renewal context encoding.
-const vectors = expectedVectors
-  .filter((v) => v.status.templateVersion !== 'phone-connector-recovery-savings-v1')
-  .map((v) =>
-    v.context.protectionTier === 'light'
-      ? v
-      : {
-          ...v,
-          name: `${v.status.network}-${v.context.protectionTier}-${LEDGER_NATIVE_TEMPLATE}`,
-          status: { ...v.status, templateVersion: LEDGER_NATIVE_TEMPLATE },
-        },
-  )
 
 const owner = new Uint8Array(32).fill(1),
   scalar = new Uint8Array(32).fill(7)
@@ -38,12 +23,7 @@ async function fixture(raw: unknown) {
   const status = structuredClone(raw) as VaultStatus
   status.phoneDirectP256 = hex.encode(p256.getPublicKey(scalar, true))
   const context = guardianRenewalContext(status)
-  const descriptor = buildLightDescriptor({
-    ...context,
-    exitDelaySeconds: status.vtxoExitDelay!,
-    spendingPolicy: defaultLightPolicy(context.network),
-  })
-  const f = delegationFixture(descriptor, now)
+  const f = renewalFixture(status, now)
   const coin = { ...f.coin, script: context.scriptPubKey }
   const capability = {
     ...f.capability,

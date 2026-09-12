@@ -1,4 +1,4 @@
-import * as delegation from './light/guardianDelegation'
+import * as delegation from './vtxo/guardianRenewal'
 import * as spendModule from './vtxo/spend'
 import * as apiModule from './api'
 import * as streamModule from './vtxo/settlementEventSource'
@@ -109,7 +109,7 @@ beforeEach(() => {
   localStorage.clear()
   vi.restoreAllMocks()
   vi.spyOn(EsploraProvider.prototype, 'getCoins').mockResolvedValue([])
-  vi.spyOn(delegation, 'authorizeGuardianRenewals').mockResolvedValue(null)
+  vi.spyOn(delegation, 'authorizeSpendingRenewals').mockResolvedValue(null)
   vi.stubGlobal('navigator', {
     locks: { request: (_name: string, _options: unknown, run: (lock: object) => unknown) => run({}) },
   })
@@ -493,7 +493,7 @@ it.each(
   expect(released).not.toHaveBeenCalled()
   expect(settle).not.toHaveBeenCalled()
   expect(dispose).toHaveBeenCalledOnce()
-  expect(delegation.authorizeGuardianRenewals).not.toHaveBeenCalled()
+  expect(delegation.authorizeSpendingRenewals).not.toHaveBeenCalled()
   if (state === 'rejected') {
     expect(humanizeVaultError(error)).toContain('funds changed or are in use')
     expect(readSpendingBitcoin(f.status)).toBeNull()

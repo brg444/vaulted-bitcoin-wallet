@@ -5,7 +5,6 @@ import {
   type SpendingEnrollmentDescriptor,
 } from './spendingEnrollment'
 import { buildSpendingRecoveryDescriptor } from './program/spendingRecoveryDescriptor'
-import type { LightKeyBackup } from './light/keyBackup'
 import { clearOpenEnrollmentSession, openEnrollmentToken } from './openEnrollmentSession'
 import { p256 } from '@noble/curves/nist.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
@@ -51,7 +50,6 @@ const DIRECT_INFO = new TextEncoder().encode('arkade-2fa-vault/direct-p256/v1')
 
 export interface EnrollmentSecrets {
   ledgerSavings?: LedgerSavingsEnrollmentSecrets
-  lightKeyBackup?: LightKeyBackup
   vaultId: string
   credId: string
   webauthnP256: string

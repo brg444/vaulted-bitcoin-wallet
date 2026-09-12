@@ -14,9 +14,7 @@ import { MAINNET_INVOICE, MUTINYNET_INVOICE } from '../../lightningTestUtils'
 import { decodeVaultLightningInvoice } from '../../lightningInvoice'
 import { compressedFromScalar, scalarSecret } from '../../program/fixtures'
 import { networkPins } from '../../networkPins'
-import { ledgerRecoveryFacts } from './helpers'
-import lightVectors from '../../light/testdata/contracts.json'
-import { lightDescriptorDigest, type LightDescriptor } from '../../light/contract'
+import { ledgerRecoveryFacts, sharedSpendingRecoveryFixture } from './helpers'
 import { packExitArchive } from '../exitArchive'
 import { lightningExitBinding, type LightningArchiveBinding, type LightningRecoveryJournal } from '../lightningArchive'
 
@@ -31,20 +29,15 @@ export function lightningRecoveryFixture(
 ) {
   const network = options.network ?? 'mainnet'
   const pins = networkPins(network)
-  const base = ledgerRecoveryFacts(options.advanced ?? false, network)
+  const base = options.light
+    ? sharedSpendingRecoveryFixture(undefined, network)
+    : ledgerRecoveryFacts(options.advanced ?? false, network)
   const binding: LightningArchiveBinding = {
     vaultId: base.status.vaultId,
     network,
     phonePub: base.kit.descriptor.keys.phoneBip340,
     descriptorHash: base.archive.spending.descriptorHash,
     spendingScript: base.status.spendingArkScript!,
-  }
-  if (options.light) {
-    const descriptor = lightVectors.find((v) => v.descriptor.network === network)!.descriptor as LightDescriptor
-    binding.vaultId = descriptor.vaultId
-    binding.phonePub = `02${descriptor.ownerPub}`
-    binding.descriptorHash = lightDescriptorDigest(descriptor)
-    binding.spendingScript = descriptor.scriptPubKey
   }
   const invoice = decodeVaultLightningInvoice(
     network === 'mainnet' ? MAINNET_INVOICE : MUTINYNET_INVOICE,

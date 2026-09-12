@@ -1,5 +1,4 @@
 import type { SpendingEnrollmentDescriptor } from './spendingEnrollment'
-import type { LightDescriptor, LightPolicy } from './light/contract'
 import type { VaultNetwork } from './constants'
 import type { SpendingPolicy } from './spendingPolicy'
 import type { ProtectionTier } from './protectionTier'
@@ -14,8 +13,6 @@ export interface LedgerSavingsStatus extends LedgerSavingsContract {
 export interface VaultStatusWire {
   spendingDescriptor?: SpendingEnrollmentDescriptor
   ledgerSavings?: LedgerSavingsStatus
-  lightDescriptor?: LightDescriptor
-  lightDescriptorHash?: string
   enrolled: boolean
   network: string
   clientOrigin: string
@@ -41,7 +38,7 @@ export interface VaultStatusWire {
   txCap: number
   absoluteFeeCap: number
   feerateCapSatVb: number
-  spendingPolicy: SpendingPolicy | LightPolicy
+  spendingPolicy: SpendingPolicy
   spendingPolicyDigest: string
   phoneBip340Pub?: string
   phoneDirectP256?: string
@@ -69,8 +66,6 @@ export interface VaultStatusWire {
 export interface VaultStatus {
   spendingDescriptor?: SpendingEnrollmentDescriptor
   ledgerSavings?: LedgerSavingsStatus
-  lightDescriptor?: LightDescriptor
-  lightDescriptorHash?: string
   enrolled: boolean
   network: string
   clientOrigin: string
@@ -92,7 +87,7 @@ export interface VaultStatus {
   txCap: number
   absoluteFeeCap: number
   feerateCapSatVb: number
-  spendingPolicy?: SpendingPolicy | LightPolicy
+  spendingPolicy?: SpendingPolicy
   spendingPolicyDigest?: string
   phoneBip340Pub?: string
   phoneDirectP256?: string

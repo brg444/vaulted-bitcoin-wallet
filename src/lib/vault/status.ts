@@ -225,7 +225,7 @@ export function requireStatusIdentity(
   const network = requireReleaseNetwork(status.network)
   if (status.templateVersion !== SPENDING_ONLY_TEMPLATE && status.templateVersion !== LEDGER_NATIVE_TEMPLATE)
     throw new Error('template version is not this release')
-  if ('connectorEnrollment' in status || status.lightDescriptor || status.lightDescriptorHash)
+  if ('connectorEnrollment' in status || 'lightDescriptor' in status || 'lightDescriptorHash' in status)
     throw new Error('status contains a retired account program')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   const selected = validateSpendingPolicy(status.spendingPolicy, network)

@@ -31,8 +31,5 @@ paths. Save a separate recovery package and matching companion application.
 See [recovery with saved files](emergency-recovery.md) for passkey, signing,
 and freshness requirements.
 
-This enrollment replaces the separate Light application for new wallets.
-Existing `vaulted-light-v1` enrollment files are not migrated by the new setup.
-The older [automatic backup](light-automatic-backup.md) and
-[delegated renewal](light-delegated-renewal.md) documents describe that legacy
-contract and its saved-file support.
+Historical Light files are outside this release's supported inputs. Current
+Light uses the shared Spending recovery package and companion.
