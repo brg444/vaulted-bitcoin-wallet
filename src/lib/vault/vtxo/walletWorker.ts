@@ -334,16 +334,6 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
         consoleError(failure.error, `Lightning swap ${failure.rfqId} contract retirement failed`)
       }
     }
-    try {
-      const initialMaintenance = await tryVaultLightningLifecycleLock(status.vaultId, maintainLightning)
-      if (initialMaintenance.held) logMaintenanceFailures(initialMaintenance.value)
-    } catch (error) {
-      // Lightning observation is auxiliary to Spending state. A busy or
-      // unavailable observer is retried by focus and the bounded
-      // visible timer; it must not strand Home balance initialization.
-      consoleError(error, 'Lightning observer initial refresh')
-    }
-
     const listeners = new Set<() => void>()
     const notify = () => listeners.forEach((listener) => listener())
     let lightningObserver: VaultLightningObserverScheduler
@@ -453,6 +443,9 @@ export async function ensureVaultWalletWorker(status: VaultStatus): Promise<Wall
     if (runtime === previous) runtime = undefined
     const next = await createRuntime(status)
     runtime = next
+    // Incoming receipt and swap reconciliation can wait on remote services.
+    // Publish Spending first; the scheduler owns maintenance and drains it on disposal.
+    next.lightningObserver.schedule()
     return next
   })()
   try {
@@ -481,8 +474,8 @@ export function subscribeVaultWalletEvents(status: VaultStatus, listener: () => 
 export async function reloadVaultWalletWorker(status: VaultStatus) {
   const current = await ensureVaultWalletWorker(status)
   if (current.boardingSettle) return
-  await current.lightningObserver.refresh()
   await current.wallet.reload()
+  current.lightningObserver.schedule()
 }
 
 /** Tear down a wedged worker and create a new one so boarding can resume. */
