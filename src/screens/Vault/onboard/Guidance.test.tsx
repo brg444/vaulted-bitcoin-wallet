@@ -1,8 +1,6 @@
+import { ledgerRecoveryFacts } from '../../../lib/vault/recovery/testdata/helpers'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildRecoveryKit } from '../../../lib/vault/program/kit'
-import { buildVaultProgramDescriptor } from '../../../lib/vault/program/descriptor'
-import { PROGRAM_FIXTURE } from '../../../lib/vault/program/fixtures'
 import { VaultContext, type VaultContextProps } from '../../../vault/context'
 import RecoveryExplanation from '../qg/RecoveryExplanation'
 import VaultKit from './Kit'
@@ -12,7 +10,7 @@ import VaultPasskey from './Passkey'
 const mocks = vi.hoisted(() => ({ available: vi.fn(), toast: vi.fn() }))
 vi.mock('../../../components/Toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('../../../lib/vault/webauthn', () => ({ isPlatformPasskeyAvailable: mocks.available }))
-const kit = buildRecoveryKit(buildVaultProgramDescriptor(PROGRAM_FIXTURE))
+const { kit } = ledgerRecoveryFacts()
 function value(overrides: Partial<VaultContextProps> = {}) {
   return {
     navigate: vi.fn(),

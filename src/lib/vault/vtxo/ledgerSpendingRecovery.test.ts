@@ -7,7 +7,7 @@ import vectors from '../program/ledger-family-vectors.json'
 import { scalarSecret } from '../program/fixtures'
 import { buildLedgerRecoveryDescriptor, LEDGER_ENROLLMENT_SCHEMA } from '../program/ledgerRecoveryDescriptor'
 import { networkPins } from '../networkPins'
-import { recoveryFixture } from '../recovery/testdata/helpers'
+import { ledgerRecoveryFacts } from '../recovery/testdata/helpers'
 import { requireExactDefaultTapscriptSignatures, tapscriptSignatureRecords } from '../taprootSignatures'
 import { VaultPolicyV1Script } from './script'
 import {
@@ -61,7 +61,7 @@ function fixture(advanced: boolean, network: 'mainnet' | 'mutinynet') {
   } finally {
     for (const key of nodes) key.wipePrivateData()
   }
-  const { status, board } = recoveryFixture(advanced, network)
+  const { status, board } = ledgerRecoveryFacts(advanced, network)
   const pins = networkPins(network)
   const a = {
     phoneBip340Pub: status.phoneBip340Pub!,

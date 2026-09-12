@@ -10,9 +10,9 @@ import '../../../screens/Vault/quiet-guardian-flows.css'
 import '../../../screens/Vault/qg/layout.css'
 import '../../../screens/Vault/quiet-guardian-screens.css'
 import LightningAddress from '../../../screens/Vault/LightningAddress'
-import { recoveryFixture } from '../../../lib/vault/recovery/testdata/helpers'
+import { ledgerRecoveryFacts } from '../../../lib/vault/recovery/testdata/helpers'
 
-const { status, archive } = recoveryFixture(false, 'mainnet')
+const { status, archive } = ledgerRecoveryFacts(false, 'mainnet')
 const id = 'v' + '12'.repeat(8)
 const active = new URLSearchParams(location.search).has('active')
 if (active)

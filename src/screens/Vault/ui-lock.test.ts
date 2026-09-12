@@ -81,11 +81,13 @@ describe('vault UI lock', () => {
     const app = read('src/VaultApp.tsx')
     const recover = read('src/screens/Vault/Recover.tsx')
     const savings = read('src/lib/vault/savingsSpend.ts')
-    for (const productionSource of [app, recover, savings]) {
+    const ledgerRecovery = read('src/screens/Vault/LedgerRecovery.tsx')
+    for (const productionSource of [app, recover, savings, ledgerRecovery]) {
       expect(productionSource).not.toMatch(/parseHardwareSecret|WIF or 64-char|hardware-map-secret/)
     }
-    expect(recover).toMatch(/recover-guardian-signed-file/)
-    expect(recover).toMatch(/acceptGuardianExitSignature/)
+    expect(recover).toMatch(/<LedgerRecovery/)
+    expect(ledgerRecovery).toMatch(/requireLedgerRecoveryUserApproval/)
+    expect(ledgerRecovery).toMatch(/acceptSavingsRecoverySignature/)
     expect(app).not.toMatch(/offline-recovery/)
     expect(existsSync(resolve(root, 'tools/offline-recovery/index.html'))).toBe(true)
     expect(existsSync(resolve(root, 'tools/offline-recovery/Recover.command'))).toBe(true)

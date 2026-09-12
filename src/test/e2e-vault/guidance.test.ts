@@ -1,7 +1,5 @@
+import { ledgerRecoveryFacts } from '../../lib/vault/recovery/testdata/helpers'
 import { expect, test } from '@playwright/test'
-import { buildVaultProgramDescriptor } from '../../lib/vault/program/descriptor'
-import { PROGRAM_FIXTURE } from '../../lib/vault/program/fixtures'
-import { buildRecoveryKit } from '../../lib/vault/program/kit'
 
 for (const dark of [false, true]) {
   test(`@visual-refinement access help works before sign-in (${dark ? 'dark' : 'light'})`, async ({
@@ -14,9 +12,7 @@ for (const dark of [false, true]) {
     await page.getByRole('radio', { name: 'Both keys are unavailable' }).click()
     await expect(page.getByText(/Check your saved Recovery Kit to identify/)).toBeVisible()
     await page.getByText('Check a saved Recovery Kit', { exact: true }).click()
-    const kit = buildRecoveryKit(
-      buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, protectionTier: 'standard', recoveryPub: undefined }),
-    )
+    const { kit } = ledgerRecoveryFacts(false)
     await page
       .getByLabel('Recovery Kit file')
       .setInputFiles({ name: 'saved-kit.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(kit)) })
@@ -26,7 +22,7 @@ for (const dark of [false, true]) {
     await expect(
       page
         .getByRole('region', { name: 'Recovery guidance' })
-        .getByText(/Starting a new delayed recovery requires both services/),
+        .getByText(/Starting delayed recovery needs a remaining user key and the Guardian/),
     ).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
     expect(overflow).toBe(false)

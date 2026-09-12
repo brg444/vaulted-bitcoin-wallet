@@ -1,3 +1,6 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { canonicalLedgerValue } from './ledgerEnrollment'
+import kitVectors from './ledger-recovery-kit-vectors.json'
 import { describe, expect, it, vi } from 'vitest'
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
@@ -78,6 +81,38 @@ function sign(file: SavingsRecoveryFile) {
 }
 
 describe('independent Ledger Savings recovery transactions', () => {
+  it.each(kitVectors.cases)(
+    'preserves committed kit and every unsigned path on $network advanced=$advanced',
+    async (vector) => {
+      const { kit, archive } = await ledgerRecoveryFixture(vector.advanced, vector.network as 'mainnet' | 'mutinynet')
+      expect(hex.encode(sha256(new TextEncoder().encode(canonicalLedgerValue(kit))))).toBe(vector.kitSha256)
+      for (const expected of vector.transactions) {
+        const path = expected.path as SavingsRecoveryPath
+        const tree =
+          path.program === 'savings-admin'
+            ? path.change === 1
+              ? kit.descriptor.savingsChange
+              : kit.descriptor.savings
+            : (path.program === 'quarantine' ? kit.descriptor.quarantine : kit.descriptor.pending)[
+                `savings-${path.claimant}`
+              ]
+        const coin = archive.onchain.find((c) => c.script === tree.script)!
+        const file = prepareSavingsRecovery({
+          kit,
+          path,
+          parentHex: coin.parentHex,
+          vout: coin.vout,
+          destination: kit.descriptor.savings.address,
+          feeSats: 200,
+        })
+        expect(hex.encode(sha256(hex.decode(file.psbt)))).toBe(expected.psbtSha256)
+        expect(() => validateSavingsRecovery({ ...file, version: 1 } as unknown as SavingsRecoveryFile)).toThrow(
+          'Invalid Savings recovery file',
+        )
+      }
+    },
+  )
+
   it.each([false, true])('prepares and signs every allowed Savings path (advanced=%s)', async (advanced) => {
     const { kit } = await ledgerRecoveryFixture(advanced)
     const roles = advanced ? (['phone', 'hardware', 'recovery'] as const) : (['phone', 'hardware'] as const)

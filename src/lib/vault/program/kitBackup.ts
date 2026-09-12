@@ -4,10 +4,7 @@ import { vaultCosignerClient } from '../cosignerClient'
 import { beginPasskeySession } from '../signIn'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
 import type { VaultStatus } from '../types'
-import { buildVaultProgramDescriptor } from './descriptor'
 import { buildRecoveryKit, parseRecoveryKit, type RecoveryKit } from './kit'
-import { SAVINGS_TEMPLATE } from './constants'
-import { isSupportedVaultNetwork } from '../constants'
 import { LEDGER_NATIVE_TEMPLATE } from './ledgerNativeKeys'
 import { buildLedgerRecoveryDescriptor, ledgerEnrollmentFromStatus } from './ledgerRecoveryDescriptor'
 
@@ -73,67 +70,6 @@ export function kitFromFacts(input: {
         (input.recoveryPub && input.recoveryPub !== descriptor.keys.recovery)
       )
         return null
-      return buildRecoveryKit(descriptor)
-    } catch {
-      return null
-    }
-  }
-  const recoveryPub = input.recoveryPub || input.status?.recoveryPub || ''
-  const hardwarePub = input.hardwarePub || input.status?.externalOwnerWalletPub || ''
-  const phonePub = input.enrollment?.phoneBip340Pub || input.status?.phoneBip340Pub || ''
-  const phoneDirectP256 = input.enrollment?.phoneDirectP256 || input.status?.phoneDirectP256 || ''
-  if (!hardwarePub) return null
-
-  const vaultId = input.status?.vaultId || input.enrollment?.vaultId || ''
-  const liveBases = Boolean(input.status?.vaultCosignerBasePub && input.status?.arkadeCosignerBasePub)
-  const liveTemplate = String(input.status?.templateVersion || '')
-  const signerOrigin = String(input.status?.arkadeCosignerOrigin || '').trim()
-  const signerVersion = String(input.status?.arkadeCosignerVersion || '').trim()
-  const spendingPolicy = input.status?.spendingPolicy
-  const statusSpendingPolicyDigest = String(input.status?.spendingPolicyDigest || '').trim()
-  const protectionTier = input.status?.protectionTier
-  if (
-    liveBases &&
-    phonePub &&
-    phoneDirectP256 &&
-    vaultId &&
-    signerOrigin &&
-    signerVersion &&
-    spendingPolicy &&
-    spendingPolicy.program === 'vault-policy-v1' &&
-    statusSpendingPolicyDigest &&
-    protectionTier &&
-    protectionTier !== 'light' &&
-    isSupportedVaultNetwork(input.status?.network) &&
-    liveTemplate === SAVINGS_TEMPLATE
-  ) {
-    try {
-      const descriptor = buildVaultProgramDescriptor({
-        vaultId,
-        network: input.status!.network,
-        phonePub,
-        hardwarePub,
-        recoveryPub,
-        phoneDirectP256,
-        vaultCosignerBase: input.status!.vaultCosignerBasePub!,
-        arkadeCosignerBase: input.status!.arkadeCosignerBasePub!,
-        arkadeCosigner: {
-          origin: signerOrigin,
-          version: signerVersion,
-        },
-        templateVersion: liveTemplate,
-        protectionTier,
-        spendingPolicy,
-      })
-      if (descriptor.policy.digest !== statusSpendingPolicyDigest) {
-        throw new Error('rebuilt map spending policy does not match this vault')
-      }
-      if (input.status?.savingsAddress && descriptor.savings.address !== input.status.savingsAddress) {
-        throw new Error('rebuilt map does not match this vault')
-      }
-      if (input.status?.savingsScript && descriptor.savings.script !== input.status.savingsScript) {
-        throw new Error('rebuilt map does not match this vault')
-      }
       return buildRecoveryKit(descriptor)
     } catch {
       return null

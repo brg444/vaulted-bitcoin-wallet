@@ -4,8 +4,7 @@ import {
   buildSpendingRecoveryDescriptor,
   type SpendingRecoveryDescriptor,
 } from './spendingRecoveryDescriptor'
-import { PROGRAM_CSV, PROGRAM_SCHEMA, familyKeysFor, isSavingsTemplate } from './constants'
-import { hashVaultProgramDescriptor, validateVaultProgramDescriptor, type VaultProgramDescriptor } from './descriptor'
+import { PROGRAM_CSV, familyKeysFor } from './constants'
 import type { ProtectionTier } from '../protectionTier'
 import { canonicalLedgerValue } from './ledgerEnrollment'
 import {
@@ -16,17 +15,6 @@ import {
 } from './ledgerRecoveryDescriptor'
 
 export const RECOVERY_KIT_NAME = 'arkade-recovery-kit'
-export const RECOVERY_KIT_VERSION = 3
-
-export interface LegacyRecoveryKit {
-  name: typeof RECOVERY_KIT_NAME
-  version: typeof RECOVERY_KIT_VERSION
-  descriptor: VaultProgramDescriptor
-  descriptorHash: string
-  spendingPolicyDigest: string
-  protectionTier: ProtectionTier
-}
-
 export interface LedgerRecoveryKit {
   name: typeof RECOVERY_KIT_NAME
   version: 4
@@ -44,8 +32,7 @@ export interface SpendingRecoveryKit {
   spendingPolicyDigest: string
   protectionTier: 'light'
 }
-export type SavingsRecoveryKit = LegacyRecoveryKit | LedgerRecoveryKit
-export type RecoveryKit = SavingsRecoveryKit | SpendingRecoveryKit
+export type RecoveryKit = LedgerRecoveryKit | SpendingRecoveryKit
 export function isSpendingRecoveryKit(kit: RecoveryKit): kit is SpendingRecoveryKit {
   return kit.version === 5
 }
@@ -62,14 +49,9 @@ export interface RecoveryKitReport {
 }
 
 export function buildRecoveryKit(descriptor: SpendingRecoveryDescriptor): SpendingRecoveryKit
-export function buildRecoveryKit(descriptor: VaultProgramDescriptor): LegacyRecoveryKit
 export function buildRecoveryKit(descriptor: LedgerRecoveryDescriptor): LedgerRecoveryKit
-export function buildRecoveryKit(
-  descriptor: VaultProgramDescriptor | LedgerRecoveryDescriptor | SpendingRecoveryDescriptor,
-): RecoveryKit
-export function buildRecoveryKit(
-  descriptor: VaultProgramDescriptor | LedgerRecoveryDescriptor | SpendingRecoveryDescriptor,
-): RecoveryKit {
+export function buildRecoveryKit(descriptor: LedgerRecoveryDescriptor | SpendingRecoveryDescriptor): RecoveryKit
+export function buildRecoveryKit(descriptor: LedgerRecoveryDescriptor | SpendingRecoveryDescriptor): RecoveryKit {
   if (descriptor.schema === SPENDING_RECOVERY_SCHEMA) {
     const d = buildSpendingRecoveryDescriptor(descriptor.enrollment)
     if (canonicalLedgerValue(d) !== canonicalLedgerValue(descriptor))
@@ -95,15 +77,7 @@ export function buildRecoveryKit(
       protectionTier: d.protectionTier,
     }
   }
-  const d = validateVaultProgramDescriptor(descriptor)
-  return {
-    name: RECOVERY_KIT_NAME,
-    version: RECOVERY_KIT_VERSION,
-    descriptor: d,
-    descriptorHash: hashVaultProgramDescriptor(d),
-    spendingPolicyDigest: d.policy.digest,
-    protectionTier: d.protectionTier,
-  }
+  throw new Error('Unsupported Recovery Kit descriptor')
 }
 
 export function parseRecoveryKit(raw: unknown): RecoveryKit {
@@ -121,19 +95,7 @@ export function parseRecoveryKit(raw: unknown): RecoveryKit {
       throw new Error('Ledger Recovery Kit binding changed')
     return built
   }
-  if (kit.version !== RECOVERY_KIT_VERSION) throw new Error('unsupported Recovery Kit version')
-  if (kit.descriptor.schema !== PROGRAM_SCHEMA) throw new Error('Recovery Kit version does not match its descriptor')
-  const built = buildRecoveryKit(kit.descriptor)
-  if (kit.descriptorHash && kit.descriptorHash !== built.descriptorHash) {
-    throw new Error('Recovery Kit hash does not match the rebuilt descriptor')
-  }
-  if (kit.spendingPolicyDigest !== built.spendingPolicyDigest) {
-    throw new Error('Recovery Kit spending policy digest does not match the rebuilt descriptor')
-  }
-  if (kit.protectionTier !== built.protectionTier) {
-    throw new Error('Recovery Kit protection tier does not match the rebuilt descriptor')
-  }
-  return built
+  throw new Error('unsupported Recovery Kit version')
 }
 
 export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
@@ -152,9 +114,7 @@ export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
   const familyKeys = familyKeysFor(Boolean(d.keys.recovery))
   const trees = [
     { role: 'savings', address: d.savings.address },
-    ...(isLedgerRecoveryKit(parsed)
-      ? [{ role: 'savings-change', address: parsed.descriptor.savingsChange.address }]
-      : []),
+    { role: 'savings-change', address: d.savingsChange.address },
     ...familyKeys.map((key) => ({
       role: `pending-${key}`,
       address: d.pending[key].address,
@@ -179,13 +139,7 @@ export function inspectRecoveryKit(kit: RecoveryKit): RecoveryKitReport {
   }
 }
 
-export function assertKitTemplate(d: VaultProgramDescriptor) {
-  if (d.schema !== PROGRAM_SCHEMA || !isSavingsTemplate(d.templateVersion)) {
-    throw new Error('Recovery Kit does not match the current Vault Program')
-  }
-}
-
-export function requireSavingsRecoveryKit(kit: RecoveryKit): LegacyRecoveryKit | LedgerRecoveryKit {
+export function requireSavingsRecoveryKit(kit: RecoveryKit): LedgerRecoveryKit {
   if (isSpendingRecoveryKit(kit)) throw new Error('This wallet has no protected Savings contract')
   return kit
 }

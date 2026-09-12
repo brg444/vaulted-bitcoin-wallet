@@ -3,7 +3,7 @@ import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { RestArkProvider, RestIndexerProvider, Transaction } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
-import { recoveryFixture } from './testdata/helpers'
+import { ledgerRecoveryFacts } from './testdata/helpers'
 import { retainFinalizationRecovery } from './finalization'
 import { recoveryFileStore } from './fileStore'
 import { vaultExitRepository } from '../vtxo/exitRepository'
@@ -16,7 +16,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 function fixture() {
-  const f = recoveryFixture()
+  const f = ledgerRecoveryFacts()
   const checkpoint = new Transaction({ version: 3 })
   checkpoint.addInput({ txid: f.coin.txid, index: f.coin.vout })
   checkpoint.addOutput({ amount: BigInt(f.coin.value), script: hex.decode(f.coin.script) })

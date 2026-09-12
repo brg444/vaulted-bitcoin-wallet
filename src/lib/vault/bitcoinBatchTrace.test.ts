@@ -11,7 +11,7 @@ import {
 } from '@arkade-os/sdk'
 import { getLogs } from '../logs'
 import { scalarSecret } from './program/fixtures'
-import { recoveryFixture } from './recovery/testdata/helpers'
+import { ledgerRecoveryFacts } from './recovery/testdata/helpers'
 import { exitArchiveProviders, validateExitArchive } from './recovery/exitArchive'
 import { vaultRecoveryBinding } from './vtxo/recoveryArchive'
 import { traceBitcoinBatch } from './bitcoinBatchTrace'
@@ -22,7 +22,7 @@ beforeEach(() => {
 })
 
 it.each(['mainnet', 'mutinynet'] as const)('traces the real SDK participation decision on %s', async (network) => {
-  const f = recoveryFixture(false, network)
+  const f = ledgerRecoveryFacts(false, network)
   const binding = vaultRecoveryBinding(f.kit, f.status)
   const provider = new RestArkProvider('https://operator.invalid')
   vi.spyOn(provider, 'getInfo').mockResolvedValue(validateExitArchive(f.archive.spending, binding).info)

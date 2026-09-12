@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { scalarSecret, FIXTURE_PHONE_DIRECT_P256 } from '../program/fixtures'
-import { wrapPhoneSecret } from '../prfEnvelope'
-import { recoveryFixture } from './testdata/helpers'
+import { scalarSecret } from '../program/fixtures'
 import { ledgerRecoveryFixture } from './testdata/ledger'
 import {
   buildRecoveryHeader,
@@ -14,18 +12,8 @@ import {
 } from './backupCodec'
 
 async function fixture(advanced = true) {
-  const { archive, status, kit } = recoveryFixture(advanced)
-  const enrollment = {
-    vaultId: status.vaultId,
-    credId: 'ab'.repeat(32),
-    webauthnP256: FIXTURE_PHONE_DIRECT_P256,
-    phoneBip340Pub: kit.descriptor.keys.phoneBip340,
-    phoneDirectP256: kit.descriptor.keys.phoneDirectP256,
-    ...(await wrapPhoneSecret(scalarSecret(9), scalarSecret(3))),
-  }
-  const header = buildRecoveryHeader(kit, status, enrollment)
-  const file: VaultRecoveryFile = { name: 'vaulted-recovery', version: 1, header, archive }
-  return { file, key: await recoveryBackupKey(scalarSecret(3), header) }
+  const { file } = await ledgerRecoveryFixture(advanced)
+  return { file, key: await recoveryBackupKey(scalarSecret(3), file.header) }
 }
 
 describe('program recovery encrypted archives', () => {

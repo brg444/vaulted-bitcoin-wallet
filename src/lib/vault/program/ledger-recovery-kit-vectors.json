@@ -1,0 +1,299 @@
+{
+  "sourceRevision": "58fad70833a5ae27a60d6f7c650efea3316887ad",
+  "cases": [
+    {
+      "network": "mainnet",
+      "advanced": false,
+      "kitSha256": "ec019564dd63943d32d3fb1b29043045c4effc8531d3bee2373ea5dedaca733d",
+      "transactions": [
+        {
+          "path": {
+            "change": 0,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "238ef23b3450daf26318b23645ef0ad068004c1254c25e4f1e754f1f0649f915"
+        },
+        {
+          "path": {
+            "change": 1,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "b289505e585ca9cb4305e6312674090e4feb4eaa6afcb55f81fe1f5c3688bf72"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "ab4c780f86a2377c21de5ee51bd053ea68350af582962851504a65add36bc0db"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "43dc24b82c559dba24b1bb3af55f25f8f4de2a30a19a4b815f9f705cf957a9b7"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "quarantine"
+          },
+          "psbtSha256": "d881956acfd3339653313303a224aaf2786fda802c13ef4aa5deaeecad17b6ab"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "7ce8b09fd485cd3ff8838495a486cf6cdc12d55d79fc4239b727a39da14bfc14"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "e4a2519ce1bc11d41603edf605c41ea9271d839210274d9d80e242a5e8f302f9"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "quarantine"
+          },
+          "psbtSha256": "5e1e1958376e06a8e70db5126d22ac79c63b9989f87847f5d4b7358804f2233b"
+        }
+      ]
+    },
+    {
+      "network": "mainnet",
+      "advanced": true,
+      "kitSha256": "ac75f9cd304728c8c6acbb204542800abd4714de915a97e4c882e5a21b4ba9a6",
+      "transactions": [
+        {
+          "path": {
+            "change": 0,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "6e6159f132d1d1574eca1e5ebd3c5e473d19d169a2ca23d0e56e701b0c9a5faa"
+        },
+        {
+          "path": {
+            "change": 1,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "a2da60dcf929ce613412de756469e64dd96eb912e9893d468054ad8e2936cfaf"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "37b2a22578cb1bcd08a993931b3fce39f6f2d77e198ccba73768ab7d5540d8fe"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "21bbf405df02b046326bcda37d7cd5d1dd74f4e4675bc7e3e2238201fc7eb96c"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "quarantine"
+          },
+          "psbtSha256": "8deac1d613b1169e4be2a2bd93d8dc64ee8e8748348e9bf1334d4dbdc21e5c11"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "c2bff0d8ae128f9a56278cb54ea8a82684b594843d2cf1780e1013adcf3bfe1c"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "89e607ee5ee697e976d0da47a73f2276af66e2cdd958783e25cf22aafcb95467"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "quarantine"
+          },
+          "psbtSha256": "61db6c0da8bcfbf578849cc60b5111f8f0cbec9da02909289868f1e160d9481b"
+        },
+        {
+          "path": {
+            "claimant": "recovery",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "a40c1f7edb8c29469cb06f93d5e3feacd2bf157a606153221b2ef3a9088c1e57"
+        },
+        {
+          "path": {
+            "claimant": "recovery",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "a91c3ae9872021de88c6c5948de7c21380bcfc35c5c3c86aa2fa473f27070d97"
+        },
+        {
+          "path": {
+            "claimant": "recovery",
+            "program": "quarantine"
+          },
+          "psbtSha256": "f68e33abc9a57e5e99942dd2dde9c77a15d982a07e344d808902bcf86322ff28"
+        }
+      ]
+    },
+    {
+      "network": "mutinynet",
+      "advanced": false,
+      "kitSha256": "5a1d52e20cafab2cefe51cd423b32cced879c2dc15ea162074bb8c588b7095bf",
+      "transactions": [
+        {
+          "path": {
+            "change": 0,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "d73c53d9cf3d046027b0c61c09f52cefdf9bad579c74bbdcf4787528b2fa4b7a"
+        },
+        {
+          "path": {
+            "change": 1,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "67cb442d475646f7826ff72800d92f89505ac2b0ef8ef8bc8cd375b5524a93f4"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "4a9daa2e6a1c94a7b3024ca5a63bede4b408438d7f5ae6703221173c6b2dca0c"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "7931f3a33df4e9b3a5f6f6aa21236d8681886ada382b1641ba9c24f62dbd5d8a"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "quarantine"
+          },
+          "psbtSha256": "e6ecdaaa23d555177d164b4a9cc6642828e82652ead97bfb8c258a47a740558a"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "4cb0b36b6ce54d45179b03b51420c2304253bfd78505303bf772ad2bff16db10"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "1cbcb6bbb9263d4710e62b5ade38ed036ece39d22093de920a1d624c62691cec"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "quarantine"
+          },
+          "psbtSha256": "dca8bb221d6b851ab041f88823e89398215c598fc843ce0c2ddfc27db9ff5c6b"
+        }
+      ]
+    },
+    {
+      "network": "mutinynet",
+      "advanced": true,
+      "kitSha256": "35be0dffd4c11d76179c40634ad5c31f7d10a65d27f8190dd77c4acbd95d10d0",
+      "transactions": [
+        {
+          "path": {
+            "change": 0,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "eb2450e9bdf84f4e7cf7e496cf02df67e7cb2946b91938843384291ee6113f23"
+        },
+        {
+          "path": {
+            "change": 1,
+            "program": "savings-admin"
+          },
+          "psbtSha256": "678c25129c4d885e15a13d7a28b19a8f3c0beb92eea8ffec8a8d3da06250728e"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "2e7142a34be837bc277520493a72aa5822aa3a95f4a39726beaf374dd83209c9"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "5361d8abeccadc243e0f70f1071b71dadfa2a963ee55645799647aaadca33016"
+        },
+        {
+          "path": {
+            "claimant": "phone",
+            "program": "quarantine"
+          },
+          "psbtSha256": "333756eaba61e0f588421f6a1811ae1c79a448ca399f4d9f2c9bb84f77d58d6e"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "45efa798bb90b89d213d944c08d451a85e40b63d6f5ee4cd8bba5305bc9fe816"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "4879678495bc77ad16f388fac58f7f91a599a68930fbd1642964b9034ac0426f"
+        },
+        {
+          "path": {
+            "claimant": "hardware",
+            "program": "quarantine"
+          },
+          "psbtSha256": "8ec9f989a3046cee29f4ead7633ca1b8f1baa41d504503c30ecc1643ffe42287"
+        },
+        {
+          "path": {
+            "claimant": "recovery",
+            "program": "pending-claim"
+          },
+          "psbtSha256": "b71cef17cc67731ab4b25f89114cd5042b6d7a51c946e083a2dd90db272a0056"
+        },
+        {
+          "path": {
+            "claimant": "recovery",
+            "program": "pending-cancel"
+          },
+          "psbtSha256": "a8e7c992be86f609a2f3431795988402f24b3e4afe0201c29be1a665b3ba762d"
+        },
+        {
+          "path": {
+            "claimant": "recovery",
+            "program": "quarantine"
+          },
+          "psbtSha256": "038b1f992b0c09a9d9c9e445f6712e648082d3534ccbd5e23af7f941776d0236"
+        }
+      ]
+    }
+  ]
+}

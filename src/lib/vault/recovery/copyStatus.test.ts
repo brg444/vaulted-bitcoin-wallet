@@ -1,20 +1,20 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
-import { recoveryFixture } from './testdata/helpers'
+import { ledgerRecoveryFacts } from './testdata/helpers'
 import { publicExitArchive } from './portable'
 import { readRecoveryCopies, recordRecoveryCopy, recoveryCopyDescription, recoveryPathDigest } from './copyStatus'
 
 beforeEach(() => vi.stubGlobal('indexedDB', new IDBFactory()))
 afterEach(() => vi.unstubAllGlobals())
 it('compares the readable export with local paths independently of capture time', () => {
-  const archive = recoveryFixture().archive.spending
+  const archive = ledgerRecoveryFacts().archive.spending
   expect(recoveryPathDigest(archive)).toBe(
     recoveryPathDigest({ ...publicExitArchive(archive), capturedAt: new Date(0).toISOString() }),
   )
 })
 it('keeps concurrent copy records across reload and identifies an older file without rolling back local status', async () => {
-  const archive = recoveryFixture().archive.spending
+  const archive = ledgerRecoveryFacts().archive.spending
   await Promise.all(
     ['local', 'downloaded', 'service'].map((kind) =>
       recordRecoveryCopy('wallet', 'mutinynet', kind as 'local' | 'downloaded' | 'service', archive),

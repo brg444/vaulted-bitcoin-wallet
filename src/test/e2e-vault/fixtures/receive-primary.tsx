@@ -12,11 +12,11 @@ import '../../../screens/Vault/quiet-guardian-screens.css'
 import VaultReceive from '../../../screens/Vault/Receive'
 import { VaultContext } from '../../../vault/context'
 import { ToastProvider } from '../../../components/Toast'
-import { recoveryFixture, sharedSpendingRecoveryFixture } from '../../../lib/vault/recovery/testdata/helpers'
+import { ledgerRecoveryFacts, sharedSpendingRecoveryFixture } from '../../../lib/vault/recovery/testdata/helpers'
 
 const { status, archive } = new URLSearchParams(location.search).has('light')
   ? sharedSpendingRecoveryFixture()
-  : recoveryFixture(false, 'mainnet')
+  : ledgerRecoveryFacts(false, 'mainnet')
 const id = 'v' + '12'.repeat(8)
 const active = new URLSearchParams(location.search).has('active')
 const name = new URLSearchParams(location.search).has('named') ? 'alex' : id

@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { Transaction, OnchainWallet, SingleKey, type OnchainProvider } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import { scalarSecret } from '../program/fixtures'
-import { recoveryFixture, sharedSpendingRecoveryFixture } from '../recovery/testdata/helpers'
+import {
+  ledgerRecoveryFacts,
+  ledgerSpendingFixtureSecret,
+  sharedSpendingRecoveryFixture,
+} from '../recovery/testdata/helpers'
 import {
   prepareVaultSpendingRecovery,
   validateSpendingRecoveryPackage,
@@ -45,7 +49,7 @@ describe('current SDK Spending recovery with required signer sets', () => {
   })
 
   it('unrolls a saved parent with a real SDK fee child and resumes without rebroadcasting', async () => {
-    const { archive, tx: parent } = recoveryFixture(false)
+    const { archive, tx: parent } = ledgerRecoveryFacts(false)
     const confirmed = new Set(['01'.repeat(32)])
     const chain: OnchainProvider = {
       ...onchain(),
@@ -67,7 +71,9 @@ describe('current SDK Spending recovery with required signer sets', () => {
       async ({ psbt }) => {
         const tx = Transaction.fromPSBT(hex.decode(psbt))
         tx.sign(scalarSecret(3))
-        tx.sign(scalarSecret(4))
+        const hardware = ledgerSpendingFixtureSecret('hardware')
+        tx.sign(hardware)
+        hardware.fill(0)
         return hex.encode(tx.toPSBT())
       },
       chain,
@@ -86,15 +92,19 @@ describe('current SDK Spending recovery with required signer sets', () => {
   it.each([false, true])(
     'prepares an actual SDK graph with every required signature (advanced=%s)',
     async (advanced) => {
-      const { archive } = recoveryFixture(advanced)
+      const { archive } = ledgerRecoveryFacts(advanced)
       const chain = onchain()
       const sign = vi.fn(async ({ psbt, requiredKeys }) => {
         expect(requiredKeys.map((key: { role: string }) => key.role)).toEqual(
           advanced ? ['hardware', 'recovery'] : ['phone', 'hardware'],
         )
         const tx = Transaction.fromPSBT(hex.decode(psbt))
-        tx.sign(scalarSecret(4))
-        tx.sign(scalarSecret(advanced ? 5 : 3))
+        const hardware = ledgerSpendingFixtureSecret('hardware')
+        tx.sign(hardware)
+        hardware.fill(0)
+        const counterpart = advanced ? ledgerSpendingFixtureSecret('recovery') : scalarSecret(3)
+        tx.sign(counterpart)
+        counterpart.fill(0)
         return hex.encode(tx.toPSBT())
       })
       const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Guardian and Operator unavailable'))
@@ -131,14 +141,16 @@ describe('current SDK Spending recovery with required signer sets', () => {
     },
   )
   it('refuses a package when only one of the required keys signs', async () => {
-    const { archive } = recoveryFixture(true)
+    const { archive } = ledgerRecoveryFacts(true)
     await expect(
       prepareVaultSpendingRecovery(
         archive,
         archive.kit.descriptor.savings.address,
         async ({ psbt }) => {
           const tx = Transaction.fromPSBT(hex.decode(psbt))
-          tx.sign(scalarSecret(4))
+          const hardware = ledgerSpendingFixtureSecret('hardware')
+          tx.sign(hardware)
+          hardware.fill(0)
           return hex.encode(tx.toPSBT())
         },
         onchain(),

@@ -25,7 +25,6 @@ import {
   validateBoardingTranscripts,
   type BoardingTranscript,
 } from './boardingJournal'
-import { hashBoardingEnrollmentDescriptor } from '../program/enroll'
 import { loadLifecycleArchive } from '../recovery/lifecycleStore'
 
 export interface VaultRecoveryArchive<K extends RecoveryKit = RecoveryKit> {
@@ -53,15 +52,7 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
       throw new Error('Ledger recovery enrollment composite changed')
   } else if (isSpendingRecoveryKit(valid)) {
     requireSpendingEnrollmentStatus(status)
-  } else if (
-    hashBoardingEnrollmentDescriptor({
-      schema: 'arkade-vault/enrollment-with-board-v1',
-      vaultId: status.vaultId,
-      savings: valid.descriptor,
-      boarding,
-    }) !== status.vtxoBoardingDescriptorHash
-  )
-    throw new Error('Recovery enrollment composite changed')
+  }
   const descriptorHash = hex.encode(
     sha256(
       new TextEncoder().encode(

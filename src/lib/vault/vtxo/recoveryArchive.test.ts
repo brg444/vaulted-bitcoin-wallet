@@ -3,7 +3,7 @@ import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hex } from '@scure/base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { boardingJournalFixture, recoveryFixture } from '../recovery/testdata/helpers'
+import { boardingJournalFixture, ledgerRecoveryFacts } from '../recovery/testdata/helpers'
 import {
   loadVaultRecoveryArchive,
   storeVaultRecoveryArchive,
@@ -17,7 +17,7 @@ describe('Standard and Advanced complete Spending archives', () => {
     'validates independently and supplies transactions during both service outages (advanced=%s)',
     async (advanced) => {
       for (const network of ['mainnet', 'mutinynet'] as const) {
-        const { archive, tx } = recoveryFixture(advanced, network)
+        const { archive, tx } = ledgerRecoveryFacts(advanced, network)
         const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('all services unavailable'))
         try {
           const imported = JSON.parse(JSON.stringify(archive))
@@ -32,7 +32,7 @@ describe('Standard and Advanced complete Spending archives', () => {
     },
   )
   it('rejects changed tier, network, recovery key, Operator and missing graph evidence', () => {
-    const { archive } = recoveryFixture()
+    const { archive } = ledgerRecoveryFacts()
     for (const mutate of [
       (a: typeof archive) => {
         a.status.protectionTier = 'standard'
@@ -115,7 +115,7 @@ describe('boarding evidence in complete program archive imports', () => {
   })
 
   it('checks the total archive size before parsing nested transaction or descriptor evidence', () => {
-    const { archive } = recoveryFixture()
+    const { archive } = ledgerRecoveryFacts()
     archive.spending.transactions = { ['ab'.repeat(32)]: '!'.repeat(24_000_001) }
     expect(() => validateVaultRecoveryArchive(archive)).toThrow(/archive limit/)
   })

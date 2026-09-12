@@ -9,7 +9,7 @@ import {
 } from '@arkade-os/sdk'
 import { RecoveryWalletRepository } from './walletRepository'
 import { RetainedExitRepository } from './retainedRepository'
-import { recoveryFixture } from './testdata/helpers'
+import { ledgerRecoveryFacts } from './testdata/helpers'
 import { validateExitArchive } from './exitArchive'
 import { loadLifecycleArchive, readRecoveryTransition } from './lifecycleStore'
 
@@ -32,7 +32,7 @@ afterEach(() => {
 })
 
 function fixture() {
-  const f = recoveryFixture()
+  const f = ledgerRecoveryFacts()
   const { info, coins } = validateExitArchive(f.archive.spending, {
     descriptorHash: f.archive.spending.descriptorHash,
     scriptPubKey: f.coin.script,

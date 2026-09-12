@@ -3,26 +3,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import { buildRecoveryHeader } from '../../lib/vault/recovery/backupCodec'
 import { MAX_PORTABLE_RECOVERY_BYTES } from '../../lib/vault/recovery/portable'
-import { recoveryFixture } from '../../lib/vault/recovery/testdata/helpers'
+import { ledgerRecoveryFixture } from '../../lib/vault/recovery/testdata/ledger'
 import RecoveryFileImport from './RecoveryFileImport'
 import VaultWelcome from './Welcome'
 import VaultUnlock from './Unlock'
 
 vi.mock('../../lib/vault/webauthn', () => ({ isCoarsePhone: () => false }))
 
-const { kit, status, archive } = recoveryFixture(false)
+const { kit, status, archive, enrollment } = await ledgerRecoveryFixture(false)
 const envelope = {
   name: 'vaulted-recovery-backup',
   version: 1,
-  header: buildRecoveryHeader(kit, status, {
-    vaultId: status.vaultId,
-    credId: 'ab'.repeat(32),
-    webauthnP256: kit.descriptor.keys.phoneDirectP256,
-    phoneDirectP256: kit.descriptor.keys.phoneDirectP256,
-    phoneBip340Pub: kit.descriptor.keys.phoneBip340,
-    nonce: '11'.repeat(12),
-    ciphertext: '22'.repeat(48),
-  }),
+  header: buildRecoveryHeader(kit, status, enrollment),
   nonce: '33'.repeat(12),
   ciphertext: 'AQ==',
 }

@@ -1,58 +1,46 @@
 import { describe, expect, it } from 'vitest'
+import { ledgerRecoveryFacts, sharedSpendingRecoveryFixture } from '../recovery/testdata/helpers'
+import { buildRecoveryKit, inspectRecoveryKit, parseRecoveryKit } from './kit'
 import { buildVaultProgramDescriptor } from './descriptor'
 import { PROGRAM_FIXTURE } from './fixtures'
-import { buildRecoveryKit, inspectRecoveryKit, parseRecoveryKit } from './kit'
 
-describe('Recovery Kit', () => {
-  it.each(['phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2'])(
-    'rejects retired %s descriptors and enrollment kits',
-    (templateVersion) => {
-      expect(() => buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, templateVersion })).toThrow('template version')
-      const kit = buildRecoveryKit(buildVaultProgramDescriptor(PROGRAM_FIXTURE))
-      expect(() => parseRecoveryKit({ ...kit, descriptor: { ...kit.descriptor, templateVersion } })).toThrow(
-        'template version',
-      )
-      expect(() =>
-        parseRecoveryKit({ name: 'arkade-connector-enrollment', version: 1, descriptor: kit.descriptor }),
-      ).toThrow('Recovery Kit')
-    },
-  )
-
-  it('rebuilds the descriptor and lists the seven Savings trees', () => {
-    const kit = buildRecoveryKit(buildVaultProgramDescriptor(PROGRAM_FIXTURE))
-    const report = inspectRecoveryKit(kit)
-    expect(report.hash).toBe(kit.descriptorHash)
-    expect(kit.version).toBe(3)
-    expect(kit.protectionTier).toBe('advanced')
-    expect(report.trees).toHaveLength(7)
-    expect(report.trees.some((tree) => tree.role === 'savings')).toBe(true)
-    expect(report.trees.some((tree) => tree.role.includes('daily'))).toBe(false)
-    expect(report.trees.some((tree) => tree.delay === 288)).toBe(true)
-    expect(report.warnings.some((line) => /phone and hardware keys without either service/.test(line))).toBe(true)
-    expect(parseRecoveryKit(JSON.parse(JSON.stringify(kit))).descriptorHash).toBe(kit.descriptorHash)
+describe('retained Recovery Kits', () => {
+  it.each(['mainnet', 'mutinynet'] as const)('rebuilds both Ledger protection levels on %s', (network) => {
+    for (const advanced of [false, true]) {
+      const { kit } = ledgerRecoveryFacts(advanced, network)
+      expect(parseRecoveryKit(JSON.parse(JSON.stringify(kit)))).toEqual(kit)
+      const report = inspectRecoveryKit(kit)
+      expect(report.hash).toBe(kit.descriptorHash)
+      expect(kit.version).toBe(4)
+      expect(report.trees).toHaveLength(advanced ? 8 : 6)
+      expect(report.trees.some((tree) => tree.role === 'savings-change')).toBe(true)
+      expect(report.trees.some((tree) => tree.role.includes('recovery'))).toBe(advanced)
+      expect(report.warnings.some((line) => /phone and hardware keys without either service/.test(line))).toBe(true)
+    }
   })
-
-  it('rejects a tampered hash', () => {
-    const kit = buildRecoveryKit(buildVaultProgramDescriptor(PROGRAM_FIXTURE))
-    expect(() => parseRecoveryKit({ ...kit, descriptorHash: '00'.repeat(32) })).toThrow(/hash/)
-    expect(() => parseRecoveryKit({ ...kit, protectionTier: 'standard' })).toThrow(/protection tier/)
-    expect(() => parseRecoveryKit({ ...kit, version: 2 })).toThrow(/version/)
-    expect(() => parseRecoveryKit({ name: 'emergency-exit', version: 1, descriptor: kit.descriptor })).toThrow(
-      /Recovery Kit/,
+  it('rejects changed bindings, cross-family versions and extra fields for every retained kit', () => {
+    const kits = [ledgerRecoveryFacts().kit, sharedSpendingRecoveryFixture().kit]
+    for (const kit of kits) {
+      for (const patch of [
+        { descriptorHash: '00'.repeat(32) },
+        { protectionTier: 'unknown' },
+        { spendingPolicyDigest: '00'.repeat(32) },
+        { version: kit.version === 4 ? 5 : 4 },
+        { unlock: {} },
+      ])
+        expect(() => parseRecoveryKit({ ...kit, ...patch })).toThrow()
+    }
+  })
+  it('rejects historical direct-hardware, Light and connector kits without rebuilding them', () => {
+    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
+    // A complete former descriptor proves rejection is due to retirement, not missing fields.
+    expect(() => buildRecoveryKit(descriptor as never)).toThrow('Unsupported Recovery Kit descriptor')
+    for (const version of [1, 2, 3, 6])
+      expect(() => parseRecoveryKit({ name: 'arkade-recovery-kit', version, descriptor })).toThrow('version')
+    for (const name of ['arkade-connector-enrollment', 'vaulted-light-recovery', 'vaulted-light-backup'])
+      expect(() => parseRecoveryKit({ name, version: 1, descriptor })).toThrow('Recovery Kit')
+    expect(() => parseRecoveryKit({ name: 'arkade-recovery-kit', version: 4, descriptor })).toThrow(
+      'Ledger recovery descriptor',
     )
-  })
-
-  it('inspects and restores a Standard kit without a recovery claimant', () => {
-    const descriptor = buildVaultProgramDescriptor({
-      ...PROGRAM_FIXTURE,
-      protectionTier: 'standard',
-      recoveryPub: undefined,
-    })
-    const kit = buildRecoveryKit(descriptor)
-    const report = inspectRecoveryKit(parseRecoveryKit(JSON.parse(JSON.stringify(kit))))
-
-    expect(kit.protectionTier).toBe('standard')
-    expect(report.trees).toHaveLength(5)
-    expect(report.trees.some((tree) => tree.role.includes('recovery'))).toBe(false)
   })
 })

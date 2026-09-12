@@ -3,7 +3,7 @@ import {
   isLedgerRecoveryKit,
   parseRecoveryKit,
   type RecoveryKit,
-  type SavingsRecoveryKit,
+  type LedgerRecoveryKit,
 } from './kit'
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
@@ -12,7 +12,6 @@ import { tapLeafHash } from '@scure/btc-signer/payment.js'
 import { bitcoinDustSats, scriptHexFromAddress } from '../bitcoin'
 import { requireExactDefaultTapscriptSignatures, tapscriptSignatureRecords } from '../taprootSignatures'
 import { type Claimant } from './constants'
-import { familyFromDescriptor } from './descriptor'
 import {
   ledgerAccountKey,
   ledgerBip32Versions,
@@ -22,8 +21,7 @@ import {
 } from './ledgerNativeKeys'
 import { deriveLedgerPhoneAccount } from '../ledgerPhoneBackup'
 import { canonicalLedgerValue, ledgerRecoveryFamily } from './ledgerEnrollment'
-import { buildClaimPsbt, buildGuardianExitPsbt, tapLeafForScript } from './spend'
-import { pendingGuardians } from './trees'
+import { tapLeafForScript } from './spend'
 
 const options = { version: 2, lockTime: 0, allowUnknownInputs: true, allowUnknownOutputs: true } as const
 export type SavingsRecoveryPath =
@@ -32,8 +30,8 @@ export type SavingsRecoveryPath =
 
 export interface SavingsRecoveryFile {
   name: 'vaulted-savings-recovery'
-  version: 1 | 2
-  kit: SavingsRecoveryKit
+  version: 2
+  kit: LedgerRecoveryKit
   path: SavingsRecoveryPath
   parentHex: string
   vout: number
@@ -43,113 +41,84 @@ export interface SavingsRecoveryFile {
 }
 
 function pathFacts(kit: RecoveryKit, path: SavingsRecoveryPath) {
-  const d = requireSavingsRecoveryKit(kit).descriptor
-  if (isLedgerRecoveryKit(kit)) {
-    const { context, spendingPolicy } = kit.descriptor.ledgerSavings
-    const family = ledgerRecoveryFamily({ context, spendingPolicy })
-    let selected: {
-      tree: Pick<typeof family.receive, 'script' | 'tapInternalKey' | 'tapLeafScript'>
-      leaf: Uint8Array
-      signers: Claimant[]
-      sequence: number
-      branch: number
-      walletPolicy: typeof family.walletPolicy
-    }
-    if (path.program === 'savings-admin') {
-      const change = path.change ?? 0
-      if (change !== 0 && change !== 1) throw new Error('Unenrolled Ledger Savings coordinate')
-      const tree = change === 0 ? family.receive : family.change
-      selected = {
-        tree,
-        leaf: tree.admin,
-        signers: ['phone', 'hardware'],
-        sequence: 0xfffffffd,
-        branch: change,
-        walletPolicy: family.walletPolicy,
-      }
-    } else {
-      const recovery = family.recovery[path.claimant]
-      if (!recovery) throw new Error('Unenrolled Ledger recovery claimant')
-      if (path.program === 'pending-claim')
-        selected = {
-          tree: recovery.pending,
-          leaf: recovery.pending.claim,
-          signers: [path.claimant],
-          sequence: recovery.delay,
-          branch: LEDGER_RECOVERY_BRANCH.claim,
-          walletPolicy: recovery.pending.walletPolicy,
-        }
-      else if (path.program === 'pending-cancel')
-        selected = {
-          tree: recovery.pending,
-          leaf: recovery.pending.cancel,
-          signers: [...recovery.guardians],
-          sequence: 0xfffffffd,
-          branch: LEDGER_RECOVERY_BRANCH.cancel,
-          walletPolicy: recovery.pending.walletPolicy,
-        }
-      else if (path.program === 'quarantine')
-        selected = {
-          tree: recovery.quarantine,
-          leaf: recovery.quarantine.admin,
-          signers: [...recovery.guardians],
-          sequence: 0xfffffffd,
-          branch: LEDGER_RECOVERY_BRANCH.quarantine,
-          walletPolicy: recovery.quarantine.walletPolicy,
-        }
-      else throw new Error('Unknown Ledger recovery path')
-    }
-    const derived = selected.signers.map((role) => {
-      const origin = context[role]!,
-        account = ledgerAccountKey(origin, context.network)
-      const key =
-        selected.branch <= 1
-          ? ledgerSavingsChild(account, selected.branch)
-          : ledgerRecoveryChild(
-              account,
-              path.program === 'pending-claim' ? 'claim' : path.program === 'pending-cancel' ? 'cancel' : 'quarantine',
-            )
-      return { publicKey: key.publicKey!, origin }
-    })
-    const origins: NonNullable<ReturnType<Transaction['getInput']>['tapBip32Derivation']> = derived.map((item) => [
-      item.publicKey.slice(1),
-      {
-        hashes: [tapLeafHash(selected.leaf)],
-        der: {
-          fingerprint: Number.parseInt(item.origin.fingerprint, 16),
-          path: [...item.origin.path, selected.branch, 0],
-        },
-      },
-    ])
-    return { ...selected, pubs: derived.map((item) => hex.encode(item.publicKey.slice(1))), origins }
+  const { descriptor } = requireSavingsRecoveryKit(kit)
+  const { context, spendingPolicy } = descriptor.ledgerSavings
+  const family = ledgerRecoveryFamily({ context, spendingPolicy })
+  let selected: {
+    tree: Pick<typeof family.receive, 'script' | 'tapInternalKey' | 'tapLeafScript'>
+    leaf: Uint8Array
+    signers: Claimant[]
+    sequence: number
+    branch: number
+    walletPolicy: typeof family.walletPolicy
   }
-  const family = familyFromDescriptor(d)
   if (path.program === 'savings-admin') {
-    return {
-      tree: family.savings,
-      leaf: family.savings.admin,
-      signers: ['phone', 'hardware'] as Claimant[],
+    const change = path.change ?? 0
+    if (change !== 0 && change !== 1) throw new Error('Unenrolled Ledger Savings coordinate')
+    const tree = change === 0 ? family.receive : family.change
+    selected = {
+      tree,
+      leaf: tree.admin,
+      signers: ['phone', 'hardware'],
       sequence: 0xfffffffd,
+      branch: change,
+      walletPolicy: family.walletPolicy,
     }
+  } else {
+    const recovery = family.recovery[path.claimant]
+    if (!recovery) throw new Error('Unenrolled Ledger recovery claimant')
+    if (path.program === 'pending-claim')
+      selected = {
+        tree: recovery.pending,
+        leaf: recovery.pending.claim,
+        signers: [path.claimant],
+        sequence: recovery.delay,
+        branch: LEDGER_RECOVERY_BRANCH.claim,
+        walletPolicy: recovery.pending.walletPolicy,
+      }
+    else if (path.program === 'pending-cancel')
+      selected = {
+        tree: recovery.pending,
+        leaf: recovery.pending.cancel,
+        signers: [...recovery.guardians],
+        sequence: 0xfffffffd,
+        branch: LEDGER_RECOVERY_BRANCH.cancel,
+        walletPolicy: recovery.pending.walletPolicy,
+      }
+    else if (path.program === 'quarantine')
+      selected = {
+        tree: recovery.quarantine,
+        leaf: recovery.quarantine.admin,
+        signers: [...recovery.guardians],
+        sequence: 0xfffffffd,
+        branch: LEDGER_RECOVERY_BRANCH.quarantine,
+        walletPolicy: recovery.quarantine.walletPolicy,
+      }
+    else throw new Error('Unknown Ledger recovery path')
   }
-  if (!['phone', 'hardware', 'recovery'].includes(path.claimant)) throw new Error('Invalid recovery claimant')
-  const key = `savings-${path.claimant}` as const
-  if (!d.pending[key]) throw new Error('This vault has no recovery path for that key')
-  if (path.program === 'quarantine') {
-    const tree = family.quarantine[key]
-    return { tree, leaf: tree.admin, signers: tree.guardians, sequence: 0xfffffffd }
-  }
-  const tree = family.pending[key]
-  if (path.program === 'pending-claim')
-    return { tree, leaf: tree.claim, signers: [path.claimant], sequence: tree.delay }
-  if (path.program !== 'pending-cancel' || !tree.guardianExit)
-    throw new Error('This vault has no service-independent cancellation path')
-  return {
-    tree,
-    leaf: tree.guardianExit,
-    signers: pendingGuardians(path.claimant, Boolean(d.keys.recovery)),
-    sequence: 0xfffffffd,
-  }
+  const derived = selected.signers.map((role) => {
+    const origin = context[role]!,
+      account = ledgerAccountKey(origin, context.network)
+    const key =
+      selected.branch <= 1
+        ? ledgerSavingsChild(account, selected.branch)
+        : ledgerRecoveryChild(
+            account,
+            path.program === 'pending-claim' ? 'claim' : path.program === 'pending-cancel' ? 'cancel' : 'quarantine',
+          )
+    return { publicKey: key.publicKey!, origin }
+  })
+  const origins: NonNullable<ReturnType<Transaction['getInput']>['tapBip32Derivation']> = derived.map((item) => [
+    item.publicKey.slice(1),
+    {
+      hashes: [tapLeafHash(selected.leaf)],
+      der: {
+        fingerprint: Number.parseInt(item.origin.fingerprint, 16),
+        path: [...item.origin.path, selected.branch, 0],
+      },
+    },
+  ])
+  return { ...selected, pubs: derived.map((item) => hex.encode(item.publicKey.slice(1))), origins }
 }
 
 function build(input: Omit<SavingsRecoveryFile, 'name' | 'version' | 'psbt'>) {
@@ -173,49 +142,20 @@ function build(input: Omit<SavingsRecoveryFile, 'name' | 'version' | 'psbt'>) {
   const amount = output.amount - BigInt(input.feeSats)
   if (amount < BigInt(bitcoinDustSats(input.destination, kit.descriptor.network)))
     throw new Error('Recovery output is below dust')
-  let tx: Transaction
-  if (
-    !isLedgerRecoveryKit(kit) &&
-    (input.path.program === 'pending-claim' || input.path.program === 'pending-cancel')
-  ) {
-    const builder = input.path.program === 'pending-claim' ? buildClaimPsbt : buildGuardianExitPsbt
-    const built = builder({
-      family: familyFromDescriptor(kit.descriptor),
-      claimant: input.path.claimant,
-      coin: { txid: parent.id, vout: input.vout, value: Number(output.amount) },
-      destAddress: input.destination,
-      feeSats: input.feeSats,
-      network: kit.descriptor.network,
-    })
-    tx = Transaction.fromPSBT(hex.decode(built.psbtHex), options)
-    tx.updateInput(0, { nonWitnessUtxo: hex.decode(input.parentHex) })
-  } else {
-    // The live Savings builder requires localStorage pins and current status.
-    // This offline sweep proves its single prevout directly from the saved parent.
-    tx = new Transaction(options)
-    tx.addInput({
-      txid: parent.id,
-      index: input.vout,
-      sequence: facts.sequence,
-      witnessUtxo: { script: output.script, amount: output.amount },
-      nonWitnessUtxo: hex.decode(input.parentHex),
-      tapInternalKey: facts.tree.tapInternalKey,
-      tapLeafScript: [tapLeafForScript(facts.tree.tapLeafScript, facts.leaf)],
-      ...('origins' in facts
-        ? { tapBip32Derivation: facts.origins.map(([pub, derivation]) => [pub, derivation]) }
-        : {}),
-    })
-    tx.addOutput({ script: hex.decode(scriptHexFromAddress(input.destination, kit.descriptor.network)), amount })
-  }
-  const pubs =
-    'pubs' in facts
-      ? facts.pubs
-      : facts.signers.map((role) => {
-          const pub = role === 'phone' ? kit.descriptor.keys.phoneBip340 : kit.descriptor.keys[role]
-          if (!pub) throw new Error('Missing required recovery key')
-          return pub.slice(2)
-        })
-  return { tx, kit, ...facts, pubs, parentTxid: parent.id }
+  // Prove the selected prevout directly from the saved parent for independent recovery.
+  const tx = new Transaction(options)
+  tx.addInput({
+    txid: parent.id,
+    index: input.vout,
+    sequence: facts.sequence,
+    witnessUtxo: { script: output.script, amount: output.amount },
+    nonWitnessUtxo: hex.decode(input.parentHex),
+    tapInternalKey: facts.tree.tapInternalKey,
+    tapLeafScript: [tapLeafForScript(facts.tree.tapLeafScript, facts.leaf)],
+    tapBip32Derivation: facts.origins.map(([pub, derivation]) => [pub, derivation]),
+  })
+  tx.addOutput({ script: hex.decode(scriptHexFromAddress(input.destination, kit.descriptor.network)), amount })
+  return { tx, kit, ...facts, parentTxid: parent.id }
 }
 
 /** No network calls, signing, or broadcasts occur during preparation. */
@@ -227,7 +167,7 @@ export function prepareSavingsRecovery(
     ...input,
     kit,
     name: 'vaulted-savings-recovery',
-    version: isLedgerRecoveryKit(kit) ? 2 : 1,
+    version: 2,
     psbt: hex.encode(tx.toPSBT()),
   }
 }
@@ -236,14 +176,12 @@ export function validateSavingsRecovery(raw: SavingsRecoveryFile) {
   if (
     !raw ||
     raw.name !== 'vaulted-savings-recovery' ||
-    (raw.version !== 1 && raw.version !== 2) ||
+    raw.version !== 2 ||
     typeof raw.psbt !== 'string' ||
     raw.psbt.length > 10_000_000
   )
     throw new Error('Invalid Savings recovery file')
   const rebuilt = build(raw)
-  if (raw.version !== (isLedgerRecoveryKit(rebuilt.kit) ? 2 : 1))
-    throw new Error('Savings recovery file version changed')
   const tx = Transaction.fromPSBT(hex.decode(raw.psbt), options)
   const signatures = tx.getInput(0).tapScriptSig || []
   const signedPubs = signatures.map(([key]) => hex.encode(key.pubKey))

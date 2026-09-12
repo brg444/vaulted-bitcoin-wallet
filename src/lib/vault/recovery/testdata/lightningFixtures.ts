@@ -14,7 +14,7 @@ import { MAINNET_INVOICE, MUTINYNET_INVOICE } from '../../lightningTestUtils'
 import { decodeVaultLightningInvoice } from '../../lightningInvoice'
 import { compressedFromScalar, scalarSecret } from '../../program/fixtures'
 import { networkPins } from '../../networkPins'
-import { recoveryFixture } from './helpers'
+import { ledgerRecoveryFacts } from './helpers'
 import lightVectors from '../../light/testdata/contracts.json'
 import { lightDescriptorDigest, type LightDescriptor } from '../../light/contract'
 import { packExitArchive } from '../exitArchive'
@@ -31,7 +31,7 @@ export function lightningRecoveryFixture(
 ) {
   const network = options.network ?? 'mainnet'
   const pins = networkPins(network)
-  const base = recoveryFixture(options.advanced ?? false, network)
+  const base = ledgerRecoveryFacts(options.advanced ?? false, network)
   const binding: LightningArchiveBinding = {
     vaultId: base.status.vaultId,
     network,

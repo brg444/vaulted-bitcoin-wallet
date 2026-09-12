@@ -1,28 +1,15 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { hex } from '@scure/base'
-import { scalarSecret, FIXTURE_PHONE_DIRECT_P256 } from '../program/fixtures'
-import { wrapPhoneSecret } from '../prfEnvelope'
-import { deriveDirectP256 } from '../ceremony/directauth'
-import { recoveryFixture } from './testdata/helpers'
+import { scalarSecret } from '../program/fixtures'
 import { buildRecoveryHeader, recoveryBackupKey, encryptRecoveryBackup, type VaultRecoveryFile } from './backupCodec'
 import { openRecoveryCloudBackup, syncRecoveryCloudBackup, type RecoveryBackupSession } from './cloudBackup'
 import { ledgerRecoveryFixture, ledgerFixturePRF, ledgerFixtureSeed } from './testdata/ledger'
 
 async function fixture() {
-  const prf = scalarSecret(9)
-  const direct = await deriveDirectP256(prf)
-  const { archive, status, kit } = recoveryFixture(false, 'mutinynet', hex.encode(direct.pub))
-  direct.scalar.fill(0)
+  const { archive, status, kit, enrollment } = await ledgerRecoveryFixture()
+  const prf = ledgerFixturePRF
   status.clientOrigin = location.origin
   status.rpId = location.hostname
-  const enrollment = {
-    vaultId: status.vaultId,
-    credId: 'ab'.repeat(32),
-    webauthnP256: FIXTURE_PHONE_DIRECT_P256,
-    phoneBip340Pub: kit.descriptor.keys.phoneBip340,
-    phoneDirectP256: kit.descriptor.keys.phoneDirectP256,
-    ...(await wrapPhoneSecret(prf, scalarSecret(3))),
-  }
   const header = buildRecoveryHeader(kit, status, enrollment)
   const file: VaultRecoveryFile = { name: 'vaulted-recovery', version: 1, header, archive }
   const session: RecoveryBackupSession = {

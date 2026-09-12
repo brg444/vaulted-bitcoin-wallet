@@ -4,20 +4,10 @@ import { hex } from '@scure/base'
 import { HDKey } from '@scure/bip32'
 import { p2tr } from '@scure/btc-signer'
 import { ledgerBip32Versions, type LedgerSavingsKeyContext } from '../program/ledgerNativeKeys'
-import {
-  buildLedgerRecoveryDescriptor,
-  hashLedgerSavingsEnrollment,
-  LEDGER_ENROLLMENT_SCHEMA,
-  type LedgerSavingsEnrollmentDescriptor,
-} from '../program/ledgerRecoveryDescriptor'
-import { buildRecoveryKit } from '../program/kit'
 import { scalarSecret } from '../program/fixtures'
 import vectors from '../program/ledger-key-vectors.json'
-import { recoveryFixture } from '../recovery/testdata/helpers'
-import { vaultRecoveryBinding } from './recoveryArchive'
+import { ledgerRecoveryFacts } from '../recovery/testdata/helpers'
 import { prepareVaultSpendingRecovery } from './spendingRecovery'
-import { defaultSpendingPolicy } from '../spendingPolicy'
-import { networkPins } from '../networkPins'
 import { ledgerRecoveryFeeWallet, type LedgerRecoveryFeeRequest } from './ledgerRecoveryFee'
 
 export const seed = mnemonicToSeedSync(
@@ -73,48 +63,8 @@ export async function fixture(advanced = false, network: 'mainnet' | 'mutinynet'
           r.wipe()
         }
         try {
-          const old = recoveryFixture(advanced, network, context.phoneDirectP256, undefined, {
-            hardwarePub: '02' + hex.encode(hExit.key.publicKey!.slice(1)),
-            ...(rExit ? { recoveryPub: '02' + hex.encode(rExit.key.publicKey!.slice(1)) } : {}),
-          })
-          const s = old.status,
-            pins = networkPins(network)
-          const composite: LedgerSavingsEnrollmentDescriptor = {
-            schema: LEDGER_ENROLLMENT_SCHEMA,
-            vaultId: context.vaultId,
-            savings: { context, spendingPolicy: defaultSpendingPolicy(network) },
-            spendingAuthorities: {
-              phoneBip340Pub: s.phoneBip340Pub!,
-              externalOwnerWalletPub: s.externalOwnerWalletPub!,
-              recoveryKeyPub: s.recoveryPub || '',
-              vaultCosignerBasePub: s.vaultCosignerBasePub!,
-              arkadeCosignerBasePub: s.arkadeCosignerBasePub!,
-              phoneDirectP256: s.phoneDirectP256!,
-              vtxoVaultCosignerPub: s.vtxoVaultCosignerPub!,
-              operatorPub: pins.operatorSignerPub,
-              vtxoDelegatePub: pins.delegatePub,
-              vtxoExitDelay: pins.policyExitDelay,
-              vtxoExitDelayUnit: 'seconds',
-              spendingArkAddress: s.spendingArkAddress!,
-              spendingArkScript: s.spendingArkScript!,
-            },
-            boarding: s.vtxoBoardingDescriptor!,
-          }
-          const descriptor = buildLedgerRecoveryDescriptor(composite),
-            kit = buildRecoveryKit(descriptor)
-          Object.assign(s, {
-            templateVersion: context.templateVersion,
-            savingsAddress: descriptor.savings.address,
-            savingsScript: descriptor.savings.script,
-            ledgerSavings: { ...composite.savings, descriptorHash: hashLedgerSavingsEnrollment(composite) },
-            vtxoBoardingDescriptorHash: hashLedgerSavingsEnrollment(composite),
-          })
-          const archive = {
-            ...old.archive,
-            kit,
-            status: s,
-            spending: { ...old.archive.spending, descriptorHash: vaultRecoveryBinding(kit, s).descriptorHash },
-          }
+          const { archive, kit } = ledgerRecoveryFacts(advanced, network, { context })
+          const descriptor = kit.descriptor
           const file = await prepareVaultSpendingRecovery(
             archive,
             descriptor.savings.address,

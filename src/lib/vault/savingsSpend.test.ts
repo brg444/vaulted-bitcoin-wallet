@@ -1,326 +1,56 @@
 import { hex } from '@scure/base'
 import { Address, TEST_NETWORK, Transaction } from '@scure/btc-signer'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { pinEnrolledStatus } from './pin'
-import {
-  buildSavingsPsbt,
-  finalizeSavingsPsbt,
-  inspectSavingsPsbt,
-  psbtFile,
-  psbtHexToBase64,
-  readPsbtFile,
-  requireSameSavingsIntent,
-  signSavingsPsbt,
-} from './savingsSpend'
-import type { VaultStatus } from './types'
-import { buildVaultProgramDescriptor, familyFromDescriptor } from './program/descriptor'
-import { PROGRAM_FIXTURE, scalarSecret } from './program/fixtures'
-import { buildRecoveryKit } from './program/kit'
-import { saveLocalKit } from './program/kitStore'
-import { spendingPolicyFromLimits, spendingPolicyDigest } from './spendingPolicy'
+import { describe, expect, it } from 'vitest'
+import { ledgerPaymentFixture } from '../../test/ledgerSavingsFixture'
+import { acceptLedgerSavingsSignatures, buildLedgerSavingsPsbt, signLedgerSavingsWithPhone } from './ledgerSavings'
+import { finalizeSavingsPsbt, inspectSavingsPsbt, psbtFile, psbtHexToBase64, readPsbtFile } from './savingsSpend'
 
-const PHONE_PRIV = hex.decode('00'.repeat(31) + '03')
-const HW_PRIV = hex.decode('00'.repeat(31) + '04')
-const BOARDING_DEST = 'tb1p9llcrjjkzr57py6vffwveztm0hn0hezj7wzrq5mat6nh07j37g4qh8jl0l'
-
-function currentAdminPsbt(): string {
-  const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
-  const savings = familyFromDescriptor(descriptor).savings
-  const leaf = savings.tapLeafScript?.find((entry) => hex.encode(entry[1].slice(0, -1)) === hex.encode(savings.admin))
-  if (!leaf) throw new Error('Savings admin leaf missing')
-  const tx = new Transaction({ version: 2, allowUnknownInputs: true, allowUnknownOutputs: true })
-  tx.addInput({
-    txid: new Uint8Array(32),
-    index: 0,
-    witnessUtxo: { script: savings.script, amount: 100_000n },
-    tapInternalKey: savings.tapInternalKey,
-    tapLeafScript: [leaf],
-    sequence: 0xffffffff,
-  })
-  tx.addOutput({ script: savings.script, amount: 98_500n })
-  return hex.encode(tx.toPSBT())
-}
-
-function statusFromDescriptor(descriptor: ReturnType<typeof buildVaultProgramDescriptor>): VaultStatus {
-  const spendingPolicy = spendingPolicyFromLimits({
-    txRecipientCapSats: descriptor.policy.recipientCapSats,
-    periodAllowanceSats: descriptor.policy.periodAllowanceSats,
-    absoluteFeeCapSats: descriptor.policy.absoluteFeeCapSats,
-    feerateCapSatPerV: descriptor.policy.feerateCapSatVb,
-  })
-  return {
-    enrolled: true,
-    network: descriptor.network,
-    clientOrigin: 'https://vault.example',
-    rpId: 'vault.example',
-    vaultId: descriptor.vaultId,
-    templateVersion: descriptor.templateVersion,
-    policyVersion: descriptor.policyVersion,
-    protectionTier: descriptor.protectionTier,
-    savingsAddress: descriptor.savings.address,
-    savingsScript: descriptor.savings.script,
-    periodAllowance: descriptor.policy.periodAllowanceSats,
-    periodSpent: 0,
-    periodRemaining: descriptor.policy.periodAllowanceSats,
-    txCap: descriptor.policy.recipientCapSats,
-    absoluteFeeCap: descriptor.policy.absoluteFeeCapSats,
-    feerateCapSatVb: descriptor.policy.feerateCapSatVb,
-    spendingPolicy,
-    spendingPolicyDigest: spendingPolicyDigest(spendingPolicy),
-    phoneBip340Pub: descriptor.keys.phoneBip340,
-    externalOwnerWalletPub: descriptor.keys.hardware,
-    recoveryPub: descriptor.keys.recovery,
-    vaultCosignerBasePub: descriptor.keys.vaultCosignerBase,
-    arkadeCosignerBasePub: descriptor.keys.arkadeCosignerBase,
-    arkadeCosignerOrigin: descriptor.arkadeCosigner.origin,
-    arkadeCosignerVersion: descriptor.arkadeCosigner.version,
-    vtxoVaultCosignerPub: '02' + '11'.repeat(32),
-    vtxoExitDelay: 4608,
-    vtxoExitDelayUnit: 'seconds',
-    spendingArkAddress: 'tark1spending',
-    spendingArkScript: '5120' + '22'.repeat(32),
-    vtxoDelegatePub: '02' + '33'.repeat(32),
-    vtxoBoardingActive: true,
-    vtxoBoardingProgram: 'vault-board-v1',
-    vtxoBoardingAddress: BOARDING_DEST,
-    vtxoBoardingScript: '5120' + '44'.repeat(32),
-    vtxoBoardingExitDelay: 604672,
-    vtxoBoardingExitDelayUnit: 'seconds',
-  }
-}
-
-describe('savings admin PSBT', () => {
-  beforeEach(() => localStorage.clear())
-
-  it('phone then hardware can finalize the admin leaf', () => {
-    const phoneSigned = signSavingsPsbt(currentAdminPsbt(), PHONE_PRIV)
-    const both = signSavingsPsbt(phoneSigned, HW_PRIV)
-    const final = finalizeSavingsPsbt(both)
-    expect(final.txHex.length).toBeGreaterThan(100)
-    expect(final.txid).toMatch(/^[0-9a-f]{64}$/)
-  })
-
-  it('exports a .psbt file wallets can share', () => {
-    const hexPsbt = currentAdminPsbt()
-    const file = psbtFile(hexPsbt)
+describe('shared native Savings PSBT handling', () => {
+  it('exports and reads the canonical binary PSBT', async () => {
+    const { payment } = ledgerPaymentFixture()
+    const psbt = buildLedgerSavingsPsbt(payment)
+    const file = psbtFile(psbt)
     expect(file.name).toBe('arkade-savings.psbt')
     expect(file.size).toBeGreaterThan(20)
-    expect(psbtHexToBase64(hexPsbt).length).toBeGreaterThan(20)
+    expect(psbtHexToBase64(psbt).length).toBeGreaterThan(20)
+    await expect(readPsbtFile(file)).resolves.toBe(psbt)
+    await expect(readPsbtFile(new File([], 'empty.psbt'))).rejects.toThrow('smaller than 1 MB')
   })
-
-  it('reads a binary .psbt file back into the canonical hex form', async () => {
-    const hexPsbt = currentAdminPsbt()
-    await expect(readPsbtFile(psbtFile(hexPsbt))).resolves.toBe(hexPsbt)
-    await expect(readPsbtFile(new File([], 'empty.psbt'))).rejects.toThrow(/smaller than 1 MB/)
-  })
-
-  it.each([true, false])('spends Savings with recovery=%s', (withRecovery) => {
-    const descriptor = buildVaultProgramDescriptor({
-      ...PROGRAM_FIXTURE,
-      protectionTier: withRecovery ? 'advanced' : 'standard',
-      recoveryPub: withRecovery ? PROGRAM_FIXTURE.recoveryPub : undefined,
-      arkadeCosigner: {
-        origin: 'https://emulator.mutinynet.arkade.sh',
-        version: 'v0.0.7-rc.1',
-      },
-    })
-    const status = statusFromDescriptor(descriptor)
-    saveLocalKit(buildRecoveryKit(descriptor))
-    pinEnrolledStatus(status)
-    const unsigned = buildSavingsPsbt({
-      status,
-      phonePub: descriptor.keys.phoneBip340,
-      destAddress: BOARDING_DEST,
-      amountSats: 50_000,
-      feeSats: 1_500,
-      coins: [{ txid: '11'.repeat(32), vout: 0, value: 100_000, confirmedHeight: 1 }],
-      leaf: 'admin',
-    })
-    const phoneSigned = signSavingsPsbt(unsigned, scalarSecret(3))
-    const hardwareSigned = signSavingsPsbt(phoneSigned, scalarSecret(4))
-    expect(finalizeSavingsPsbt(hardwareSigned).txid).toMatch(/^[0-9a-f]{64}$/)
-  })
-
-  it('rejects a recipient below the decoded script dust threshold', () => {
-    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
-    const status = statusFromDescriptor(descriptor)
-    saveLocalKit(buildRecoveryKit(descriptor))
-    pinEnrolledStatus(status)
-    const p2pkh = Address(TEST_NETWORK).encode({ type: 'pkh', hash: new Uint8Array(20).fill(1) })
-    const build = (amountSats: number) =>
-      buildSavingsPsbt({
-        status,
-        phonePub: descriptor.keys.phoneBip340,
-        destAddress: p2pkh,
-        amountSats,
-        feeSats: 1_500,
-        coins: [{ txid: '11'.repeat(32), vout: 0, value: 100_000, confirmedHeight: 1 }],
-        leaf: 'admin',
-      })
-    expect(() => build(330)).toThrow(/at least ₿546/)
+  it('enforces script-specific recipient dust', () => {
+    const { payment } = ledgerPaymentFixture()
+    const destAddress = Address(TEST_NETWORK).encode({ type: 'pkh', hash: new Uint8Array(20).fill(1) })
+    const build = (amountSats: number) => buildLedgerSavingsPsbt({ ...payment, destAddress, amountSats })
+    expect(() => build(330)).toThrow('at least ₿546')
     expect(inspectSavingsPsbt(build(546)).outputs[0].amount).toBe(546)
   })
-
-  it('combines fragmented Savings and requires hardware to sign every canonical input', () => {
-    const descriptor = buildVaultProgramDescriptor({
-      ...PROGRAM_FIXTURE,
-      arkadeCosigner: {
-        origin: 'https://emulator.mutinynet.arkade.sh',
-        version: 'v0.0.7-rc.1',
-      },
-    })
-    const status = statusFromDescriptor(descriptor)
-    saveLocalKit(buildRecoveryKit(descriptor))
-    pinEnrolledStatus(status)
-    const unsigned = buildSavingsPsbt({
-      status,
-      phonePub: descriptor.keys.phoneBip340,
-      destAddress: BOARDING_DEST,
-      amountSats: 50_000,
-      feeSats: 1_500,
-      coins: [
-        { txid: '22'.repeat(32), vout: 1, value: 26_000, confirmedHeight: 1 },
-        { txid: '11'.repeat(32), vout: 0, value: 30_000, confirmedHeight: 1 },
-      ],
-      leaf: 'admin',
-    })
-    const phoneSigned = signSavingsPsbt(unsigned, scalarSecret(3))
-    expect(() =>
-      requireSameSavingsIntent(
-        phoneSigned,
-        phoneSigned,
-        BOARDING_DEST,
-        50_000,
-        descriptor.network,
-        descriptor.keys.phoneBip340,
-        descriptor.keys.hardware,
-      ),
-    ).toThrow(/wrong tapscript signer set/)
-
-    const hardwareSigned = signSavingsPsbt(phoneSigned, scalarSecret(4))
-    requireSameSavingsIntent(
-      phoneSigned,
-      hardwareSigned,
-      BOARDING_DEST,
-      50_000,
-      descriptor.network,
-      descriptor.keys.phoneBip340,
-      descriptor.keys.hardware,
-    )
-    const inspected = inspectSavingsPsbt(hardwareSigned)
-    expect(inspected.inputs.map((input) => `${input.txid}:${input.vout}`)).toEqual([
-      `${'11'.repeat(32)}:0`,
-      `${'22'.repeat(32)}:1`,
-    ])
-    expect(inspected.outputs.map((output) => output.amount)).toEqual([50_000, 4_500])
-    expect(finalizeSavingsPsbt(hardwareSigned).txid).toMatch(/^[0-9a-f]{64}$/)
+  it('requires the exact retained phone signature and transaction before accepting hardware', () => {
+    const { payment, phone, signHardware } = ledgerPaymentFixture()
+    const approved = signLedgerSavingsWithPhone(payment, phone)
+    const signed = signHardware(approved)
+    expect(() => acceptLedgerSavingsSignatures(payment, approved, approved)).toThrow()
+    const final = acceptLedgerSavingsSignatures(payment, approved, signed)
+    expect(finalizeSavingsPsbt(final).txid).toMatch(/^[0-9a-f]{64}$/)
+    const retry = signLedgerSavingsWithPhone(payment, phone)
+    expect(() => acceptLedgerSavingsSignatures(payment, retry, signed)).toThrow(/phone Savings signature/)
+    expect(() => acceptLedgerSavingsSignatures({ ...payment, amountSats: 19000 }, approved, signed)).toThrow()
   })
-
-  it('accepts a hardware signature only for the exact persisted Savings transaction', () => {
-    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
-    const status = statusFromDescriptor(descriptor)
-    saveLocalKit(buildRecoveryKit(descriptor))
-    pinEnrolledStatus(status)
-    const build = (amountSats: number) =>
-      buildSavingsPsbt({
-        status,
-        phonePub: descriptor.keys.phoneBip340,
-        destAddress: BOARDING_DEST,
-        amountSats,
-        feeSats: 1_500,
-        coins: [{ txid: '11'.repeat(32), vout: 0, value: 100_000, confirmedHeight: 1 }],
-        leaf: 'admin',
-      })
-
-    const firstPhone = signSavingsPsbt(build(50_000), scalarSecret(3))
-    const firstHardware = signSavingsPsbt(firstPhone, scalarSecret(4))
-    const identicalRetry = signSavingsPsbt(build(50_000), scalarSecret(3))
-    const differentAmount = signSavingsPsbt(build(40_000), scalarSecret(3))
-
-    requireSameSavingsIntent(
-      firstPhone,
-      firstHardware,
-      BOARDING_DEST,
-      50_000,
-      descriptor.network,
-      descriptor.keys.phoneBip340,
-      descriptor.keys.hardware,
-    )
-    expect(() =>
-      requireSameSavingsIntent(
-        identicalRetry,
-        firstHardware,
-        BOARDING_DEST,
-        50_000,
-        descriptor.network,
-        descriptor.keys.phoneBip340,
-        descriptor.keys.hardware,
-      ),
-    ).toThrow(/changed the phone Savings signature/)
-    expect(() =>
-      requireSameSavingsIntent(
-        differentAmount,
-        firstHardware,
-        BOARDING_DEST,
-        40_000,
-        descriptor.network,
-        descriptor.keys.phoneBip340,
-        descriptor.keys.hardware,
-      ),
-    ).toThrow(/changed the unsigned Savings transaction/)
-  })
-
-  it('rejects an invalid hardware signature before finalization', () => {
-    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
-    const status = statusFromDescriptor(descriptor)
-    saveLocalKit(buildRecoveryKit(descriptor))
-    pinEnrolledStatus(status)
-    const unsigned = buildSavingsPsbt({
-      status,
-      phonePub: descriptor.keys.phoneBip340,
-      destAddress: BOARDING_DEST,
-      amountSats: 50_000,
-      feeSats: 1_500,
-      coins: [{ txid: '11'.repeat(32), vout: 0, value: 100_000, confirmedHeight: 1 }],
-      leaf: 'admin',
-    })
-    const phoneSigned = signSavingsPsbt(unsigned, PHONE_PRIV)
-    const hardwareSigned = Transaction.fromPSBT(hex.decode(signSavingsPsbt(phoneSigned, HW_PRIV)))
-    const signatures = hardwareSigned.getInput(0).tapScriptSig!
-    const internal = hardwareSigned as unknown as { inputs: ReturnType<Transaction['getInput']>[] }
-    internal.inputs[0].tapScriptSig = signatures.map(([data, signature]) => [
+  it('rejects invalid hardware signatures and non-default signing modes', () => {
+    const { payment, phone, signHardware, hardware } = ledgerPaymentFixture()
+    const approved = signLedgerSavingsWithPhone(payment, phone)
+    const signed = signHardware(approved)
+    const pub = hex.encode(hardware.deriveChild(0).deriveChild(0).publicKey!.slice(1))
+    const altered = Transaction.fromPSBT(hex.decode(signed))
+    const signatures = altered.getInput(0).tapScriptSig!
+    const internal = altered as unknown as { inputs: ReturnType<Transaction['getInput']>[] }
+    internal.inputs[0].tapScriptSig = signatures.map(([data, sig]) => [
       data,
-      hex.encode(data.pubKey) === descriptor.keys.hardware.slice(2) ? new Uint8Array(64) : signature,
+      hex.encode(data.pubKey) === pub ? new Uint8Array(64) : sig,
     ])
-    expect(() =>
-      requireSameSavingsIntent(
-        phoneSigned,
-        hex.encode(hardwareSigned.toPSBT()),
-        BOARDING_DEST,
-        50_000,
-        descriptor.network,
-        descriptor.keys.phoneBip340,
-        descriptor.keys.hardware,
-      ),
-    ).toThrow(/Invalid signature/)
-  })
-
-  it('rejects non-default sighash metadata on an imported Savings PSBT', () => {
-    const descriptor = buildVaultProgramDescriptor(PROGRAM_FIXTURE)
-    const phoneSigned = signSavingsPsbt(currentAdminPsbt(), PHONE_PRIV)
-    const hardwareSigned = Transaction.fromPSBT(hex.decode(signSavingsPsbt(phoneSigned, HW_PRIV)))
-    const internal = hardwareSigned as unknown as { inputs: ReturnType<Transaction['getInput']>[] }
+    expect(() => acceptLedgerSavingsSignatures(payment, approved, hex.encode(altered.toPSBT()))).toThrow(
+      /Invalid signature/,
+    )
+    internal.inputs[0].tapScriptSig = signatures
     internal.inputs[0].sighashType = 1
-    expect(() =>
-      requireSameSavingsIntent(
-        phoneSigned,
-        hex.encode(hardwareSigned.toPSBT()),
-        descriptor.savings.address,
-        98_500,
-        descriptor.network,
-        descriptor.keys.phoneBip340,
-        descriptor.keys.hardware,
-      ),
-    ).toThrow(/SIGHASH_DEFAULT/)
+    expect(() => acceptLedgerSavingsSignatures(payment, approved, hex.encode(altered.toPSBT()))).toThrow()
   })
 })

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { recoveryFixture } from './testdata/helpers'
+import { ledgerRecoveryFacts } from './testdata/helpers'
 import { vaultRecoveryBinding } from '../vtxo/recoveryArchive'
 import { packExitArchive } from './exitArchive'
 import { requireSpendingRecoveryCoverage, spendingRecoveryCoverage } from './coverage'
 
 describe('Spending recovery coverage', () => {
   const fixture = () => {
-    const f = recoveryFixture()
+    const f = ledgerRecoveryFacts()
     return { ...f, binding: vaultRecoveryBinding(f.kit, f.status) }
   }
   it('compares output identities even when a replacement has the same balance', () => {

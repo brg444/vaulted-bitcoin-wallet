@@ -8,12 +8,7 @@ import { zeroBytes } from './ceremony/directauth'
 import { DUST_SATS } from './constants'
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import { hexToBytes } from './hex'
-import { loadAddressPin, requireStatusMatchesPin } from './pin'
 import type { VaultStatus } from './types'
-import { familyFromDescriptor } from './program/descriptor'
-import { loadLocalKit } from './program/kitStore'
-import { assertLiveKit } from './program/liveKit'
-import { sameBip340Key } from './setupPlan'
 import { deviceSigningOptions, prfExtension, prfFrom } from './webauthn'
 import { requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
 import { requireExactDefaultTapscriptSignatures, tapscriptSignatureRecords } from './taprootSignatures'
@@ -26,56 +21,11 @@ import { secp256k1 } from '@noble/curves/secp256k1.js'
 const PRF_SALT = new TextEncoder().encode('arkade-2fa-vault/prf/v1')
 const TX_OPTS = { version: 2, allowUnknownInputs: true, allowUnknownOutputs: true } as const
 
-export type SavingsLeaf = 'admin'
-
 export interface SavingsCoin {
   txid: string
   vout: number
   value: number
   confirmedHeight?: number
-}
-
-export function buildSavingsPsbt(input: {
-  status: VaultStatus
-  phonePub: string
-  destAddress: string
-  amountSats: number
-  feeSats: number
-  coins: SavingsCoin[]
-  leaf: SavingsLeaf
-}): string {
-  const pin = loadAddressPin(localStorage, input.status.vaultId)
-  if (!pin) throw new Error('deposit address is not pinned locally')
-  requireStatusMatchesPin(input.status, pin)
-  if (pin.savingsAddress !== input.status.savingsAddress) throw new Error('savings address pin mismatch')
-  const stored = loadLocalKit(input.status.vaultId)
-  if (!stored) throw new Error('Savings needs the Recovery Kit saved on this device')
-  const kit = assertLiveKit(stored, input.status)
-  if (kit.version === 5) throw new Error('This wallet has no protected Savings contract')
-  if (kit.version === 4) throw new Error('Use the Ledger Savings approval flow for this vault.')
-  if (kit.descriptor.savings.address !== pin.savingsAddress) {
-    throw new Error('Savings map does not match the pinned address')
-  }
-  if (!sameBip340Key(kit.descriptor.keys.phoneBip340, input.phonePub)) {
-    throw new Error('Savings map does not match this device key')
-  }
-  if (
-    input.status.externalOwnerWalletPub &&
-    !sameBip340Key(kit.descriptor.keys.hardware, input.status.externalOwnerWalletPub)
-  ) {
-    throw new Error('Savings map does not match the hardware key')
-  }
-  const tree = familyFromDescriptor(kit.descriptor).savings
-  return buildNativeSavingsPsbt({
-    ...input,
-    network: input.status.network,
-    changeScript: tree.script,
-    inputForCoin: () => ({
-      witnessScript: tree.script,
-      tapInternalKey: tree.tapInternalKey,
-      tapLeafScript: [requireSavingsAdminLeaf(tree)],
-    }),
-  })
 }
 
 export function requireSavingsAdminLeaf(tree: {
@@ -272,14 +222,6 @@ export async function unlockVaultPhoneKeys(
   }
 }
 
-export function signSavingsPsbt(psbtHex: string, priv: Uint8Array): string {
-  if (priv.length !== 32) throw new Error('private key must be 32 bytes')
-  const tx = Transaction.fromPSBT(hex.decode(psbtHex), TX_OPTS)
-  if (tx.inputsLength < 1) throw new Error('Savings spend needs an input')
-  tx.sign(priv)
-  return hex.encode(tx.toPSBT())
-}
-
 export function psbtHexToBase64(psbtHex: string): string {
   const bytes = hex.decode(parseIncomingPsbt(psbtHex))
   let s = ''
@@ -391,21 +333,6 @@ export function requireSavingsPsbtIntent(
   if (inspected.inputs.some((current) => current.sigs < minimumSignatures)) {
     throw new Error('this device did not sign every Savings input')
   }
-}
-
-export function requireSameSavingsIntent(
-  unsignedHex: string,
-  signedHex: string,
-  destAddress: string,
-  amountSats: number,
-  network: string,
-  phonePub: string,
-  hardwarePub: string,
-) {
-  return requireSameNativeSavingsIntent(unsignedHex, signedHex, destAddress, amountSats, network, () => ({
-    phonePub,
-    hardwarePub,
-  }))
 }
 
 export function requireSameNativeSavingsIntent(

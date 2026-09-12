@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { IndexedDBWalletRepository } from '@arkade-os/sdk'
-import { recoveryFixture } from './testdata/helpers'
+import { ledgerRecoveryFixture } from './testdata/ledger'
 import { buildRecoveryHeader, type VaultRecoveryFile } from './backupCodec'
 import { recoveryFileStore } from './fileStore'
 import { captureVaultRecoveryFile } from './capture'
@@ -36,7 +36,7 @@ async function fixture() {
   mocks.snapshot.mockReset().mockResolvedValue({ history: [] })
   mocks.setup.mockReset().mockReturnValue(null)
   mocks.clearBitcoinPayment.mockReset()
-  const f = recoveryFixture()
+  const f = await ledgerRecoveryFixture(true)
   const coin = {
     ...f.coin,
     createdAt: new Date(f.coin.createdAt),
@@ -47,15 +47,7 @@ async function fixture() {
     forfeitTapLeafScript: f.spending.forfeit(),
     intentTapLeafScript: f.spending.forfeit(),
   }
-  const enrollment = {
-    vaultId: f.status.vaultId,
-    credId: 'ab'.repeat(32),
-    webauthnP256: f.kit.descriptor.keys.phoneDirectP256,
-    phoneBip340Pub: f.kit.descriptor.keys.phoneBip340,
-    phoneDirectP256: f.kit.descriptor.keys.phoneDirectP256,
-    nonce: 'aa'.repeat(12),
-    ciphertext: 'bb'.repeat(48),
-  }
+  const { enrollment } = f
   const header = buildRecoveryHeader(f.kit, f.status, enrollment)
   const previous: VaultRecoveryFile = { name: 'vaulted-recovery', version: 1, header, archive: f.archive }
   await recoveryFileStore(header.binding.descriptorHash, previous)

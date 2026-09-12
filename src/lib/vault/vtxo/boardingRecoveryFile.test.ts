@@ -2,7 +2,7 @@ import { requireSavingsRecoveryKit } from '../program/kit'
 import { describe, expect, it, vi } from 'vitest'
 import { Transaction, type OnchainProvider } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
-import { recoveryFixture } from '../recovery/testdata/helpers'
+import { ledgerRecoveryFacts } from '../recovery/testdata/helpers'
 import { scalarSecret } from '../program/fixtures'
 import {
   prepareBoardingRecoveryFile,
@@ -18,7 +18,7 @@ describe('standalone named boarding recovery', () => {
     ['mainnet', 'public'],
     ['mutinynet', 'public'],
   ] as const)('uses the SDK phone recovery leaf and resumes on %s from %s data', async (network, sourceKind) => {
-    const { archive, board } = recoveryFixture(false, network)
+    const { archive, board } = ledgerRecoveryFacts(false, network)
     const parent = new Transaction()
     parent.addInput({ txid: 'ab'.repeat(32), index: 0 })
     parent.addOutput({ amount: 50_000n, script: board.pkScript })
