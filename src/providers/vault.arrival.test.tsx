@@ -68,7 +68,6 @@ vi.mock('../vault/useRecoveryKit', () => ({
     initiateAlert: '',
     initiateAlerts: [],
     restoreRecoveryKit: vi.fn().mockResolvedValue(undefined),
-    signGuardianExitWithDevice: vi.fn().mockResolvedValue(''),
   }),
 }))
 vi.mock('../vault/useRecoveryArchive', () => ({

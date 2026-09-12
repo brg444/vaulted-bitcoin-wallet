@@ -8,12 +8,16 @@ import { resolve } from 'node:path'
 import { decodeVaultBip21 } from '../../lib/vault/bip21'
 import { POLICY_VERSION } from '../../lib/vault/constants'
 import { SAVINGS_TEMPLATE } from '../../lib/vault/program/constants'
+import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
+import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../../lib/vault/spendingPolicy'
+import { BOARDING_PROGRAM } from '../../lib/vault/vtxo/board'
 import type { VaultStatus } from '../../lib/vault/types'
 
 const UI_FIXTURE = '/src/test/e2e-vault/fixtures/vault-ui.ts'
 const WORKER_FIXTURE = '/src/test/e2e-vault/fixtures/vtxo-browser.ts'
 const KIT_STORE_MODULE = '/src/lib/vault/program/kitStore.ts'
-const RECOVERY_SPEND_MODULE = '/src/lib/vault/program/spend.ts'
+const LEDGER_RECOVERY_MODULE = '/src/lib/vault/ledgerRecovery.ts'
+const SAVINGS_RECOVERY_MODULE = '/src/lib/vault/program/onchainRecovery.ts'
 const APP_PORT = process.env.VAULT_E2E_PORT || '3003'
 const OPERATOR_PORT = process.env.VAULT_E2E_OPERATOR_PORT || '18888'
 const APP_ORIGIN = `http://localhost:${APP_PORT}`
@@ -160,7 +164,7 @@ async function installRoutes(page: Page, getStatus: () => VaultStatus | undefine
   await page.route('**/ready', (route) =>
     json(route, {
       ok: true,
-      schema: 7,
+      schema: 11,
       network: 'mutinynet',
       enrollTemplate: SAVINGS_TEMPLATE,
       arkadeOrigin: OPERATOR_ORIGIN,
@@ -180,6 +184,10 @@ async function installRoutes(page: Page, getStatus: () => VaultStatus | undefine
       templateVersion: SAVINGS_TEMPLATE,
       policyVersion: POLICY_VERSION,
       enrollmentMode: 'token',
+      supportedSetups: ['light', 'standard', 'advanced'],
+      ledgerSavingsCapability: { version: 1, templateVersion: LEDGER_NATIVE_TEMPLATE },
+      spendingPolicyCapabilities: CURRENT_SPENDING_POLICY_CAPABILITIES,
+      vtxoBoardingProgram: BOARDING_PROGRAM,
     })
   })
   await page.route('**/v1/vtxo/operation*', (route) => json(route, { error: 'operation not found' }, 404))
@@ -269,29 +277,36 @@ async function recoveryKitJson(page: Page, vaultId: string): Promise<string> {
   )
 }
 
-async function installPendingRecovery(
-  page: Page,
-  vaultId: string,
-  claimant: 'phone' | 'hardware' | 'recovery',
-  utxo: EsploraUtxo,
-) {
-  const address = await page.evaluate(
-    async ({ id, role, storePath }) => {
-      const store = await import(/* @vite-ignore */ storePath)
+async function recoveryCoin(page: Page, vaultId: string, pending = false) {
+  const result = await page.evaluate(
+    async ({ id, storePath, fixturePath, fromPending }) => {
+      const [store, fixture] = await Promise.all([
+        import(/* @vite-ignore */ storePath),
+        import(/* @vite-ignore */ fixturePath),
+      ])
       const kit = store.loadLocalKit(id)
       if (!kit) throw new Error('Recovery Kit fixture is missing')
-      return kit.descriptor.pending[`savings-${role}`].address as string
+      const source = fromPending ? kit.descriptor.pending['savings-hardware'] : kit.descriptor.savings
+      const coins = await fixture.vaultUiRecoveryCoins()
+      const coin = coins.find((c: { script: string }) => c.script === source.script)
+      if (!coin?.parentHex) throw new Error('Ledger recovery parent is missing')
+      return { coin, address: source.address, pendingAddress: kit.descriptor.pending['savings-hardware'].address }
     },
-    { id: vaultId, role: claimant, storePath: KIT_STORE_MODULE },
+    { id: vaultId, storePath: KIT_STORE_MODULE, fixturePath: UI_FIXTURE, fromPending: pending },
   )
-  await page.route('**/esplora/**', (route) => {
-    const url = new URL(route.request().url())
-    if (url.pathname === `/esplora/address/${address}/utxo`) return json(route, [utxo])
-    if (url.pathname === '/esplora/blocks/tip/height') return route.fulfill({ status: 200, body: '20' })
-    return route.fallback()
-  })
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-  await expect(page.getByTestId('initiate-alert')).toBeVisible()
+  await page.route(`**/esplora/tx/${result.coin.txid}/hex`, (route) =>
+    route.fulfill({ status: 200, body: result.coin.parentHex }),
+  )
+  const coin: EsploraUtxo = { ...result.coin, status: { confirmed: true, block_height: 1 } }
+  return { ...result, coin }
+}
+
+async function downloadedRecovery(page: Page) {
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save recovery file', exact: true }).click()
+  const path = await (await downloadPromise).path()
+  if (!path) throw new Error('Ledger recovery download path is missing')
+  return JSON.parse(await readFile(path, 'utf8'))
 }
 
 async function clearVaultWorkers(context: BrowserContext) {
@@ -431,18 +446,19 @@ test('switches the Home balance between sats and USD using the live price feed',
 test('loads Spending while another tab holds the foreground Lightning lock', async ({ context, page }) => {
   const blocker = await context.newPage()
   await blocker.goto('/')
-  await blocker.evaluate(() => {
+  await blocker.evaluate(async (fixturePath) => {
+    const { VAULT_UI_ID } = await import(/* @vite-ignore */ fixturePath)
     const state = globalThis as typeof globalThis & {
       __vaultLightningLockHeld?: boolean
       __releaseVaultLightningLock?: () => void
     }
-    void navigator.locks.request('arkade-vault-lightning:e2e-vault-ui', { mode: 'exclusive' }, async () => {
+    void navigator.locks.request(`arkade-vault-lightning:${VAULT_UI_ID}`, { mode: 'exclusive' }, async () => {
       state.__vaultLightningLockHeld = true
       await new Promise<void>((resolve) => {
         state.__releaseVaultLightningLock = resolve
       })
     })
-  })
+  }, UI_FIXTURE)
   await expect
     .poll(() =>
       blocker.evaluate(() =>
@@ -706,123 +722,111 @@ test('validates a pasted Recovery Kit against its committed descriptor', async (
 
   const input = page.getByTestId('recovery-kit-json')
   await input.fill(JSON.stringify(tampered))
-  await expect(page.getByText('Recovery Kit hash does not match the rebuilt descriptor')).toBeVisible()
+  await expect(page.getByText('Ledger Recovery Kit binding changed')).toBeVisible()
 
   await input.fill(validKit)
-  await expect(page.getByText(/This kit is for vault e2e-vaul… · 7 addresses/)).toBeVisible()
-  await expect(page.getByText('Recovery Kit hash does not match the rebuilt descriptor')).toHaveCount(0)
+  await expect(page.getByText(`This kit is for vault ${status.vaultId.slice(0, 8)}… · 8 addresses`)).toBeVisible()
+  await expect(page.getByText('Ledger Recovery Kit binding changed')).toHaveCount(0)
 })
 
-test('starts recovery only from a confirmed Savings coin and fences a second destination', async ({
-  context,
+test('starts Ledger recovery from a confirmed coin and retains its pending candidate across navigation', async ({
   page,
 }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: APP_ORIGIN })
   const { state, status } = await openVault(page)
-  const coin: EsploraUtxo = {
-    txid: '71'.repeat(32),
-    vout: 0,
-    value: 50_000,
-    status: { confirmed: true, block_height: 1 },
-  }
-
+  const { coin, pendingAddress } = await recoveryCoin(page, status.vaultId)
   await page.getByRole('button', { name: 'Open navigation' }).click()
   await page.getByTestId('tab-vault').click()
   await page.getByTestId('security-lost').click()
-  await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()
-  await page.getByRole('radio', { name: 'I can’t use my passkey' }).click()
-  await page.getByRole('button', { name: 'Review recovery preparation' }).click()
+  await expect(page.getByRole('heading', { name: 'Recover Ledger Savings', exact: true })).toBeVisible()
 
   state.savingsUtxos = [{ ...coin, status: { confirmed: false } }]
-  await page.getByTestId('recover-initiate').click()
-  await expect(page.getByText('No confirmed coin on that account')).toBeVisible()
+  await page.getByRole('button', { name: 'Find confirmed outputs', exact: true }).click()
+  await page.getByRole('button', { name: 'Review recovery', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Choose a confirmed Bitcoin output')
+  await expect(page.getByRole('combobox', { name: 'Bitcoin output', exact: true }).locator('option')).toHaveCount(0)
 
   state.savingsUtxos = [coin]
-  await page.getByTestId('recover-initiate').click()
-  await expect(page.getByTestId('recovery-prepared')).toBeVisible()
-  const psbt = await page.evaluate(() => navigator.clipboard.readText())
-  const initiation = await page.evaluate(
-    async ({ id, kitPath, rawPsbt, spendPath }) => {
-      const [kitStore, spend] = await Promise.all([
-        import(/* @vite-ignore */ kitPath),
-        import(/* @vite-ignore */ spendPath),
-      ])
-      const kit = kitStore.loadLocalKit(id)
-      if (!kit) throw new Error('Recovery Kit fixture is missing')
-      return {
-        expectedDestScript: kit.descriptor.pending['savings-hardware'].script,
-        view: spend.inspectTransitionPsbt(rawPsbt),
-      }
+  await page.getByRole('button', { name: 'Find confirmed outputs', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Bitcoin output', exact: true }).locator('option')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Review recovery', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Approve recovery', exact: true })).toBeVisible()
+  const saved = await downloadedRecovery(page)
+  const review = await page.evaluate(
+    async ({ value, modulePath }) => {
+      const recovery = await import(/* @vite-ignore */ modulePath)
+      const view = recovery.inspectLedgerRecoveryTransition(value.transition)
+      return { destination: view.destinationAddress, amountSats: view.amountSats }
     },
-    { id: status.vaultId, kitPath: KIT_STORE_MODULE, rawPsbt: psbt, spendPath: RECOVERY_SPEND_MODULE },
+    { value: saved, modulePath: LEDGER_RECOVERY_MODULE },
   )
-  expect(initiation.view).toMatchObject({
-    destScript: initiation.expectedDestScript,
-    destSats: 49_260,
+  expect(review).toEqual({ destination: pendingAddress, amountSats: 99_500 })
+  expect(saved.transition).toMatchObject({
+    action: { kind: 'initiate', claimant: 'hardware', change: 0 },
+    coin: { txid: coin.txid, vout: 0, value: 100_000 },
     feeSats: 500,
-    inputVout: 0,
   })
+  expect(saved.userPsbt).toBeUndefined()
 
-  await page.getByRole('button', { name: 'Go back' }).click()
-  await page.getByTestId('recover-key-phone').click()
-  await page.getByTestId('recover-initiate').click()
-  await expect(page.getByText('second dest for this outpoint')).toBeVisible()
+  await page.getByRole('button', { name: 'Go back', exact: true }).click()
+  await page.getByRole('button', { name: 'More options', exact: true }).click()
+  await page.getByRole('button', { name: /I lost a key/ }).click()
+  await page.getByRole('combobox', { name: 'Recovery claimant', exact: true }).selectOption('phone')
+  await page.getByRole('button', { name: 'Find confirmed outputs', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Bitcoin output', exact: true }).locator('option')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Review recovery', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Another recovery candidate for this output is still pending')
+  await page.getByRole('combobox', { name: 'Resume recovery', exact: true }).selectOption('record:0')
+  expect(await downloadedRecovery(page)).toEqual(saved)
+  await expect(page.getByRole('button', { name: 'Save and broadcast recovery', exact: true })).toHaveCount(0)
 })
 
-test('surfaces a mature recovery and preserves claimant-aware guardian cancellation', async ({ context, page }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: APP_ORIGIN })
+test('surfaces Ledger recovery and preserves delayed claims and claimant-aware cancellation', async ({ page }) => {
   const { status } = await openVault(page)
-  const coin: EsploraUtxo = {
-    txid: '72'.repeat(32),
-    vout: 1,
-    value: 20_000,
-    status: { confirmed: true, block_height: 1 },
-  }
-  await installPendingRecovery(page, status.vaultId, 'hardware', coin)
-
+  const { coin, address } = await recoveryCoin(page, status.vaultId, true)
+  await page.route('**/esplora/**', (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === `/esplora/address/${address}/utxo`) return json(route, [coin])
+    if (url.pathname === '/esplora/blocks/tip/height') return route.fulfill({ status: 200, body: '20' })
+    return route.fallback()
+  })
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   const alert = page.getByTestId('initiate-alert')
   await expect(alert).toContainText('Savings recovery detected')
   await alert.click()
-  await page.getByRole('button', { name: 'Claim after the waiting period' }).click()
-  await expect(page.getByRole('region', { name: 'Recovery status' })).toContainText('In process')
-
-  await page.getByTestId('recover-claim-dest').fill(status.savingsAddress)
-  await page.getByTestId('recover-claim').click()
-  await expect(page.getByTestId('recovery-prepared')).toBeVisible()
-  const claimPsbt = await page.evaluate(() => navigator.clipboard.readText())
-  const claim = await page.evaluate(
-    async ({ rawPsbt, spendPath }) => {
-      const spend = await import(/* @vite-ignore */ spendPath)
-      return spend.inspectClaimPsbt(rawPsbt)
+  await page.getByRole('combobox', { name: 'Recovery path', exact: true }).selectOption('pending-claim')
+  await page.getByRole('button', { name: 'Find confirmed outputs', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Bitcoin output', exact: true }).locator('option')).toHaveCount(1)
+  await page.getByRole('textbox', { name: 'Bitcoin destination', exact: true }).fill(status.savingsAddress)
+  await page.getByRole('button', { name: 'Review recovery', exact: true }).click()
+  await expect(page.getByText('This claim requires 6 blocks', { exact: false })).toBeVisible()
+  const claim = await downloadedRecovery(page)
+  const review = await page.evaluate(
+    async ({ value, modulePath }) => {
+      const recovery = await import(/* @vite-ignore */ modulePath)
+      const view = recovery.validateSavingsRecovery(value)
+      return { sequence: view.sequence, amount: Number(view.tx.getOutput(0).amount), signers: view.signers }
     },
-    { rawPsbt: claimPsbt, spendPath: RECOVERY_SPEND_MODULE },
+    { value: claim, modulePath: SAVINGS_RECOVERY_MODULE },
   )
-  expect(claim).toMatchObject({
-    sequence: 6,
-    destScript: status.savingsScript,
-    destSats: 19_500,
-    feeSats: 500,
-  })
+  expect(review).toEqual({ sequence: 6, amount: 99_500, signers: ['hardware'] })
+  expect(claim.destination).toBe(status.savingsAddress)
+  expect(claim.feeSats).toBe(500)
 
-  await page.getByRole('button', { name: 'Go back' }).click()
-  await page.getByRole('button', { name: 'Go back' }).click()
-  await page.getByRole('button', { name: 'Cancel this recovery' }).click()
-  await page.getByTestId('recover-guardian-exit').click()
-  await expect(page.getByTestId('recover-guardian-signers')).toContainText('This device and Recovery')
-  await expect(page.getByTestId('recover-guardian-signers')).not.toContainText('Hardware and')
-  await expect(page.getByTestId('recover-guardian-device')).toBeVisible()
-  await expect(page.getByTestId('recover-guardian-external')).toContainText('Recovery')
-
-  const downloadPromise = page.waitForEvent('download')
-  await page.getByTestId('recover-guardian-external-download').click()
-  const download = await downloadPromise
-  const path = await download.path()
-  if (!path) throw new Error('cancel PSBT download path is missing')
-  const unsignedCancel = await readFile(path)
-  await page.getByTestId('recover-guardian-signed-psbt').fill(unsignedCancel.toString('hex'))
-  await page.getByTestId('recover-guardian-external').click()
-  await expect(page.getByText('signed cancel must add exactly one signature')).toBeVisible()
-  await expect(page.getByTestId('recover-guardian-broadcast')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Choose another path', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Recovery path', exact: true }).selectOption('pending-cancel')
+  await page.getByRole('button', { name: 'Find confirmed outputs', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Bitcoin output', exact: true }).locator('option')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Review recovery', exact: true }).click()
+  await expect(page.getByText('Required: phone and recovery.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Signing account', exact: true }).locator('option')).toHaveText([
+    'phone',
+    'recovery',
+  ])
+  const cancellation = await downloadedRecovery(page)
+  await page.getByRole('textbox', { name: 'Signed partial PSBT', exact: true }).fill(cancellation.psbt)
+  await page.getByRole('button', { name: 'Import reviewed signature', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Recovery must retain prior signatures and add the requested key')
+  await expect(page.getByRole('button', { name: 'Save and broadcast recovery', exact: true })).toHaveCount(0)
 })
 
 async function expectNoBlockingAxeViolations(page: Page) {
@@ -1051,7 +1055,7 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await page.screenshot({ path: testInfo.outputPath('recovery-copies.png'), fullPage: true })
   await page.getByText('Saved copies', { exact: true }).click()
   await page.getByRole('button', { name: /I lost a key/ }).click()
-  await expect(page.getByRole('heading', { name: 'Access and recovery', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Recover Ledger Savings', exact: true })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
   await expect(page).toHaveScreenshot('recovery-lost-key.png', { animations: 'disabled', fullPage: true })
@@ -1736,13 +1740,12 @@ for (const mode of ['standard', 'light'] as const) {
   })
 }
 
-// Expanded guidance needs separate coverage from the collapsed Security overview.
-test('@polish recovery inner pages keep text and actions clear of their borders', async ({ page }, testInfo) => {
+test('@polish recovery help keeps guidance readable in both themes', async ({ page }) => {
   await openVault(page)
   await page.getByRole('button', { name: 'Open navigation' }).click()
   await page.getByTestId('tab-vault').click()
-  await page.getByTestId('security-lost').click()
-
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+  await page.getByRole('button', { name: 'Access and recovery help', exact: true }).click()
   for (const theme of ['light', 'dark']) {
     await page.setViewportSize({ width: theme === 'light' ? 320 : 390, height: 844 })
     await page.evaluate((value) => {
@@ -1757,45 +1760,59 @@ test('@polish recovery inner pages keep text and actions clear of their borders'
       await page.getByRole('radio', { name: scenario, exact: true }).click()
       for (const summary of await page.locator('.qg-guidance > summary').all()) await summary.click()
       await expectWalletLayout(page)
-      const clearances = await page.locator('.qg-guidance-body').evaluateAll((bodies) =>
-        bodies.map((body) => {
-          const last = body.lastElementChild!
-          return body.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom
-        }),
-      )
+      const clearances = await page
+        .locator('.qg-guidance-body')
+        .evaluateAll((bodies) =>
+          bodies.map(
+            (body) => body.getBoundingClientRect().bottom - body.lastElementChild!.getBoundingClientRect().bottom,
+          ),
+        )
       for (const clearance of clearances) expect(clearance).toBeGreaterThanOrEqual(15)
-      const action = page.getByRole('button', { name: 'Review recovery preparation' })
-      if (await action.count()) {
-        for (const fontSize of ['16px', '32px']) {
-          await page.evaluate((size) => {
-            document.documentElement.style.fontSize = size
-          }, fontSize)
-          await action.scrollIntoViewIfNeeded()
-          await expect(action).toBeInViewport({ ratio: 1 })
-          const inset = await action.evaluate((button) => {
-            const range = document.createRange()
-            range.selectNodeContents(button)
-            const text = range.getBoundingClientRect()
-            const bounds = button.getBoundingClientRect()
-            return { left: text.left - bounds.left, right: bounds.right - text.right, height: bounds.height }
-          })
-          expect(inset.left).toBeGreaterThanOrEqual(23)
-          expect(inset.right).toBeGreaterThanOrEqual(23)
-          expect(inset.height).toBeGreaterThanOrEqual(56)
-          await expectWalletLayout(page)
-        }
-        await page.evaluate(() => {
-          document.documentElement.style.fontSize = ''
-        })
-      }
-      if (scenario === 'I can’t use my passkey') {
-        await page.locator('.qg-main').evaluate((main) => {
-          main.scrollTop = 0
-        })
-        await page.screenshot({ path: testInfo.outputPath(`passkey-help-${theme}.png`) })
-      }
-      await page.getByTestId('header-back').click()
+      await expect(page.getByRole('button', { name: 'Review recovery preparation', exact: true })).toHaveCount(0)
+      await page
+        .getByRole('dialog', { name: 'Wallet help' })
+        .getByRole('button', { name: 'Go back', exact: true })
+        .click()
     }
+  }
+})
+
+test('@polish Ledger recovery paths keep controls reachable with enlarged text', async ({ page }, testInfo) => {
+  await openVault(page)
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.getByTestId('tab-vault').click()
+  await page.getByTestId('security-lost').click()
+
+  for (const theme of ['light', 'dark']) {
+    await page.setViewportSize({ width: theme === 'light' ? 320 : 390, height: 844 })
+    await page.evaluate((value) => {
+      document.documentElement.classList.toggle('palette-dark', value === 'dark')
+    }, theme)
+    for (const path of ['initiate', 'clawback', 'pending-claim', 'pending-cancel', 'quarantine', 'savings-admin']) {
+      await page.getByRole('combobox', { name: 'Recovery path', exact: true }).selectOption(path)
+      for (const fontSize of ['16px', '32px']) {
+        await page.evaluate((size) => {
+          document.documentElement.style.fontSize = size
+        }, fontSize)
+        await expectWalletLayout(page)
+        for (const control of await page
+          .locator('.ledger-recovery-form input, .ledger-recovery-form select, .ledger-recovery-form button')
+          .all()) {
+          await control.scrollIntoViewIfNeeded()
+          await expect(control).toBeInViewport({ ratio: 1 })
+          const bounds = await control.boundingBox()
+          expect(bounds!.height).toBeGreaterThanOrEqual(44)
+        }
+      }
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = ''
+      })
+      await expectNoBlockingAxeViolations(page)
+    }
+    await page.locator('.qg-main').evaluate((main) => {
+      main.scrollTop = 0
+    })
+    await page.screenshot({ path: testInfo.outputPath(`ledger-recovery-${theme}.png`), fullPage: true })
   }
 })
 

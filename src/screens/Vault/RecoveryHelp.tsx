@@ -2,10 +2,9 @@ import QgGuidance from './qg/QgGuidance'
 import { useState } from 'react'
 import { parseRecoveryKit, type RecoveryKit } from '../../lib/vault/program/kit'
 import type { ProtectionTier } from '../../lib/vault/protectionTier'
-import type { Claimant } from '../../lib/vault/program/constants'
 import RecoveryExplanation from './qg/RecoveryExplanation'
 import SavingsAvailability from './qg/SavingsAvailability'
-import QgScreen, { QgSecondary } from './qg/QgScreen'
+import QgScreen from './qg/QgScreen'
 
 type Scenario = 'passkey' | 'hardware' | 'both' | 'service'
 const SCENARIOS: { id: Scenario; label: string }[] = [
@@ -22,14 +21,12 @@ export default function RecoveryHelp({
   protectionTier,
   templateVersion,
   mainnet = false,
-  onPrepare,
 }: {
   onBack?: () => void
   onDismiss?: () => void
   protectionTier?: ProtectionTier
   templateVersion?: string
   mainnet?: boolean
-  onPrepare?: (claimant: Claimant) => void
 }) {
   const [scenario, setScenario] = useState<Scenario | null>(null)
   const [kit, setKit] = useState<RecoveryKit | null>(null)
@@ -37,14 +34,6 @@ export default function RecoveryHelp({
   const [reading, setReading] = useState(false)
   const tier = protectionTier || kit?.protectionTier
   const isMainnet = kit ? kit.descriptor.network === 'mainnet' : mainnet
-  const claimant: Claimant | null =
-    scenario === 'passkey'
-      ? 'hardware'
-      : scenario === 'hardware'
-        ? 'phone'
-        : scenario === 'both' && tier === 'advanced'
-          ? 'recovery'
-          : null
 
   return (
     <QgScreen
@@ -89,8 +78,7 @@ export default function RecoveryHelp({
                 <QgGuidance title='If you can’t restore your passkey'>
                   <p>
                     If passkey access cannot be restored, your hardware key can start delayed Savings recovery with
-                    approval from both recovery services. You also need the Recovery Kit and compatible signing
-                    software.
+                    Guardian approval. You also need the Recovery Kit and compatible signing software.
                   </p>
                 </QgGuidance>
               </>
@@ -106,7 +94,7 @@ export default function RecoveryHelp({
                 <QgGuidance title='If you can’t restore your hardware wallet'>
                   <p>
                     If that key cannot be restored, working passkey access can unlock the wallet key for delayed Savings
-                    recovery. Starting it also needs both recovery services and your Recovery Kit.
+                    recovery. Starting it also needs Guardian approval and your Recovery Kit.
                   </p>
                 </QgGuidance>
               </>
@@ -117,7 +105,7 @@ export default function RecoveryHelp({
                   {tier === 'standard'
                     ? 'This kit uses Standard protection. If neither normal key can be restored, there is no separate key that can recover Savings.'
                     : tier === 'advanced'
-                      ? 'Advanced provides a delayed Savings path using the separate recovery key chosen during setup. You still need that key, your Recovery Kit, compatible signing software, and approval from both recovery services.'
+                      ? 'Advanced provides a delayed Savings path using the separate recovery key chosen during setup. You still need that key, your Recovery Kit, compatible signing software, and Guardian approval.'
                       : 'Advanced can provide a path with the separate recovery key chosen during setup. Standard has no separate key for this situation. Check your saved Recovery Kit to identify your setup.'}
                 </p>
                 <p>
@@ -140,9 +128,6 @@ export default function RecoveryHelp({
                 </p>
               </div>
             )}
-            {claimant && onPrepare && tier ? (
-              <QgSecondary label='Review recovery preparation' onClick={() => onPrepare(claimant)} />
-            ) : null}
           </section>
           {!protectionTier ? (
             <QgGuidance title='Check a saved Recovery Kit'>
@@ -201,9 +186,7 @@ export default function RecoveryHelp({
             <QgGuidance title='What happens during Savings recovery?'>
               <ol>
                 <li>Prepare the recovery transaction using your vault’s kit and the key you still control.</li>
-                <li>
-                  Sign with that key, obtain both recovery service approvals, and submit the transaction to Bitcoin.
-                </li>
+                <li>Sign with that key, obtain Guardian approval, and submit the transaction to Bitcoin.</li>
                 <li>
                   After Bitcoin confirms it, wait for the required number of blocks. Eligible remaining keys can cancel
                   during this period.

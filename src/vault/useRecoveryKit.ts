@@ -3,10 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchAddressUtxos } from '../lib/vault/esplora'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
-import { zeroBytes } from '../lib/vault/ceremony/directauth.js'
 import { unlockLocalEnrollment } from '../lib/vault/signIn'
-import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
-import { signGuardianExitPsbt } from '../lib/vault/program/guardianExit'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { loadLocalKit, saveLocalKit } from '../lib/vault/program/kitStore'
 import { kitMatchesLiveVault, selectLiveKit } from '../lib/vault/program/liveKit'
@@ -26,9 +23,8 @@ interface RecoveryKitOptions {
   clearError: () => void
 }
 
-// useRecoveryKit owns recovery-map persistence, device recovery signing, and
-// the best-effort local alert poll. It has no navigation or wallet-balance
-// responsibilities.
+// useRecoveryKit owns recovery-map persistence and the best-effort local
+// alert poll. It has no signing, navigation or wallet-balance responsibilities.
 export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, clearError }: RecoveryKitOptions) {
   const [initiateAlert, setInitiateAlert] = useState('')
   const [initiateAlerts, setInitiateAlerts] = useState<InitiateAlert[]>([])
@@ -82,19 +78,6 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
     saveLocalKit(kit)
   }, [clearError, enrollment, hardwarePub, recoveryPub, status])
 
-  const signGuardianExitWithDevice = useCallback(
-    async (psbtHex: string) => {
-      if (!enrollment || !status?.enrolled) throw new Error('Unlock this device on this vault first')
-      const privateKey = await unlockPhoneBip340(enrollment, status)
-      try {
-        return signGuardianExitPsbt(psbtHex, privateKey)
-      } finally {
-        zeroBytes(privateKey)
-      }
-    },
-    [enrollment, status],
-  )
-
   useEffect(() => {
     const id = status?.vaultId || enrollment?.vaultId || ''
     setInitiateAlerts([])
@@ -134,6 +117,5 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
     initiateAlert,
     initiateAlerts,
     restoreRecoveryKit,
-    signGuardianExitWithDevice,
   }
 }

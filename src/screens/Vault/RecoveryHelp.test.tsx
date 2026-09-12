@@ -1,8 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildVaultProgramDescriptor } from '../../lib/vault/program/descriptor'
-import { PROGRAM_FIXTURE } from '../../lib/vault/program/fixtures'
-import { buildRecoveryKit } from '../../lib/vault/program/kit'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ledgerRecoveryFixture } from '../../lib/vault/recovery/testdata/ledger'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import RecoveryHelp from './RecoveryHelp'
 import VaultWelcome from './Welcome'
@@ -13,11 +11,13 @@ import VaultRecover from './Recover'
 vi.mock('../../components/Toast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('../../lib/vault/webauthn', () => ({ isCoarsePhone: () => false }))
 
-const standard = buildRecoveryKit(
-  buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, protectionTier: 'standard', recoveryPub: undefined }),
-)
-const advanced = buildRecoveryKit(buildVaultProgramDescriptor(PROGRAM_FIXTURE))
-function context(kit = standard) {
+let standard: Awaited<ReturnType<typeof ledgerRecoveryFixture>>
+let advanced: Awaited<ReturnType<typeof ledgerRecoveryFixture>>
+beforeAll(async () => {
+  standard = await ledgerRecoveryFixture(false)
+  advanced = await ledgerRecoveryFixture(true)
+})
+function context(fixture = standard) {
   return {
     busy: false,
     error: '',
@@ -28,7 +28,8 @@ function context(kit = standard) {
     initiateAlerts: [],
     recoverEntry: 'lost',
     recoverExit: 'keys',
-    downloadRecoveryKit: () => JSON.stringify(kit),
+    status: fixture.status,
+    downloadRecoveryKit: () => JSON.stringify(fixture.kit),
   } as unknown as VaultContextProps
 }
 beforeEach(() => {
@@ -58,11 +59,11 @@ describe('access and recovery guidance', () => {
     expect(screen.getByText(/Check your saved Recovery Kit to identify/)).toBeTruthy()
     fireEvent.click(screen.getByText('Check a saved Recovery Kit'))
     const input = screen.getByLabelText('Recovery Kit file')
-    fireEvent.change(input, { target: { files: [{ size: 100, text: async () => JSON.stringify(standard) }] } })
+    fireEvent.change(input, { target: { files: [{ size: 100, text: async () => JSON.stringify(standard.kit) }] } })
     await screen.findByText(/This kit uses Standard protection/)
     expect(screen.queryByRole('button', { name: 'Review recovery preparation' })).toBeNull()
     expect(localStorage.length).toBe(0)
-    fireEvent.change(input, { target: { files: [{ size: 100, text: async () => JSON.stringify(advanced) }] } })
+    fireEvent.change(input, { target: { files: [{ size: 100, text: async () => JSON.stringify(advanced.kit) }] } })
     await screen.findByText(/Advanced provides a delayed Savings path/)
     fireEvent.change(input, { target: { files: [{ size: 100, text: async () => '{"broken":true}' }] } })
     await screen.findByRole('alert')
@@ -82,16 +83,21 @@ describe('access and recovery guidance', () => {
     expect(text).not.toHaveBeenCalled()
   })
 
-  it.each([standard, advanced])('offers only the selected vault’s configured recovery keys', (kit) => {
+  it.each([false, true])('offers only the enrolled Ledger recovery keys (advanced=%s)', (hasRecovery) => {
+    const fixture = hasRecovery ? advanced : standard
     render(
-      <VaultContext.Provider value={context(kit)}>
+      <VaultContext.Provider value={context(fixture)}>
         <VaultRecover />
       </VaultContext.Provider>,
     )
-    fireEvent.click(screen.getByRole('radio', { name: 'I can’t use my passkey' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Review recovery preparation' }))
-    expect(screen.getByTestId('recover-key-hardware')).toHaveAttribute('aria-checked', 'true')
-    expect(Boolean(screen.queryByTestId('recover-key-recovery'))).toBe(kit.protectionTier === 'advanced')
-    expect(screen.getByTestId('recover-initiate')).toHaveTextContent('Prepare recovery')
+    expect(screen.getByRole('heading', { name: 'Recover Ledger Savings' })).toBeVisible()
+    const claimant = screen.getByRole('combobox', { name: 'Recovery claimant' })
+    expect(claimant).toHaveValue('hardware')
+    expect(
+      within(claimant)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(hasRecovery ? ['phone', 'hardware', 'recovery'] : ['phone', 'hardware'])
+    expect(screen.getByRole('button', { name: 'Review recovery' })).toBeVisible()
   })
 })

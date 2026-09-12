@@ -14,10 +14,10 @@
   min-height: 48px;
   margin-top: 8px;
   padding: 12px;
-  border: 1px solid var(--border, #d7d1c8);
+  border: 1px solid var(--qg-line);
   border-radius: 12px;
-  background: var(--surface, #fffdf8);
-  color: inherit;
+  background: var(--qg-paper);
+  color: var(--qg-ink);
   font: inherit;
 }
 .ledger-recovery-form textarea {

@@ -549,21 +549,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked, arrivalReady])
 
-  const {
-    backupRecoveryKit,
-    downloadRecoveryKit,
-    hasRecoveryKit,
-    initiateAlert,
-    initiateAlerts,
-    restoreRecoveryKit,
-    signGuardianExitWithDevice,
-  } = useRecoveryKit({
-    enrollment,
-    status,
-    hardwarePub: setup.hardwarePub,
-    recoveryPub: setup.recoveryPub,
-    clearError,
-  })
+  const { backupRecoveryKit, downloadRecoveryKit, hasRecoveryKit, initiateAlert, initiateAlerts, restoreRecoveryKit } =
+    useRecoveryKit({
+      enrollment,
+      status,
+      hardwarePub: setup.hardwarePub,
+      recoveryPub: setup.recoveryPub,
+      clearError,
+    })
 
   const { backupRecoveryArchive, downloadRecoveryArchive, recoveryArchiveStatus, recoveryArchiveError } =
     useRecoveryArchive(enrollment, status, locked)
@@ -1469,7 +1462,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       boardingAddress,
       restoreRecoveryKit,
       restoreRecoveryArchive,
-      signGuardianExitWithDevice,
       hasRecoveryKit,
       initiateAlert,
       initiateAlerts,
@@ -1614,7 +1606,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       boardingAddress,
       restoreRecoveryKit,
       restoreRecoveryArchive,
-      signGuardianExitWithDevice,
       hasRecoveryKit,
       initiateAlert,
       initiateAlerts,

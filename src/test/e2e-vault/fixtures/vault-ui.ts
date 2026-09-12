@@ -1,36 +1,16 @@
-import { ArkAddress, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
+import { ArkAddress } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
-import { POLICY_VERSION } from '../../../lib/vault/constants'
 import { saveEnrollment, saveSelectedVaultId } from '../../../lib/vault/enrollmentStore'
 import { pinFromEnrolledStatus, saveAddressPin } from '../../../lib/vault/pin'
-import { buildVaultProgramDescriptor } from '../../../lib/vault/program/descriptor'
-import { PROGRAM_FIXTURE, scalarSecret } from '../../../lib/vault/program/fixtures'
-import { hashBoardingEnrollmentDescriptor } from '../../../lib/vault/program/enroll'
-import { buildRecoveryKit } from '../../../lib/vault/program/kit'
+import { scalarSecret } from '../../../lib/vault/program/fixtures'
 import { saveLocalKit } from '../../../lib/vault/program/kitStore'
-import { SAVINGS_TEMPLATE } from '../../../lib/vault/program/constants'
+import { ledgerRecoveryFixture } from '../../../lib/vault/recovery/testdata/ledger'
 import { saveSetupPlan } from '../../../lib/vault/setupPlan'
 import type { VaultStatus } from '../../../lib/vault/types'
-import { spendingPolicyFromLimits, spendingPolicyDigest } from '../../../lib/vault/spendingPolicy'
-import {
-  activateBoardingKey,
-  stageBoardingKey,
-  BOARDING_EXIT_DELAY,
-  BOARDING_EXIT_DELAY_UNIT,
-  BOARDING_PROGRAM,
-  BOARDING_SCHEMA,
-  BOARDING_TEMPLATE,
-  MUTINYNET_OPERATOR_SIGNER_PUB,
-} from '../../../lib/vault/vtxo/board'
-import {
-  VAULT_POLICY_V1_EXIT_DELAY,
-  VAULT_POLICY_V1_EXIT_DELAY_UNIT,
-  VAULT_POLICY_V1_PINNED_DELEGATE,
-  VaultPolicyV1Script,
-} from '../../../lib/vault/vtxo/script'
+import { activateBoardingKey, stageBoardingKey, MUTINYNET_OPERATOR_SIGNER_PUB } from '../../../lib/vault/vtxo/board'
 import { persistVtxoSpend, type PersistedVtxoSpend } from '../../../lib/vault/vtxo/spend'
 
-export const VAULT_UI_ID = 'e2e-vault-ui'
+export const VAULT_UI_ID = 'e2'.repeat(16)
 export const OPERATOR_XONLY = MUTINYNET_OPERATOR_SIGNER_PUB.slice(2)
 export const VAULT_UI_DESTINATION = new ArkAddress(
   hex.decode(OPERATOR_XONLY),
@@ -38,131 +18,45 @@ export const VAULT_UI_DESTINATION = new ArkAddress(
   'tark',
 ).encode()
 
-function xonly(compressed: string): Uint8Array {
-  return hex.decode(compressed).subarray(1)
+async function vaultUiFixture(origin = location.origin, hostname = location.hostname) {
+  const fixture = await ledgerRecoveryFixture(true, 'mutinynet', VAULT_UI_ID)
+  const { status } = fixture
+  status.clientOrigin = origin
+  status.rpId = hostname
+  const phoneSecret = scalarSecret(3)
+  try {
+    const staged = await stageBoardingKey({ vaultId: status.vaultId, phoneSecret, network: status.network })
+    if (staged.boardingPub !== status.vtxoBoardingDescriptor!.boardingPub)
+      throw new Error('Ledger UI fixture boarding key does not match its enrollment')
+    await activateBoardingKey({
+      vaultId: status.vaultId,
+      descriptorHash: status.vtxoBoardingDescriptorHash!,
+      expectedBoardingPub: staged.boardingPub,
+    })
+  } finally {
+    phoneSecret.fill(0)
+  }
+  return fixture
 }
 
 export async function vaultUiStatus(origin = location.origin, hostname = location.hostname): Promise<VaultStatus> {
-  const descriptor = buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, vaultId: VAULT_UI_ID })
-  const delegatePub = VAULT_POLICY_V1_PINNED_DELEGATE
-  const spending = new VaultPolicyV1Script({
-    userPub: xonly(descriptor.keys.phoneBip340),
-    vtxoVaultCosignerPub: xonly(descriptor.keys.vaultCosignerBase),
-    arkdServerPub: hex.decode(OPERATOR_XONLY),
-    delegatePub: xonly(delegatePub),
-    exitDelay: VAULT_POLICY_V1_EXIT_DELAY,
-    exitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
-    exitDevicePub: xonly(descriptor.keys.phoneBip340),
-    exitHardwarePub: xonly(descriptor.keys.hardware),
-    exitRecoveryPub: xonly(descriptor.keys.recovery!),
-  })
-  const phoneSecret = scalarSecret(3)
-  const staged = await stageBoardingKey({ vaultId: VAULT_UI_ID, phoneSecret, network: 'mutinynet' })
-  phoneSecret.fill(0)
-  const boarding = createBoardingProgramScript(
-    {
-      name: BOARDING_PROGRAM,
-      boardingPubKey: xonly(staged.boardingPub),
-      cosignerPubKey: xonly(descriptor.keys.vaultCosignerBase),
-      recoveryPubKey: xonly(descriptor.keys.phoneBip340),
-    },
-    xonly(MUTINYNET_OPERATOR_SIGNER_PUB),
-    { type: BOARDING_EXIT_DELAY_UNIT, value: BigInt(BOARDING_EXIT_DELAY) },
-  )
-  const boardingDescriptor = {
-    schema: BOARDING_SCHEMA,
-    program: BOARDING_PROGRAM,
-    template: BOARDING_TEMPLATE,
-    network: 'mutinynet' as const,
-    boardingPub: staged.boardingPub,
-    recoveryPhonePub: descriptor.keys.phoneBip340,
-    vaultBoardCosignerPub: descriptor.keys.vaultCosignerBase,
-    operatorPub: MUTINYNET_OPERATOR_SIGNER_PUB,
-    exitDelay: BOARDING_EXIT_DELAY,
-    exitDelayUnit: BOARDING_EXIT_DELAY_UNIT,
-    script: hex.encode(boarding.pkScript),
-    address: boarding.onchainAddress(getNetwork('mutinynet')),
-  }
-  const boardingDescriptorHash = hashBoardingEnrollmentDescriptor({
-    schema: 'arkade-vault/enrollment-with-board-v1',
-    vaultId: VAULT_UI_ID,
-    savings: descriptor,
-    boarding: boardingDescriptor,
-  })
-  await activateBoardingKey({
-    vaultId: VAULT_UI_ID,
-    descriptorHash: boardingDescriptorHash,
-    expectedBoardingPub: staged.boardingPub,
-  })
-  const spendingPolicy = spendingPolicyFromLimits({
-    txRecipientCapSats: descriptor.policy.recipientCapSats,
-    periodAllowanceSats: descriptor.policy.periodAllowanceSats,
-    absoluteFeeCapSats: descriptor.policy.absoluteFeeCapSats,
-    feerateCapSatPerV: descriptor.policy.feerateCapSatVb,
-  })
-  return {
-    enrolled: true,
-    network: 'mutinynet',
-    clientOrigin: origin,
-    rpId: hostname,
-    vaultId: VAULT_UI_ID,
-    templateVersion: SAVINGS_TEMPLATE,
-    policyVersion: POLICY_VERSION,
-    protectionTier: descriptor.protectionTier,
-    savingsAddress: descriptor.savings.address,
-    savingsScript: descriptor.savings.script,
-    periodAllowance: spendingPolicy.periodAllowanceSats,
-    periodSpent: 0,
-    periodRemaining: spendingPolicy.periodAllowanceSats,
-    txCap: spendingPolicy.txRecipientCapSats,
-    absoluteFeeCap: spendingPolicy.absoluteFeeCapSats,
-    feerateCapSatVb: spendingPolicy.feerateCapSatPerV,
-    spendingPolicy,
-    spendingPolicyDigest: spendingPolicyDigest(spendingPolicy),
-    phoneBip340Pub: descriptor.keys.phoneBip340,
-    phoneDirectP256: descriptor.keys.phoneDirectP256,
-    externalOwnerWalletPub: descriptor.keys.hardware,
-    recoveryPub: descriptor.keys.recovery,
-    recoveryKeyPub: descriptor.keys.recovery,
-    vaultCosignerBasePub: descriptor.keys.vaultCosignerBase,
-    arkadeCosignerBasePub: descriptor.keys.arkadeCosignerBase,
-    arkadeCosignerOrigin: descriptor.arkadeCosigner.origin,
-    arkadeCosignerVersion: descriptor.arkadeCosigner.version,
-    vtxoVaultCosignerPub: descriptor.keys.vaultCosignerBase,
-    vtxoExitDelay: Number(VAULT_POLICY_V1_EXIT_DELAY),
-    vtxoExitDelayUnit: VAULT_POLICY_V1_EXIT_DELAY_UNIT,
-    spendingArkAddress: new ArkAddress(hex.decode(OPERATOR_XONLY), spending.tweakedPublicKey, 'tark').encode(),
-    spendingArkScript: hex.encode(spending.pkScript),
-    vtxoDelegatePub: delegatePub,
-    vtxoBoardingActive: true,
-    vtxoBoardingProgram: BOARDING_PROGRAM,
-    vtxoBoardingAddress: boardingDescriptor.address,
-    vtxoBoardingScript: hex.encode(boarding.pkScript),
-    vtxoBoardingExitDelay: Number(BOARDING_EXIT_DELAY),
-    vtxoBoardingExitDelayUnit: BOARDING_EXIT_DELAY_UNIT,
-    vtxoBoardingDescriptor: boardingDescriptor,
-    vtxoBoardingDescriptorHash: boardingDescriptorHash,
-  }
+  return (await vaultUiFixture(origin, hostname)).status
+}
+
+export async function vaultUiRecoveryCoins() {
+  return (await ledgerRecoveryFixture(true, 'mutinynet', VAULT_UI_ID)).archive.onchain
 }
 
 export async function installVaultUiSession() {
-  const status = await vaultUiStatus()
-  const descriptor = buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, vaultId: VAULT_UI_ID })
-  saveSelectedVaultId(VAULT_UI_ID)
-  saveEnrollment({
-    vaultId: VAULT_UI_ID,
-    credId: '11'.repeat(32),
-    webauthnP256: descriptor.keys.phoneDirectP256,
-    phoneDirectP256: descriptor.keys.phoneDirectP256,
-    phoneBip340Pub: descriptor.keys.phoneBip340,
-    nonce: '22'.repeat(12),
-    ciphertext: '33'.repeat(48),
-  })
+  const { status, kit, enrollment, composite } = await vaultUiFixture()
+  saveSelectedVaultId(status.vaultId)
+  saveEnrollment(enrollment)
   saveAddressPin(pinFromEnrolledStatus(status))
   saveSetupPlan({
-    protectionTier: descriptor.protectionTier,
-    hardwarePub: descriptor.keys.hardware,
-    recoveryPub: descriptor.keys.recovery || '',
+    protectionTier: status.protectionTier,
+    hardwarePub: status.externalOwnerWalletPub!,
+    recoveryPub: status.recoveryPub || '',
+    ledger: { hardware: composite.savings.context.hardware, recovery: composite.savings.context.recovery },
     txCapSats: status.txCap,
     dailyLimitSats: status.periodAllowance,
     absoluteFeeCapSats: status.absoluteFeeCap,
@@ -170,7 +64,7 @@ export async function installVaultUiSession() {
     acceptedDesign: true,
     complete: true,
   })
-  saveLocalKit(buildRecoveryKit(descriptor))
+  saveLocalKit(kit)
   localStorage.removeItem('arkade-vault-v2:session-lock')
   return status
 }

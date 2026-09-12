@@ -33,10 +33,15 @@ import { deriveDirectP256 } from '../../ceremony/directauth'
 export const ledgerFixtureSeed = new Uint8Array(32).fill(0x43)
 export const ledgerFixturePRF = new Uint8Array(32).fill(0x71)
 
-export async function ledgerRecoveryFixture(advanced = false, network: 'mainnet' | 'mutinynet' = 'mutinynet') {
+export async function ledgerRecoveryFixture(
+  advanced = false,
+  network: 'mainnet' | 'mutinynet' = 'mutinynet',
+  vaultId?: string,
+) {
   const context = structuredClone(
     vectors.find((v) => Boolean(v.input.recovery) === advanced && v.input.network === network)!.input,
   ) as LedgerSavingsKeyContext
+  if (vaultId !== undefined) context.vaultId = vaultId
   const direct = await deriveDirectP256(ledgerFixturePRF)
   context.phoneDirectP256 = hex.encode(direct.pub)
   direct.scalar.fill(0)

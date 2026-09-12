@@ -86,7 +86,6 @@ export interface VaultContextProps {
   boardingAddress: string
   restoreRecoveryArchive: (raw?: unknown) => Promise<void>
   restoreRecoveryKit: () => Promise<void>
-  signGuardianExitWithDevice: (psbtHex: string) => Promise<string>
   hasRecoveryKit: boolean
   initiateAlert: string
   initiateAlerts: InitiateAlert[]
@@ -190,7 +189,6 @@ export const VaultContext = createContext<VaultContextProps>({
   boardingAddress: '',
   restoreRecoveryArchive: async () => {},
   restoreRecoveryKit: async () => {},
-  signGuardianExitWithDevice: async () => '',
   hasRecoveryKit: false,
   initiateAlert: '',
   initiateAlerts: [],

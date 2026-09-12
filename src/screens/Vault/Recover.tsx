@@ -1,40 +1,17 @@
-import {
-  requireSavingsRecoveryKit,
-  inspectRecoveryKit,
-  parseRecoveryKit,
-  isLedgerRecoveryKit,
-} from '../../lib/vault/program/kit'
+import { inspectRecoveryKit, parseRecoveryKit, isLedgerRecoveryKit } from '../../lib/vault/program/kit'
 import QgGuidance from './qg/QgGuidance'
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { hex } from '@scure/base'
-import { Fingerprint, FileKey, ShieldCheck } from 'lucide-react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../../components/Toast'
-import { copyToClipboard } from '../../lib/clipboard'
 import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { useBalanceDenomination } from './AccountBalance'
-import { broadcastTx, fetchAddressUtxos } from '../../lib/vault/esplora'
-import { recoveryOnchainFeeSats, SAVINGS_CLAIM_VBYTES, SAVINGS_TRANSITION_VBYTES } from '../../lib/vault/onchainFee'
-import { parseIncomingPsbt, psbtFile } from '../../lib/vault/savingsSpend'
-import { familyClaimants, SAVINGS_TEMPLATE, type Claimant } from '../../lib/vault/program/constants'
-import { familyFromDescriptor } from '../../lib/vault/program/descriptor'
-import {
-  acceptGuardianExitSignature,
-  assertGuardianExitSigners,
-  describeGuardianExitSigners,
-  finalizeGuardianExit,
-  requiredGuardianExitSigners,
-} from '../../lib/vault/program/guardianExit'
 import LedgerRecovery from './LedgerRecovery'
-import { planClaim, planClawback, planInitiate } from '../../lib/vault/program/recoverFlow'
-import { buildGuardianExitPsbt } from '../../lib/vault/program/spend'
 import { findMatureBoardingInputs } from '../../lib/vault/vtxo/boardingRecovery'
 import { VaultContext } from '../../vault/context'
-import RecoveryHelp from './RecoveryHelp'
 import { HubGroup, HubRow } from './ui'
 import RecoveryCopies from './RecoveryCopies'
 import { checkProtectedRecoveryPackage } from '../../lib/vault/recovery/packageCheck'
 import { recordRecoveryCopy } from '../../lib/vault/recovery/copyStatus'
-import QgScreen, { QgCheck, QgPrimary, QgSecondary } from './qg/QgScreen'
+import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
 import { portableRecoverySource } from '../../lib/vault/recovery/portable'
 import { spendingRecoveryCoverage } from '../../lib/vault/recovery/coverage'
 import { vaultRecoveryBinding } from '../../lib/vault/vtxo/recoveryArchive'
@@ -46,33 +23,6 @@ function downloadJson(name: string, body: string) {
   document.body.appendChild(hidden)
   hidden.click()
   hidden.remove()
-}
-
-function downloadPsbt(name: string, psbtHex: string) {
-  const hidden = document.createElement('a')
-  hidden.href = URL.createObjectURL(psbtFile(psbtHex, name))
-  hidden.download = name
-  document.body.appendChild(hidden)
-  hidden.click()
-  hidden.remove()
-}
-
-const KEY_LABEL: Record<Claimant, string> = {
-  phone: 'Passkey access',
-  hardware: 'Hardware wallet',
-  recovery: 'Recovery key',
-}
-
-const KEY_DETAIL: Record<Claimant, string> = {
-  phone: 'Use the passkey on this device',
-  hardware: 'Use your hardware key',
-  recovery: 'Use your separately stored recovery key',
-}
-
-const KEY_ICON: Record<Claimant, ReactNode> = {
-  phone: <Fingerprint />,
-  hardware: <ShieldCheck />,
-  recovery: <FileKey />,
 }
 
 function RecoverAlert({ text }: { text: string }) {
@@ -97,31 +47,22 @@ export default function VaultRecover() {
     downloadRecoveryKit,
     error,
     hasRecoveryKit,
-    initiateAlert,
-    initiateAlerts,
     navigate,
     recoverEntry,
     recoverExit,
     recoverMatureBoarding,
     restoreRecoveryKit,
-    savingsAddress,
-    signGuardianExitWithDevice,
     status,
   } = useContext(VaultContext)
   const { toast } = useToast()
   const [backupView, setBackupView] = useState<
     'overview' | 'more' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding' | 'exit'
   >(status?.protectionTier === 'light' && recoverEntry === 'lost' ? 'exit' : 'overview')
-  const [recoveryTask, setRecoveryTask] = useState<'cancel' | 'claim' | null>(null)
   const [view, setView] = useState<'kit' | 'lost'>(status?.protectionTier === 'light' ? 'kit' : recoverEntry)
-  const [reviewingRecovery, setReviewingRecovery] = useState(false)
-  const [fromKit, setFromKit] = useState(false)
 
   useEffect(() => {
     setView(status?.protectionTier === 'light' ? 'kit' : recoverEntry)
     if (status?.protectionTier === 'light' && recoverEntry === 'lost') setBackupView('exit')
-    setReviewingRecovery(false)
-    setFromKit(false)
   }, [recoverEntry, status?.protectionTier])
   const [pasted, setPasted] = useState('')
   const [protectedCheck, setProtectedCheck] = useState('')
@@ -135,14 +76,6 @@ export default function VaultRecover() {
     [],
   )
   const [localError, setLocalError] = useState('')
-  const [claimant, setClaimant] = useState<Claimant>('hardware')
-  const [claimDest, setClaimDest] = useState('')
-  const [psbtOut, setPsbtOut] = useState('')
-  const [preparedAction, setPreparedAction] = useState<'initiate' | 'cancel' | 'claim' | null>(null)
-  const [cancelPsbt, setCancelPsbt] = useState('')
-  const [cancelSigners, setCancelSigners] = useState<Claimant[]>([])
-  const [cancelHave, setCancelHave] = useState<Claimant[]>([])
-  const [signedCancelPsbt, setSignedCancelPsbt] = useState('')
   const [matureBoardingSats, setMatureBoardingSats] = useState(0)
   const [recoveringBoarding, setRecoveringBoarding] = useState(false)
 
@@ -175,20 +108,6 @@ export default function VaultRecover() {
       return null
     }
   }, [kitJson])
-  const eligibleClaimants =
-    currentKit && currentKit.version !== 5 ? familyClaimants(Boolean(currentKit.descriptor.keys.recovery)) : []
-
-  const canCancelWithoutServices = useMemo(() => {
-    try {
-      return (
-        requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit()))).descriptor.templateVersion ===
-        SAVINGS_TEMPLATE
-      )
-    } catch {
-      return false
-    }
-  }, [downloadRecoveryKit])
-
   const report = useMemo(() => {
     const raw = pasted.trim() || kitJson
     if (!raw) return null
@@ -235,425 +154,15 @@ export default function VaultRecover() {
     }
   }
 
-  if (view === 'lost' && currentKit && isLedgerRecoveryKit(currentKit) && status)
-    return <LedgerRecovery kit={currentKit} status={status} back={() => setView('kit')} />
-
-  if (view === 'lost' && psbtOut && preparedAction && !cancelSigners.length)
-    return (
-      <QgScreen
-        title={preparedAction === 'cancel' ? 'Cancellation prepared' : 'Recovery transaction prepared'}
-        back={() => {
-          setPsbtOut('')
-          setPreparedAction(null)
-        }}
-        footer={
-          <QgPrimary label='Save transaction file' onClick={() => downloadPsbt('Vaulted recovery.psbt', psbtOut)} />
-        }
-      >
-        <h1>Continue with your signer</h1>
-        <p className='qg-copy' data-testid='recovery-prepared'>
-          {preparedAction === 'claim'
-            ? 'Sign with the key that started recovery and submit after the waiting period ends.'
-            : 'This transaction needs the selected eligible key and recovery service approvals before submission.'}{' '}
-          Preparation has not moved funds. Recovery and cancellation take effect after Bitcoin confirmation.
-        </p>
-        <QgSecondary label='Copy transaction' onClick={() => void copyToClipboard(psbtOut)} />
-      </QgScreen>
-    )
-
   if (view === 'lost') {
-    const inProcess = initiateAlerts[0]
-    const externalRole = cancelSigners.find((role) => role !== 'phone' && !cancelHave.includes(role))
-    const backToKit = fromKit || recoverEntry === 'kit'
-    const fromHome = recoverExit === 'home'
-    if (!inProcess && !reviewingRecovery) {
-      return (
-        <RecoveryHelp
-          onBack={backToKit ? () => setView('kit') : fromHome ? undefined : () => navigate(recoverExit)}
-          onDismiss={!backToKit && fromHome ? () => navigate('home') : undefined}
-          protectionTier={currentKit?.protectionTier}
-          templateVersion={currentKit?.descriptor.templateVersion}
-          mainnet={currentKit?.descriptor.network === 'mainnet'}
-          onPrepare={
-            currentKit
-              ? (key) => {
-                  setClaimant(key)
-                  setLocalError('')
-                  setPsbtOut('')
-                  setPreparedAction(null)
-                  setReviewingRecovery(true)
-                }
-              : undefined
-          }
-        />
-      )
-    }
-    if (inProcess && !recoveryTask)
-      return (
-        <QgScreen title='Active recovery' back={() => navigate(recoverExit)}>
-          <h1>Recovery detected on Savings</h1>
-          <p className='qg-copy'>{initiateAlert || 'Review the recovery and the keys available to cancel it.'}</p>
-          <HubGroup>
-            <HubRow title='Cancel this recovery' onClick={() => setRecoveryTask('cancel')} />
-            <HubRow title='Claim after the waiting period' onClick={() => setRecoveryTask('claim')} />
-          </HubGroup>
-          <p className='qg-copy'>
-            Use the eligible keys for your selected path. Preparing a transaction does not end the waiting period or
-            cancel recovery.
-          </p>
-        </QgScreen>
-      )
+    if (currentKit && isLedgerRecoveryKit(currentKit) && status)
+      return <LedgerRecovery kit={currentKit} status={status} back={() => setView('kit')} />
     return (
-      <QgScreen
-        title={fromHome && !backToKit ? 'Recovery' : 'Lost a key'}
-        dismiss={!inProcess && !backToKit && fromHome ? () => navigate('home') : undefined}
-        back={
-          inProcess
-            ? () => setRecoveryTask(null)
-            : backToKit
-              ? () => setView('kit')
-              : fromHome
-                ? undefined
-                : () => navigate(recoverExit)
-        }
-        footer={
-          inProcess ? (
-            <>
-              <RecoverAlert text={error || localError} />
-              {recoveryTask === 'cancel' ? (
-                <QgPrimary
-                  label='Prepare cancellation'
-                  testId='recover-clawback'
-                  onClick={() => {
-                    setLocalError('')
-                    void (async () => {
-                      try {
-                        const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
-                        const built = planClawback({
-                          family: familyFromDescriptor(kit.descriptor),
-                          claimant: c,
-                          coin: { txid: inProcess.txid, vout: inProcess.vout, value: inProcess.value },
-                          feeSats: await recoveryOnchainFeeSats(SAVINGS_TRANSITION_VBYTES),
-                          vaultId: kit.descriptor.vaultId,
-                        })
-                        setPsbtOut(built.psbtHex)
-                        setPreparedAction('cancel')
-                        await copyToClipboard(built.psbtHex)
-                        toast('Cancellation transaction copied')
-                      } catch (err) {
-                        setLocalError(err instanceof Error ? err.message : 'Could not prepare cancellation')
-                      }
-                    })()
-                  }}
-                />
-              ) : null}
-              {recoveryTask === 'cancel' && canCancelWithoutServices ? (
-                <QgSecondary
-                  label='Cancel without services'
-                  testId='recover-guardian-exit'
-                  disabled={!claimDest.trim()}
-                  onClick={() => {
-                    setLocalError('')
-                    void (async () => {
-                      try {
-                        const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
-                        if (kit.descriptor.templateVersion !== SAVINGS_TEMPLATE) {
-                          throw new Error('this vault cannot cancel pending recovery without the services')
-                        }
-                        const hasRecovery = Boolean(kit.descriptor.keys.recovery)
-                        const signers = requiredGuardianExitSigners(c, hasRecovery)
-                        assertGuardianExitSigners(c, signers)
-                        const built = buildGuardianExitPsbt({
-                          family: familyFromDescriptor(kit.descriptor),
-                          claimant: c,
-                          coin: { txid: inProcess.txid, vout: inProcess.vout, value: inProcess.value },
-                          destAddress: claimDest.trim(),
-                          feeSats: await recoveryOnchainFeeSats(SAVINGS_CLAIM_VBYTES),
-                          network: kit.descriptor.network,
-                        })
-                        setCancelPsbt(built.psbtHex)
-                        setCancelSigners(signers)
-                        setCancelHave([])
-                        setSignedCancelPsbt('')
-                        setPsbtOut(built.psbtHex)
-                        setPreparedAction(null)
-                        toast(`To cancel, ${describeGuardianExitSigners(signers)} must sign.`)
-                      } catch (err) {
-                        setLocalError(err instanceof Error ? err.message : 'Could not cancel without services')
-                      }
-                    })()
-                  }}
-                />
-              ) : null}
-              {recoveryTask === 'claim' ? (
-                <QgPrimary
-                  label='Prepare recovery transfer'
-                  testId='recover-claim'
-                  disabled={!claimDest.trim()}
-                  onClick={() => {
-                    setLocalError('')
-                    void (async () => {
-                      try {
-                        const [, c] = inProcess.familyKey.split('-') as ['savings', Claimant]
-                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
-                        const built = planClaim({
-                          family: familyFromDescriptor(kit.descriptor),
-                          claimant: c,
-                          coin: { txid: inProcess.txid, vout: inProcess.vout, value: inProcess.value },
-                          destAddress: claimDest.trim(),
-                          feeSats: await recoveryOnchainFeeSats(SAVINGS_CLAIM_VBYTES),
-                          network: kit.descriptor.network,
-                        })
-                        setPsbtOut(built.psbtHex)
-                        setPreparedAction('claim')
-                        await copyToClipboard(built.psbtHex)
-                        toast('Recovery transfer copied')
-                      } catch (err) {
-                        setLocalError(err instanceof Error ? err.message : 'Could not prepare recovery transfer')
-                      }
-                    })()
-                  }}
-                />
-              ) : null}
-            </>
-          ) : (
-            <>
-              <RecoverAlert text={error || localError} />
-              <QgPrimary
-                label='Prepare recovery'
-                testId='recover-initiate'
-                disabled={!eligibleClaimants.includes(claimant)}
-                onClick={() => {
-                  setLocalError('')
-                  void (async () => {
-                    try {
-                      const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
-                      const family = familyFromDescriptor(kit.descriptor)
-                      if (!savingsAddress) throw new Error('No Savings address yet')
-                      const coin = (await fetchAddressUtxos(savingsAddress)).find(
-                        (item) => item.status.confirmed && item.value > 1000,
-                      )
-                      if (!coin) throw new Error('No confirmed coin on that account')
-                      const built = planInitiate({
-                        family,
-                        claimant,
-                        coin: { txid: coin.txid, vout: coin.vout, value: coin.value },
-                        feeSats: await recoveryOnchainFeeSats(SAVINGS_TRANSITION_VBYTES),
-                        vaultId: kit.descriptor.vaultId,
-                      })
-                      setPsbtOut(built.psbtHex)
-                      setPreparedAction('initiate')
-                      await copyToClipboard(built.psbtHex)
-                      toast('Recovery transaction copied')
-                    } catch (err) {
-                      setLocalError(err instanceof Error ? err.message : 'Could not prepare recovery')
-                    }
-                  })()
-                }}
-              />
-            </>
-          )
-        }
-      >
-        <div className='vault-security'>
-          <section className='vault-security-hero' aria-label='Recovery status'>
-            <div className='vault-security-hero-head'>
-              <strong>Recovery protection</strong>
-              <span className={inProcess ? 'is-attention' : 'is-ready'}>{inProcess ? 'In process' : 'Idle'}</span>
-            </div>
-            <h2>{inProcess ? 'Recovery detected on Savings.' : 'Recover with a key you still control.'}</h2>
-            <p>
-              {inProcess
-                ? initiateAlert || 'Review this recovery and the keys available to cancel it.'
-                : 'Prepare a recovery transaction for external signing and submission. Starting recovery requires a key you still control and approval from the recovery services.'}
-            </p>
-          </section>
-
-          {!inProcess ? (
-            <button type='button' className='qg-text' onClick={() => setReviewingRecovery(false)}>
-              Choose another recovery situation
-            </button>
-          ) : null}
-          <div className='vault-section'>
-            <p className='vault-section-label'>Recover with</p>
-            <div className='vault-hub' role='radiogroup' aria-label='Key to use for recovery'>
-              {eligibleClaimants.map((item) => (
-                <button
-                  key={item}
-                  type='button'
-                  role='radio'
-                  aria-checked={claimant === item}
-                  className={claimant === item ? 'vault-hub-row is-on' : 'vault-hub-row'}
-                  data-testid={`recover-key-${item}`}
-                  onClick={() => setClaimant(item)}
-                >
-                  <div className='vault-icon sm' aria-hidden>
-                    {KEY_ICON[item]}
-                  </div>
-                  <div className='vault-hub-copy'>
-                    <p>{KEY_LABEL[item]}</p>
-                    <p>{KEY_DETAIL[item]}</p>
-                  </div>
-                  {claimant === item ? (
-                    <span className='qg-account-option-check' aria-hidden>
-                      <QgCheck />
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          </div>
-          {inProcess ? (
-            <label className='qg-field'>
-              <span>Recovery destination</span>
-              <input
-                value={claimDest}
-                placeholder='Bitcoin address'
-                data-testid='recover-claim-dest'
-                onChange={(event) => setClaimDest(event.target.value)}
-              />
-            </label>
-          ) : null}
-          {psbtOut && preparedAction && !cancelSigners.length ? (
-            <section className='qg-note' role='status' data-testid='recovery-prepared'>
-              <FileKey />
-              <div>
-                <strong>
-                  {preparedAction === 'initiate'
-                    ? 'Recovery transaction prepared'
-                    : preparedAction === 'cancel'
-                      ? 'Cancellation transaction prepared'
-                      : 'Recovery transfer prepared'}
-                </strong>
-                <p>
-                  {preparedAction === 'initiate'
-                    ? 'This transaction still needs your selected key and the recovery services to approve it, then submission with compatible recovery software. The waiting period starts after Bitcoin confirmation.'
-                    : preparedAction === 'cancel'
-                      ? 'This transaction still needs an eligible remaining key and the recovery services to approve it, then submission with compatible recovery software. Recovery remains active until cancellation is confirmed.'
-                      : 'Sign with the key that started recovery and submit with compatible recovery software after the waiting period ends. Preparing this transaction does not move your funds.'}
-                </p>
-              </div>
-            </section>
-          ) : null}
-          {cancelSigners.length ? (
-            <>
-              <p className='qg-copy' data-testid='recover-guardian-signers'>
-                Cancel without services needs {describeGuardianExitSigners(cancelSigners)}. The key that started
-                recovery cannot sign.
-              </p>
-              <section className='qg-summary'>
-                {cancelSigners.map((role) => (
-                  <div key={role}>
-                    <span>{KEY_LABEL[role]}</span>
-                    <strong>{cancelHave.includes(role) ? 'signed' : 'still needed'}</strong>
-                  </div>
-                ))}
-              </section>
-              {cancelSigners.includes('phone') && !cancelHave.includes('phone') ? (
-                <QgPrimary
-                  label='Sign with this device'
-                  testId='recover-guardian-device'
-                  onClick={() => {
-                    setLocalError('')
-                    void (async () => {
-                      try {
-                        const next = await signGuardianExitWithDevice(cancelPsbt)
-                        setCancelPsbt(next)
-                        setCancelHave((have) => [...have, 'phone'])
-                        toast('This device signed')
-                      } catch (err) {
-                        setLocalError(err instanceof Error ? err.message : 'Could not sign with this device')
-                      }
-                    })()
-                  }}
-                />
-              ) : null}
-              {externalRole ? (
-                <>
-                  <QgSecondary
-                    label={`Download cancel for ${KEY_LABEL[externalRole]}`}
-                    testId='recover-guardian-external-download'
-                    onClick={() => {
-                      downloadPsbt('arkade-cancel.psbt', cancelPsbt)
-                      toast(`Cancel PSBT saved for ${KEY_LABEL[externalRole]}`)
-                    }}
-                  />
-                  <label className='qg-field'>
-                    <span>Signed cancel PSBT file</span>
-                    <input
-                      type='file'
-                      accept='.psbt,application/octet-stream'
-                      data-testid='recover-guardian-signed-file'
-                      onChange={(event) => {
-                        const file = event.target.files?.[0]
-                        if (!file) return
-                        void file.arrayBuffer().then((body) => setSignedCancelPsbt(hex.encode(new Uint8Array(body))))
-                      }}
-                    />
-                  </label>
-                  <label className='qg-field'>
-                    <span>{`Signed by ${KEY_LABEL[externalRole]}`}</span>
-                    <input
-                      value={signedCancelPsbt}
-                      placeholder='Paste a signed PSBT, or choose the file'
-                      data-testid='recover-guardian-signed-psbt'
-                      onChange={(event) => setSignedCancelPsbt(event.target.value)}
-                    />
-                  </label>
-                  <QgPrimary
-                    label={`Accept ${KEY_LABEL[externalRole]} signature`}
-                    testId='recover-guardian-external'
-                    disabled={!signedCancelPsbt.trim()}
-                    onClick={() => {
-                      setLocalError('')
-                      try {
-                        const kit = requireSavingsRecoveryKit(parseRecoveryKit(JSON.parse(downloadRecoveryKit())))
-                        const expectedPub =
-                          externalRole === 'hardware' ? kit.descriptor.keys.hardware : kit.descriptor.keys.recovery
-                        if (!expectedPub) throw new Error(`${KEY_LABEL[externalRole]} is not configured`)
-                        const next = acceptGuardianExitSignature(
-                          cancelPsbt,
-                          parseIncomingPsbt(signedCancelPsbt),
-                          expectedPub,
-                        )
-                        setCancelPsbt(next)
-                        setCancelHave((have) => [...have, externalRole])
-                        setSignedCancelPsbt('')
-                        toast(`${KEY_LABEL[externalRole]} signature accepted`)
-                      } catch (err) {
-                        setLocalError(err instanceof Error ? err.message : 'Could not accept the signed PSBT')
-                      }
-                    }}
-                  />
-                </>
-              ) : null}
-              {cancelHave.length === cancelSigners.length ? (
-                <QgPrimary
-                  label='Broadcast cancel'
-                  testId='recover-guardian-broadcast'
-                  onClick={() => {
-                    setLocalError('')
-                    void (async () => {
-                      try {
-                        const done = finalizeGuardianExit(cancelPsbt, cancelSigners.length)
-                        const txid = await broadcastTx(done.txHex)
-                        toast(`Cancel broadcast ${txid.slice(0, 8)}…`)
-                        setCancelPsbt('')
-                        setCancelSigners([])
-                        setCancelHave([])
-                        setSignedCancelPsbt('')
-                      } catch (err) {
-                        setLocalError(err instanceof Error ? err.message : 'Could not broadcast the cancel')
-                      }
-                    })()
-                  }}
-                />
-              ) : null}
-            </>
-          ) : null}
-        </div>
+      <QgScreen title='Savings recovery' back={() => navigate(recoverExit)}>
+        <p className='qg-copy' role='alert'>
+          Open your enrolled Ledger account and retrieve its recovery package before continuing.
+        </p>
+        <QgSecondary label='Open backups' onClick={() => setView('kit')} />
       </QgScreen>
     )
   }
@@ -788,8 +297,6 @@ export default function VaultRecover() {
               title={currentKit?.protectionTier === 'light' ? 'Recover Spending' : 'I lost a key'}
               onClick={() => {
                 setLocalError('')
-                setFromKit(true)
-                setReviewingRecovery(false)
                 if (currentKit?.protectionTier === 'light') setBackupView('exit')
                 else setView('lost')
               }}
