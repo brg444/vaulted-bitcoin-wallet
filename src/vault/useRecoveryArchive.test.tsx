@@ -5,6 +5,7 @@ import type { VaultStatus } from '../lib/vault/types'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 const mocks = vi.hoisted(() => ({
   capture: vi.fn(),
+  acknowledge: vi.fn(),
   open: vi.fn(),
   sync: vi.fn(),
   subscribe: vi.fn(),
@@ -30,10 +31,13 @@ vi.mock('../lib/vault/savingsSpend', () => ({ unlockPhoneBip340: mocks.unlock })
 const status = { vaultId: 'test', enrolled: true } as VaultStatus
 const enrollment = { vaultId: 'test' } as EnrollmentSecrets
 const file = { header: { binding: { vaultId: 'test' } }, archive: { spending: {} } }
+const coverage = { vaultId: 'test', network: 'mainnet', descriptorHash: 'aa', fileDigest: 'bb', outputs: [] }
+const captured = { file, coverage }
 let event: () => void
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.capture.mockResolvedValue(file)
+  mocks.capture.mockResolvedValue(captured)
+  mocks.acknowledge.mockResolvedValue(undefined)
   mocks.sync.mockImplementation(async (session) => {
     session.file = file
     return file
@@ -57,23 +61,26 @@ afterEach(() => {
 })
 describe('automatic program recovery backups', () => {
   it('captures receipt events and only reports a cloud save after verified synchronization', async () => {
-    const { result, unmount } = renderHook(() => useRecoveryArchive(enrollment, status, false))
+    const { result, unmount } = renderHook(() => useRecoveryArchive(enrollment, status, false, mocks.acknowledge))
     await act(() => result.current.backupRecoveryArchive())
     expect(mocks.open).toHaveBeenCalledTimes(1)
+    expect(mocks.acknowledge).toHaveBeenCalledWith(coverage)
+    mocks.acknowledge.mockClear()
     expect(result.current.recoveryArchiveStatus).toContain('cloud backup verified')
     mocks.capture.mockRejectedValueOnce(new Error('Incomplete exit graph'))
     act(() => event())
     expect(result.current.recoveryArchiveStatus).not.toContain('verified')
     await waitFor(() => expect(result.current.recoveryArchiveError).toBe('Incomplete exit graph'))
     expect(mocks.sync).toHaveBeenCalledTimes(1)
+    expect(mocks.acknowledge).not.toHaveBeenCalled()
     act(() => event())
     await waitFor(() => expect(mocks.sync).toHaveBeenCalledTimes(2))
     expect(mocks.open).toHaveBeenCalledTimes(1)
     unmount()
   })
   it('completes an explicit cloud backup across activity without reporting its snapshot as current', async () => {
-    const { result, unmount } = renderHook(() => useRecoveryArchive(enrollment, status, false))
-    let finish!: (value: typeof file) => void
+    const { result, unmount } = renderHook(() => useRecoveryArchive(enrollment, status, false, mocks.acknowledge))
+    let finish!: (value: typeof captured) => void
     mocks.capture.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -86,7 +93,7 @@ describe('automatic program recovery backups', () => {
     })
     act(() => event())
     await act(async () => {
-      finish(file)
+      finish(captured)
       await operation
     })
     expect(mocks.sync).toHaveBeenCalledTimes(1)
@@ -94,16 +101,19 @@ describe('automatic program recovery backups', () => {
     unmount()
   })
   it('rejects an explicit backup if the wallet locks during capture', async () => {
-    let finish!: (value: typeof file) => void
+    let finish!: (value: typeof captured) => void
     mocks.capture.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           finish = resolve
         }),
     )
-    const { result, rerender, unmount } = renderHook(({ locked }) => useRecoveryArchive(enrollment, status, locked), {
-      initialProps: { locked: false },
-    })
+    const { result, rerender, unmount } = renderHook(
+      ({ locked }) => useRecoveryArchive(enrollment, status, locked, mocks.acknowledge),
+      {
+        initialProps: { locked: false },
+      },
+    )
     let operation!: Promise<void>
     await act(async () => {
       operation = result.current.backupRecoveryArchive()
@@ -111,10 +121,11 @@ describe('automatic program recovery backups', () => {
     const rejected = expect(operation).rejects.toThrow('Wallet session changed')
     rerender({ locked: true })
     await act(async () => {
-      finish(file)
+      finish(captured)
       await rejected
     })
     expect(mocks.sync).not.toHaveBeenCalled()
+    expect(mocks.acknowledge).not.toHaveBeenCalled()
     unmount()
   })
   it('does not restore a cloud session whose unlock finished after the wallet locked', async () => {
@@ -125,9 +136,12 @@ describe('automatic program recovery backups', () => {
           finish = resolve
         }),
     )
-    const { result, rerender, unmount } = renderHook(({ locked }) => useRecoveryArchive(enrollment, status, locked), {
-      initialProps: { locked: false },
-    })
+    const { result, rerender, unmount } = renderHook(
+      ({ locked }) => useRecoveryArchive(enrollment, status, locked, mocks.acknowledge),
+      {
+        initialProps: { locked: false },
+      },
+    )
     let operation!: Promise<void>
     act(() => {
       operation = result.current.backupRecoveryArchive()
@@ -143,15 +157,19 @@ describe('automatic program recovery backups', () => {
     unmount()
   })
   it('drops the cloud capability when locked and exports locally without requiring cloud availability', async () => {
-    const { result, rerender, unmount } = renderHook(({ locked }) => useRecoveryArchive(enrollment, status, locked), {
-      initialProps: { locked: false },
-    })
+    const { result, rerender, unmount } = renderHook(
+      ({ locked }) => useRecoveryArchive(enrollment, status, locked, mocks.acknowledge),
+      {
+        initialProps: { locked: false },
+      },
+    )
     const phone = new Uint8Array(32).fill(2)
     mocks.unlock.mockResolvedValue(phone)
     await act(async () => {
       expect(await result.current.downloadRecoveryArchive()).toContain('encrypted')
     })
     expect(mocks.open).not.toHaveBeenCalled()
+    expect(mocks.acknowledge).toHaveBeenCalledWith(coverage)
     expect(phone.every((byte) => byte === 0)).toBe(true)
     await act(() => result.current.backupRecoveryArchive())
     rerender({ locked: true })

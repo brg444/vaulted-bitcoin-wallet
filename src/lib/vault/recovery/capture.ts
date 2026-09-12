@@ -8,8 +8,9 @@ import { recoveryFileStore } from './fileStore'
 import { IndexedDBWalletRepository } from '@arkade-os/sdk'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 import { requireSpendingRecoveryCoverage } from './coverage'
-import { readSpendingBitcoin, clearBitcoinPayment, bitcoinPlanOutputs } from '../spendingBitcoinStore'
+import { readSpendingBitcoin } from '../spendingBitcoinStore'
 import { validateExitArchive } from './exitArchive'
+import { readCommittedRecoveryCoverage } from './committedCoverage'
 
 export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: EnrollmentSecrets) {
   const kit = kitFromFacts({ status, enrollment })
@@ -61,24 +62,9 @@ export async function captureVaultRecoveryFile(status: VaultStatus, enrollment: 
           throw new Error('Bitcoin payment recovery data is still syncing. The previous backup is retained.')
       }
       await recoveryFileStore(key, file)
-      if (setup?.stage === 'confirmed') {
-        const { fetchVaultWalletVtxoSnapshot } = await import('../vtxo/walletWorker')
-        const snapshot = await fetchVaultWalletVtxoSnapshot(status).catch(() => null)
-        const expectedOutflow =
-          bitcoinPlanOutputs(setup.plan!.plan).reduce((sum, output) => sum + output.amountSats, 0) +
-          setup.plan!.plan.feeSats
-        if (
-          snapshot?.history.some(
-            (row) =>
-              row.account === 'spend' &&
-              row.type === 'sent' &&
-              row.txid === setup.receipt!.commitmentTxid &&
-              row.amount === expectedOutflow,
-          )
-        )
-          clearBitcoinPayment(setup)
-      }
-      return file
+      const coverage = await readCommittedRecoveryCoverage(status)
+      if (!coverage) throw new Error('Committed recovery coverage is unavailable')
+      return { file, coverage }
     } finally {
       await wallet[Symbol.asyncDispose]()
     }

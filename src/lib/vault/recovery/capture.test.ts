@@ -4,6 +4,7 @@ import { IndexedDBWalletRepository } from '@arkade-os/sdk'
 import { ledgerRecoveryFixture } from './testdata/ledger'
 import { buildRecoveryHeader, type VaultRecoveryFile } from './backupCodec'
 import { recoveryFileStore } from './fileStore'
+import { readCommittedRecoveryCoverage } from './committedCoverage'
 import { captureVaultRecoveryFile } from './capture'
 
 const mocks = vi.hoisted(() => ({
@@ -81,12 +82,12 @@ describe('complete recovery snapshot replacement', () => {
     mocks.capture.mockResolvedValue(next)
     const saved = await captureVaultRecoveryFile(f.status, f.enrollment)
     expect(f.read).toHaveBeenCalledTimes(2)
-    expect(saved.archive).toEqual(next)
-    expect(await recoveryFileStore(f.key)).toEqual(saved)
+    expect(saved.file.archive).toEqual(next)
+    expect(await recoveryFileStore(f.key)).toEqual(saved.file)
   })
 })
 
-it('keeps confirmed signer setup until the exact replacement recovery output has been saved', async () => {
+it('returns committed coverage without retiring the confirmed payment or querying history', async () => {
   const f = await fixture()
   const setup = {
     stage: 'confirmed',
@@ -96,22 +97,19 @@ it('keeps confirmed signer setup until the exact replacement recovery output has
   mocks.setup.mockReturnValue(setup)
   await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('Bitcoin payment recovery data')
   expect(await recoveryFileStore(f.key)).toEqual(f.previous)
-  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
   setup.receipt.receiverTxid = f.coin.txid
-  mocks.clearBitcoinPayment.mockImplementation(async () => {
-    expect(await recoveryFileStore(f.key)).not.toBeNull()
-  })
-  await captureVaultRecoveryFile(f.status, f.enrollment)
-  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
   mocks.snapshot.mockRejectedValue(new Error('History is still syncing'))
-  await expect(captureVaultRecoveryFile(f.status, f.enrollment)).resolves.toBeDefined()
-  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
-  mocks.snapshot.mockResolvedValue({
-    history: [{ account: 'spend', type: 'sent', txid: setup.receipt.commitmentTxid, amount: 1700 }],
-  })
   const saved = await captureVaultRecoveryFile(f.status, f.enrollment)
-  expect(mocks.clearBitcoinPayment).toHaveBeenCalledWith(setup)
-  expect(await recoveryFileStore(f.key)).toEqual(saved)
+  expect(saved.coverage).toEqual(await readCommittedRecoveryCoverage(f.status))
+  expect(saved.coverage.outputs).toContainEqual({
+    txid: f.coin.txid,
+    vout: f.coin.vout,
+    value: f.coin.value,
+    script: f.coin.script,
+  })
+  expect(mocks.clearBitcoinPayment).not.toHaveBeenCalled()
+  expect(mocks.snapshot).not.toHaveBeenCalled()
+  expect(await recoveryFileStore(f.key)).toEqual(saved.file)
 })
 
 it('retains the complete file when a setup final appears during capture before its replacement is indexed', async () => {

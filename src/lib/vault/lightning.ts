@@ -43,7 +43,7 @@ import {
 } from './lightningLifecycle'
 import type { VaultStatus } from './types'
 import { withActiveVaultWalletState, withVaultWalletState } from './vtxo/walletWorker'
-import { vaultArkServer } from './vtxo/spend'
+import { vaultOperatorOrigin } from './networkPins'
 
 export {
   isVaultLightningInput,
@@ -139,7 +139,7 @@ async function withUnlockedVaultLightningSdkWallet<T>(
   if (hex.encode(await identity.compressedPublicKey()) !== String(status.phoneBip340Pub || '')) {
     throw new Error('Phone key does not match this vault.')
   }
-  const arkServerUrl = vaultArkServer(status.network)
+  const arkServerUrl = vaultOperatorOrigin(status.network)
   const operator = new RestArkProvider(arkServerUrl)
   const indexer = new RestIndexerProvider(arkServerUrl)
   const info = await operator.getInfo()

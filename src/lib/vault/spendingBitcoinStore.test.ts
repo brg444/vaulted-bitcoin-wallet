@@ -1,3 +1,9 @@
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
+import * as walletWorker from './vtxo/walletWorker'
+import { recoveryFileStore } from './recovery/fileStore'
+import { buildRecoveryHeader, type VaultRecoveryFile } from './recovery/backupCodec'
+import { readCommittedRecoveryCoverage } from './recovery/committedCoverage'
 import * as delegation from './vtxo/guardianRenewal'
 import * as spendModule from './vtxo/spend'
 import * as apiModule from './api'
@@ -44,10 +50,11 @@ import {
   cancelSpendingBitcoin,
   scopeBitcoinBatchFailures,
   normalizeBitcoinResponse,
+  acknowledgeSpendingBitcoinRecovery,
 } from './spendingBitcoinFunding'
 
-async function bitcoinFixture(count = 1, light = false) {
-  const source = light ? sharedSpendingRecoveryFixture() : await ledgerRecoveryFixture(false, 'mainnet')
+async function bitcoinFixture(count = 1, light = false, network: 'mainnet' | 'mutinynet' = 'mainnet') {
+  const source = light ? sharedSpendingRecoveryFixture(undefined, network) : await ledgerRecoveryFixture(false, network)
   const spending = spendModule.vaultPolicyV1ScriptFromStatus(source.status)
   const coin = JSON.parse(source.archive.spending.coins)[0]
   // Public deterministic key from the shared Spending vector, or the Ledger fixture phone key.
@@ -106,6 +113,7 @@ async function bitcoinFixture(count = 1, light = false) {
   return { ...source, spending, coin, phoneSecret, plan, prepared, journal, operatorInfo }
 }
 beforeEach(() => {
+  vi.stubGlobal('indexedDB', new IDBFactory())
   localStorage.clear()
   vi.restoreAllMocks()
   vi.spyOn(EsploraProvider.prototype, 'getCoins').mockResolvedValue([])
@@ -550,4 +558,161 @@ it('checks the enrolled Light output before asking for a Bitcoin payment signatu
   expect(unlock).not.toHaveBeenCalled()
   expect(approve).not.toHaveBeenCalled()
   expect(dispose).toHaveBeenCalledOnce()
+})
+
+async function confirmedBitcoinFixture(network: 'mainnet' | 'mutinynet' = 'mainnet', light = false) {
+  const f = await bitcoinFixture(1, light, network)
+  // Reuse the independent recovery vector's exact successor, value and script.
+  const plan = { ...f.plan, valueSats: f.coin.value + 1900, changeSats: f.coin.value }
+  const prepared = { ...f.prepared, plan, planDigest: savingsSetupDigest('bitcoin-plan', plan) }
+  const commitment = new Transaction({ version: 2 })
+  commitment.addInput({ txid: '12'.repeat(32), index: 0 })
+  commitment.addOutput({ amount: 100000n, script: f.spending.pkScript })
+  const journal: BitcoinPaymentJournal = {
+    ...f.journal,
+    valueSats: plan.valueSats,
+    plan: prepared,
+    stage: 'confirmed',
+    final: {
+      batchId: 'retained-batch',
+      batchExpiry: 1,
+      commitmentPsbt: base64.encode(commitment.toPSBT()),
+      vtxoTree: [{ txid: f.coin.txid, tx: f.archive.spending.transactions[f.coin.txid], children: {} }],
+      connectors: [],
+      ownerForfeitPsbt: '',
+    },
+    receipt: {
+      state: 'confirmed',
+      commitmentTxid: commitment.id,
+      receiverTxid: f.coin.txid,
+      receiverVout: f.coin.vout,
+    },
+  }
+  saveBitcoinPayment(journal)
+  expect(readSpendingBitcoin(f.status)?.stage).toBe('confirmed')
+  const file: VaultRecoveryFile = {
+    name: 'vaulted-recovery',
+    version: 1,
+    header: buildRecoveryHeader(
+      f.kit,
+      f.status,
+      'enrollment' in f
+        ? f.enrollment
+        : {
+            ...sharedSpendingEnrollment(),
+            nonce: '00'.repeat(12),
+            ciphertext: '00'.repeat(48),
+          },
+    ),
+    archive: f.archive,
+  }
+  const history = [{ account: 'spend', type: 'sent', txid: commitment.id, amount: 1900 }]
+  const snapshot = vi.spyOn(walletWorker, 'fetchVaultWalletVtxoSnapshot').mockResolvedValue({ history } as never)
+  const key = file.header.binding.descriptorHash
+  return { ...f, journal, file, key, history, snapshot }
+}
+
+describe('payment-owned recovery acknowledgment', () => {
+  it.each([
+    ['mainnet', false],
+    ['mutinynet', false],
+    ['mainnet', true],
+    ['mutinynet', true],
+  ] as const)(
+    'requires durable exact coverage and resumes after interruption on %s (Spending-only %s)',
+    async (network, light) => {
+      const f = await confirmedBitcoinFixture(network, light)
+      await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
+      expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.journal.operationId)
+      await recoveryFileStore(f.key, f.file)
+      const coverage = (await readCommittedRecoveryCoverage(f.status))!
+      for (const change of [
+        { vaultId: 'other' },
+        { network: 'other' },
+        { descriptorHash: '00'.repeat(32) },
+        { fileDigest: '00'.repeat(32) },
+      ]) {
+        await expect(acknowledgeSpendingBitcoinRecovery(f.status, { ...coverage, ...change })).resolves.toBe(false)
+        expect(readSpendingBitcoin(f.status)).not.toBeNull()
+      }
+      // No callback survived the reload. The owner recovers the same evidence from storage.
+      await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(true)
+      expect(readSpendingBitcoin(f.status)).toBeNull()
+      await expect(acknowledgeSpendingBitcoinRecovery(f.status, coverage)).resolves.toBe(false)
+    },
+  )
+  it.each([{ account: 'savings' }, { type: 'received' }, { txid: '00'.repeat(32) }, { amount: 1899 }])(
+    'retains the journal for mismatched history %j',
+    async (change) => {
+      const f = await confirmedBitcoinFixture()
+      await recoveryFileStore(f.key, f.file)
+      f.snapshot.mockResolvedValue({ history: [{ ...f.history[0], ...change }] } as never)
+      await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
+      expect(readSpendingBitcoin(f.status)).not.toBeNull()
+    },
+  )
+  it('retains the journal when history fails, and acknowledges the same operation on retry', async () => {
+    const f = await confirmedBitcoinFixture()
+    await recoveryFileStore(f.key, f.file)
+    f.snapshot.mockRejectedValueOnce(new Error('History unavailable'))
+    await expect(acknowledgeSpendingBitcoinRecovery(f.status)).rejects.toThrow('History unavailable')
+    expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.journal.operationId)
+    await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(true)
+  })
+  it('rejects stale coverage and a complete archive that omits the payment successor', async () => {
+    const f = await confirmedBitcoinFixture()
+    await recoveryFileStore(f.key, f.file)
+    const coverage = (await readCommittedRecoveryCoverage(f.status))!
+    const empty = structuredClone(f.file)
+    empty.archive.spending.coins = '[]'
+    empty.archive.spending.branches = {}
+    empty.archive.spending.transactions = {}
+    await recoveryFileStore(f.key, empty)
+    expect(await readCommittedRecoveryCoverage(f.status)).toMatchObject({ outputs: [] })
+    await expect(acknowledgeSpendingBitcoinRecovery(f.status, coverage)).resolves.toBe(false)
+    await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
+    expect(readSpendingBitcoin(f.status)).not.toBeNull()
+  })
+  it.each(['submitted', 'finalizing'] as const)(
+    'keeps %s outcomes even with durable coverage and matching history',
+    async (stage) => {
+      const f = await confirmedBitcoinFixture()
+      await recoveryFileStore(f.key, f.file)
+      saveBitcoinPayment({ ...f.journal, stage, receipt: { ...f.journal.receipt!, state: 'submitted' } })
+      await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
+      expect(f.snapshot).not.toHaveBeenCalled()
+      expect(readSpendingBitcoin(f.status)?.stage).toBe(stage)
+    },
+  )
+  it('cannot retire an operation rewritten during history observation', async () => {
+    const f = await confirmedBitcoinFixture()
+    await recoveryFileStore(f.key, f.file)
+    const changed = {
+      ...f.journal,
+      deleteIntent: { proof: 'retained-proof', message: '{"type":"delete","expire_at":0}' },
+    }
+    f.snapshot.mockImplementationOnce(async () => {
+      saveBitcoinPayment(changed)
+      return { history: f.history } as never
+    })
+    await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
+    expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(changed.deleteIntent)
+  })
+  it('shares the existing payment lock across competing acknowledgments', async () => {
+    const f = await confirmedBitcoinFixture()
+    await recoveryFileStore(f.key, f.file)
+    let tail = Promise.resolve<unknown>(undefined)
+    const request = vi.fn((_name, _options, run) => {
+      const operation = tail.then(() => run({}))
+      tail = operation.catch(() => {})
+      return operation
+    })
+    vi.stubGlobal('navigator', { locks: { request } })
+    expect(
+      await Promise.all([acknowledgeSpendingBitcoinRecovery(f.status), acknowledgeSpendingBitcoinRecovery(f.status)]),
+    ).toEqual([true, false])
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(request.mock.calls[0][0]).toBe(request.mock.calls[1][0])
+    expect(f.snapshot).toHaveBeenCalledTimes(1)
+  })
 })

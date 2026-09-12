@@ -200,7 +200,7 @@ test('fresh Light enrolls with shared boarding, reloads and recovers its Spendin
             destination: p2tr(hex.decode(status.phoneBip340Pub).slice(1), undefined, getNetwork('mutinynet')).address,
           }
         }
-        const file = await (await import(base + 'recovery/capture.ts')).captureVaultRecoveryFile(status, enrollment)
+        const { file } = await (await import(base + 'recovery/capture.ts')).captureVaultRecoveryFile(status, enrollment)
         const key = await (await import(base + 'savingsSpend.ts')).unlockPhoneBip340(enrollment, status)
         try {
           const module = '/src/test/e2e-vault/fixtures/shared-spending-live.ts'
@@ -277,7 +277,7 @@ test('fresh Light enrolls with shared boarding, reloads and recovers its Spendin
         const base = '/src/lib/vault/'
         const enrollment = (await import(base + 'enrollmentStore.ts')).findStoredEnrollment()
         const status = await (await import(base + 'status.ts')).fetchVaultStatus(undefined, enrollment.vaultId)
-        return (await import(base + 'recovery/capture.ts')).captureVaultRecoveryFile(status, enrollment)
+        return (await (await import(base + 'recovery/capture.ts')).captureVaultRecoveryFile(status, enrollment)).file
       })
       await save('post-payment-recovery-private.json', after)
     }

@@ -4,10 +4,9 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { RestArkProvider, RestIndexerProvider, Transaction } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { ledgerRecoveryFacts } from './testdata/helpers'
-import { retainFinalizationRecovery } from './finalization'
+import { retainFinalizationRecovery, type FinalizationRecoveryEvidence } from './finalization'
 import { recoveryFileStore } from './fileStore'
 import { vaultExitRepository } from '../vtxo/exitRepository'
-import type { PersistedVtxoSpend } from '../vtxo/spend'
 import type { ExitArchive } from './exitArchive'
 
 beforeEach(() => vi.stubGlobal('indexedDB', new IDBFactory()))
@@ -31,13 +30,11 @@ function fixture() {
     .spyOn(RestIndexerProvider.prototype, 'getVirtualTxs')
     .mockResolvedValue({ txs: Object.values(f.archive.spending.transactions) })
   const pending = {
-    vaultId: f.status.vaultId,
-    operationId: '01'.repeat(32),
     arkTxid: next.id,
     operatorArkPsbt: base64.encode(next.toPSBT()),
     checkpointPsbts: [base64.encode(checkpoint.toPSBT())],
     reservedInputs: [{ txid: f.coin.txid, vout: f.coin.vout, valueSats: f.coin.value, scriptHex: f.coin.script }],
-  } as PersistedVtxoSpend
+  } satisfies FinalizationRecoveryEvidence
   return { ...f, next, pending, fetchTxs }
 }
 it('retains the exact successor and ancestors independently of payment-journal deletion', async () => {

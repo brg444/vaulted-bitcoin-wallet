@@ -1,3 +1,4 @@
+import type { CommittedRecoveryCoverage } from '../lib/vault/recovery/committedCoverage'
 import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
@@ -15,14 +16,19 @@ import { subscribeVaultWalletEvents } from '../lib/vault/vtxo/walletWorker'
 import { createPortableRecoveryPackage } from '../lib/vault/recovery/portable'
 import { recordRecoveryFileCopy } from '../lib/vault/recovery/packageCheck'
 
-export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status: VaultStatus | null, locked: boolean) {
+export function useRecoveryArchive(
+  enrollment: EnrollmentSecrets | null,
+  status: VaultStatus | null,
+  locked: boolean,
+  acknowledgeRecovery: (coverage: CommittedRecoveryCoverage) => Promise<void>,
+) {
   const session = useRef<RecoveryBackupSession | null>(null)
   const contextEpoch = useRef(0)
   const activityEpoch = useRef(0)
   const [recoveryArchiveStatus, setRecoveryArchiveStatus] = useState('')
   const [recoveryArchiveError, setRecoveryArchiveError] = useState('')
-  const current = useRef({ enrollment, status, locked })
-  current.current = { enrollment, status, locked }
+  const current = useRef({ enrollment, status, locked, acknowledgeRecovery })
+  current.current = { enrollment, status, locked, acknowledgeRecovery }
   useEffect(() => {
     session.current = null
     setRecoveryArchiveStatus('')
@@ -38,9 +44,12 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
     const context = contextEpoch.current
     const activity = activityEpoch.current
     const unchanged = () => context === contextEpoch.current && activity === activityEpoch.current
-    const file = await captureVaultRecoveryFile(status, enrollment)
+    const { file, coverage } = await captureVaultRecoveryFile(status, enrollment)
     if (requireCloudBackup && context !== contextEpoch.current)
       throw new Error('Wallet session changed during recovery backup')
+    if (!requireCloudBackup && !unchanged()) return file
+    if (unchanged()) await current.current.acknowledgeRecovery(coverage)
+    if (context !== contextEpoch.current) throw new Error('Wallet session changed during recovery backup')
     if (!requireCloudBackup && !unchanged()) return file
     await recordRecoveryFileCopy('local', file)
     const active = session.current
@@ -53,6 +62,7 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
       setRecoveryArchiveStatus(`Encrypted cloud backup verified ${new Date().toLocaleString()}`)
     } else {
       if (requireCloudBackup) throw new Error('Unlock this vault again to enable backup')
+      if (!unchanged()) return file
       setRecoveryArchiveStatus(`Transaction recovery data saved on this device ${new Date().toLocaleString()}`)
     }
     setRecoveryArchiveError('')
@@ -114,7 +124,11 @@ export function useRecoveryArchive(enrollment: EnrollmentSecrets | null, status:
   const downloadRecoveryArchive = useCallback(async (format: 'encrypted' | 'portable' = 'encrypted') => {
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault first')
-    const file = await captureVaultRecoveryFile(status, enrollment)
+    const context = contextEpoch.current
+    const { file, coverage } = await captureVaultRecoveryFile(status, enrollment)
+    if (context !== contextEpoch.current) throw new Error('Wallet session changed during recovery backup')
+    await current.current.acknowledgeRecovery(coverage)
+    if (context !== contextEpoch.current) throw new Error('Wallet session changed during recovery backup')
     await recordRecoveryFileCopy('local', file)
     const encode = async (key: CryptoKey) =>
       JSON.stringify(

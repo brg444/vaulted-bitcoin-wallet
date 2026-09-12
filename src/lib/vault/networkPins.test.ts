@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { networkPins, requireSdkNetworkName, sdkNetworkName } from './networkPins'
+import { networkPins, vaultOperatorOrigin, requireSdkNetworkName, sdkNetworkName } from './networkPins'
 
 describe('networkPins', () => {
   it('keeps Mutinynet delays and Operator identity unchanged', () => {
@@ -48,4 +48,12 @@ describe('networkPins', () => {
     expect(sdkNetworkName('regtest')).toBeUndefined()
     expect(() => requireSdkNetworkName('regtest')).toThrow(/unsupported Vault network/)
   })
+})
+
+it('uses the release-pinned Operator for explicit networks and the SDK mainnet alias', () => {
+  expect(vaultOperatorOrigin()).toBe('https://mutinynet.arkade.sh')
+  expect(vaultOperatorOrigin('mutinynet')).toBe('https://mutinynet.arkade.sh')
+  expect(vaultOperatorOrigin('mainnet')).toBe('https://arkade.computer')
+  expect(vaultOperatorOrigin('bitcoin')).toBe('https://arkade.computer')
+  expect(() => vaultOperatorOrigin('regtest')).toThrow(/unsupported Vault network/)
 })

@@ -1,3 +1,4 @@
+import { configuredReleaseNetwork } from './releaseNetwork'
 import { requireSupportedVaultNetwork, type VaultNetwork } from './constants'
 
 export interface VaultNetworkPins {
@@ -84,3 +85,13 @@ export function requireSdkNetworkName(network: unknown): 'bitcoin' | 'mutinynet'
   if (!name) throw new Error(`unsupported Vault network ${String(network || '')}`)
   return name
 }
+
+/** Use the pinned Operator for the selected release, with the existing browser-test override. */
+export function vaultOperatorOrigin(network?: string): string {
+  if (__VAULT_E2E_OPERATOR_ORIGIN__) return __VAULT_E2E_OPERATOR_ORIGIN__
+  const raw =
+    network || configuredReleaseNetwork(import.meta.env.VITE_VAULT_RELEASE_NETWORK, import.meta.env.PROD) || 'mutinynet'
+  return networkPins(raw === 'bitcoin' ? 'mainnet' : raw).operatorOrigin
+}
+
+declare const __VAULT_E2E_OPERATOR_ORIGIN__: string

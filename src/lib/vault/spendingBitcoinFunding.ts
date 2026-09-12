@@ -26,7 +26,6 @@ import {
   createVtxoOperationId,
   createVtxoSpendUnlocker,
   newVtxoSpendChallenge,
-  vaultArkServer,
   vtxoSpendDirectSig,
   withVtxoSendLock,
 } from './vtxo/spend'
@@ -46,7 +45,9 @@ import {
 } from './bitcoinBatchEvidence'
 import type { VaultStatus } from './types'
 import type { EnrollmentSecrets } from './tenantEnrollment'
-import { networkPins } from './networkPins'
+import { networkPins, vaultOperatorOrigin } from './networkPins'
+import { readCommittedRecoveryCoverage, type CommittedRecoveryCoverage } from './recovery/committedCoverage'
+import { fetchVaultWalletVtxoSnapshot } from './vtxo/walletWorker'
 import {
   bitcoinPlanOutputs,
   validateBitcoinOutputs,
@@ -63,7 +64,7 @@ import {
 } from './spendingBitcoinStore'
 export { readSpendingBitcoin, type SpendingBitcoinPlan } from './spendingBitcoinStore'
 const eligibilityScope = (status: VaultStatus) =>
-  `${vaultArkServer(status.network)}:${status.vaultId}:${guardianRenewalContextDigest(status)}`
+  `${vaultOperatorOrigin(status.network)}:${status.vaultId}:${guardianRenewalContextDigest(status)}`
 const terminal = (state: string) => ['released', 'cancelled', 'rejected'].includes(state)
 
 const post = <T>(phase: string, body: unknown): Promise<T> => vaultPost(`/v1/vtxo/bitcoin/${phase}`, body)
@@ -130,6 +131,51 @@ export async function checkSpendingBitcoin(status: VaultStatus): Promise<Bitcoin
     }
     retainBitcoinOutcome(status, result)
     return result
+  })
+}
+
+/** Only the payment owner retires a confirmed journal, under its existing input lock. */
+export async function acknowledgeSpendingBitcoinRecovery(status: VaultStatus, evidence?: CommittedRecoveryCoverage) {
+  return withVtxoSendLock(status.vaultId, async () => {
+    const journal = readSpendingBitcoin(status)
+    if (!journal || journal.stage !== 'confirmed') return false
+    const plan = journal.plan!.plan
+    const receipt = journal.receipt!
+    const outflow = bitcoinPlanOutputs(plan).reduce((sum, output) => sum + output.amountSats, 0) + plan.feeSats
+    const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+    if (
+      !snapshot.history.some(
+        (row) =>
+          row.account === 'spend' &&
+          row.type === 'sent' &&
+          row.txid === receipt.commitmentTxid &&
+          row.amount === outflow,
+      )
+    )
+      return false
+    // Read durable evidence again after history observation. This also resumes
+    // acknowledgment after a reload between recovery commit and notification.
+    const coverage = await readCommittedRecoveryCoverage(status)
+    if (
+      !coverage ||
+      (evidence &&
+        (evidence.vaultId !== coverage.vaultId ||
+          evidence.network !== coverage.network ||
+          evidence.descriptorHash !== coverage.descriptorHash ||
+          evidence.fileDigest !== coverage.fileDigest)) ||
+      !coverage.outputs.some(
+        (coin) =>
+          coin.txid === receipt.receiverTxid &&
+          coin.vout === receipt.receiverVout &&
+          coin.value === plan.changeSats &&
+          coin.script === status.spendingArkScript,
+      )
+    )
+      return false
+    // A stale observation cannot retire a replacement or rewritten operation.
+    if (JSON.stringify(readSpendingBitcoin(status)) !== JSON.stringify(journal)) return false
+    clearBitcoinPayment(journal)
+    return true
   })
 }
 /** Explicit cancellation also works before the expiry cleanup runs. */
@@ -269,7 +315,7 @@ export async function sendSpendingToBitcoin(
     try {
       progress('Checking funds for this Bitcoin payment')
       const script = vaultPolicyV1ScriptFromStatus(status)
-      const url = vaultArkServer(status.network)
+      const url = vaultOperatorOrigin(status.network)
       const indexer = new RestIndexerProvider(url)
       const result = await indexer.getVtxos({ scripts: [context.scriptPubKey] })
       const candidates = result.vtxos.filter(

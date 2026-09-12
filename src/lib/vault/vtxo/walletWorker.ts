@@ -39,7 +39,8 @@ import {
   vaultWalletWorkerPath,
   vaultWalletWorkerScope,
 } from './walletWorkerNames'
-import { listPersistedVtxoSpends, vaultArkServer } from './spend'
+import { listPersistedVtxoSpends } from './spend'
+import { vaultOperatorOrigin } from '../networkPins'
 import { readSpendingBitcoin } from '../spendingBitcoinStore'
 import { vtxoBalanceWithPending } from './pendingBalance'
 import { requireBoardingStatus } from './board'
@@ -208,7 +209,7 @@ export function vaultWalletRuntimeKey(status: VaultStatus) {
     String(status.vtxoBoardingScript || '').toLowerCase(),
     String(status.vtxoBoardingAddress || ''),
     String(status.vtxoBoardingDescriptorHash || ''),
-    vaultArkServer(status.network),
+    vaultOperatorOrigin(status.network),
   ])
 }
 
@@ -270,7 +271,7 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
     const common = {
       serviceWorker,
       identity: vaultWalletIdentity(status),
-      arkServerUrl: vaultArkServer(status.network),
+      arkServerUrl: vaultOperatorOrigin(status.network),
       esploraUrl: '/esplora',
       walletMode: 'static' as const,
       walletUpdaterTag: updaterTag,
@@ -295,7 +296,7 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
     if (contract.state !== 'active' || (contract.watch || 'watched') !== 'watched') {
       throw new Error('SDK worker did not activate the Spending contract')
     }
-    const activityIndexer = new RestIndexerProvider(vaultArkServer(status.network))
+    const activityIndexer = new RestIndexerProvider(vaultOperatorOrigin(status.network))
     wallet.activity.use(
       swapActivityResolver({
         listSwaps: () => rfqSwapActivityInputs({ repository: swapRepository, indexer: activityIndexer }),
@@ -503,7 +504,7 @@ export async function vaultBoardingSettleParams(
   boardingUtxos: ExtendedCoin[],
   spendingAddress: string,
   absoluteFeeCapSats: number,
-  provider: Pick<RestArkProvider, 'getInfo'> = new RestArkProvider(vaultArkServer()),
+  provider: Pick<RestArkProvider, 'getInfo'> = new RestArkProvider(vaultOperatorOrigin()),
 ): Promise<SettleParams | undefined> {
   if (
     !Number.isSafeInteger(absoluteFeeCapSats) ||
@@ -633,7 +634,7 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
         boardingUtxos,
         String(status.spendingArkAddress || ''),
         status.absoluteFeeCap,
-        new RestArkProvider(vaultArkServer(status.network)),
+        new RestArkProvider(vaultOperatorOrigin(status.network)),
       )
       if (!params) throw new Error('No inputs found')
       return current.wallet.settle(params)

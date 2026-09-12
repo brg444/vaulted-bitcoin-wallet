@@ -78,7 +78,9 @@ vi.mock('../vault/useRecoveryArchive', () => ({
     recoveryArchiveError: '',
   }),
 }))
-vi.mock('../vault/useSpendingBitcoin', () => ({ useSpendingBitcoin: () => ({ operation: null, error: '' }) }))
+vi.mock('../vault/useSpendingBitcoin', () => ({
+  useSpendingBitcoin: () => ({ snapshot: { operation: null, error: '' }, acknowledgeRecovery: vi.fn() }),
+}))
 vi.mock('../vault/useSpendingRenewals', () => ({ useSpendingRenewals: () => null }))
 vi.mock('../vault/useLedgerSavings', () => ({
   useLedgerSavings: () => ({

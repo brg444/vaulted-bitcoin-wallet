@@ -25,7 +25,8 @@ import {
   vaultWalletUpdaterTagForNamespace,
   vaultWalletDatabaseForNamespace,
 } from './lib/vault/vtxo/walletWorkerNames'
-import { vaultArkServer, vaultPolicyV1ScriptFromStatus } from './lib/vault/vtxo/spend'
+import { vaultPolicyV1ScriptFromStatus } from './lib/vault/vtxo/spend'
+import { vaultOperatorOrigin } from './lib/vault/networkPins'
 import { RecoveryWalletRepository } from './lib/vault/recovery/walletRepository'
 
 declare const self: ServiceWorkerGlobalScope
@@ -65,7 +66,7 @@ const bus = new MessageBus(walletRepository, contractRepository, {
       if (active.descriptorHash !== status.vtxoBoardingDescriptorHash) {
         throw new Error('active vault-board-v1 key is bound to a different descriptor')
       }
-      const expectedArkServer = vaultArkServer(pins.network)
+      const expectedArkServer = vaultOperatorOrigin(pins.network)
       if (config.arkServer.url !== expectedArkServer) {
         throw new Error('worker Arkade Operator origin does not match this release')
       }

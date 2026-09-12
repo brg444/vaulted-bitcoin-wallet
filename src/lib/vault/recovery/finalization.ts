@@ -8,15 +8,22 @@ import {
   type ChainTx,
 } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
-import { vaultArkServer, type PersistedVtxoSpend } from '../vtxo/spend'
+import { vaultOperatorOrigin } from '../networkPins'
 import type { VaultStatus } from '../types'
 import { vaultExitRepository } from '../vtxo/exitRepository'
 import { normalizeRecoveryChain, packExitArchive, validateExitArchive, type ExitArchive } from './exitArchive'
 import { recoveryFileStore } from './fileStore'
 
+export interface FinalizationRecoveryEvidence {
+  arkTxid: string
+  operatorArkPsbt?: string
+  checkpointPsbts?: readonly string[]
+  reservedInputs?: readonly { txid: string; vout: number; valueSats: number; scriptHex: string }[]
+}
+
 /** Persist the already-validated signed successor and ancestors before the
  * wallet releases finalization. Never signs, submits, or changes payment state. */
-export async function retainFinalizationRecovery(status: VaultStatus, pending: PersistedVtxoSpend) {
+export async function retainFinalizationRecovery(status: VaultStatus, pending: FinalizationRecoveryEvidence) {
   if (!pending.operatorArkPsbt || !pending.checkpointPsbts?.length || !pending.reservedInputs?.length)
     throw new Error('Signed recovery evidence is unavailable before finalization')
   const repository = vaultExitRepository(status.vaultId, status.network)
@@ -27,9 +34,9 @@ export async function retainFinalizationRecovery(status: VaultStatus, pending: P
     descriptorHash: status.vaultId,
   }
   try {
-    const indexer = new RestIndexerProvider(vaultArkServer(status.network))
+    const indexer = new RestIndexerProvider(vaultOperatorOrigin(status.network))
     const resolver = recoveryChainResolver(indexer, repository)
-    const info = await new RestArkProvider(vaultArkServer(status.network)).getInfo()
+    const info = await new RestArkProvider(vaultOperatorOrigin(status.network)).getInfo()
     const nodes = new Map<string, ChainTx>()
     const inputBranches: Record<string, ChainTx[]> = {}
     for (const input of pending.reservedInputs) {

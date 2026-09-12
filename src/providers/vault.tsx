@@ -33,7 +33,7 @@ import { zeroBytes } from '../lib/vault/ceremony/directauth'
 import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
 import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
 import { consoleError } from '../lib/logs'
-import { requireSdkNetworkName } from '../lib/vault/networkPins'
+import { requireSdkNetworkName, vaultOperatorOrigin } from '../lib/vault/networkPins'
 import { humanizeVaultError } from '../lib/vault/humanize'
 import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress, scriptHexFromAddress } from '../lib/vault/bitcoin'
 import {
@@ -65,7 +65,6 @@ import {
   sendVaultVtxo,
   vtxoSpendIsLivePending,
   type VaultVtxoSpendQuote,
-  vaultArkServer,
 } from '../lib/vault/vtxo/spend'
 import { deleteBoardingKey } from '../lib/vault/vtxo/board'
 import { recoverMatureBoardingInputs } from '../lib/vault/vtxo/boardingRecovery'
@@ -433,7 +432,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const clearError = useCallback(() => reportError(''), [reportError])
 
   const ledgerSavings = useLedgerSavings(status, enrollment, locked)
-  const spendingBitcoin = useSpendingBitcoin(status, locked)
+  const { snapshot: spendingBitcoin, acknowledgeRecovery: acknowledgeBitcoinRecovery } = useSpendingBitcoin(
+    status,
+    locked,
+  )
   const historyWithBitcoin = useMemo(
     () => withBitcoinPaymentHistory(history, spendingBitcoin.operation),
     [history, spendingBitcoin.operation],
@@ -559,7 +561,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     })
 
   const { backupRecoveryArchive, downloadRecoveryArchive, recoveryArchiveStatus, recoveryArchiveError } =
-    useRecoveryArchive(enrollment, status, locked)
+    useRecoveryArchive(enrollment, status, locked, acknowledgeBitcoinRecovery)
 
   const acceptDesign = useCallback(
     (tier?: 'light' | 'standard' | 'advanced') => {
@@ -860,7 +862,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           lightning.withVaultLightningTransport(profile, (transport) =>
             lightning.requestVaultLightningQuote({
               wallet: session.wallet,
-              arkServerUrl: vaultArkServer(profile.network),
+              arkServerUrl: vaultOperatorOrigin(profile.network),
               invoice: invoice.raw,
               network: profile.network,
               transport,

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   readSpendingBitcoin,
   BITCOIN_PAYMENT_EVENT,
   type BitcoinPaymentJournal,
 } from '../lib/vault/spendingBitcoinStore'
-import { checkSpendingBitcoin } from '../lib/vault/spendingBitcoinFunding'
+import { acknowledgeSpendingBitcoinRecovery, checkSpendingBitcoin } from '../lib/vault/spendingBitcoinFunding'
+import type { CommittedRecoveryCoverage } from '../lib/vault/recovery/committedCoverage'
 import type { VaultStatus } from '../lib/vault/types'
 
 export function useSpendingBitcoin(status: VaultStatus | null, locked: boolean) {
@@ -12,24 +13,43 @@ export function useSpendingBitcoin(status: VaultStatus | null, locked: boolean) 
     operation: null,
     error: '',
   })
-  const latest = useRef(status)
-  latest.current = status
+  const latest = useRef({ status, locked })
+  latest.current = { status, locked }
+  const acknowledgeRecovery = useCallback(async (coverage: CommittedRecoveryCoverage) => {
+    const { status, locked } = latest.current
+    if (!status?.enrolled || locked || coverage.vaultId !== status.vaultId || coverage.network !== status.network)
+      return
+    try {
+      await acknowledgeSpendingBitcoinRecovery(status, coverage)
+    } catch {
+      // Durable coverage can be acknowledged on the next payment refresh.
+    }
+  }, [])
   useEffect(() => {
     let active = true,
       running = false
     const load = () => {
       if (!active) return
       try {
-        setPending({ operation: !locked && latest.current ? readSpendingBitcoin(latest.current) : null, error: '' })
+        setPending({
+          operation: !locked && latest.current.status ? readSpendingBitcoin(latest.current.status) : null,
+          error: '',
+        })
       } catch (error) {
         setPending({ operation: null, error: (error as Error).message })
       }
     }
     const refresh = async () => {
-      if (running || locked || !latest.current?.enrolled) return
+      const { status, locked } = latest.current
+      if (running || locked || !status?.enrolled) return
       running = true
       try {
-        if (readSpendingBitcoin(latest.current)) await checkSpendingBitcoin(latest.current)
+        const operation = readSpendingBitcoin(status)
+        if (operation) {
+          if (operation.stage !== 'confirmed') await checkSpendingBitcoin(status)
+          if (!active || latest.current.locked) return
+          await acknowledgeSpendingBitcoinRecovery(status)
+        }
       } catch {
         // The saved operation stays visible during a network or reconciliation failure.
       } finally {
@@ -51,5 +71,5 @@ export function useSpendingBitcoin(status: VaultStatus | null, locked: boolean) 
       window.removeEventListener('focus', refresh)
     }
   }, [status?.vaultId, locked])
-  return pending
+  return { snapshot: pending, acknowledgeRecovery }
 }
