@@ -7,6 +7,11 @@ import { execFileSync } from 'node:child_process'
 const require = createRequire(import.meta.url)
 const { build } = createRequire(require.resolve('vite/package.json'))('esbuild')
 const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+function requireWalletRecoveryInputs(result) {
+  for (const path of Object.keys(result.metafile.inputs))
+    if (path.replaceAll('\\', '/').includes('tools/offline-recovery/'))
+      throw new Error(`Recovery must build from wallet source without importing companion copies: ${path}`)
+}
 export async function buildRecoveryArtifacts({ entry, html, output, buildScript, extraEntries = [] }) {
   for (const network of ['mainnet', 'mutinynet']) {
     const dir = resolve(output, network)
@@ -26,6 +31,7 @@ export async function buildRecoveryArtifacts({ entry, html, output, buildScript,
       sourcemap: true,
       define: Object.fromEntries(Object.entries(defines).map(([key, value]) => [key, JSON.stringify(value)])),
     })
+    requireWalletRecoveryInputs(built)
     await copyFile(html, resolve(dir, 'index.html'))
     const extra = {}
     for (const asset of extraEntries) {
@@ -40,6 +46,7 @@ export async function buildRecoveryArtifacts({ entry, html, output, buildScript,
         sourcemap: true,
         define: Object.fromEntries(Object.entries(defines).map(([key, value]) => [key, JSON.stringify(value)])),
       })
+      requireWalletRecoveryInputs(extraBuilt)
       await copyFile(asset.html, resolve(dir, `${asset.name}.html`))
       extra[asset.name] = {
         entry: asset.entry,

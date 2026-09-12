@@ -1,4 +1,4 @@
-import { extractRecoveryKitJson } from '../offline-recovery/src/lib/vault/program/kitBundle'
+import { extractRecoveryKitJson } from '../../src/lib/vault/recovery/fileImport'
 import {
   getNetwork,
   Transaction,
@@ -10,14 +10,7 @@ import {
 } from '@arkade-os/sdk'
 import { Address, OutScript, p2tr } from '@scure/btc-signer'
 import { base64, hex } from '@scure/base'
-import { schnorr } from '@noble/curves/secp256k1.js'
 import {
-  parseRecoveryKit as parsePublicKit,
-  kitHasUnlock,
-  type RecoveryKit as PublicKit,
-} from '../offline-recovery/src/lib/vault/program/kit'
-import {
-  buildRecoveryKit,
   parseRecoveryKit,
   isLedgerRecoveryKit,
   isSpendingRecoveryKit,
@@ -31,17 +24,7 @@ import {
   validateVaultRecoveryFile,
   type VaultRecoveryFile,
 } from '../../src/lib/vault/recovery/backupCodec'
-import { openLocalLightBackup, parseLightEncryptedBackup } from '../../src/lib/vault/light/backupCodec'
-import { parseLightRecoveryPackage, unwrapLightRecoveryPackage } from '../../src/lib/vault/light/portable'
-import { lightRecoveryStatus } from '../../src/lib/vault/light/status'
-import {
-  prepareLightRecoveryWithOwner,
-  validateLightRecoveryFile,
-  executeLightRecoveryWithOwner,
-  requireConfirmedLightRecovery,
-  type LightRecoveryFile,
-} from '../../src/lib/vault/light/recovery'
-import { unlockLightWithPasskey } from '../../src/lib/vault/light/passkey'
+import { requireConfirmedLightRecovery } from '../../src/lib/vault/light/recovery'
 import { unlockPhoneBip340, unlockVaultPhoneKeys } from '../../src/lib/vault/savingsSpend'
 import { connectLedgerSavings } from '../../src/lib/vault/ledgerClient'
 import { signLedgerSavingsRecoveryWithDevice } from '../../src/lib/vault/program/ledgerRecoveryDevice'
@@ -70,7 +53,6 @@ import {
   validateBoardingRecoveryFile,
   executeBoardingRecoveryFile,
   type BoardingRecoveryFile,
-  type BoardingRecoverySource,
 } from '../../src/lib/vault/vtxo/boardingRecoveryFile'
 import {
   prepareLightningRecovery,
@@ -84,12 +66,9 @@ import {
   recoveryPsbtBytes,
   recoveryPsbtHasAllSignatures,
 } from '../../src/lib/vault/recovery/signatureImport'
-import { familyFromDescriptor } from '../../src/lib/vault/program/descriptor'
 import { requireReleaseNetwork } from '../../src/lib/vault/releaseNetwork'
 import { networkPins } from '../../src/lib/vault/networkPins'
 import { readBounded } from '../../src/lib/vault/bounded'
-import { allowPasskey, passkeyGetOptions, prfExtension, prfFrom } from '../../src/lib/vault/webauthn'
-import { PRF_SALT, unwrapPhoneSecret } from '../../src/lib/vault/prfEnvelope'
 import {
   parsePortableRecoveryPackage,
   portableRecoverySource,
@@ -104,17 +83,9 @@ const value = (id: string) => el<HTMLInputElement>(id).value.trim()
 const bitcoin = new EsploraProvider('/esplora')
 type Source = {
   full?: VaultRecoveryFile | ReadableRecoverySource
-  light?: LightRecoveryFile
-  publicKit?: PublicKit
   ledgerKit?: LedgerRecoveryKit | SpendingRecoveryKit
-  originalKit?: unknown
 }
-type Prepared =
-  | SavingsRecoveryFile
-  | SpendingRecoveryPackage
-  | BoardingRecoveryFile
-  | LightningRecoveryPackage
-  | LightRecoveryFile
+type Prepared = SavingsRecoveryFile | SpendingRecoveryPackage | BoardingRecoveryFile | LightningRecoveryPackage
 type Draft = {
   name: 'vaulted-recovery-signing'
   version: 1
@@ -175,23 +146,21 @@ function save(name: string, data: unknown) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 function status() {
-  return source.full?.header.status || (source.light ? lightRecoveryStatus(source.light.descriptor) : undefined)
+  return source.full?.header.status
 }
 function kit(): RecoveryKit {
   if (source.full) return parseRecoveryKit(source.full.header.kit)
   if (source.ledgerKit) return parseRecoveryKit(source.ledgerKit)
-  const d = source.full?.header.kit.descriptor || source.publicKit?.descriptor
-  if (!d) throw new Error('This path needs the saved wallet descriptor')
-  return buildRecoveryKit(d)
+
+  throw new Error('This path needs the saved wallet descriptor')
 }
 function network() {
-  const n = status()?.network || source.publicKit?.descriptor.network || source.ledgerKit?.descriptor.network
+  const n = status()?.network || source.ledgerKit?.descriptor.network
   if (!n) throw new Error('Open a recovery file first')
   requireReleaseNetwork(n)
   return n
 }
 function keys() {
-  if (source.light) return [{ role: 'phone', publicKey: `02${source.light.descriptor.ownerPub}` }]
   const saved = kit()
   const k = saved.descriptor.keys
   if (isSpendingRecoveryKit(saved)) return [{ role: 'phone', publicKey: k.phoneBip340 }]
@@ -203,43 +172,12 @@ function keys() {
   ]
 }
 function feeLimits() {
-  if (source.light) {
-    const p = source.light.descriptor.spendingPolicy
-    return { absoluteFeeCapSats: p.absoluteFeeCapSats, feerateCapSatVb: p.feerateCapSatPerV }
-  }
   return kit().descriptor.policy
 }
 async function phone(): Promise<Uint8Array> {
   if (source.full) return unlockPhoneBip340(source.full.header.enrollment, source.full.header.status)
-  if (source.light) return unlockLightWithPasskey(source.light)
-  const saved = source.publicKit
-  if (!saved || !kitHasUnlock(saved) || !saved.unlock)
-    throw new Error('This public kit has no passkey envelope; use an encrypted archive or a version 4 kit')
-  if (location.origin !== saved.clientOrigin || location.hostname !== saved.rpId)
-    throw new Error(`Open this page at ${saved.clientOrigin} for the original passkey`)
-  const id = Uint8Array.from(hex.decode(saved.unlock.credId))
-  const credential = (await navigator.credentials.get({
-    publicKey: passkeyGetOptions({
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rpId: saved.rpId,
-      userVerification: 'required',
-      allowCredentials: [allowPasskey(id)],
-      extensions: prfExtension(PRF_SALT, id),
-    }),
-  })) as PublicKeyCredential | null
-  if (!credential) throw new Error('Passkey cancelled')
-  const prf = prfFrom(credential)
-  if (!prf) throw new Error('Original passkey PRF required')
-  try {
-    const key = await unwrapPhoneSecret(prf, saved.unlock.nonce, saved.unlock.ciphertext)
-    if (hex.encode(schnorr.getPublicKey(key)) !== saved.descriptor.keys.phoneBip340.slice(2)) {
-      key.fill(0)
-      throw new Error('Passkey key differs from the kit')
-    }
-    return key
-  } finally {
-    prf.fill(0)
-  }
+
+  throw new Error('Open an encrypted recovery archive to unlock the phone key')
 }
 function select(id: string, options: { value: string; label: string }[]) {
   const node = el<HTMLSelectElement>(id)
@@ -258,21 +196,18 @@ function review() {
   el('change-file').hidden = false
   el('review').hidden = false
   el('prepared').hidden = !prepared
-  const k = source.full?.header.kit || source.publicKit || source.ledgerKit
+  const k = source.full?.header.kit || source.ledgerKit
   el('facts').textContent =
-    `${source.light ? 'Light' : k?.protectionTier} · ${network()} · Wallet ${(status()?.vaultId || k?.descriptor.vaultId || '').slice(0, 8)}`
+    `${k?.protectionTier} · ${network()} · Wallet ${(status()?.vaultId || k?.descriptor.vaultId || '').slice(0, 8)}`
   el('amount').textContent = source.full
     ? `${spendingRecoveryCoverage(source.full.archive.spending, vaultRecoveryBinding(source.full.header.kit, source.full.header.status), null).archivedSats.toLocaleString()} sats in saved Spending paths`
     : ''
   el('coverage').textContent = source.full
     ? `Saved ${new Date(source.full.archive.spending.capturedAt).toLocaleString()}. Later wallet activity may need a newer file. ${source.full?.name === 'vaulted-readable-recovery' ? 'Unlock the protected backup only for payment journals.' : ''}`
-    : source.light
-      ? `Saved ${source.light.createdAt}. The archive covers its saved Spending and Lightning lockup paths.`
-      : `Recovery Kit version ${(source.originalKit as { version?: number })?.version || k?.version}. Public transaction scripts are verified independently; offchain Spending needs a complete archive. ${k && kitHasUnlock(k as PublicKit) ? 'This file can unlock the phone key with its original passkey.' : ''}`
+    : `Recovery Kit version ${k?.version}. Public transaction scripts are verified independently; offchain Spending needs a complete archive.`
   const options: { value: string; label: string }[] = []
-  if (source.full || source.light) options.push({ value: 'spending', label: 'Spending — unilateral Bitcoin exit' })
-  if (source.full || source.publicKit?.boarding)
-    options.push({ value: 'boarding', label: 'Boarding — phone recovery after its delay' })
+  if (source.full) options.push({ value: 'spending', label: 'Spending — unilateral Bitcoin exit' })
+  if (source.full) options.push({ value: 'boarding', label: 'Boarding — phone recovery after its delay' })
   if (k && !isSpendingRecoveryKit(k)) {
     options.push({ value: 'savings-admin', label: 'Savings — phone and hardware' })
     if (k.descriptor.schema === LEDGER_RECOVERY_SCHEMA)
@@ -283,19 +218,13 @@ function review() {
           { value: `pending-claim:${claimant}`, label: `Pending ${claimant} recovery — claim after its delay` },
           { value: `quarantine:${claimant}`, label: `Quarantine after ${claimant} recovery — remaining keys` },
         )
-        if (
-          k.descriptor.schema === LEDGER_RECOVERY_SCHEMA ||
-          familyFromDescriptor(k.descriptor).pending[`savings-${claimant}`].guardianExit
-        )
-          options.push({
-            value: `pending-cancel:${claimant}`,
-            label: `Pending ${claimant} recovery — remaining-key cancellation`,
-          })
+        options.push({
+          value: `pending-cancel:${claimant}`,
+          label: `Pending ${claimant} recovery — remaining-key cancellation`,
+        })
       }
   }
-  const journal =
-    (source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined) ||
-    source.light?.lightningJournal
+  const journal = source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined
   for (const entry of journal?.entries || [])
     options.push({
       value: `lightning:${entry.record.rfqId}`,
@@ -315,8 +244,7 @@ function review() {
 function paintCoins() {
   const program = value('program')
   let script: string | undefined
-  if (program === 'boarding')
-    script = source.full?.header.status.vtxoBoardingDescriptor?.script || source.publicKit?.boarding?.script
+  if (program === 'boarding') script = source.full?.header.status.vtxoBoardingDescriptor?.script
   else if (program === 'savings-admin') script = requireSavingsRecoveryKit(kit()).descriptor.savings.script
   else if (program === 'savings-admin-change') {
     const saved = kit()
@@ -339,11 +267,11 @@ function programChanged() {
   const program = value('program')
   el('requirements').textContent =
     program === 'spending'
-      ? `Required: ${source.light || source.full?.header.kit.protectionTier === 'light' ? 'the wallet key unlocked by your original passkey' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
+      ? `Required: ${source.full?.header.kit.protectionTier === 'light' ? 'the wallet key unlocked by your original passkey' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
       : 'Use the keys and waiting conditions in this saved account. Review the signing request before approving.'
   el('fee-label').hidden = program === 'spending' || program === 'boarding' || program.startsWith('lightning:')
   el('coin-label').hidden = program === 'spending' || program.startsWith('lightning:')
-  el('scan').hidden = Boolean(source.light) || program === 'spending' || program.startsWith('lightning:')
+  el('scan').hidden = program === 'spending' || program.startsWith('lightning:')
   el<HTMLInputElement>('destination').disabled = program === 'boarding'
   if (program === 'boarding')
     el<HTMLInputElement>('destination').value = p2tr(
@@ -696,23 +624,9 @@ async function prepare() {
         },
         provider,
       )
-    else if (source.light) {
-      const key = await phone()
-      try {
-        prepared = await prepareLightRecoveryWithOwner(source.light, key, d.destination, source.light.archive, true)
-      } finally {
-        key.fill(0)
-      }
-    }
   } else if (d.program === 'boarding') {
-    if (!d.coin || (!source.full && !source.publicKit?.boarding)) throw new Error('Select a saved boarding output')
-    const archive: BoardingRecoverySource = source.full?.archive || {
-      name: 'vaulted-public-boarding-data',
-      version: 1,
-      kit: kit(),
-      descriptor: source.publicKit!.boarding!,
-      onchain: coins.filter((coin) => coin.script === source.publicKit!.boarding!.script),
-    }
+    if (!d.coin || !source.full) throw new Error('Select a saved boarding output')
+    const archive = source.full.archive
     const key = await phone()
     try {
       prepared = await prepareBoardingRecoveryFile(archive, d.coin, key, provider)
@@ -720,9 +634,7 @@ async function prepare() {
       key.fill(0)
     }
   } else if (d.program.startsWith('lightning:')) {
-    const journal =
-      (source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined) ||
-      source.light?.lightningJournal
+    const journal = source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined
     const entry = journal?.entries.find((e) => e.record.rfqId === d.program.slice(10))
     if (!entry || !status()) throw new Error('Saved Lightning lockup is missing')
     prepared = await prepareLightningRecovery(
@@ -763,8 +675,6 @@ async function prepare() {
     prepared = file
   }
   if (!prepared) throw new Error('Recovery preparation did not produce a file')
-  if (prepared.name === 'vaulted-light-recovery' && !prepared.exitPackage)
-    throw new Error('This archive has no Spending outputs to recover')
   paintPrepared()
   el('status').textContent = 'Recovery prepared. Save the file before starting.'
 }
@@ -789,10 +699,9 @@ function paintPrepared() {
   el('details').textContent = details
   const needsFeeWallet = p.name === 'vaulted-spending-recovery' || p.name === 'vaulted-lightning-refund'
   el('fee-key-label').hidden = !needsFeeWallet
-  el('funding').hidden = !needsFeeWallet && p.name !== 'vaulted-light-recovery'
-  if (p.name === 'vaulted-light-recovery')
-    el('funding').textContent = `Separate Bitcoin fee funding address: ${p.feeFundingAddress}`
-  el('export-psbt').hidden = p.name === 'vaulted-light-recovery'
+  el('funding').hidden = !needsFeeWallet
+
+  el('export-psbt').hidden = false
 }
 el('change-path').onclick = () => {
   prepared = undefined
@@ -817,11 +726,7 @@ el('scan').onclick = () =>
             ...Object.values(k.descriptor.pending),
             ...Object.values(k.descriptor.quarantine),
           ]),
-      ...(source.full
-        ? [source.full.header.status.vtxoBoardingDescriptor!]
-        : source.publicKit?.boarding
-          ? [source.publicKit.boarding]
-          : []),
+      ...(source.full ? [source.full.header.status.vtxoBoardingDescriptor!] : []),
     ]
     const found = new Map(coins.map((c) => [`${c.txid}:${c.vout}`, c]))
     for (const tree of trees)
@@ -876,17 +781,6 @@ async function load(data: unknown) {
   const x = data as { name?: string; version?: number; source?: Source; prepared?: Prepared }
   clearSource()
   raw = data
-  if (x.name === 'vaulted-light-recovery-package') {
-    const pkg = parseLightRecoveryPackage(data)
-    requireReleaseNetwork(pkg.backup.header.descriptor.network)
-    el('origin').textContent =
-      `Spending paths saved ${pkg.archive.capturedAt}. Use your original passkey at ${pkg.backup.header.origin} to unlock the owner key.`
-    el('open').hidden = false
-    el('unlock').hidden = false
-    el<HTMLDetailsElement>('unlock').open = true
-    el('review').hidden = true
-    return
-  }
   if (x.name === 'vaulted-recovery-package') {
     const pkg = parsePortableRecoveryPackage(data)
     source = { full: portableRecoverySource(pkg) }
@@ -897,7 +791,7 @@ async function load(data: unknown) {
     review()
     return
   }
-  if (x.name === 'vaulted-recovery-backup' || x.name === 'vaulted-light-backup') {
+  if (x.name === 'vaulted-recovery-backup') {
     const header = (data as any).header
     const n = header.binding?.network || header.descriptor.network
     requireReleaseNetwork(n)
@@ -927,7 +821,6 @@ async function load(data: unknown) {
     return
   }
   if (x.name === 'vaulted-recovery') source.full = validateVaultRecoveryFile(data as VaultRecoveryFile)
-  else if (x.name === 'vaulted-light-recovery') source.light = validateLightRecoveryFile(data)
   else if (
     x.name === 'arkade-recovery-kit' &&
     [LEDGER_RECOVERY_SCHEMA, SPENDING_RECOVERY_SCHEMA].includes(
@@ -937,21 +830,18 @@ async function load(data: unknown) {
     const saved = parseRecoveryKit(data)
     if (!isLedgerRecoveryKit(saved) && !isSpendingRecoveryKit(saved)) throw new Error('Unsupported wallet recovery kit')
     source.ledgerKit = saved
-  } else {
-    source.publicKit = parsePublicKit(data)
-    source.originalKit = data
-  }
+  } else throw new Error('Unsupported wallet recovery file')
   review()
 }
 function validateSource() {
-  if ([source.full, source.light, source.publicKit, source.ledgerKit].filter(Boolean).length !== 1)
+  if (!source || Object.keys(source).some((key) => !['full', 'ledgerKit'].includes(key)))
+    throw new Error('Unsupported wallet recovery source')
+  if ([source.full, source.ledgerKit].filter(Boolean).length !== 1)
     throw new Error('Recovery source must identify one wallet')
   if (source.full) {
     if (source.full.name === 'vaulted-readable-recovery') validateReadableRecoverySource(source.full)
     else validateVaultRecoveryFile(source.full)
   }
-  if (source.light) validateLightRecoveryFile(source.light)
-  if (source.publicKit) source.publicKit = parsePublicKit(source.originalKit || source.publicKit)
   if (source.ledgerKit) {
     const saved = parseRecoveryKit(source.ledgerKit)
     if (!isLedgerRecoveryKit(saved) && !isSpendingRecoveryKit(saved)) throw new Error('Unsupported wallet recovery kit')
@@ -977,10 +867,6 @@ function validatePrepared() {
     case 'vaulted-lightning-refund':
       validateLightningRecoveryPackage(prepared, recoveryLightningBinding(status()!), feeLimits())
       break
-    case 'vaulted-light-recovery':
-      validateLightRecoveryFile(prepared)
-      if (prepared.descriptor.vaultId !== source.light?.descriptor.vaultId) throw new Error('Prepared wallet changed')
-      break
     default:
       throw new Error('Unknown recovery action')
   }
@@ -999,10 +885,7 @@ el('open').onclick = () =>
     if (name === 'vaulted-recovery-package')
       source = { full: await openLocalRecoveryBackup(parsePortableRecoveryPackage(raw).backup) }
     else if (name === 'vaulted-recovery-backup') source = { full: await openLocalRecoveryBackup(raw) }
-    else {
-      const parsed = parseLightEncryptedBackup(unwrapLightRecoveryPackage(raw))
-      source = { light: (await openLocalLightBackup(parsed)).file }
-    }
+    else throw new Error('Unsupported encrypted recovery file')
     el('open').hidden = true
     el('unlock').hidden = true
     review()
@@ -1029,17 +912,6 @@ el('execute').onclick = () =>
     try {
       if (file.name === 'vaulted-savings-recovery') {
         el('status').textContent = JSON.stringify(await executeSavingsRecovery(file, chain))
-        return
-      }
-      if (file.name === 'vaulted-light-recovery') {
-        const key = await phone()
-        try {
-          await executeLightRecoveryWithOwner(file, key, controller.signal, (event) => {
-            el('events').textContent += JSON.stringify(event) + '\n'
-          })
-        } finally {
-          key.fill(0)
-        }
         return
       }
       const role = value('fee-key'),

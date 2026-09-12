@@ -102,6 +102,31 @@ export function sign(bytes) {
       return route.abort()
     })
     await page.goto(origin)
+    const retired = [
+      { name: 'vaulted-light-recovery-package', version: 1 },
+      { name: 'vaulted-light-backup', version: 1 },
+      { name: 'vaulted-light-recovery', version: 1 },
+      { name: 'arkade-recovery-kit', version: 3, descriptor: { schema: 'arkade-vault/savings-v1' } },
+      { name: 'arkade-recovery-kit', version: 4, descriptor: { schema: 'arkade-vault/savings-v1' }, unlock: {} },
+      { name: 'arkade-connector-enrollment', version: 1 },
+      { name: 'vaulted-recovery-action', version: 1, source: { light: {} }, prepared: {} },
+      { name: 'vaulted-recovery-signing', version: 1, source: { publicKit: {} } },
+      { name: 'vaulted-recovery-action', version: 1, source: { ledgerKit: pkg.archive.kit, light: {} }, prepared: {} },
+    ]
+    for (const data of retired) {
+      const before = requests.length
+      await page.locator('#file').setInputFiles({
+        name: 'discarded.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(data)),
+      })
+      await expect(page.locator('#error')).toContainText('Unsupported wallet recovery')
+      await expect(page.locator('#review')).toBeHidden()
+      await expect(page.locator('#prepared')).toBeHidden()
+      await expect(page.locator('#unlock')).toBeHidden()
+      await expect(page.locator('#signature')).toBeHidden()
+      if (requests.length !== before) throw new Error('Discarded source triggered a network request')
+    }
     await page
       .locator('#file')
       .setInputFiles({ name: 'recovery.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(pkg)) })
@@ -193,6 +218,7 @@ export function sign(bytes) {
           scope: 'Advanced and fresh Light portable import and actual PSBT handoff; mocked Bitcoin, no broadcast',
           phoneRequested: false,
           resumed: true,
+          retiredSourcesRejected: retired.length,
           requests,
         },
         null,
