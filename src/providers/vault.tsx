@@ -64,8 +64,10 @@ import {
   discoverVaultLightningSolver,
   isVaultLightningInput,
   vaultLightningSendEnabled,
+  vaultLightningSolverProfile,
 } from '../lib/vault/lightningConfig'
 import { decodeVaultLightningInvoice } from '../lib/vault/lightningInvoice'
+import { LightningPaymentError } from '../lib/vault/lightningError'
 import type { VaultLightningQuote } from '../lib/vault/lightningLifecycle'
 import {
   createVtxoSpendUnlocker,
@@ -1007,49 +1009,32 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [status],
   )
 
+  const lightningReviewInFlight = useRef(false)
   const reviewLightningSpend = useCallback(async () => {
-    if (!status?.enrolled || !enrollment) {
-      setError('Sign in with the passkey that created this vault.')
-      return
-    }
-    if (account !== 'spend') {
-      setError('Lightning payments use Spending.')
-      return
-    }
-    if (!vaultLightningSendEnabled(status.network as NetworkName)) {
-      setError('Lightning send is not enabled in this release.')
-      return
-    }
-    const profile = await discoverVaultLightningSolver(status.network as NetworkName)
-    if (!profile) {
-      setError('No Lightning solver is configured for this network.')
-      return
-    }
-
-    let invoice
-    try {
-      invoice = decodeVaultLightningInvoice(spend.address, profile.network)
-    } catch (err) {
-      setError(humanizeVaultError(err))
-      return
-    }
-    const active = listPersistedVtxoSpends(status.vaultId).find(vtxoSpendIsLivePending)
-    if (active) {
-      setError('A payment is still pending. Open Pending payment to resume it before starting another.')
-      return
-    }
-    if (invoice.amountSats > setup.txCapSats) {
-      setError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
-      return
-    }
-    if (invoice.amountSats > spendingAvailableSats) {
-      setError('Not enough confirmed spending funds.')
-      return
-    }
-
+    if (lightningReviewInFlight.current) return
+    lightningReviewInFlight.current = true
     setBusy(true)
+    let phase = 'validation'
     try {
-      const lightning = await import('../lib/vault/lightning')
+      if (!status?.enrolled || !enrollment)
+        throw new LightningPaymentError('Sign in with the passkey that created this vault.')
+      if (account !== 'spend') throw new LightningPaymentError('Lightning payments use Spending.')
+      if (!vaultLightningSendEnabled(status.network as NetworkName)) {
+        throw new LightningPaymentError('Lightning send is not enabled in this release.')
+      }
+      const pinned = vaultLightningSolverProfile(status.network)
+      if (!pinned) throw new LightningPaymentError('No Lightning solver is configured for this network.')
+      const invoice = decodeVaultLightningInvoice(spend.address, pinned.network)
+      if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending)) {
+        throw new LightningPaymentError(
+          'A payment is still pending. Open Pending payment to resume it before starting another.',
+        )
+      }
+      if (invoice.amountSats > setup.txCapSats) {
+        throw new LightningPaymentError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
+      }
+      if (invoice.amountSats > spendingAvailableSats)
+        throw new LightningPaymentError('Not enough confirmed spending funds.')
       const persistedVtxo = loadPersistedVtxoSpend(status.vaultId)
       const resumeVtxo =
         persistedVtxo?.bundleDigest && persistedVtxo.destAddress && Number.isSafeInteger(persistedVtxo.amountSats)
@@ -1061,10 +1046,18 @@ export function VaultProvider({ children }: { children: ReactNode }) {
               fundingFeeSats: persistedVtxo.feeSats,
             }
           : undefined
+      // Reach WebAuthn directly from the click. Card discovery and module loading
+      // must not consume the browser's user gesture before its passkey request.
+      phase = 'passkey approval'
       const phoneSecret = await unlockPhoneBip340(enrollment, status)
       let quote: VaultLightningQuote
       let funding: VaultVtxoSpendQuote
       try {
+        phase = 'solver verification'
+        const profile = await discoverVaultLightningSolver(status.network)
+        if (!profile) throw new LightningPaymentError('No verified Lightning solver is configured for this network.')
+        const lightning = await import('../lib/vault/lightning')
+        phase = 'quote'
         quote = await lightning.withVaultLightningSdkWallet(phoneSecret, status, (session) =>
           lightning.withVaultLightningTransport(profile, (transport) =>
             lightning.requestVaultLightningQuote({
@@ -1082,18 +1075,22 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           ),
         )
         if (quote.fundAmountSats > setup.txCapSats) {
-          throw new Error(`This payment exceeds the ${setup.txCapSats.toLocaleString()} sat send limit after fees.`)
+          throw new LightningPaymentError(
+            `This payment exceeds the ${setup.txCapSats.toLocaleString()} sat send limit after fees.`,
+          )
         }
         // The SDK session has released its lock; reuse this approval for the reservation.
+        phase = 'reservation'
         funding = await reserveVaultVtxo(enrollment, status, quote.fundAddress, quote.fundAmountSats, { phoneSecret })
       } finally {
         zeroBytes(phoneSecret)
       }
+      phase = 'review'
       if (quote.fundAmountSats + funding.feeSats > spendingAvailableSats) {
-        throw new Error('Not enough confirmed spending funds after fees.')
+        throw new LightningPaymentError('Not enough confirmed spending funds after fees.')
       }
       if (spendRef.current.address.trim().replace(/^lightning:/i, '') !== invoice.raw) {
-        throw new Error('Send details changed. Review the send again.')
+        throw new LightningPaymentError('Send details changed. Review the send again.')
       }
       setLightningQuote(quote)
       setReviewedVtxoQuote(funding)
@@ -1104,10 +1101,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       )
       setScreen('review')
     } catch (err) {
+      consoleError(err, `Lightning payment ${phase}`)
       setLightningQuote(null)
       setReviewedVtxoQuote(null)
       setError(humanizeVaultError(err))
     } finally {
+      lightningReviewInFlight.current = false
       setBusy(false)
     }
   }, [account, enrollment, setup.txCapSats, spend.address, spendingAvailableSats, status])

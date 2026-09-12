@@ -1,5 +1,6 @@
 import { BitcoinPaymentError } from './bitcoinPaymentError'
 import { ConnectorUserError } from './connectorError'
+import { LightningPaymentError } from './lightningError'
 import { isVaultConcurrencyUnavailableError } from './vtxo/lock'
 import {
   isVtxoAbortFailedError,
@@ -41,7 +42,8 @@ const LEDGER_ENROLLMENT_MESSAGES: Readonly<Record<string, string>> = {
 }
 
 export function humanizeVaultError(err: unknown): string {
-  if (err instanceof ConnectorUserError || err instanceof BitcoinPaymentError) return err.message
+  if (err instanceof ConnectorUserError || err instanceof BitcoinPaymentError || err instanceof LightningPaymentError)
+    return err.message
   const parts = nestedErrorMessages(err)
   const raw = parts[0] || (err instanceof Error ? err.message : String(err || 'Something went wrong'))
   if (Object.hasOwn(LEDGER_ENROLLMENT_MESSAGES, raw)) return LEDGER_ENROLLMENT_MESSAGES[raw]

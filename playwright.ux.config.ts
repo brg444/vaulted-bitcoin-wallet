@@ -3,6 +3,7 @@ import base from './playwright.vault.config'
 
 // These suites use local fixtures, including bound synthetic Lightning addresses.
 process.env.VITE_VAULT_LIGHTNING_RECEIVE = 'true'
+process.env.VITE_VAULT_LIGHTNING_SEND = 'true'
 process.env.VITE_VAULT_LNURL = 'true'
 
 export default defineConfig({
