@@ -6,7 +6,6 @@ import { lightTestEnrollment, lightTestStatus } from './light/testdata/helpers'
 import { requireLightStatus } from './light/status'
 import * as spendModule from './vtxo/spend'
 import * as apiModule from './api'
-import * as workerModule from './vtxo/walletWorker'
 import * as streamModule from './vtxo/settlementEventSource'
 import { humanizeVaultError } from './humanize'
 import { writeFileSync } from 'node:fs'
@@ -147,7 +146,7 @@ describe('Spending signer setup binding and lifecycle', () => {
     expect(readSpendingBitcoin(f.status)).toBeNull()
   })
   it.each(['prepared', 'registered', 'register_dispatched', 'delete_dispatched'])(
-    'status %s never requests cancellation',
+    'unexpired status %s never requests cancellation',
     async (state) => {
       const f = setupFixture()
       saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered' })
@@ -158,6 +157,78 @@ describe('Spending signer setup binding and lifecycle', () => {
       expect(readSpendingBitcoin(f.status)).not.toBeNull()
     },
   )
+  it.each(['released', 'uncertain', 'waiting_expiry'])(
+    'expired registration requests cancellation and preserves funds unless Guardian returns released (%s)',
+    async (state) => {
+      const f = setupFixture()
+      const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
+      saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
+      vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 15) * 1000)
+      vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'registered' })
+      const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state })
+      expect((await checkSpendingBitcoin(f.status))?.state).toBe(state)
+      expect(release).toHaveBeenCalledWith({
+        vaultId: f.status.vaultId,
+        operationId: f.plan.operationId,
+        deleteIntent: deletion,
+      })
+      expect(readSpendingBitcoin(f.status) === null).toBe(state === 'released')
+    },
+  )
+  it.each(['final_dispatched', 'submitted', 'confirmed', 'uncertain', 'not_found'])(
+    'expired status %s does not infer that final submission failed',
+    async (state) => {
+      const f = setupFixture()
+      saveBitcoinPayment({
+        ...f.journal,
+        plan: f.prepared,
+        stage: 'registered',
+        deleteIntent: { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' },
+      })
+      vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
+      vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state })
+      const release = vi.spyOn(bitcoinPaymentClient, 'release')
+      // Submitted/confirmed without a matching receipt must also remain reserved.
+      await checkSpendingBitcoin(f.status).catch(() => undefined)
+      expect(release).not.toHaveBeenCalled()
+      expect(readSpendingBitcoin(f.status)).not.toBeNull()
+    },
+  )
+  it('asks Guardian to release an expired final authorization that never reached dispatch', async () => {
+    const f = setupFixture()
+    const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
+    saveBitcoinPayment({
+      ...f.journal,
+      plan: f.prepared,
+      stage: 'finalizing',
+      deleteIntent: deletion,
+      final: { batchId: 'failed-batch' } as never,
+    })
+    vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
+    vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'final_authorized' })
+    const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state: 'released' })
+    expect((await checkSpendingBitcoin(f.status))?.state).toBe('released')
+    expect(release).toHaveBeenCalledWith({
+      vaultId: f.status.vaultId,
+      operationId: f.plan.operationId,
+      deleteIntent: deletion,
+    })
+    expect(readSpendingBitcoin(f.status)).toBeNull()
+  })
+  it('retains an expired registration after cancellation transport failure or missing owner proof', async () => {
+    const f = setupFixture()
+    const saved = { ...f.journal, plan: f.prepared, stage: 'registered' as const }
+    saveBitcoinPayment(saved)
+    vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
+    vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'registered' })
+    const release = vi.spyOn(bitcoinPaymentClient, 'release').mockRejectedValue(new Error('connection reset'))
+    await checkSpendingBitcoin(f.status)
+    expect(release).not.toHaveBeenCalled()
+    const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
+    saveBitcoinPayment({ ...saved, deleteIntent: deletion })
+    await expect(checkSpendingBitcoin(f.status)).rejects.toThrow('connection reset')
+    expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deletion)
+  })
   it('explicit cancellation uses the retained proof and keeps ambiguous funds reserved', async () => {
     const f = setupFixture()
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
@@ -364,14 +435,12 @@ it('reconciles a new Bitcoin payment through the shared status path without crea
 })
 
 it.each(
-  ['protected', 'light'].flatMap((profile) => ['rejected', 'expiry', 'uncertain'].map((state) => [profile, state])),
-)('%s SDK settlement preserves the Guardian %s outcome without retrying or cancelling', async (profile, state) => {
+  ['protected', 'light'].flatMap((profile) =>
+    ['rejected', 'expiry', 'uncertain', 'registered'].map((state) => [profile, state]),
+  ),
+)('%s explicit batch preserves the Guardian %s outcome without retrying or cancelling', async (profile, state) => {
   const f = bitcoinFixture(1, profile === 'light')
   vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt - 240) * 1000)
-  const repositories = {
-    walletRepository: new InMemoryWalletRepository(),
-    contractRepository: new InMemoryContractRepository(),
-  }
   const dispose = vi.fn()
   const unlock = vi.fn(async () => ({
     phoneSecret: scalarSecret(profile === 'light' ? 1 : 3),
@@ -388,7 +457,6 @@ it.each(
     maxInputs: 1,
     descriptorHash: f.plan.descriptorHash,
   })
-  vi.spyOn(workerModule, 'ensureVaultWalletWorker').mockResolvedValue(repositories as never)
   vi.spyOn(streamModule, 'installVaultSettlementEventSource').mockImplementation(() => {})
   vi.spyOn(streamModule, 'waitForVaultSettlementStream').mockResolvedValue(undefined)
   vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(f.operatorInfo)
@@ -409,19 +477,24 @@ it.each(
     ],
   } as never)
   vi.spyOn(bitcoinPaymentClient, 'prepare').mockResolvedValue(f.prepared)
+  vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'uncertain' })
+  const settle = vi.spyOn(Wallet.prototype, 'settle')
+  const join = vi.spyOn(Batch, 'join').mockResolvedValue('dd'.repeat(32))
   const registered = vi.spyOn(bitcoinPaymentClient, 'register').mockImplementation(async (request) => {
     expect(JSON.parse(request.message).expire_at).toBe(f.plan.registerExpireAt)
     expect(readSpendingBitcoin(f.status)?.deleteIntent).toBeDefined()
     const proof = Transaction.fromPSBT(base64.decode(request.psbt))
     expect(proof.inputsLength).toBe(2)
     expect(hex.encode(proof.getOutput(1).script!)).toBe(f.plan.outputs![0].script)
-    return {
-      state: state === 'expiry' ? 'rejected' : state,
-      reason:
-        state === 'expiry'
-          ? 'INVALID_PSBT_INPUT (5): vtxo [redacted] expires after 2026-10-07 (minExpiryGap: 1h0m0s)'
-          : 'input already spent',
-    }
+    return state === 'registered'
+      ? { state: 'registered', intentId: 'protected-intent' }
+      : {
+          state: state === 'expiry' ? 'rejected' : state,
+          reason:
+            state === 'expiry'
+              ? 'INVALID_PSBT_INPUT (5): vtxo [redacted] expires after 2026-10-07 (minExpiryGap: 1h0m0s)'
+              : 'input already spent',
+        }
   })
   const released = vi.spyOn(bitcoinPaymentClient, 'release')
   let error: unknown
@@ -438,6 +511,7 @@ it.each(
   }
   expect(registered, String(error)).toHaveBeenCalledOnce()
   expect(released).not.toHaveBeenCalled()
+  expect(settle).not.toHaveBeenCalled()
   expect(dispose).toHaveBeenCalledOnce()
   expect(delegation.authorizeGuardianRenewals).toHaveBeenCalledTimes(profile === 'light' ? 1 : 0)
   if (state === 'rejected') {
@@ -460,9 +534,13 @@ it.each(
     expect(bitcoinPaymentClient.prepare).toHaveBeenCalledOnce()
     expect(registered).toHaveBeenCalledOnce()
     expect(readSpendingBitcoin(f.status)).toBeNull()
-  } else {
+  } else if (state === 'uncertain') {
     expect(humanizeVaultError(error)).toContain('registration is still being checked')
     expect(readSpendingBitcoin(f.status)?.stage).toBe('registering')
+  } else {
+    expect(join).toHaveBeenCalledOnce()
+    expect(humanizeVaultError(error)).toContain('receipt is still being checked')
+    expect(readSpendingBitcoin(f.status)?.stage).toBe('registered')
   }
 })
 

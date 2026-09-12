@@ -214,12 +214,15 @@ export function vaultWalletRuntimeKey(status: VaultStatus) {
 
 async function disposeRuntime(current: WalletRuntime | undefined) {
   if (!current) return
-  await current.wallet.dispose()
   current.unsubscribeContract()
   current.unsubscribeSwap()
   navigator.serviceWorker.removeEventListener('message', current.onWorkerMessage)
+  // Drain every page-side consumer before stopping the worker they call.
+  // Otherwise an in-flight Lightning restore can race STOP and report
+  // "Failed to get contracts" against an already-closed MessageBus.
   await current.lightningObserver.dispose()
   await current.swapManager.stop().catch(() => undefined)
+  await current.wallet.dispose()
   await Promise.allSettled([
     current.walletRepository[Symbol.asyncDispose](),
     current.contractRepository[Symbol.asyncDispose](),
@@ -381,6 +384,9 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
     }
   } catch (error) {
     let teardownError: unknown
+    // A manager restore can still be reading contracts through the worker.
+    // Drain it before disposing the MessageBus on initialization failures too.
+    await swapManager?.stop().catch(() => undefined)
     if (wallet) {
       try {
         await wallet.dispose()
@@ -388,7 +394,6 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
         teardownError = failure
       }
     }
-    await swapManager?.stop().catch(() => undefined)
     await Promise.allSettled([
       walletRepository[Symbol.asyncDispose](),
       contractRepository[Symbol.asyncDispose](),

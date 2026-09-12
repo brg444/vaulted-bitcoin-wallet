@@ -26,6 +26,7 @@ type SettlementStream = {
   resolveReady: () => void
   rejectReady: (error: Error) => void
   state: 'connecting' | 'open' | 'closed'
+  participating: boolean
   closed: boolean
 }
 
@@ -176,9 +177,9 @@ export function createFetchEventSource(url: string, fetchImpl: FetchLike = fetch
 }
 
 /**
- * Retry connection setup, but fail an interrupted open settlement stream.
- * Reconnecting cannot replay missed batch events; continuing the old SDK batch
- * would leave it waiting for a phase or terminal event that has already passed.
+ * Retry while an intent is waiting to enter a batch, then fail an interrupted
+ * participating stream. Operator batch events are not replayable once signing
+ * starts, but a registered intent can safely survive a pre-participation retry.
  */
 export function createVaultEventSourceFactory(
   nativeFactory: EventSourceTransportFactory = (url) => createFetchEventSource(url),
@@ -196,6 +197,7 @@ export function createVaultEventSourceFactory(
       resolveReady: () => undefined,
       rejectReady: () => undefined,
       state: 'connecting',
+      participating: false,
       closed: false,
     }
     armSettlementStream(record)
@@ -215,7 +217,13 @@ export function createVaultEventSourceFactory(
     }
     const onError = (event: Event) => {
       if (record.closed) return
-      if (source.readyState === EVENT_SOURCE_CONNECTING && record.state === 'connecting') return
+      if (source.readyState === EVENT_SOURCE_CONNECTING && !record.participating) {
+        if (record.state === 'open') {
+          record.state = 'connecting'
+          armSettlementStream(record)
+        }
+        return
+      }
       const listeners = [...errorListeners]
       close()
       for (const listener of listeners) listener(event as MessageEvent)
@@ -261,15 +269,27 @@ function latestSettlementStream(topic: string): SettlementStream | undefined {
   return matching[matching.length - 1]
 }
 
+/** Commit the current stream once this intent has acknowledged batch participation. */
+export function markVaultSettlementStreamParticipating(topic: string): void {
+  const stream = latestSettlementStream(topic)
+  if (!stream || stream.closed || stream.state !== 'open') {
+    throw new Error('Vault settlement event stream interrupted before batch participation')
+  }
+  stream.participating = true
+}
+
 /** Bind an async signing continuation to its original uninterrupted stream. */
 export function vaultSettlementStreamGuard(topic: string): () => void {
   const stream = latestSettlementStream(topic)
+  if (!stream || stream.closed || stream.state !== 'open') {
+    throw new Error('Vault settlement event stream interrupted before final submission')
+  }
   const assertOpen = () => {
-    if (!stream || stream.closed || stream.state !== 'open') {
+    if (stream.closed || stream.state !== 'open') {
       throw new Error('Vault settlement event stream interrupted before final submission')
     }
   }
-  assertOpen()
+  stream.participating = true
   return assertOpen
 }
 

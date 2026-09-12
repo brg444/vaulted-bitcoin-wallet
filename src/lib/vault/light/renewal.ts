@@ -17,7 +17,11 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { lightDescriptorDigest, LightScript, type LightDescriptor } from './contract'
 import { lightContract, registerLightContractHandler } from './contractHandler'
-import { installVaultSettlementEventSource, waitForVaultSettlementStream } from '../vtxo/settlementEventSource'
+import {
+  installVaultSettlementEventSource,
+  markVaultSettlementStreamParticipating,
+  waitForVaultSettlementStream,
+} from '../vtxo/settlementEventSource'
 import { validateLightEnrollment, type LightEnrollment } from './enrollment'
 import { lightStatusMatchesDescriptor } from './status'
 import { vaultCosignerClient } from '../cosignerClient'
@@ -392,7 +396,10 @@ export async function renewLightSpending(
       const start = handler.onBatchStarted
       handler.onBatchStarted = async (event) => {
         const decision = await start(event)
-        if (!decision.skip) batchExpiry = Number(event.batchExpiry)
+        if (!decision.skip) {
+          markVaultSettlementStreamParticipating(`${coin.txid}:${coin.vout}`)
+          batchExpiry = Number(event.batchExpiry)
+        }
         return decision
       }
       const finalize = handler.onBatchFinalization
