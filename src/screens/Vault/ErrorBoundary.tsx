@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react'
 import { createIncidentReference, recordVaultIncident } from '../../lib/logs'
-import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 interface Props {
   children: ReactNode
@@ -28,7 +29,7 @@ export default class VaultErrorBoundary extends Component<Props, State> {
     if (!this.state.crashed) return this.props.children
     return (
       <div className='page vault-error-page' data-testid='vault-app'>
-        <QgScreen
+        <WalletScreen
           title='Can’t continue'
           footer={
             <>
@@ -48,7 +49,7 @@ export default class VaultErrorBoundary extends Component<Props, State> {
               <p>{this.state.incidentReference}</p>
             </div>
           </section>
-        </QgScreen>
+        </WalletScreen>
       </div>
     )
   }

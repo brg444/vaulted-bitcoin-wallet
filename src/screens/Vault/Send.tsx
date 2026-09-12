@@ -22,7 +22,8 @@ import { useBalanceDenomination, type BalanceDenomination } from './AccountBalan
 import Scanner from './Scanner'
 import DestinationField from './qg/DestinationField'
 import { amountSizeStyle } from './qg/QgAmount'
-import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 function lightningInvoice(value: string, network?: string): { invoice?: InvoiceFacts; error?: string } {
   if (!network || !vaultLightningSendEnabled(network as NetworkName) || !isVaultLightningInput(value)) return {}
@@ -220,7 +221,7 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
   }
 
   return (
-    <QgScreen
+    <WalletScreen
       title={movingToSpending ? 'Transfer' : fromSavings ? 'Send from Savings' : 'Send'}
       dismiss={() => navigate('home')}
       footer={
@@ -352,6 +353,6 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
             : `Up to ${formatMoney(setup.txCapSats, money)} per payment. The fee appears before approval.`}
         </p>
       )}
-    </QgScreen>
+    </WalletScreen>
   )
 }

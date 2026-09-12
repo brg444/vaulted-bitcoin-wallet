@@ -2,12 +2,13 @@ import { useContext } from 'react'
 import { CircleHelp } from 'lucide-react'
 import '../qg/guidance.css'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgPrimary, QgSecondary } from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
+import { QgPrimary, QgSecondary } from '../qg/QgScreen'
 
 export default function VaultProblem() {
   const { enrollmentMode, error, navigate } = useContext(VaultContext)
   return (
-    <QgScreen
+    <WalletScreen
       title='Setup help'
       back={() => navigate('passkey')}
       footer={
@@ -59,6 +60,6 @@ export default function VaultProblem() {
           </p>
         </div>
       </details>
-    </QgScreen>
+    </WalletScreen>
   )
 }

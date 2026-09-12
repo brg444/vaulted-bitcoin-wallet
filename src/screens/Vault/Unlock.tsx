@@ -3,14 +3,15 @@ import { Fingerprint } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
 import { isCoarsePhone } from '../../lib/vault/webauthn'
 import { VaultContext } from '../../vault/context'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary } from './qg/QgScreen'
 
 export default function VaultUnlock() {
   const { busy, error, signIn } = useContext(VaultContext)
   const onPhone = isCoarsePhone()
 
   return (
-    <QgScreen
+    <WalletScreen
       variant='unlock'
       footer={
         <>
@@ -38,6 +39,6 @@ export default function VaultUnlock() {
         <h1>Unlock</h1>
         <p className='qg-copy'>This vault stays hidden until this device approves.</p>
       </div>
-    </QgScreen>
+    </WalletScreen>
   )
 }

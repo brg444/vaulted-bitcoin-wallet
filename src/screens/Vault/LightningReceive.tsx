@@ -15,7 +15,8 @@ import { formatMoney, satsFromUsd, usdInputFromSats } from '../../lib/vault/fiat
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import { prettyAmount } from '../../lib/format'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary } from './qg/QgScreen'
 
 export default function LightningReceive({
   onBack,
@@ -217,7 +218,7 @@ export default function LightningReceive({
     setUsdInput(amount ? usdInputFromSats(Number(amount), rate) : '')
   }
   return (
-    <QgScreen
+    <WalletScreen
       title='Receive Lightning'
       dismiss={onBack}
       footer={
@@ -329,6 +330,6 @@ export default function LightningReceive({
           </p>
         ) : null}
       </div>
-    </QgScreen>
+    </WalletScreen>
   )
 }

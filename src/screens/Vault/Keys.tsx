@@ -8,7 +8,7 @@ import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import RecoveryExplanation from './qg/RecoveryExplanation'
-import QgScreen from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
 import SecurityOverview from './SecurityOverview'
 
 function SecurityTile({
@@ -90,7 +90,7 @@ export default function VaultKeys() {
   const vaultReady = phoneCovered && addressCovered && readiness.state === 'ready'
 
   return (
-    <QgScreen
+    <WalletScreen
       title={
         view === 'overview'
           ? 'Security'
@@ -241,6 +241,6 @@ export default function VaultKeys() {
           )}
         </>
       )}
-    </QgScreen>
+    </WalletScreen>
   )
 }

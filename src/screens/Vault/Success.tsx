@@ -6,7 +6,8 @@ import { truncateAddress } from '../../lib/vault/policy'
 import { VaultContext } from '../../vault/context'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import TransactionReference from './qg/TransactionReference'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary } from './qg/QgScreen'
 import PaymentResult from './qg/PaymentResult'
 
 export default function VaultSuccess({ denomination }: { denomination?: BalanceDenomination }) {
@@ -38,7 +39,7 @@ export default function VaultSuccess({ denomination }: { denomination?: BalanceD
           : 'Done'
 
   return (
-    <QgScreen variant='success' footer={<QgPrimary onClick={() => navigate('home')} label='Done' />}>
+    <WalletScreen variant='success' footer={<QgPrimary onClick={() => navigate('home')} label='Done' />}>
       <PaymentResult state={onchain ? 'submitted' : lightning ? 'started' : 'sent'} title={headline} copy={copy}>
         {lastSend ? (
           <section className='qg-details'>
@@ -62,6 +63,6 @@ export default function VaultSuccess({ denomination }: { denomination?: BalanceD
         ) : null}
         <TransactionReference txid={lastTxid} explorer={explorer} funding={lightning} />
       </PaymentResult>
-    </QgScreen>
+    </WalletScreen>
   )
 }

@@ -10,7 +10,8 @@ import { VaultContext } from '../../vault/context'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import TransactionReference from './qg/TransactionReference'
-import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 export default function VaultTx({ denomination }: { denomination?: BalanceDenomination }) {
   const {
@@ -53,7 +54,7 @@ export default function VaultTx({ denomination }: { denomination?: BalanceDenomi
   const amount = selectedTx?.displayAmount ?? selectedTx?.amount ?? 0
 
   return (
-    <QgScreen
+    <WalletScreen
       title={lightning ? 'Lightning payment' : bitcoin ? 'Bitcoin payment' : 'Transaction'}
       dismiss={() => navigate(txReturn)}
       footer={
@@ -125,6 +126,6 @@ export default function VaultTx({ denomination }: { denomination?: BalanceDenomi
       ) : (
         <p className='qg-copy'>{copy}</p>
       )}
-    </QgScreen>
+    </WalletScreen>
   )
 }

@@ -4,7 +4,8 @@ import QrScanner from 'qr-scanner'
 import { SlidersHorizontal } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
 import { extractError } from '../../lib/error'
-import QgScreen, { QgSecondary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgSecondary } from './qg/QgScreen'
 
 function ScanFrame({
   label,
@@ -24,7 +25,7 @@ function ScanFrame({
   message?: string
 }) {
   return (
-    <QgScreen
+    <WalletScreen
       variant='scan'
       title={label}
       back={onClose}
@@ -46,7 +47,7 @@ function ScanFrame({
         </div>
         <p role='status'>{message || 'Place the QR code inside the frame'}</p>
       </div>
-    </QgScreen>
+    </WalletScreen>
   )
 }
 

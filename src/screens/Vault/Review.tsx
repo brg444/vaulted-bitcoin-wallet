@@ -10,7 +10,8 @@ import { VaultContext } from '../../vault/context'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount from './qg/QgAmount'
 import ReviewAmount from './qg/ReviewAmount'
-import QgScreen, { QgPrimary, QgTextButton } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary, QgTextButton } from './qg/QgScreen'
 
 export default function VaultReview({ denomination }: { denomination?: BalanceDenomination }) {
   const {
@@ -57,7 +58,7 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
   }
 
   return (
-    <QgScreen
+    <WalletScreen
       title={resumingPayment ? 'Resume payment' : 'Review payment'}
       back={busy ? undefined : () => navigate(resumingPayment || bitcoinSend ? 'home' : 'send')}
       footer={
@@ -168,6 +169,6 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
           <p className='qg-full-value'>{spend.address}</p>
         </details>
       ) : null}
-    </QgScreen>
+    </WalletScreen>
   )
 }

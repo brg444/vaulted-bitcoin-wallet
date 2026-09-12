@@ -23,7 +23,8 @@ import { reloadIfNewerWallet } from '../../lib/vault/update'
 import { VaultContext } from '../../vault/context'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
-import QgScreen, { QgCheck, QgPrimary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgCheck, QgPrimary } from './qg/QgScreen'
 import NativeNotifications from './NativeNotifications'
 
 type View = 'menu' | 'theme' | 'about' | 'haptics' | 'notifications' | 'logs' | 'reset' | 'diagnostics'
@@ -66,7 +67,7 @@ function LogsView({ onBack }: { onBack: () => void }) {
   const [logs, setLogs] = useState<LogLine[]>(() => getLogs())
 
   return (
-    <QgScreen
+    <WalletScreen
       title='Logs'
       back={onBack}
       aux={<span>Clear</span>}
@@ -95,14 +96,18 @@ function LogsView({ onBack }: { onBack: () => void }) {
           ))}
         </HubGroup>
       )}
-    </QgScreen>
+    </WalletScreen>
   )
 }
 
 function ResetView({ onBack, onReset }: { onBack: () => void; onReset: () => void }) {
   const [ok, setOk] = useState(false)
   return (
-    <QgScreen title='Sign out' back={onBack} footer={<QgPrimary onClick={onReset} disabled={!ok} label='Sign out' />}>
+    <WalletScreen
+      title='Sign out'
+      back={onBack}
+      footer={<QgPrimary onClick={onReset} disabled={!ok} label='Sign out' />}
+    >
       <div className='vault-security'>
         <section className='vault-security-hero' aria-label='Sign out of this browser'>
           <div className='vault-security-hero-head'>
@@ -124,7 +129,7 @@ function ResetView({ onBack, onReset }: { onBack: () => void; onReset: () => voi
           <span>I understand</span>
         </label>
       </div>
-    </QgScreen>
+    </WalletScreen>
   )
 }
 
@@ -157,7 +162,7 @@ export default function VaultSettings() {
 
   if (view === 'theme') {
     return (
-      <QgScreen title='Theme' back={() => setView('menu')}>
+      <WalletScreen title='Theme' back={() => setView('menu')}>
         <div className='vault-section'>
           <p className='vault-section-label'>Appearance</p>
           <div className='vault-hub' role='radiogroup' aria-label='Theme'>
@@ -190,13 +195,13 @@ export default function VaultSettings() {
             })}
           </div>
         </div>
-      </QgScreen>
+      </WalletScreen>
     )
   }
 
   if (view === 'haptics') {
     return (
-      <QgScreen title='Haptics' back={() => setView('menu')}>
+      <WalletScreen title='Haptics' back={() => setView('menu')}>
         <HubGroup label='This device'>
           <label className='vault-hub-row'>
             <div className='vault-hub-copy'>
@@ -221,7 +226,7 @@ export default function VaultSettings() {
             />
           </label>
         </HubGroup>
-      </QgScreen>
+      </WalletScreen>
     )
   }
 
@@ -263,7 +268,7 @@ export default function VaultSettings() {
       ['RP ID', status?.rpId],
     ]
     return (
-      <QgScreen title='About' back={() => setView('menu')}>
+      <WalletScreen title='About' back={() => setView('menu')}>
         <HubGroup label='This vault'>
           {rows.map(([title, value]) =>
             value ? (
@@ -280,13 +285,13 @@ export default function VaultSettings() {
             ) : null,
           )}
         </HubGroup>
-      </QgScreen>
+      </WalletScreen>
     )
   }
 
   if (view === 'diagnostics')
     return (
-      <QgScreen title='Diagnostics' back={() => setView('menu')}>
+      <WalletScreen title='Diagnostics' back={() => setView('menu')}>
         {' '}
         <HubGroup label='Advanced'>
           <SettingsRow
@@ -313,7 +318,7 @@ export default function VaultSettings() {
           />
           <SettingsRow label='Logs' testId='settings-logs' onClick={() => setView('logs')} />
         </HubGroup>
-      </QgScreen>
+      </WalletScreen>
     )
 
   if (view === 'logs') return <LogsView onBack={() => setView('diagnostics')} />
@@ -321,7 +326,7 @@ export default function VaultSettings() {
   if (view === 'notifications') return <NativeNotifications status={status ?? null} onBack={() => setView('menu')} />
 
   return (
-    <QgScreen title='Settings' dismiss={close}>
+    <WalletScreen title='Settings' dismiss={close}>
       <div className='vault-security'>
         <HubGroup label='General'>
           <SettingsRow
@@ -375,6 +380,6 @@ export default function VaultSettings() {
           </>
         </HubGroup>
       </div>
-    </QgScreen>
+    </WalletScreen>
   )
 }

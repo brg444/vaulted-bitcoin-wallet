@@ -10,7 +10,8 @@ import { copyToClipboard } from '../../lib/clipboard'
 import { encodeVaultBip21 } from '../../lib/vault/bip21'
 import { truncateAddress } from '../../lib/vault/policy'
 import { VaultContext } from '../../vault/context'
-import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 function AddressRow({
   label,
@@ -121,7 +122,7 @@ export default function VaultReceive() {
     )
 
   return (
-    <QgScreen
+    <WalletScreen
       title='Receive'
       dismiss={() => navigate('home')}
       footer={
@@ -184,6 +185,6 @@ export default function VaultReceive() {
       {spending && vaultLightningReceiveEnabled(status?.network, status?.vaultId) ? (
         <QgSecondary label='Create invoice' onClick={() => setView('lightning')} />
       ) : null}
-    </QgScreen>
+    </WalletScreen>
   )
 }

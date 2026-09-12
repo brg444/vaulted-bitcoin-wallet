@@ -1,12 +1,13 @@
 import { useContext } from 'react'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgCheck, QgPrimary, QgTextButton } from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
+import { QgCheck, QgPrimary, QgTextButton } from '../qg/QgScreen'
 import '../qg/guidance.css'
 
 export default function VaultReady() {
   const { navigate, networkLabel, openRecover } = useContext(VaultContext)
   return (
-    <QgScreen
+    <WalletScreen
       variant='success'
       footer={
         <>
@@ -39,6 +40,6 @@ export default function VaultReady() {
           Save a recovery package outside this device, and update it after transaction activity.
         </p>
       </div>
-    </QgScreen>
+    </WalletScreen>
   )
 }

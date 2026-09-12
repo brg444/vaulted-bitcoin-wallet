@@ -11,7 +11,8 @@ import { HubGroup, HubRow } from './ui'
 import RecoveryCopies from './RecoveryCopies'
 import { checkProtectedRecoveryPackage } from '../../lib/vault/recovery/packageCheck'
 import { recordRecoveryCopy } from '../../lib/vault/recovery/copyStatus'
-import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary, QgSecondary } from './qg/QgScreen'
 import { portableRecoverySource } from '../../lib/vault/recovery/portable'
 import { spendingRecoveryCoverage } from '../../lib/vault/recovery/coverage'
 import { vaultRecoveryBinding } from '../../lib/vault/vtxo/recoveryArchive'
@@ -158,12 +159,12 @@ export default function VaultRecover() {
     if (currentKit && isLedgerRecoveryKit(currentKit) && status)
       return <LedgerRecovery kit={currentKit} status={status} back={() => setView('kit')} />
     return (
-      <QgScreen title='Savings recovery' back={() => navigate(recoverExit)}>
+      <WalletScreen title='Savings recovery' back={() => navigate(recoverExit)}>
         <p className='qg-copy' role='alert'>
           Open your enrolled Ledger account and retrieve its recovery package before continuing.
         </p>
         <QgSecondary label='Open backups' onClick={() => setView('kit')} />
-      </QgScreen>
+      </WalletScreen>
     )
   }
 
@@ -173,7 +174,7 @@ export default function VaultRecover() {
     void action().catch((err) => setLocalError(err instanceof Error ? err.message : 'Backup is unavailable'))
   }
   return (
-    <QgScreen
+    <WalletScreen
       title={
         backupView === 'overview'
           ? 'Backups'
@@ -523,6 +524,6 @@ export default function VaultRecover() {
           {report && 'error' in report && report.error && pasted.trim() ? <RecoverAlert text={report.error} /> : null}
         </>
       )}
-    </QgScreen>
+    </WalletScreen>
   )
 }

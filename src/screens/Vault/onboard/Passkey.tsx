@@ -4,7 +4,8 @@ import ErrorMessage from '../../../components/Error'
 import { pasteFromClipboard } from '../../../lib/clipboard'
 import { isPlatformPasskeyAvailable } from '../../../lib/vault/webauthn'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgPrimary } from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
+import { QgPrimary } from '../qg/QgScreen'
 
 export default function VaultPasskey() {
   const { busy, enroll, enrollmentMode, error, navigate } = useContext(VaultContext)
@@ -24,7 +25,7 @@ export default function VaultPasskey() {
   const inviteOnly = enrollmentMode === 'token'
   const accessReady = enrollmentMode === 'open' || (inviteOnly && token.trim().length >= 32)
   return (
-    <QgScreen
+    <WalletScreen
       title='Secure this device'
       stepLabel='6 of 6'
       back={() => navigate('plan')}
@@ -94,6 +95,6 @@ export default function VaultPasskey() {
           </button>
         </>
       ) : null}
-    </QgScreen>
+    </WalletScreen>
   )
 }

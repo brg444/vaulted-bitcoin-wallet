@@ -2,14 +2,15 @@ import { useContext, useMemo, useState } from 'react'
 import { VaultContext } from '../../../vault/context'
 import { loadStagedEnrollment } from '../../../lib/vault/enrollmentStore'
 import LedgerSavingsApproval from '../LedgerSavingsApproval'
-import QgScreen, { QgPrimary } from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
+import { QgPrimary } from '../qg/QgScreen'
 import QgGuidance from '../qg/QgGuidance'
 
 export function LedgerHardware() {
   const { connectLedgerKey, ledgerAvailable, busy, error, navigate } = useContext(VaultContext)
   const supported = globalThis.isSecureContext && typeof navigator !== 'undefined' && 'hid' in navigator
   return (
-    <QgScreen
+    <WalletScreen
       title='Ledger'
       stepLabel='2 of 6'
       back={() => navigate('design')}
@@ -42,7 +43,7 @@ export function LedgerHardware() {
       {!ledgerAvailable ? <p role='status'>Ledger Savings setup is unavailable on this deployment.</p> : null}
       {!supported ? <p role='status'>Set up Ledger in a supported desktop browser with USB device access.</p> : null}
       {error ? <p role='alert'>{error}</p> : null}
-    </QgScreen>
+    </WalletScreen>
   )
 }
 
@@ -51,7 +52,7 @@ export function LedgerRecoveryKey() {
   const [value, setValue] = useState('')
   const supported = globalThis.isSecureContext && typeof navigator !== 'undefined' && 'hid' in navigator
   return (
-    <QgScreen
+    <WalletScreen
       title='Recovery wallet'
       stepLabel='3 of 6'
       back={() => navigate('hardware')}
@@ -96,7 +97,7 @@ export function LedgerRecoveryKey() {
         its separate Guardian and waiting-period requirements.
       </p>
       {error ? <p role='alert'>{error}</p> : null}
-    </QgScreen>
+    </WalletScreen>
   )
 }
 
@@ -105,20 +106,20 @@ export function LedgerEnrollmentRegistration() {
   const staged = useMemo(() => loadStagedEnrollment(), [])
   if (!staged?.ledgerSavingsDraft)
     return (
-      <QgScreen title='Set up Ledger' back={() => navigate('hardware')}>
+      <WalletScreen title='Set up Ledger' back={() => navigate('hardware')}>
         <p>Start Savings setup before registering the Ledger policy.</p>
-      </QgScreen>
+      </WalletScreen>
     )
   if (staged.ledgerSavings)
     return (
-      <QgScreen
+      <WalletScreen
         title='Complete setup'
         back={() => navigate('plan')}
         footer={<QgPrimary label='Complete setup' disabled={busy} onClick={() => void enroll()} />}
       >
         <p>Your Ledger approval is saved. Complete the existing setup to open your wallet.</p>
         {error ? <p role='alert'>{error}</p> : null}
-      </QgScreen>
+      </WalletScreen>
     )
   return (
     <LedgerSavingsApproval

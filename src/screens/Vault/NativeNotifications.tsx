@@ -10,7 +10,7 @@ import {
 import { needsInstallForPush, requestNativePermission } from '../../lib/vault/nativeNotifications'
 import type { VaultStatus } from '../../lib/vault/types'
 import { HubGroup, HubRow } from './ui'
-import QgScreen from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
 
 function isStandalone(): boolean {
   try {
@@ -138,7 +138,7 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
   }
 
   return (
-    <QgScreen title='Notifications' back={onBack}>
+    <WalletScreen title='Notifications' back={onBack}>
       <HubGroup label='Payment alerts'>
         <HubRow
           title='Device notifications'
@@ -172,6 +172,6 @@ export default function NativeNotifications({ status, onBack }: { status: VaultS
           {error}
         </p>
       ) : null}
-    </QgScreen>
+    </WalletScreen>
   )
 }

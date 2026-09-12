@@ -2,7 +2,8 @@ import { useContext, useEffect } from 'react'
 import ErrorMessage from '../../components/Error'
 import { isCoarsePhone } from '../../lib/vault/webauthn'
 import { VaultContext } from '../../vault/context'
-import QgScreen, { QgMark, QgPrimary, QgTextButton } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgMark, QgPrimary, QgTextButton } from './qg/QgScreen'
 
 export default function VaultWelcome() {
   const { busy, enrollmentMode, lightAvailable, error, hasLocalEnrollment, locked, navigate, signIn } =
@@ -14,7 +15,7 @@ export default function VaultWelcome() {
   }, [hasLocalEnrollment, locked, navigate])
 
   return (
-    <QgScreen
+    <WalletScreen
       variant='welcome'
       brand
       footer={
@@ -59,6 +60,6 @@ export default function VaultWelcome() {
       <p className='qg-lead'>
         Use your passkey for everyday payments and your hardware wallet for a second Savings approval.
       </p>
-    </QgScreen>
+    </WalletScreen>
   )
 }

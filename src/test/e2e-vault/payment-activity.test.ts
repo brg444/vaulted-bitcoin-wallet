@@ -14,13 +14,13 @@ for (const width of [320, 390, 1440]) {
           import React from '/node_modules/.vite/deps/react.js';
           import { VaultHistoryList } from '/src/screens/Vault/History.tsx';
           import { describePayment } from '/src/lib/vault/payments.ts';
-          import QgScreen from '/src/screens/Vault/qg/QgScreen.tsx';
+          import WalletScreen from '/src/screens/Vault/qg/WalletScreen.tsx';
           const received = {txid:'${'ab'.repeat(32)}',type:'received',amount:123456789,confirmed:true,account:'spend'};
           const confirmed = {txid:'${'cd'.repeat(32)}',type:'sent',amount:12000,confirmed:true,account:'spend',activity:'bitcoin'};
           const attention = {txid:'${'ef'.repeat(32)}',type:'sent',amount:5000,confirmed:true,account:'spend',activity:'lightning',lightningState:'failed',lightningRfqId:'failed-rfq'};
           export default function PaymentFixture(){
             const [selected,setSelected]=React.useState(null);
-            return React.createElement(QgScreen,{title:'Payment activity'},
+            return React.createElement(WalletScreen,{title:'Payment activity'},
               React.createElement(VaultHistoryList,{account:'spend',balancesLoaded:true,history:[received,confirmed,attention],openTx:setSelected}),
               selected && React.createElement('p',{role:'status','data-testid':'selected-payment'},describePayment(selected).state)
             );

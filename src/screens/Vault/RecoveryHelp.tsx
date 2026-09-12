@@ -37,7 +37,6 @@ export default function RecoveryHelp({
 
   return (
     <QgScreen
-      help={false}
       title={scenario ? SCENARIOS.find((item) => item.id === scenario)?.label : 'Access and recovery'}
       back={scenario ? () => setScenario(null) : onBack}
       dismiss={scenario ? undefined : onDismiss}

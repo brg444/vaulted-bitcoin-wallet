@@ -35,7 +35,8 @@ import {
 import type { LedgerRecoveryKit } from '../../lib/vault/program/kit'
 import type { Claimant } from '../../lib/vault/program/constants'
 import type { VaultStatus } from '../../lib/vault/types'
-import QgScreen, { QgPrimary, QgSecondary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 const download = (body: unknown) => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' }))
@@ -260,7 +261,7 @@ export default function LedgerRecovery({
   }
   const prepared = Boolean(record || standalone)
   return (
-    <QgScreen
+    <WalletScreen
       title='Recover Ledger Savings'
       back={back}
       footer={
@@ -537,6 +538,6 @@ export default function LedgerRecovery({
           </p>
         ) : null}
       </div>
-    </QgScreen>
+    </WalletScreen>
   )
 }

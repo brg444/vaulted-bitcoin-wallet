@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LedgerSavingsContract, LedgerSavingsPayment } from '../../lib/vault/ledgerSavings'
 import type { LedgerSavingsRegistration } from '../../lib/vault/ledgerClient'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary } from './qg/QgScreen'
 import QgGuidance from './qg/QgGuidance'
 
 // The enrolled native coordinator supplies the reconstructed contract and retained
@@ -109,7 +110,7 @@ export default function LedgerSavingsApproval(props: Props) {
   }
 
   return (
-    <QgScreen
+    <WalletScreen
       title={registering ? 'Set up Ledger' : 'Approve on Ledger'}
       back={busy ? undefined : props.onBack}
       footer={
@@ -167,6 +168,6 @@ export default function LedgerSavingsApproval(props: Props) {
         </p>
       ) : null}
       {error ? <p role='alert'>{error}</p> : null}
-    </QgScreen>
+    </WalletScreen>
   )
 }

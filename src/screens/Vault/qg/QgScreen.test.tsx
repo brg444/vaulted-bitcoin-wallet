@@ -2,6 +2,23 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import QgScreen from './QgScreen'
 
+it('renders supplied header content and literal progress without wallet context', () => {
+  const { rerender } = render(
+    <QgScreen title='Recovery' stepLabel='Saved paths' help={<button>Recovery instructions</button>}>
+      <p>Choose a saved file</p>
+    </QgScreen>,
+  )
+  expect(screen.getByText('Saved paths')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Recovery instructions' })).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Help' })).toBeNull()
+  rerender(
+    <QgScreen title='Recovery'>
+      <p>Choose a saved file</p>
+    </QgScreen>,
+  )
+  expect(screen.queryByRole('button', { name: 'Recovery instructions' })).toBeNull()
+})
+
 describe('QgScreen input viewport lifecycle', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -120,24 +137,4 @@ describe('sheet gesture intent', () => {
     fireEvent.click(back)
     expect(dismiss).toHaveBeenCalledOnce()
   })
-})
-
-it('keeps an in-progress form mounted while Help opens and closes', () => {
-  const dismiss = vi.fn()
-  render(
-    <QgScreen title='Send' dismiss={dismiss}>
-      <input aria-label='Draft destination' />
-    </QgScreen>,
-  )
-  const input = screen.getByLabelText('Draft destination')
-  fireEvent.change(input, { target: { value: 'saved-destination' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Help' }))
-  expect(screen.getByRole('dialog')).toBeVisible()
-  fireEvent.keyDown(window, { key: 'Escape' })
-  expect(dismiss).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Close help' }))
-  expect(screen.queryByRole('dialog')).toBeNull()
-  expect(screen.getByLabelText('Draft destination')).toBe(input)
-  expect(input).toHaveValue('saved-destination')
-  expect(screen.getByRole('button', { name: 'Help' })).toHaveFocus()
 })

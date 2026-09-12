@@ -6,7 +6,8 @@ import { ABSOLUTE_FEE_CEILING_SATS, FEERATE_CEILING_SAT_PER_V } from '../../../l
 import { setupSpendingPolicy } from '../../../lib/vault/setupPlan'
 import { spendingPolicyFromLimits } from '../../../lib/vault/spendingPolicy'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgPrimary } from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
+import { QgPrimary } from '../qg/QgScreen'
 
 function digitsOnly(raw: string) {
   return raw.replace(/\D/g, '')
@@ -47,7 +48,7 @@ export default function VaultConditions() {
   const bounds = spendingPolicyCapabilities.bounds
 
   return (
-    <QgScreen
+    <WalletScreen
       title='Spending limits'
       stepLabel='4 of 6'
       back={() =>
@@ -107,6 +108,6 @@ export default function VaultConditions() {
           </div>
         </section>
       )}
-    </QgScreen>
+    </WalletScreen>
   )
 }

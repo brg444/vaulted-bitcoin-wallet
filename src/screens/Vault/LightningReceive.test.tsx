@@ -33,13 +33,15 @@ vi.mock('../../lib/vault/vtxo/walletWorker', () => ({
 vi.mock('../../components/QrCode', () => ({
   default: ({ value }: { value: string }) => <span data-testid='invoice-qr'>{value}</span>,
 }))
-vi.mock('./qg/QgScreen', () => ({
+vi.mock('./qg/WalletScreen', () => ({
   default: ({ children, footer }: { children: React.ReactNode; footer: React.ReactNode }) => (
     <div>
       {children}
       {footer}
     </div>
   ),
+}))
+vi.mock('./qg/QgScreen', () => ({
   QgPrimary: ({
     label,
     loading,

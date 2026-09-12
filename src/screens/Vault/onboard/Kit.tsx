@@ -2,7 +2,8 @@ import { useContext, useState } from 'react'
 import { Download, LockKeyhole } from 'lucide-react'
 import { useToast } from '../../../components/Toast'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgMark, QgPrimary, QgTextButton } from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
+import { QgMark, QgPrimary, QgTextButton } from '../qg/QgScreen'
 import '../qg/guidance.css'
 
 function downloadJson(name: string, body: string) {
@@ -32,7 +33,7 @@ export default function VaultKit() {
   }
 
   return (
-    <QgScreen
+    <WalletScreen
       title='Recovery Kit'
       stepLabel='Backup'
       back={() => navigate('home')}
@@ -83,6 +84,6 @@ export default function VaultKit() {
         Open Security → Recovery to save and check a package with your Spending paths and protected payment records.
         This public map download leaves those backup checks outstanding.
       </p>
-    </QgScreen>
+    </WalletScreen>
   )
 }

@@ -6,7 +6,8 @@ import { copyToClipboard } from '../../lib/clipboard'
 import { loadLightningAddress, type LightningAddress as Address } from '../../lib/vault/lnurl'
 import type { VaultStatus } from '../../lib/vault/types'
 import ReceiveMethods, { LightningReceiveMethod } from './qg/ReceiveMethods'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary } from './qg/QgScreen'
 
 export default function SpendingReceive(props: {
   status: VaultStatus
@@ -107,7 +108,7 @@ function ReceiveContent({
     </section>
   )
   return (
-    <QgScreen
+    <WalletScreen
       title='Receive'
       dismiss={onClose}
       footer={
@@ -144,6 +145,6 @@ function ReceiveContent({
             : []),
         ]}
       />
-    </QgScreen>
+    </WalletScreen>
   )
 }

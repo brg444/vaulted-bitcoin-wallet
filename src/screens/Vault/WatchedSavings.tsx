@@ -3,7 +3,8 @@ import { Eye, Pencil, Plus } from 'lucide-react'
 import { VaultContext } from '../../vault/context'
 import AccountHome from './AccountHome'
 import VaultHistory from './History'
-import QgScreen, { QgPrimary } from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
+import { QgPrimary } from './qg/QgScreen'
 
 export default function WatchedSavings() {
   const {
@@ -29,7 +30,7 @@ export default function WatchedSavings() {
   }
   if (editing)
     return (
-      <QgScreen
+      <WalletScreen
         title='Watch Savings'
         back={() => setEditing(false)}
         footer={
@@ -78,7 +79,7 @@ export default function WatchedSavings() {
             {error}
           </p>
         ) : null}
-      </QgScreen>
+      </WalletScreen>
     )
   return (
     <AccountHome

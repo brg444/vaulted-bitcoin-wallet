@@ -3,7 +3,7 @@ import { groupVaultHistory, type VaultHistoryItem } from '../../lib/vault/histor
 import { describePayment } from '../../lib/vault/payments'
 import { VaultContext } from '../../vault/context'
 import { VaultHistoryRow } from './History'
-import QgScreen from './qg/QgScreen'
+import WalletScreen from './qg/WalletScreen'
 import styles from './History.module.css'
 
 const ACTIVITY_PAGE_SIZE = 50
@@ -53,7 +53,7 @@ export default function VaultActivity() {
   }
 
   return (
-    <QgScreen title='Activity' dismiss={() => navigate('home')}>
+    <WalletScreen title='Activity' dismiss={() => navigate('home')}>
       <section
         className='vault-history'
         data-testid='vault-activity'
@@ -160,6 +160,6 @@ export default function VaultActivity() {
           </p>
         ) : null}
       </section>
-    </QgScreen>
+    </WalletScreen>
   )
 }

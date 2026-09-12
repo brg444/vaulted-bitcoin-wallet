@@ -1,12 +1,12 @@
 import { useContext } from 'react'
 import { VaultContext } from '../../../vault/context'
-import QgScreen from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
 
 export default function VaultDesign() {
   const lightOnly = import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true'
   const { acceptDesign, lightAvailable, navigate } = useContext(VaultContext)
   return (
-    <QgScreen title='Choose your Vault' stepLabel='1 of 6' back={() => navigate('welcome')}>
+    <WalletScreen title='Choose your Vault' stepLabel='1 of 6' back={() => navigate('welcome')}>
       <h1>Choose your protection</h1>
       <div className='qg-setup-options' aria-label='Choose your setup'>
         {lightAvailable ? (
@@ -29,6 +29,6 @@ export default function VaultDesign() {
           ? 'Standard and Advanced setup is temporarily unavailable. Existing wallets remain accessible.'
           : 'Standard and Advanced require a Ledger. Your protection choice is fixed after setup.'}
       </p>
-    </QgScreen>
+    </WalletScreen>
   )
 }

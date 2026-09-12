@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, relative } from 'node:path'
 import ts from 'typescript'
 import { expect, it } from 'vitest'
@@ -84,4 +84,46 @@ it('capture has no payment mutation or SDK history dependency', () => {
       ? bindings.elements.map((item) => item.propertyName?.text ?? item.name.text)
       : [],
   ).toEqual(['readSpendingBitcoin'])
+})
+
+it('Qg presentation primitives have no transitive wallet state or Help-flow dependency', () => {
+  const seen = new Set<string>()
+  const visit = (path: string) => {
+    if (seen.has(path)) return
+    seen.add(path)
+    for (const target of imports(path)) {
+      expect(target, `${path} imports ${target}`).not.toMatch(
+        /src\/(vault|providers|lib\/vault)\/|\/(Help|RecoveryHelp|WalletScreen)\.tsx$/,
+      )
+      visit(target)
+    }
+  }
+  visit('src/screens/Vault/qg/QgScreen.tsx')
+})
+
+it('wallet implementation modules have no runtime import cycle', () => {
+  const files = (directory: string): string[] =>
+    readdirSync(resolve(root, directory), { withFileTypes: true }).flatMap((entry) => {
+      const path = `${directory}/${entry.name}`
+      return entry.isDirectory() ? files(path) : [path]
+    })
+  const paths = new Set(
+    [...files('src'), ...files('api')].filter(
+      (path) =>
+        /\.tsx?$/.test(path) &&
+        !path.endsWith('.d.ts') &&
+        !/(^|\/)(test|testdata|fixtures)(\/|\.|$)|\.(test|fixture)\./.test(path),
+    ),
+  )
+  const active = new Set<string>(),
+    done = new Set<string>()
+  const visit = (path: string, chain: string[]) => {
+    if (done.has(path)) return
+    if (active.has(path)) throw new Error(`Runtime import cycle: ${[...chain, path].join(' -> ')}`)
+    active.add(path)
+    for (const next of imports(path)) if (paths.has(next)) visit(next, [...chain, path])
+    active.delete(path)
+    done.add(path)
+  }
+  for (const path of paths) visit(path, [])
 })

@@ -2,7 +2,8 @@ import { useContext, useState } from 'react'
 import { prettyNumber } from '../../../lib/format'
 import { fingerprint } from '../../../lib/vault/hex'
 import { VaultContext } from '../../../vault/context'
-import QgScreen, { QgPrimary } from '../qg/QgScreen'
+import WalletScreen from '../qg/WalletScreen'
+import { QgPrimary } from '../qg/QgScreen'
 
 function shortPub(pub: string) {
   return pub ? fingerprint(pub, 2) : 'Not enrolled'
@@ -15,7 +16,7 @@ export default function VaultPlan() {
   const advanced = setup.protectionTier === 'advanced'
 
   return (
-    <QgScreen
+    <WalletScreen
       title='Review'
       stepLabel='5 of 6'
       back={() => navigate('conditions')}
@@ -78,6 +79,6 @@ export default function VaultPlan() {
         <input type='checkbox' checked={consented} onChange={(event) => setConsented(event.target.checked)} />
         <span>I understand that this protection choice and these Spending limits cannot be changed after setup.</span>
       </label>
-    </QgScreen>
+    </WalletScreen>
   )
 }

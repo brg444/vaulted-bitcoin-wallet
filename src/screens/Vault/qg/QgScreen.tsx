@@ -1,6 +1,4 @@
-import { useContext, useEffect, useLayoutEffect, useRef, type PointerEvent, type ReactNode } from 'react'
-import { VaultContext } from '../../../vault/context'
-import WalletHelp from './Help'
+import { useEffect, useLayoutEffect, useRef, type PointerEvent, type ReactNode } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { hapticLight } from '../../../lib/haptics'
 import { animateScreenEntrance } from './useScreenMotion'
@@ -143,7 +141,7 @@ const DISMISS_DISTANCE = 88
 const LOCK_DISTANCE = 12
 
 export default function QgScreen({
-  help = true,
+  help,
   variant = 'flow',
   brand,
   title,
@@ -158,7 +156,7 @@ export default function QgScreen({
   children,
   footer,
 }: {
-  help?: boolean
+  help?: ReactNode
   variant?: 'welcome' | 'flow' | 'progress' | 'success' | 'scan' | 'unlock'
   brand?: boolean
   title?: string
@@ -173,14 +171,6 @@ export default function QgScreen({
   children: ReactNode
   footer?: ReactNode
 }) {
-  const { setup } = useContext(VaultContext)
-  const advanced = setup?.protectionTier === 'advanced'
-  const numberedStep = stepLabel?.match(/^(\d) of 6$/)
-  const displayedStep = numberedStep
-    ? `${Number(numberedStep[1]) - (!advanced && Number(numberedStep[1]) > 3 ? 1 : 0)} of ${advanced ? 7 : 6}`
-    : stepLabel === 'Backup'
-      ? `${advanced ? 7 : 6} of ${advanced ? 7 : 6}`
-      : stepLabel
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLElement>(null)
   const mainRef = useRef<HTMLElement>(null)
@@ -353,14 +343,12 @@ export default function QgScreen({
         <header className='qg-brand'>
           <QgMark />
           <strong>Vaulted</strong>
-          {help ? <WalletHelp /> : null}
+          {help}
           <small>{import.meta.env.VITE_VAULT_RELEASE_NETWORK === 'mainnet' ? 'BITCOIN' : 'MUTINYNET'}</small>
         </header>
       ) : variant === 'progress' || variant === 'success' || variant === 'unlock' ? (
         help ? (
-          <div className='qg-corner-help'>
-            <WalletHelp />
-          </div>
+          <div className='qg-corner-help'>{help}</div>
         ) : null
       ) : (
         <header ref={headerRef} className={sheet ? 'qg-header qg-header-sheet' : 'qg-header'}>
@@ -389,7 +377,7 @@ export default function QgScreen({
             <span />
           )}
           {title ? <h2 data-testid='screen-title'>{title}</h2> : <span />}
-          {help ? <WalletHelp /> : null}
+          {help}
           {sheet ? (
             <span className='qg-handle' aria-hidden='true' />
           ) : aux ? (
@@ -404,7 +392,7 @@ export default function QgScreen({
               {aux}
             </button>
           ) : stepLabel ? (
-            <small>{displayedStep}</small>
+            <small>{stepLabel}</small>
           ) : !help ? (
             <span />
           ) : null}
