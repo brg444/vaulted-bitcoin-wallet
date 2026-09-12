@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { vaultAccountPositions } from './balances'
+import { vaultAccountPositions } from '../lib/vault/balances'
 
 describe('vaultAccountPositions', () => {
   it('keeps confirmed Spending available', () => {

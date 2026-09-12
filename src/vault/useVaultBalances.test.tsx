@@ -1,4 +1,9 @@
-import { sharedSpendingStatus, sharedSpendingEnrollment } from '../lib/vault/vtxo/testdata/sharedSpending'
+import {
+  sharedSpendingStatus,
+  sharedSpendingEnrollment,
+  sharedSpendingStatusForNetwork,
+} from '../lib/vault/vtxo/testdata/sharedSpending'
+import { StrictMode } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAddressTxs, fetchAddressUtxos, fetchOlderAddressTxs } from '../lib/vault/esplora'
@@ -6,7 +11,6 @@ import { pinFromEnrolledStatus, saveAddressPin, loadAddressPin } from '../lib/va
 import { fetchVaultStatus, fetchVaultStatusUnpinned } from '../lib/vault/status'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
-import { defaultSpendingPolicy, spendingPolicyDigest } from '../lib/vault/spendingPolicy'
 import {
   fetchVaultWalletVtxoSnapshot,
   reloadVaultWalletWorker,
@@ -15,13 +19,15 @@ import {
 } from '../lib/vault/vtxo/walletWorker'
 import { loadBalanceSnapshot, saveBalanceSnapshot } from '../lib/vault/balanceStore'
 import {
+  createVaultBalanceController,
+  type VaultBalancesOptions,
   boardingUtxoBalance,
   confirmedUtxoBalance,
   oldestSavingsTxid,
   retainOlderRows,
   savingsUtxoBalance,
-  useVaultBalances,
-} from './useVaultBalances'
+} from '../lib/vault/accountBalances'
+import { useVaultBalances } from './useVaultBalances'
 
 vi.mock('../lib/vault/esplora', () => ({
   fetchAddressTxs: vi.fn(),
@@ -40,39 +46,8 @@ vi.mock('../lib/vault/vtxo/walletWorker', () => ({
   subscribeVaultWalletEvents: vi.fn().mockReturnValue(() => undefined),
 }))
 
-const spendingPolicy = defaultSpendingPolicy()
-const STATUS: VaultStatus = {
-  enrolled: true,
-  network: 'mutinynet',
-  clientOrigin: 'https://vault.test',
-  rpId: 'vault.test',
-  vaultId: 'vault-a',
-  templateVersion: 'savings-v1',
-  policyVersion: 'policy-v1',
-  protectionTier: 'standard',
-  savingsAddress: 'tb1psavings',
-  savingsScript: '51',
-  periodAllowance: 100_000,
-  periodSpent: 0,
-  periodRemaining: 100_000,
-  txCap: 50_000,
-  absoluteFeeCap: 5_000,
-  feerateCapSatVb: 10,
-  spendingPolicy,
-  spendingPolicyDigest: spendingPolicyDigest(spendingPolicy),
-  vtxoVaultCosignerPub: `02${'11'.repeat(32)}`,
-  vtxoExitDelay: 4608,
-  vtxoExitDelayUnit: 'seconds',
-  spendingArkAddress: 'tark1spending',
-  spendingArkScript: `5120${'22'.repeat(32)}`,
-  vtxoDelegatePub: `02${'33'.repeat(32)}`,
-  vtxoBoardingActive: true,
-  vtxoBoardingProgram: 'vault-board-v1',
-  vtxoBoardingAddress: 'tb1pboarding',
-  vtxoBoardingScript: `5120${'44'.repeat(32)}`,
-  vtxoBoardingExitDelay: 604672,
-  vtxoBoardingExitDelayUnit: 'seconds',
-}
+const STATUS = sharedSpendingStatusForNetwork('mutinynet', { vaultId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' })
+const SAVINGS_ADDRESS = 'tb1psavings'
 
 const mockedStatus = vi.mocked(fetchVaultStatus)
 const mockedUtxos = vi.mocked(fetchAddressUtxos)
@@ -104,6 +79,7 @@ function setupHook(
   const setStatus = vi.fn()
   const hook = renderHook(() =>
     useVaultBalances({
+      watchedSavingsAddress: status?.vaultId === STATUS.vaultId || !status ? SAVINGS_ADDRESS : '',
       addressPin: pin,
       enrollment,
       initialStatusChecked: !locked && initialStatusChecked,
@@ -128,7 +104,30 @@ beforeEach(() => {
   mockedWorkerEvents.mockReturnValue(() => undefined)
 })
 
-afterEach(() => vi.useRealTimers())
+const controllers = new Set<ReturnType<typeof createVaultBalanceController>>()
+afterEach(() => {
+  for (const controller of controllers) controller.dispose()
+  controllers.clear()
+  vi.useRealTimers()
+})
+
+function controllerOptions(overrides: Partial<VaultBalancesOptions> = {}): VaultBalancesOptions {
+  return {
+    status: STATUS,
+    addressPin: pinFromEnrolledStatus(STATUS),
+    enrollment: null,
+    watchedSavingsAddress: SAVINGS_ADDRESS,
+    initialStatusChecked: false,
+    locked: false,
+    setStatus: vi.fn(),
+    ...overrides,
+  }
+}
+function standaloneController(options = controllerOptions()) {
+  const controller = createVaultBalanceController(options)
+  controllers.add(controller)
+  return controller
+}
 
 describe('boardingUtxoBalance', () => {
   it('counts unique boarding outputs including unconfirmed deposits', () => {
@@ -199,7 +198,8 @@ describe('savingsUtxoBalance', () => {
 
 describe('useVaultBalances', () => {
   it('surfaces the last known snapshot immediately', () => {
-    saveBalanceSnapshot(STATUS.vaultId, {
+    saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', {
+      watchedSavingsAddress: SAVINGS_ADDRESS,
       boardingBalance: 0,
       history: [],
       savingsSats: 9_000,
@@ -213,7 +213,8 @@ describe('useVaultBalances', () => {
   })
 
   it('reports fresh snapshot readiness only after a successful refresh', async () => {
-    saveBalanceSnapshot(STATUS.vaultId, {
+    saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', {
+      watchedSavingsAddress: SAVINGS_ADDRESS,
       boardingBalance: 0,
       history: [],
       savingsSats: 9_000,
@@ -308,7 +309,8 @@ describe('useVaultBalances', () => {
   })
 
   it('keeps loaded history when the older window fails', async () => {
-    saveBalanceSnapshot(STATUS.vaultId, {
+    saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', {
+      watchedSavingsAddress: SAVINGS_ADDRESS,
       boardingBalance: 0,
       history: [
         { txid: 'recent', type: 'received', amount: 9_000, confirmed: true, blockTime: 200, account: 'savings' },
@@ -356,7 +358,8 @@ describe('useVaultBalances', () => {
   })
 
   it('replaces the cached snapshot after a successful refresh', async () => {
-    saveBalanceSnapshot(STATUS.vaultId, {
+    saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', {
+      watchedSavingsAddress: SAVINGS_ADDRESS,
       boardingBalance: 0,
       history: [],
       savingsSats: 0,
@@ -368,7 +371,7 @@ describe('useVaultBalances', () => {
     expect(result.current.positions.spending.availableSats).toBe(42_000)
     await act(async () => result.current.refreshBalance())
     expect(result.current.positions.spending.availableSats).toBe(50_000)
-    expect(loadBalanceSnapshot(STATUS.vaultId)?.vtxoSpendingSats).toBe(50_000)
+    expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.vtxoSpendingSats).toBe(50_000)
   })
 
   it('takes Spending, boarding balance, and activity only from the persistent SDK worker', async () => {
@@ -422,8 +425,8 @@ describe('useVaultBalances', () => {
     await act(async () => result.current.refreshBalance())
     expect(result.current.positions.spending).toEqual({ availableSats: 33_458, pendingSats: 0, totalSats: 33_458 })
     expect(result.current.history).toEqual([settled])
-    expect(loadBalanceSnapshot(STATUS.vaultId)?.boardingBalance).toBe(0)
-    expect(loadBalanceSnapshot(STATUS.vaultId)?.history).toEqual([settled])
+    expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.boardingBalance).toBe(0)
+    expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.history).toEqual([settled])
 
     // A failed read must not reintroduce the stale pending deposit beside
     // the previously observed settled balance, including after a reload.
@@ -468,7 +471,7 @@ describe('useVaultBalances', () => {
       if (address === STATUS.vtxoBoardingAddress) {
         return [{ txid: 'b8ed', vout: 0, value: 33_458, status: { confirmed: true } }]
       }
-      if (address === STATUS.savingsAddress) {
+      if (address === SAVINGS_ADDRESS) {
         return [{ txid: 'sav', vout: 0, value: 20_000, status: { confirmed: true } }]
       }
       return []
@@ -532,7 +535,7 @@ describe('useVaultBalances', () => {
     await act(async () => result.current.refreshBalance())
     expect(result.current.boardingError).toBe(boardingError)
     expect(result.current.positions.spending).toEqual({ availableSats: 1_300, pendingSats: 30_608, totalSats: 31_908 })
-    expect(loadBalanceSnapshot(STATUS.vaultId)?.boardingError).toBe(boardingError)
+    expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.boardingError).toBe(boardingError)
 
     mockedSnapshot.mockRejectedValueOnce(new Error('worker unavailable'))
     await act(async () => result.current.refreshBalance())
@@ -543,7 +546,7 @@ describe('useVaultBalances', () => {
     await act(async () => result.current.refreshBalance())
     expect(result.current.boardingError).toBe('')
     expect(result.current.positions.spending).toEqual({ availableSats: 31_908, pendingSats: 0, totalSats: 31_908 })
-    expect(loadBalanceSnapshot(STATUS.vaultId)?.boardingError).toBeUndefined()
+    expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.boardingError).toBeUndefined()
   })
 
   it('keeps the previous account snapshot when a worker read fails', async () => {
@@ -594,7 +597,8 @@ describe('useVaultBalances', () => {
 })
 
 it('keeps the last known Savings funds when Esplora fails', async () => {
-  saveBalanceSnapshot(STATUS.vaultId, {
+  saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', {
+    watchedSavingsAddress: SAVINGS_ADDRESS,
     boardingBalance: 0,
     history: [],
     savingsSats: 9000,
@@ -602,14 +606,14 @@ it('keeps the last known Savings funds when Esplora fails', async () => {
     vtxoSpendingSats: 42000,
   })
   mockedUtxos.mockImplementation(async (address) => {
-    if (address === STATUS.savingsAddress) throw new Error('Esplora unavailable')
+    if (address === SAVINGS_ADDRESS) throw new Error('Esplora unavailable')
     return []
   })
   mockedSnapshot.mockResolvedValue({ balance: 42000, history: [] })
   const { result } = setupHook(true)
   await act(async () => result.current.refreshBalance())
   expect(result.current.positions.savings.totalSats).toBe(9000)
-  expect(loadBalanceSnapshot(STATUS.vaultId)?.savingsSats).toBe(9000)
+  expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.savingsSats).toBe(9000)
 })
 
 it('refreshes fresh Light Spending through the same pinned status and worker as protected Spending', async () => {
@@ -668,7 +672,7 @@ it('keeps watched Savings scoped to the selected address when an earlier request
 })
 
 describe('older activity scope safety', () => {
-  const STATUS_B: VaultStatus = { ...STATUS, vaultId: 'vault-b' }
+  const STATUS_B = sharedSpendingStatusForNetwork('mutinynet', { vaultId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' })
 
   function savingsTx(txid: string, blockTime: number) {
     return {
@@ -685,6 +689,7 @@ describe('older activity scope safety', () => {
     return renderHook(
       ({ currentStatus, currentLocked }: { currentStatus: VaultStatus; currentLocked: boolean }) =>
         useVaultBalances({
+          watchedSavingsAddress: SAVINGS_ADDRESS,
           addressPin: currentStatus.vaultId === status.vaultId ? pin : null,
           enrollment: null,
           initialStatusChecked: true,
@@ -718,7 +723,9 @@ describe('older activity scope safety', () => {
       outcome = await pending
     })
     expect(outcome).toEqual({ added: 0, exhausted: false })
-    expect(loadBalanceSnapshot('vault-a')?.history.map((item) => item.txid)).toEqual(['recent-a'])
+    expect(
+      loadBalanceSnapshot('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'mutinynet')?.history.map((item) => item.txid),
+    ).toEqual(['recent-a'])
     expect(result.current.olderActivity.status).not.toBe('error')
   })
 
@@ -817,7 +824,7 @@ describe('older activity scope safety', () => {
     })
     expect(result.current.history.map((item) => item.txid).sort()).toEqual(['older-a', 'recent-a'])
     expect(
-      loadBalanceSnapshot(STATUS.vaultId)
+      loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')
         ?.history.map((item) => item.txid)
         .sort(),
     ).toEqual(['older-a', 'recent-a'])
@@ -826,8 +833,8 @@ describe('older activity scope safety', () => {
 })
 
 describe('older activity request generations', () => {
-  const STATUS_B: VaultStatus = { ...STATUS, vaultId: 'vault-b' }
-  const STATUS_NET: VaultStatus = { ...STATUS, network: 'mainnet' }
+  const STATUS_B = sharedSpendingStatusForNetwork('mutinynet', { vaultId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' })
+  const STATUS_NET = sharedSpendingStatusForNetwork('mainnet', { vaultId: STATUS.vaultId })
 
   function savingsTx(txid: string, blockTime: number) {
     return {
@@ -839,7 +846,8 @@ describe('older activity request generations', () => {
   }
 
   function seedSnapshot(vaultId: string, txids: { txid: string; blockTime: number }[]) {
-    saveBalanceSnapshot(vaultId, {
+    saveBalanceSnapshot(vaultId, 'mutinynet', {
+      watchedSavingsAddress: SAVINGS_ADDRESS,
       boardingBalance: 0,
       history: txids.map(({ txid, blockTime }) => ({
         txid,
@@ -861,6 +869,7 @@ describe('older activity request generations', () => {
     return renderHook(
       ({ currentStatus, currentLocked }: { currentStatus: VaultStatus; currentLocked: boolean }) =>
         useVaultBalances({
+          watchedSavingsAddress: SAVINGS_ADDRESS,
           addressPin:
             currentStatus.vaultId === pinStatus.vaultId ? loadAddressPin(localStorage, pinStatus.vaultId) : null,
           enrollment: null,
@@ -890,7 +899,7 @@ describe('older activity request generations', () => {
   }
 
   it('discards a locked-then-unlocked flight without touching state', async () => {
-    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', [{ txid: 'recent-a', blockTime: 200 }])
     mockedTxs.mockResolvedValue([savingsTx('recent-a', 200)])
     const flight = deferredOlder()
     const { result, rerender } = setupScoped(STATUS, false)
@@ -920,8 +929,8 @@ describe('older activity request generations', () => {
   })
 
   it('discards an A-B-A flight and lets the returning scope load again', async () => {
-    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
-    seedSnapshot('vault-b', [{ txid: 'recent-b', blockTime: 200 }])
+    seedSnapshot('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', [{ txid: 'recent-b', blockTime: 200 }])
     saveAddressPin(pinFromEnrolledStatus(STATUS_B))
     const flight = deferredOlder()
     const { result, rerender } = setupScoped(STATUS, false)
@@ -939,7 +948,9 @@ describe('older activity request generations', () => {
     })
     expect(outcome).toEqual({ added: 0, exhausted: false })
     expect(result.current.history.map((item) => item.txid)).toEqual(['recent-a'])
-    expect(loadBalanceSnapshot('vault-a')?.history.map((item) => item.txid)).toEqual(['recent-a'])
+    expect(
+      loadBalanceSnapshot('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'mutinynet')?.history.map((item) => item.txid),
+    ).toEqual(['recent-a'])
     mockedOlderTxs.mockResolvedValue({ transactions: [savingsTx('older-a', 100)], exhausted: true })
     await act(async () => {
       outcome = await result.current.loadOlderActivity()
@@ -948,8 +959,8 @@ describe('older activity request generations', () => {
   })
 
   it('keeps scope errors off the new scope after a vault change', async () => {
-    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
-    seedSnapshot('vault-b', [{ txid: 'recent-b', blockTime: 200 }])
+    seedSnapshot('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', [{ txid: 'recent-b', blockTime: 200 }])
     saveAddressPin(pinFromEnrolledStatus(STATUS_B))
     const flight = deferredOlder()
     const { result, rerender } = setupScoped(STATUS, false)
@@ -968,7 +979,7 @@ describe('older activity request generations', () => {
   })
 
   it('discards a stale failure after a network change', async () => {
-    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', [{ txid: 'recent-a', blockTime: 200 }])
     const flight = deferredOlder()
     const { result, rerender } = setupScoped(STATUS, false)
     let pending!: Promise<{ added: number; exhausted: boolean }>
@@ -986,8 +997,8 @@ describe('older activity request generations', () => {
   })
 
   it('keeps a newer flight alive when an older finally lands first', async () => {
-    seedSnapshot('vault-a', [{ txid: 'recent-a', blockTime: 200 }])
-    seedSnapshot('vault-b', [{ txid: 'recent-b', blockTime: 200 }])
+    seedSnapshot('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', [{ txid: 'recent-a', blockTime: 200 }])
+    seedSnapshot('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', [{ txid: 'recent-b', blockTime: 200 }])
     saveAddressPin(pinFromEnrolledStatus(STATUS_B))
     const first = deferredOlder()
     const { result, rerender } = setupScoped(STATUS, false)
@@ -1038,7 +1049,7 @@ it('publishes Spending while Savings fails and retries without replacing the SDK
   })
   expect(result.current.snapshotFresh).toBe(false)
   expect(mockedWorkerRevive).not.toHaveBeenCalled()
-  expect(loadBalanceSnapshot(STATUS.vaultId)?.loaded).toEqual({ spend: true, savings: false })
+  expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.loaded).toEqual({ spend: true, savings: false })
 })
 
 it('shares three concurrent snapshot requests for each account and the validated status', async () => {
@@ -1068,6 +1079,7 @@ it.each(['lock', 'network', 'vault', 'return', 'unmount'] as const)(
     const hook = renderHook(
       ({ status, locked }) =>
         useVaultBalances({
+          watchedSavingsAddress: SAVINGS_ADDRESS,
           addressPin: pin,
           enrollment: null,
           initialStatusChecked: false,
@@ -1084,17 +1096,22 @@ it.each(['lock', 'network', 'vault', 'return', 'unmount'] as const)(
     await waitFor(() => expect(mockedSnapshot).toHaveBeenCalledOnce())
     if (transition === 'unmount') hook.unmount()
     else if (transition === 'lock') hook.rerender({ status: STATUS, locked: true })
-    else if (transition === 'network') hook.rerender({ status: { ...STATUS, network: 'mainnet' }, locked: false })
+    else if (transition === 'network')
+      hook.rerender({ status: sharedSpendingStatusForNetwork('mainnet', { vaultId: STATUS.vaultId }), locked: false })
     else {
-      hook.rerender({ status: { ...STATUS, vaultId: 'vault-b' }, locked: false })
+      hook.rerender({
+        status: sharedSpendingStatusForNetwork('mutinynet', { vaultId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }),
+        locked: false,
+      })
       if (transition === 'return') hook.rerender({ status: STATUS, locked: false })
     }
-    const saved = localStorage.getItem(`arkade-vault-v2:balance-snapshot:${STATUS.vaultId}`)
+    const saved = localStorage.getItem(`arkade-vault-v2:balance-snapshot:mutinynet:${STATUS.vaultId}`)
+    expect(saved).not.toBeNull()
     await act(async () => {
       spending.resolve({ balance: 999_000, history: [] })
       await request
     })
-    expect(localStorage.getItem(`arkade-vault-v2:balance-snapshot:${STATUS.vaultId}`)).toBe(saved)
+    expect(localStorage.getItem(`arkade-vault-v2:balance-snapshot:mutinynet:${STATUS.vaultId}`)).toBe(saved)
     if (transition !== 'unmount') expect(hook.result.current.positions.spending.availableSats).toBe(0)
   },
 )
@@ -1107,7 +1124,8 @@ it('does not request another vault through the active account refresh command', 
 })
 
 it('hydrates an unknown Savings balance separately from a saved Spending balance', () => {
-  saveBalanceSnapshot(STATUS.vaultId, {
+  saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', {
+    watchedSavingsAddress: SAVINGS_ADDRESS,
     loaded: { spend: true, savings: false },
     boardingBalance: 0,
     history: [],
@@ -1138,7 +1156,98 @@ it.each([0, 33_458])('keeps Spending unknown after a boarding-only read of %i sa
     pendingSats: boardingSats,
     totalSats: boardingSats,
   })
-  expect(loadBalanceSnapshot(STATUS.vaultId)?.loaded?.spend).toBe(false)
+  expect(loadBalanceSnapshot(STATUS.vaultId, 'mutinynet')?.loaded?.spend).toBe(false)
   unmount()
   revive.resolve(undefined as never)
+})
+
+describe('balance controller ownership', () => {
+  it('publishes independently to subscribers without a React component or a second balance owner', async () => {
+    const savings = deferred<Awaited<ReturnType<typeof fetchAddressUtxos>>>()
+    mockedUtxos.mockReturnValue(savings.promise)
+    mockedSnapshot.mockResolvedValue({ balance: 7000, history: [] })
+    const controller = standaloneController()
+    const first = vi.fn(),
+      second = vi.fn()
+    const unsubscribe = controller.subscribe(first)
+    controller.subscribe(second)
+    const initial = controller.getSnapshot()
+    expect(controller.getSnapshot()).toBe(initial)
+    const read = controller.refreshBalance()
+    await vi.waitFor(() => expect(controller.getSnapshot().positions.spending.availableSats).toBe(7000))
+    expect(controller.getSnapshot().accountReads.savings.loaded).toBe(false)
+    expect(first).toHaveBeenCalled()
+    expect(second).toHaveBeenCalledTimes(first.mock.calls.length)
+    unsubscribe()
+    first.mockClear()
+    savings.resolve([{ txid: 'saved', vout: 0, value: 3000, status: { confirmed: true } }])
+    await read
+    expect(first).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().positions.savings.totalSats).toBe(3000)
+    expect(controller.getSnapshot().snapshotFresh).toBe(true)
+    expect(controller.getSnapshot()).toBe(controller.getSnapshot())
+  })
+
+  it('hydrates only the selected network for a vault ID that exists on both networks', () => {
+    const base = {
+      history: [],
+      boardingBalance: 0,
+      savingsSats: 0,
+      savingsSpendableSats: 0,
+      watchedSavingsAddress: SAVINGS_ADDRESS,
+    }
+    saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', { ...base, vtxoSpendingSats: 7000 })
+    saveBalanceSnapshot(STATUS.vaultId, 'mainnet', { ...base, vtxoSpendingSats: 9000 })
+    const controller = standaloneController()
+    expect(controller.getSnapshot().positions.spending.availableSats).toBe(7000)
+    const mainnet = sharedSpendingStatusForNetwork('mainnet', { vaultId: STATUS.vaultId })
+    controller.update(controllerOptions({ status: mainnet, addressPin: pinFromEnrolledStatus(mainnet) }))
+    expect(controller.getSnapshot().positions.spending.availableSats).toBe(9000)
+    expect(controller.getSnapshot().snapshotFresh).toBe(false)
+  })
+
+  it('keeps Spending available while rejecting a cache for a different watched Savings address', () => {
+    saveBalanceSnapshot(STATUS.vaultId, 'mutinynet', {
+      history: [],
+      boardingBalance: 0,
+      savingsSats: 99000,
+      savingsSpendableSats: 99000,
+      vtxoSpendingSats: 7000,
+      watchedSavingsAddress: 'tb1pold',
+    })
+    const controller = standaloneController()
+    expect(controller.getSnapshot().positions.spending.availableSats).toBe(7000)
+    expect(controller.getSnapshot().accountReads.spend.loaded).toBe(true)
+    expect(controller.getSnapshot().positions.savings.totalSats).toBe(0)
+    expect(controller.getSnapshot().accountReads.savings.loaded).toBe(false)
+  })
+
+  it('invalidates an old read when signing identity changes under the same vault ID and network', async () => {
+    const old = deferred<Awaited<ReturnType<typeof fetchVaultWalletVtxoSnapshot>>>()
+    mockedSnapshot.mockReturnValue(old.promise)
+    const controller = standaloneController()
+    const pending = controller.refreshBalance()
+    await vi.waitFor(() => expect(mockedSnapshot).toHaveBeenCalledOnce())
+    const replacement = sharedSpendingStatusForNetwork('mutinynet', {
+      vaultId: STATUS.vaultId,
+      phoneSecret: new Uint8Array(32).fill(42),
+    })
+    controller.update(controllerOptions({ status: replacement, addressPin: pinFromEnrolledStatus(replacement) }))
+    old.resolve({ balance: 900000, history: [] })
+    await pending
+    expect(controller.getSnapshot().accountReads.spend.loaded).toBe(false)
+    expect(controller.getSnapshot().positions.spending.availableSats).toBe(0)
+  })
+
+  it('resumes its subscription after React Strict Mode replays the mounting effects', async () => {
+    mockedSnapshot.mockResolvedValue({ balance: 7000, history: [] })
+    const options = controllerOptions({ initialStatusChecked: true })
+    const { result, unmount } = renderHook(() => useVaultBalances(options), { wrapper: StrictMode })
+    await waitFor(() => expect(result.current.positions.spending.availableSats).toBe(7000))
+    expect(result.current.snapshotFresh).toBe(true)
+    unmount()
+    mockedSnapshot.mockClear()
+    window.dispatchEvent(new Event('focus'))
+    expect(mockedSnapshot).not.toHaveBeenCalled()
+  })
 })

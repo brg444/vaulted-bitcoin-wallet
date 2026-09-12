@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../../components/Toast'
 import type { VaultHistoryItem } from '../../lib/vault/history'
-import type { OlderActivityState } from '../../vault/useVaultBalances'
+import type { OlderActivityState } from '../../lib/vault/accountBalances'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import VaultActivity, { filterActivity } from './Activity'
 

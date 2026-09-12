@@ -153,3 +153,11 @@ it('wallet implementation modules have no runtime import cycle', () => {
   }
   for (const path of paths) visit(path, [])
 })
+
+it('balance state belongs to the controller and React only binds its external store', () => {
+  const controller = readFileSync(resolve(root, 'src/lib/vault/accountBalances.ts'), 'utf8')
+  const hook = readFileSync(resolve(root, 'src/vault/useVaultBalances.ts'), 'utf8')
+  expect(controller).not.toMatch(/from ['"]react['"]|from ['"].*\/screens\//)
+  expect(hook).toContain('useSyncExternalStore')
+  expect(hook).not.toMatch(/fetchVault|saveBalanceSnapshot|setTimeout|setInterval|reconcilePersisted/)
+})

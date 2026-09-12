@@ -3,6 +3,7 @@ import type { VaultHistoryItem } from './history'
 export const BALANCE_STORE = 'arkade-vault-v2:balance-snapshot'
 
 export type StoredBalanceSnapshot = {
+  watchedSavingsAddress?: string
   loaded?: { spend: boolean; savings: boolean }
   boardingBalance: number
   boardingError?: string
@@ -13,10 +14,10 @@ export type StoredBalanceSnapshot = {
   vtxoPendingSats?: number
 }
 
-export function balanceStoreKey(vaultId: string): string {
+export function balanceStoreKey(vaultId: string, network: string): string {
   const id = vaultId.trim()
   if (!id) throw new Error('vault id required')
-  return `${BALANCE_STORE}:${id}`
+  return `${BALANCE_STORE}:${network}:${id}`
 }
 
 function isFiniteSats(value: unknown): value is number {
@@ -28,6 +29,7 @@ function parseSnapshot(raw: string | null): StoredBalanceSnapshot | null {
   try {
     const rec = JSON.parse(raw) as StoredBalanceSnapshot
     if (
+      (rec.watchedSavingsAddress !== undefined && typeof rec.watchedSavingsAddress !== 'string') ||
       (rec.loaded !== undefined &&
         (typeof rec.loaded?.spend !== 'boolean' || typeof rec.loaded?.savings !== 'boolean')) ||
       !isFiniteSats(rec.boardingBalance) ||
@@ -46,11 +48,15 @@ function parseSnapshot(raw: string | null): StoredBalanceSnapshot | null {
   }
 }
 
-export function loadBalanceSnapshot(vaultId: string, storage: Storage = localStorage): StoredBalanceSnapshot | null {
+export function loadBalanceSnapshot(
+  vaultId: string,
+  network: string,
+  storage: Storage = localStorage,
+): StoredBalanceSnapshot | null {
   const id = vaultId.trim()
-  if (!id) return null
+  if (!id || !network) return null
   try {
-    return parseSnapshot(storage.getItem(balanceStoreKey(id)))
+    return parseSnapshot(storage.getItem(balanceStoreKey(id, network)))
   } catch {
     return null
   }
@@ -58,13 +64,14 @@ export function loadBalanceSnapshot(vaultId: string, storage: Storage = localSto
 
 export function saveBalanceSnapshot(
   vaultId: string,
+  network: string,
   snapshot: StoredBalanceSnapshot,
   storage: Storage = localStorage,
 ): void {
   const id = vaultId.trim()
-  if (!id) return
+  if (!id || !network) return
   try {
-    storage.setItem(balanceStoreKey(id), JSON.stringify(snapshot))
+    storage.setItem(balanceStoreKey(id, network), JSON.stringify(snapshot))
   } catch {
     // Private or embedded browsers may refuse durable writes.
   }
