@@ -82,14 +82,14 @@ export function VaultHistoryRow({
 }
 
 export default function VaultHistory() {
-  const { account, balancesLoaded, history, openTx, refreshingBalance } = useContext(VaultContext)
+  const { account, accountReads, history, openTx } = useContext(VaultContext)
   return (
     <VaultHistoryList
       account={account}
-      balancesLoaded={balancesLoaded}
+      balancesLoaded={accountReads[account].loaded}
       history={history}
       openTx={openTx}
-      refreshingBalance={refreshingBalance}
+      refreshingBalance={accountReads[account].refreshing}
     />
   )
 }

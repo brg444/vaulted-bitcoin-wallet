@@ -9,6 +9,23 @@ export type VaultAccountPositions = {
   savings: VaultBalancePosition
 }
 
+export type AccountBalanceRead = {
+  loaded: boolean
+  refreshing: boolean
+  fresh: boolean
+  error: string
+}
+
+export type AccountBalanceReads = {
+  spend: AccountBalanceRead
+  savings: AccountBalanceRead
+}
+
+export const EMPTY_ACCOUNT_BALANCE_READS: AccountBalanceReads = {
+  spend: { loaded: false, refreshing: false, fresh: false, error: '' },
+  savings: { loaded: false, refreshing: false, fresh: false, error: '' },
+}
+
 export const EMPTY_VAULT_POSITIONS: VaultAccountPositions = {
   spending: { availableSats: 0, pendingSats: 0, totalSats: 0 },
   savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },

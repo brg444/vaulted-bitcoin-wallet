@@ -1,3 +1,4 @@
+import { accountBalanceReads } from '../../test/accountBalances'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
@@ -15,7 +16,7 @@ function renderHome(overrides: Partial<VaultContextProps> & { balanceUnit?: Vaul
   const { balanceUnit: initialUnit = 'sats', ...rest } = overrides
   const value = {
     account: 'spend',
-    balancesLoaded: true,
+    accountReads: accountBalanceReads(),
     boardingAddress: 'tb1pboardingdestination',
     busy: false,
     canSend: true,
@@ -271,7 +272,7 @@ describe('Vault home account boundaries', () => {
 
   it('does not present zero as the balance before the first snapshot loads', () => {
     renderHome({
-      balancesLoaded: false,
+      accountReads: accountBalanceReads({ loaded: false }),
       positions: {
         spending: { availableSats: 0, pendingSats: 0, totalSats: 0 },
         savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
@@ -281,14 +282,13 @@ describe('Vault home account boundaries', () => {
     expect(screen.getByTestId('vault-balance')).toHaveAccessibleName('Spending balance loading')
   })
 
-  it('keeps loading the first snapshot in the background without a retry control', () => {
-    renderHome({ balanceError: 'Wallet activity is unavailable.', balancesLoaded: false })
+  it('keeps an unknown balance distinct from zero and reports the failed account read', () => {
+    renderHome({ accountReads: accountBalanceReads({ loaded: false, error: 'Wallet activity is unavailable.' }) })
 
     expect(screen.getByTestId('vault-balance')).toHaveAttribute('aria-busy')
     expect(screen.getByTestId('vault-balance')).toHaveTextContent('—')
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.queryByText('Wallet activity is unavailable.')).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('Wallet activity is unavailable.')
   })
 
   it('shows a boarding failure beside the retained Spending balance', () => {
@@ -311,8 +311,7 @@ describe('Vault home account boundaries', () => {
 
   it('does not show a background refresh failure over a known balance', () => {
     renderHome({
-      balanceError: 'Something went wrong. Try again.',
-      balancesLoaded: true,
+      accountReads: accountBalanceReads({ error: 'Something went wrong. Try again.' }),
       error: 'Something went wrong. Try again.',
     })
     expect(screen.queryByRole('alert')).toBeNull()

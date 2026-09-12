@@ -3,6 +3,7 @@ import type { VaultHistoryItem } from './history'
 export const BALANCE_STORE = 'arkade-vault-v2:balance-snapshot'
 
 export type StoredBalanceSnapshot = {
+  loaded?: { spend: boolean; savings: boolean }
   boardingBalance: number
   boardingError?: string
   history: VaultHistoryItem[]
@@ -27,6 +28,8 @@ function parseSnapshot(raw: string | null): StoredBalanceSnapshot | null {
   try {
     const rec = JSON.parse(raw) as StoredBalanceSnapshot
     if (
+      (rec.loaded !== undefined &&
+        (typeof rec.loaded?.spend !== 'boolean' || typeof rec.loaded?.savings !== 'boolean')) ||
       !isFiniteSats(rec.boardingBalance) ||
       (rec.boardingError !== undefined && typeof rec.boardingError !== 'string') ||
       !isFiniteSats(rec.savingsSats) ||

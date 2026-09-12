@@ -5,6 +5,7 @@ import { VaultContext } from '../../vault/context'
 import { VaultHistoryRow } from './History'
 import WalletScreen from './qg/WalletScreen'
 import styles from './History.module.css'
+import PaymentNotice from './qg/PaymentNotice'
 
 const ACTIVITY_PAGE_SIZE = 50
 
@@ -38,9 +39,15 @@ export function filterActivity(rows: readonly VaultHistoryItem[], filters: Activ
 }
 
 export default function VaultActivity() {
-  const { allHistory, balancesLoaded, refreshingBalance, openTx, navigate, loadOlderActivity, olderActivity } =
-    useContext(VaultContext)
+  const { allHistory, accountReads, openTx, navigate, loadOlderActivity, olderActivity } = useContext(VaultContext)
   const [filters, setFilters] = useState<ActivityFilters>(EMPTY_ACTIVITY_FILTERS)
+  const reads = filters.account === 'all' ? Object.values(accountReads) : [accountReads[filters.account]]
+  const balancesLoaded = reads.some((read) => read.loaded)
+  const refreshingBalance = reads.some((read) => read.refreshing)
+  const balanceError = reads
+    .map((read) => read.error)
+    .filter(Boolean)
+    .join(' ')
   const [visibleCount, setVisibleCount] = useState(ACTIVITY_PAGE_SIZE)
   const filtered = useMemo(() => filterActivity(allHistory, filters), [allHistory, filters])
   const page = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount])
@@ -54,6 +61,7 @@ export default function VaultActivity() {
 
   return (
     <WalletScreen title='Activity' dismiss={() => navigate('home')}>
+      {!balancesLoaded && balanceError ? <PaymentNotice message={balanceError} /> : null}
       <section
         className='vault-history'
         data-testid='vault-activity'

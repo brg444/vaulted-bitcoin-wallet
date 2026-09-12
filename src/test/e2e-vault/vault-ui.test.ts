@@ -64,6 +64,7 @@ type OperatorFixtureState = {
 }
 
 type OpenVaultOptions = {
+  savingsDepositSats?: number
   readySelector?: string
   operatorAvailable?: boolean
   operatorVtxos?: Record<string, unknown>[]
@@ -234,6 +235,19 @@ async function openVault(page: Page, initial: Partial<VaultUiState> = {}, option
   }, UI_FIXTURE)
   const currentStatus = installed.status as VaultStatus
   status = currentStatus
+  if (options.savingsDepositSats) {
+    const deposit = await page.evaluate(
+      async ({ fixturePath, status, value }) => {
+        const fixture = await import(/* @vite-ignore */ fixturePath)
+        return fixture.vaultUiSavingsDeposit(status, value)
+      },
+      { fixturePath: UI_FIXTURE, status: currentStatus, value: options.savingsDepositSats },
+    )
+    state.savingsUtxos.push(deposit.utxo)
+    await page.route(`**/esplora/tx/${deposit.utxo.txid}/hex`, (route) =>
+      route.fulfill({ status: 200, body: deposit.parentHex }),
+    )
+  }
   await setAuthorizerStatus(currentStatus)
   await setEsploraState(currentStatus, state)
   await page.reload()
@@ -257,9 +271,13 @@ async function openVault(page: Page, initial: Partial<VaultUiState> = {}, option
         },
         { currentStatus, workerPath: '/src/lib/vault/vtxo/walletWorker.ts' },
       )
-      throw new Error(`Vault Home did not finish loading. Runtime: ${runtimeError}. Operator fixture: ${operator}`, {
-        cause: error,
-      })
+      const diagnostics = await page.evaluate(() => localStorage.getItem('logs'))
+      throw new Error(
+        `Vault Home did not finish loading. Runtime: ${runtimeError}. Diagnostics: ${diagnostics}. Operator fixture: ${operator}`,
+        {
+          cause: error,
+        },
+      )
     }
   }
   return { destination: installed.destination as string, state, status: currentStatus }
@@ -335,17 +353,7 @@ test('@docs captures the current mobile wallet journey', async ({ page }) => {
     value: 48_000,
     status: { confirmed: false },
   }
-  const { destination, status } = await openVault(page, {
-    boardingUtxos: [pending],
-    savingsUtxos: [
-      {
-        txid: SAVINGS_TXID,
-        vout: 0,
-        value: 100_000,
-        status: { confirmed: true, block_height: 1 },
-      },
-    ],
-  })
+  const { destination, status } = await openVault(page, { boardingUtxos: [pending] }, { savingsDepositSats: 100_000 })
   await setOperatorVtxos([
     await wireVtxo(page, status, {
       amount: 80_000,
@@ -937,17 +945,11 @@ test('@polish covers accessible account, send, Security, and Settings states', a
     value: 48_000,
     status: { confirmed: false },
   }
-  const { destination, state, status } = await openVault(page, {
-    boardingUtxos: [pending],
-    savingsUtxos: [
-      {
-        txid: SAVINGS_TXID,
-        vout: 0,
-        value: 100_000,
-        status: { confirmed: true, block_height: 1 },
-      },
-    ],
-  })
+  const { destination, state, status } = await openVault(
+    page,
+    { boardingUtxos: [pending] },
+    { savingsDepositSats: 100_000 },
+  )
   await setOperatorVtxos([
     await wireVtxo(page, status, {
       amount: 80_000,
@@ -1900,4 +1902,19 @@ test('@polish Bitcoin eligibility notice keeps diagnostics collapsed and preserv
   await expect(page.locator('.qg-payment-notice p')).toHaveCSS('text-align', 'left')
   await expect(page.locator('.qg-payment-notice p')).toHaveCSS('font-size', '16px')
   await expectWalletLayout(page)
+})
+
+test('Spending remains usable when a Savings parent cannot be verified', async ({ page }) => {
+  await openVault(page, {
+    savingsUtxos: [{ txid: SAVINGS_TXID, vout: 0, value: 100_000, status: { confirmed: true, block_height: 1 } }],
+  })
+  await expect(page.getByTestId('vault-balance')).toHaveText('₿0')
+  await expect(page.getByText('Could not refresh Savings. Try again.')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.getByTestId('account-savings').click()
+  await expect(page.getByTestId('vault-balance')).toHaveText('—')
+  await expect(page.getByRole('alert')).toHaveText('Could not refresh Savings. Try again.')
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.getByTestId('account-spend').click()
+  await expect(page.getByTestId('vault-balance')).toHaveText('₿0')
 })

@@ -141,8 +141,8 @@ export default function VaultSettings() {
   const status = context.status
   const busy = context.busy
   const liveNetwork = context.liveNetwork
-  const balanceError = context.balanceError
-  const refreshingBalance = context.refreshingBalance
+  const balanceError = [context.accountReads.spend.error, context.accountReads.savings.error].filter(Boolean).join(' ')
+  const refreshingBalance = context.accountReads.spend.refreshing || context.accountReads.savings.refreshing
   const refreshBalance = context.refreshBalance
   const close = () => context.navigate('home')
   const readiness = useVaultReadiness()

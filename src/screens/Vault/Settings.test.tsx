@@ -1,3 +1,4 @@
+import { accountBalanceReads } from '../../test/accountBalances'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +10,7 @@ vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.re
 
 function renderSettings(overrides: Partial<VaultContextProps> = {}) {
   const value = {
+    accountReads: accountBalanceReads(),
     boardingAddress: 'tb1pboardingdestination',
     busy: false,
     liveNetwork: true,

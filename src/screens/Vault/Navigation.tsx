@@ -27,7 +27,7 @@ const ACCOUNTS: { id: VaultAccount; label: string; testId: string; icon: ReactNo
 export default function VaultNavigation() {
   const {
     account,
-    balancesLoaded,
+    accountReads,
     navigate,
     positions,
     setAccount,
@@ -39,11 +39,11 @@ export default function VaultNavigation() {
     <VaultLauncher
       account={account}
       balances={{
-        spending: balancesLoaded ? positions.spending.totalSats : null,
+        spending: accountReads.spend.loaded ? positions.spending.totalSats : null,
         savings:
           watchedSavingsTotalSats !== undefined
             ? watchedSavingsTotalSats
-            : balancesLoaded
+            : accountReads.savings.loaded
               ? positions.savings.totalSats
               : null,
       }}

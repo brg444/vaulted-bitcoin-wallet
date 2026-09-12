@@ -13,12 +13,11 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
     account,
     status,
     spendingBitcoin,
-    balancesLoaded,
     boardingAddress,
     canSend,
     busy,
     error,
-    balanceError,
+    accountReads,
     boardingError,
     pendingPayments = [],
     openPendingPayment,
@@ -26,7 +25,6 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
     openSendScan,
     openRecover,
     initiateAlert,
-    refreshingBalance,
     positions,
     clearSpendDraft,
     setSpendDraft,
@@ -41,6 +39,7 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
+  const read = accountReads[account]
   const spending = account === 'spend'
   const position = spending ? positions.spending : positions.savings
 
@@ -52,8 +51,8 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
       totalSats={position.totalSats}
       availableSats={position.availableSats}
       pendingSats={spending && spendingBitcoin?.operation ? 0 : position.pendingSats}
-      balancesLoaded={balancesLoaded}
-      refreshingBalance={refreshingBalance}
+      balancesLoaded={read.loaded}
+      refreshingBalance={read.refreshing}
       security={{ label: 'Open Recovery', attention: !!initiateAlert, onClick: () => openRecover('lost', 'home') }}
       onScan={openSendScan}
       onReceive={() => navigate('receive')}
@@ -90,6 +89,7 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
       }
     >
       {children}
+      {!read.loaded && read.error ? <PaymentNotice message={read.error} /> : null}
       {spending && boardingError ? <PaymentNotice message={boardingError} /> : null}
       {spending && spendingBitcoin?.error ? <PaymentNotice message={spendingBitcoin.error} /> : null}
       {spending
@@ -108,7 +108,7 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
             />
           ))
         : null}
-      {error && (pendingPayments.length > 0 || error !== balanceError) ? <PaymentNotice message={error} /> : null}
+      {error && (pendingPayments.length > 0 || error !== read.error) ? <PaymentNotice message={error} /> : null}
 
       {!spending ? (
         <button

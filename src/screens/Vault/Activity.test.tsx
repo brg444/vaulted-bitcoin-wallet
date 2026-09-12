@@ -1,3 +1,4 @@
+import { accountBalanceReads } from '../../test/accountBalances'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -49,8 +50,7 @@ function renderActivity(
 ) {
   const value = {
     allHistory: rows,
-    balancesLoaded: true,
-    refreshingBalance: false,
+    accountReads: accountBalanceReads(),
     openTx: vi.fn(),
     navigate: vi.fn(),
     loadOlderActivity: vi.fn().mockResolvedValue({ added: 0, exhausted: true }),
@@ -155,7 +155,7 @@ describe('full activity', () => {
   })
 
   it('says loading and empty distinctly', () => {
-    const { unmount } = renderActivity({ balancesLoaded: false }, [])
+    const { unmount } = renderActivity({ accountReads: accountBalanceReads({ loaded: false }) }, [])
     expect(screen.getByText('Loading activity…')).toBeVisible()
     unmount()
     renderActivity({}, [])

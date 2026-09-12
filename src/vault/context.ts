@@ -18,7 +18,12 @@ import {
 import type { ProtectionTier } from '../lib/vault/protectionTier'
 import type { VaultBalanceUnit, VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
 import type { VaultRateStatus } from '../lib/vault/useDisplayUnit'
-import { EMPTY_VAULT_POSITIONS, type VaultAccountPositions } from './balances'
+import {
+  EMPTY_VAULT_POSITIONS,
+  EMPTY_ACCOUNT_BALANCE_READS,
+  type AccountBalanceReads,
+  type VaultAccountPositions,
+} from './balances'
 import type { LedgerSavingsRegistration } from '../lib/vault/ledgerClient'
 
 export type VaultAccount = 'spend' | 'savings'
@@ -80,9 +85,8 @@ export interface VaultContextProps {
   recoveryArchiveStatus: string
   recoveryArchiveError: string
   backupRecoveryKit: () => Promise<boolean>
-  balanceError: string
+  accountReads: AccountBalanceReads
   boardingError: string
-  balancesLoaded: boolean
   boardingAddress: string
   restoreRecoveryArchive: (raw?: unknown) => Promise<void>
   restoreRecoveryKit: () => Promise<void>
@@ -140,7 +144,6 @@ export interface VaultContextProps {
   spendingArkAddress: string
   refreshBalance: () => Promise<void>
   retryLightningRefund: (rfqId: string) => Promise<void>
-  refreshingBalance: boolean
   reset: () => void
   reviewSpend: () => Promise<void>
   bitcoinOutputs?: BitcoinPaymentOutput[]
@@ -183,9 +186,8 @@ export const VaultContext = createContext<VaultContextProps>({
   recoveryArchiveStatus: '',
   recoveryArchiveError: '',
   backupRecoveryKit: async () => false,
-  balanceError: '',
+  accountReads: EMPTY_ACCOUNT_BALANCE_READS,
   boardingError: '',
-  balancesLoaded: false,
   boardingAddress: '',
   restoreRecoveryArchive: async () => {},
   restoreRecoveryKit: async () => {},
@@ -241,7 +243,6 @@ export const VaultContext = createContext<VaultContextProps>({
   spendingArkAddress: '',
   refreshBalance: async () => {},
   retryLightningRefund: async () => {},
-  refreshingBalance: false,
   reset: () => {},
   reviewSpend: async () => {},
   resumingPayment: false,

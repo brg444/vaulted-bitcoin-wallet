@@ -1,5 +1,6 @@
 import { ArkAddress } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
+import { Transaction } from '@scure/btc-signer'
 import { saveEnrollment, saveSelectedVaultId } from '../../../lib/vault/enrollmentStore'
 import { pinFromEnrolledStatus, saveAddressPin } from '../../../lib/vault/pin'
 import { scalarSecret } from '../../../lib/vault/program/fixtures'
@@ -124,4 +125,14 @@ export function seedReviewedVtxoSpend(
   }
   persistVtxoSpend(record)
   return record
+}
+
+export function vaultUiSavingsDeposit(status: VaultStatus, value: number) {
+  const parent = new Transaction({ version: 2, allowUnknownOutputs: true })
+  parent.addInput({ txid: '91'.repeat(32), index: 0 })
+  parent.addOutput({ amount: BigInt(value), script: hex.decode(status.savingsScript!) })
+  return {
+    utxo: { txid: parent.id, vout: 0, value, status: { confirmed: true, block_height: 1 } },
+    parentHex: hex.encode(parent.toBytes(true, true)),
+  }
 }

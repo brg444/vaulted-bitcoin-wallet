@@ -1,3 +1,4 @@
+import { accountBalanceReads } from '../../test/accountBalances'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -8,7 +9,7 @@ import VaultHistory, { VaultHistoryList } from './History'
 function renderHistory(overrides: Partial<VaultContextProps>) {
   const value = {
     account: 'spend',
-    balancesLoaded: true,
+    accountReads: accountBalanceReads(),
     history: [],
     openTx: vi.fn(),
     ...overrides,
@@ -39,7 +40,7 @@ describe('Vault history', () => {
   })
 
   it('preserves a known empty result during refresh', () => {
-    renderHistory({ history: [], balancesLoaded: true, refreshingBalance: true })
+    renderHistory({ history: [], accountReads: accountBalanceReads({ refreshing: true }) })
     expect(screen.getByText(/No Spending activity yet/)).toBeVisible()
     expect(screen.queryByText('Loading activity…')).toBeNull()
     expect(screen.getByRole('status')).toHaveTextContent('Updating…')
@@ -129,13 +130,13 @@ describe('Vault history', () => {
   })
 
   it('does not show a false empty state while the first snapshot is loading', () => {
-    renderHistory({ account: 'spend', balancesLoaded: false })
+    renderHistory({ account: 'spend', accountReads: accountBalanceReads({ loaded: false }) })
     expect(screen.getByText('Loading activity…')).toBeTruthy()
     expect(screen.queryByText(/No Spending activity/i)).toBeNull()
   })
 
   it('keeps loading activity while the first snapshot is still recovering', () => {
-    renderHistory({ balancesLoaded: false, balanceError: 'Could not load activity' })
+    renderHistory({ accountReads: accountBalanceReads({ loaded: false, error: 'Could not load activity' }) })
     expect(screen.getByTestId('vault-history').getAttribute('aria-busy')).toBe('true')
     expect(screen.getByText('Loading activity…')).toBeTruthy()
     expect(screen.queryByText('Activity is unavailable. Refresh to try again.')).toBeNull()
@@ -182,7 +183,7 @@ describe('Vault history', () => {
   it('keeps a local Ledger payment visible while remote Savings activity loads', () => {
     renderHistory({
       account: 'savings',
-      balancesLoaded: false,
+      accountReads: accountBalanceReads({ loaded: false }),
       history: [
         {
           txid: 'pending-savings:2',

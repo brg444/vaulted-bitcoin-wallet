@@ -7,17 +7,8 @@ import WalletScreen from './qg/WalletScreen'
 import { QgPrimary } from './qg/QgScreen'
 
 export default function WatchedSavings() {
-  const {
-    watchedSavings,
-    updateWatchedSavings,
-    positions,
-    balancesLoaded,
-    refreshingBalance,
-    refreshBalance,
-    navigate,
-    openRecover,
-    balanceError,
-  } = useContext(VaultContext)
+  const { watchedSavings, updateWatchedSavings, positions, accountReads, refreshBalance, navigate, openRecover } =
+    useContext(VaultContext)
   const [editing, setEditing] = useState(false)
   const [address, setAddress] = useState(watchedSavings?.address || '')
   const [label, setLabel] = useState(watchedSavings?.label || '')
@@ -85,8 +76,8 @@ export default function WatchedSavings() {
     <AccountHome
       account='Savings'
       totalSats={watchedSavings ? positions.savings.totalSats : undefined}
-      balancesLoaded={balancesLoaded}
-      refreshingBalance={refreshingBalance}
+      balancesLoaded={accountReads.savings.loaded}
+      refreshingBalance={accountReads.savings.refreshing}
       onRefresh={() => refreshBalance()}
       security={{ label: 'Open Recovery', onClick: () => openRecover('lost', 'home') }}
       primaryAction={{
@@ -106,9 +97,9 @@ export default function WatchedSavings() {
         </>
       }
     >
-      {balanceError ? (
+      {accountReads.savings.error ? (
         <p role='status' className='qg-copy'>
-          {balanceError}
+          {accountReads.savings.error}
         </p>
       ) : null}
       {watchedSavings ? (

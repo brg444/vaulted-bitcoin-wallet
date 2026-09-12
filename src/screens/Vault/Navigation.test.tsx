@@ -1,3 +1,4 @@
+import { accountBalanceReads } from '../../test/accountBalances'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,7 +21,7 @@ if (typeof PointerEvent === 'undefined') {
 function renderNav(overrides: Partial<VaultContextProps> = {}) {
   const value = {
     account: 'spend',
-    balancesLoaded: true,
+    accountReads: accountBalanceReads(),
     navigate: vi.fn(),
     positions: {
       spending: { availableSats: 80_000, pendingSats: 48_000, totalSats: 128_000 },

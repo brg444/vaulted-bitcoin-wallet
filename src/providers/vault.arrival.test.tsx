@@ -1,3 +1,4 @@
+import { accountBalanceReads } from '../test/accountBalances'
 import { IDBFactory } from 'fake-indexeddb'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -37,8 +38,7 @@ const balances = vi.hoisted(() => ({
 
 vi.mock('../vault/useVaultBalances', () => ({
   useVaultBalances: () => ({
-    balanceError: '',
-    balancesLoaded: balances.balancesLoaded,
+    accountReads: accountBalanceReads({ loaded: balances.balancesLoaded, fresh: balances.snapshotFresh }),
     snapshotFresh: balances.snapshotFresh,
     history: balances.history,
     positions: {
@@ -46,7 +46,6 @@ vi.mock('../vault/useVaultBalances', () => ({
       savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
     },
     refreshBalance: vi.fn().mockResolvedValue(undefined),
-    refreshingBalance: false,
     loadOlderActivity: vi.fn().mockResolvedValue({ added: 0, exhausted: true }),
     olderActivity: { status: 'idle', error: '' },
     olderHistory: [],

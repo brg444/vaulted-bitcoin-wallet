@@ -1,3 +1,4 @@
+import { accountBalanceReads } from '../test/accountBalances'
 import {
   sharedSpendingEnrollment,
   sharedSpendingDescriptor,
@@ -138,8 +139,7 @@ vi.mock('../lib/vault/lightningConfig', async (importOriginal) => ({
 
 vi.mock('../vault/useVaultBalances', () => ({
   useVaultBalances: () => ({
-    balanceError: '',
-    balancesLoaded: true,
+    accountReads: accountBalanceReads(),
     snapshotFresh: true,
     history: [],
     positions: {
@@ -147,7 +147,6 @@ vi.mock('../vault/useVaultBalances', () => ({
       savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
     },
     refreshBalance: mocks.refreshBalance,
-    refreshingBalance: false,
     loadOlderActivity: vi.fn().mockResolvedValue({ added: 0, exhausted: true }),
     olderActivity: { status: 'idle', error: '' },
     olderHistory: [],
