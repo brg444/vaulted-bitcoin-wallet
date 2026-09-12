@@ -10,6 +10,7 @@ import {
   reloadVaultWalletWorker,
   reviveVaultWalletWorker,
   shutdownVaultWalletWorker,
+  subscribeVaultWalletEvents,
 } from './walletWorker'
 
 const mocks = vi.hoisted(() => ({
@@ -281,4 +282,39 @@ it('drains account consumers before one shared SDK replacement and preserves the
   await recovery.refresh()
   expect(capture).toHaveBeenCalledTimes(2)
   await recovery.dispose()
+})
+
+it('preserves account subscribers across SDK replacement and clears them on account shutdown', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  vi.spyOn(ServiceWorkerWallet, 'create')
+    .mockResolvedValueOnce(mockWallet() as never)
+    .mockResolvedValueOnce(mockWallet() as never)
+  const changed = vi.fn()
+  const unsubscribe = subscribeVaultWalletEvents(status, changed)
+  const first = await ensureVaultWalletWorker(status)
+  first.notify()
+  expect(changed).toHaveBeenCalledOnce()
+  const second = await reviveVaultWalletWorker(status)
+  changed.mockClear()
+  second.notify()
+  expect(changed).toHaveBeenCalledOnce()
+  unsubscribe()
+  second.notify()
+  expect(changed).toHaveBeenCalledOnce()
+  subscribeVaultWalletEvents(status, changed)
+  await shutdownVaultWalletWorker(status.vaultId)
+  changed.mockClear()
+  second.notify()
+  expect(changed).not.toHaveBeenCalled()
+})
+
+it('publishes receive reconciliation failure and recovery through the shared connection state', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  mocks.receives.mockRejectedValueOnce(new Error('Claim service unavailable')).mockResolvedValue(undefined)
+  vi.spyOn(ServiceWorkerWallet, 'create').mockResolvedValue(mockWallet() as never)
+  const current = await ensureVaultWalletWorker(status)
+  await current.lightningObserver.refresh()
+  expect(current.lightningReceiveError).toBe('Claim service unavailable')
+  await current.lightningObserver.refresh()
+  expect(current.lightningReceiveError).toBe('')
 })

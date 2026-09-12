@@ -6,7 +6,8 @@ import { copyToClipboard } from '../../lib/clipboard'
 import { discoverVaultLightningSolver, withVaultLightningTransport } from '../../lib/vault/lightning'
 import { vaultLightningReceivePlan, vaultLightningSolverProfile } from '../../lib/vault/lightningConfig'
 import { requestVaultLightningReceive, receiveProfile } from '../../lib/vault/lightningReceive'
-import { reconcileVaultLightningReceives } from '../../lib/vault/lightningReceiveClaim'
+import { observeVaultLightningReceive } from '../../lib/vault/lightningReceiveObservation'
+import { vaultWalletRuntimeKey } from '../../lib/vault/accountRuntime'
 import { withVaultLightningLifecycleLock } from '../../lib/vault/lightningLock'
 import { withVaultWalletState } from '../../lib/vault/vtxo/walletWorker'
 import { networkPins } from '../../lib/vault/networkPins'
@@ -21,17 +22,16 @@ import { QgPrimary } from './qg/QgScreen'
 export default function LightningReceive({
   onBack,
   status,
-  refreshBalance,
   denomination,
 }: {
   onBack: () => void
   status: VaultStatus
-  refreshBalance: () => Promise<void>
   denomination?: BalanceDenomination
 }) {
-  const actions = useRef({ status, refreshBalance })
-  actions.current = { status, refreshBalance }
-  const vaultId = status.vaultId
+  const scope = vaultWalletRuntimeKey(status)
+  const actions = useRef({ status, scope })
+  actions.current = { status, scope }
+  const generation = useRef(0)
   const [amount, setAmount] = useState('')
   const [usdInput, setUsdInput] = useState('')
   // Canonical sats last produced by typing; vault switches bypass it.
@@ -71,6 +71,7 @@ export default function LightningReceive({
   }
 
   useEffect(() => {
+    generation.current++
     setRecord(undefined)
     setAmount('')
     setUsdInput('')
@@ -78,7 +79,7 @@ export default function LightningReceive({
     setError('')
     setCopied(false)
     setBusy(false)
-  }, [vaultId])
+  }, [scope])
 
   const displayedRate = useRef<number | null>(null)
   useEffect(() => {
@@ -96,42 +97,24 @@ export default function LightningReceive({
   useEffect(() => {
     if (!rfqId || paid) return
     const { status } = actions.current
-    let stopped = false,
-      running = false
-    const poll = async () => {
-      if (running) return
-      running = true
-      try {
-        const saved = await withVaultLightningLifecycleLock(status.vaultId, () =>
-          withVaultWalletState(status, async ({ swapRepository, contracts }) => {
-            await reconcileVaultLightningReceives({ status, repository: swapRepository, contracts })
-            return swapRepository.getRfqSwap(rfqId)
-          }),
-        )
-        if (!stopped && saved) {
-          setRecord(saved)
-          if (saved.state === 'settled') setError('')
-        }
-        await actions.current.refreshBalance()
-      } catch (e) {
-        if (!stopped) setError(e instanceof Error ? e.message : 'Waiting for payment status. Keep this wallet open.')
-      } finally {
-        running = false
-      }
-    }
-    const timer = setInterval(() => {
+    const stop = observeVaultLightningReceive(status, rfqId, ({ record, error }) => {
+      if (record) setRecord(record)
+      setError(record?.state === 'settled' ? '' : error)
+    })
+    // This clock renders invoice expiry; the account owner reconciles payment.
+    const timer = window.setInterval(() => {
       setNow(Math.floor(Date.now() / 1000))
-      void poll()
     }, 5000)
-    void poll()
     return () => {
-      stopped = true
-      clearInterval(timer)
+      stop()
+      window.clearInterval(timer)
     }
-  }, [rfqId, vaultId, paid])
+  }, [rfqId, scope, paid])
 
   const create = async () => {
     if (!status || !estimate || busy) return
+    const version = generation.current
+    const unchanged = () => mounted.current && generation.current === version && actions.current.scope === scope
     setBusy(true)
     setError('')
     setProgress('Connecting to Lightning…')
@@ -142,6 +125,7 @@ export default function LightningReceive({
         discoverVaultLightningSolver(status.network),
         new RestArkProvider(pins.operatorOrigin).getInfo(),
       ])
+      if (!unchanged()) return
       if (emulatorInfo.signerPubkey !== networkPins(status.network).emulatorSignerPub)
         throw new Error('The Lightning claim service does not match this wallet.')
       if (!verified) throw new Error('The Lightning solver card could not be verified.')
@@ -170,16 +154,15 @@ export default function LightningReceive({
           )
         }),
       )
-      if (mounted.current && actions.current.status.vaultId === status.vaultId) {
+      if (unchanged()) {
         setRecord(saved)
         setNow(Math.floor(Date.now() / 1000))
         setCopied(false)
       }
     } catch (e) {
-      if (mounted.current && actions.current.status.vaultId === status.vaultId)
-        setError(e instanceof Error ? e.message : 'Could not create a Lightning invoice.')
+      if (unchanged()) setError(e instanceof Error ? e.message : 'Could not create a Lightning invoice.')
     } finally {
-      if (mounted.current && actions.current.status.vaultId === status.vaultId) setBusy(false)
+      if (unchanged()) setBusy(false)
     }
   }
   const another = () => {

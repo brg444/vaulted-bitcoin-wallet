@@ -7,6 +7,7 @@ export interface VaultAccountRuntime {
   key: string
   vaultId: string
   maintenance: VaultAccountMaintenance
+  listeners: Set<() => void>
   disposed: boolean
   previous: Promise<void>
   connection?: WalletConnection
@@ -41,6 +42,7 @@ export function activeVaultAccountRuntime(vaultId: string) {
 export function disposeVaultAccountRuntime(account: VaultAccountRuntime): Promise<void> {
   if (account.disposal) return account.disposal
   account.disposed = true
+  account.listeners.clear()
   if (current === account) current = undefined
   const drain = account.maintenance.dispose()
   account.disposal = (async () => {
@@ -64,6 +66,7 @@ export function vaultAccountRuntime(status: VaultStatus): VaultAccountRuntime {
     key,
     vaultId: status.vaultId,
     maintenance: createVaultAccountMaintenance(status.vaultId),
+    listeners: new Set(),
     disposed: false,
     previous: retiring,
   }

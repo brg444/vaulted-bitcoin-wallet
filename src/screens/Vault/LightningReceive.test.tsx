@@ -12,13 +12,13 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   read: vi.fn(),
   backup: vi.fn(),
-  reconcile: vi.fn(),
+  observe: vi.fn(),
 }))
 vi.mock('../../lib/vault/lightningReceive', async (original) => ({
   ...(await original<typeof import('../../lib/vault/lightningReceive')>()),
   requestVaultLightningReceive: mocks.request,
 }))
-vi.mock('../../lib/vault/lightningReceiveClaim', () => ({ reconcileVaultLightningReceives: mocks.reconcile }))
+vi.mock('../../lib/vault/lightningReceiveObservation', () => ({ observeVaultLightningReceive: mocks.observe }))
 vi.mock('../../lib/vault/lightning', () => ({
   discoverVaultLightningSolver: async () => ({ network: 'bitcoin' }),
   withVaultLightningTransport: async (_profile: unknown, run: (t: object) => unknown) => run({}),
@@ -97,16 +97,12 @@ function show(denomination?: {
   } as unknown as VaultContextProps
   return render(
     <VaultContext.Provider value={value}>
-      <LightningReceive
-        status={value.status!}
-        refreshBalance={value.refreshBalance}
-        onBack={() => {}}
-        denomination={denomination}
-      />
+      <LightningReceive status={value.status!} onBack={() => {}} denomination={denomination} />
     </VaultContext.Provider>,
   )
 }
 beforeEach(() => {
+  mocks.observe.mockImplementation(() => () => {})
   mocks.list.mockResolvedValue([])
   mocks.read.mockResolvedValue(undefined)
   mocks.backup.mockRejectedValue(new Error('Cloud backup is unavailable'))
@@ -166,6 +162,28 @@ describe('Lightning receive screen', () => {
     expect(screen.queryByRole('button', { name: 'Copy invoice' })).toBeNull()
     expect(mocks.backup).not.toHaveBeenCalled()
   })
+
+  it.each(['vault', 'network'])('discards an invoice request after an A-B-A %s switch', async (changed) => {
+    let finish!: (info: object) => void
+    vi.mocked(RestArkProvider.prototype.getInfo).mockReturnValueOnce(
+      new Promise((resolve) => (finish = resolve as never)),
+    )
+    const status = { enrolled: true, vaultId: 'aa', network: 'mainnet' } as NonNullable<VaultContextProps['status']>
+    const view = (current: typeof status) => (
+      <VaultContext.Provider value={{ status: current } as VaultContextProps}>
+        <LightningReceive status={current} onBack={() => {}} />
+      </VaultContext.Provider>
+    )
+    const rendered = render(view(status))
+    await create()
+    rendered.rerender(view({ ...status, ...(changed === 'vault' ? { vaultId: 'bb' } : { network: 'mutinynet' }) }))
+    rendered.rerender(view(status))
+    await act(async () => finish({}))
+    expect(mocks.request).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox')).toHaveValue('')
+    expect(screen.queryByTestId('invoice-qr')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
   it('reuses an active invoice for the requested amount without a cloud backup marker or authentication', async () => {
     mocks.list.mockResolvedValue([record()])
     show()
@@ -193,8 +211,7 @@ describe('Lightning receive screen', () => {
     expect(screen.getByText(/2 sats above/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Copy invoice' })).toBeEnabled()
   })
-  it('shows a new receipt during polling but returns to amount entry when reopened', async () => {
-    const timer = vi.spyOn(globalThis, 'setInterval')
+  it('shows a receipt from the account observer and returns to amount entry when reopened', async () => {
     const pending = record()
     mocks.list.mockResolvedValue([pending])
     mocks.read.mockResolvedValue(pending)
@@ -202,12 +219,8 @@ describe('Lightning receive screen', () => {
     await create()
     await screen.findByTestId('invoice-qr')
     const settled = { ...pending, state: 'settled' }
-    mocks.reconcile.mockImplementationOnce(async () => {
-      mocks.read.mockResolvedValue(settled)
-    })
-    const poll = timer.mock.calls.find((call) => call[1] === 5000)![0] as () => void
     await act(async () => {
-      poll()
+      mocks.observe.mock.calls.at(-1)![2]({ record: settled, error: '' })
     })
     expect(await screen.findByRole('status')).toHaveTextContent('1,000 sats received in Spending.')
     expect(screen.queryByTestId('invoice-qr')).toBeNull()
@@ -254,7 +267,6 @@ describe('Lightning receive screen', () => {
       <VaultContext.Provider value={value}>
         <LightningReceive
           status={value.status!}
-          refreshBalance={value.refreshBalance}
           onBack={() => {}}
           denomination={{ unit: 'usd', rate: null, rateStatus: 'unavailable', setUnit: async () => null }}
         />
@@ -266,7 +278,6 @@ describe('Lightning receive screen', () => {
       <VaultContext.Provider value={value}>
         <LightningReceive
           status={value.status!}
-          refreshBalance={value.refreshBalance}
           onBack={() => {}}
           denomination={{ unit: 'usd', rate, rateStatus: 'ready', setUnit: async () => rate }}
         />
@@ -278,7 +289,6 @@ describe('Lightning receive screen', () => {
       <VaultContext.Provider value={value}>
         <LightningReceive
           status={value.status!}
-          refreshBalance={value.refreshBalance}
           onBack={() => {}}
           denomination={{ unit: 'usd', rate: updatedRate, rateStatus: 'ready', setUnit: async () => updatedRate }}
         />
@@ -289,7 +299,6 @@ describe('Lightning receive screen', () => {
       <VaultContext.Provider value={value}>
         <LightningReceive
           status={value.status!}
-          refreshBalance={value.refreshBalance}
           onBack={() => {}}
           denomination={{ unit: 'sats', rate: updatedRate, rateStatus: 'ready', setUnit: async () => updatedRate }}
         />

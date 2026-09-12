@@ -51,7 +51,7 @@ import {
   vaultWalletRuntimeKey,
   type VaultAccountRuntime,
 } from '../accountRuntime'
-import type { VaultAccountMaintenance, VaultMaintenanceTask } from '../accountMaintenance'
+import type { VaultMaintenanceTask } from '../accountMaintenance'
 export { vaultWalletRuntimeKey } from '../accountRuntime'
 
 export type WalletConnection = {
@@ -63,7 +63,8 @@ export type WalletConnection = {
   contractRepository: IndexedDBContractRepository
   swapRepository: IndexedDbAssetSwapRepository
   swapManager: RfqSwapManager
-  listeners: Set<() => void>
+  lightningReceiveError: string
+  notify: () => void
   unsubscribeContract: () => void
   unsubscribeSwap: () => void
   onWorkerMessage: (event: MessageEvent) => void
@@ -189,7 +190,8 @@ async function stopRegisteredVaultWorker(vaultId: string): Promise<void> {
   await registration.unregister()
 }
 
-async function createConnection(status: VaultStatus, maintenance: VaultAccountMaintenance): Promise<WalletConnection> {
+async function createConnection(status: VaultStatus, account: VaultAccountRuntime): Promise<WalletConnection> {
+  const { maintenance, listeners } = account
   registerVaultPolicyV1ContractHandler()
   const key = vaultWalletRuntimeKey(status)
   const walletDatabase = vaultWalletDatabase(status.vaultId)
@@ -250,6 +252,7 @@ async function createConnection(status: VaultStatus, maintenance: VaultAccountMa
       repository: swapRepository,
     })
     swapManager = activeSwapManager
+    let lightningReceiveError = ''
     const maintainLightning = async () => {
       try {
         await importLightningAddressReceipts({ status, repository: swapRepository, contracts: manager })
@@ -258,7 +261,10 @@ async function createConnection(status: VaultStatus, maintenance: VaultAccountMa
       }
       try {
         await reconcileVaultLightningReceives({ status, repository: swapRepository, contracts: manager })
+        lightningReceiveError = ''
       } catch (error) {
+        lightningReceiveError =
+          error instanceof Error ? error.message : 'Waiting for payment status. Keep this wallet open.'
         consoleError(error, 'Lightning receive reconciliation')
       }
       return maintainVaultLightningObserver({
@@ -276,7 +282,6 @@ async function createConnection(status: VaultStatus, maintenance: VaultAccountMa
         consoleError(failure.error, `Lightning swap ${failure.rfqId} contract retirement failed`)
       }
     }
-    const listeners = new Set<() => void>()
     const notify = () => {
       listeners.forEach((listener) => listener())
       maintenance.invalidate('wallet')
@@ -315,7 +320,10 @@ async function createConnection(status: VaultStatus, maintenance: VaultAccountMa
       contractRepository,
       swapRepository,
       swapManager: activeSwapManager,
-      listeners,
+      get lightningReceiveError() {
+        return lightningReceiveError
+      },
+      notify,
       unsubscribeContract,
       unsubscribeSwap,
       onWorkerMessage,
@@ -349,6 +357,7 @@ export interface VaultWalletStateSession {
   contracts: IContractManager
   swapRepository: IndexedDbAssetSwapRepository
   swapManager: RfqSwapManager
+  lightningReceiveError: string
 }
 
 export async function withVaultWalletState<T>(
@@ -361,6 +370,7 @@ export async function withVaultWalletState<T>(
     contracts: await current.wallet.getContractManager(),
     swapRepository: current.swapRepository,
     swapManager: current.swapManager,
+    lightningReceiveError: current.lightningReceiveError,
   })
 }
 
@@ -376,6 +386,7 @@ export async function withActiveVaultWalletState<T>(
     contracts: await current.wallet.getContractManager(),
     swapRepository: current.swapRepository,
     swapManager: current.swapManager,
+    lightningReceiveError: current.lightningReceiveError,
   })
 }
 
@@ -397,7 +408,7 @@ async function connectAccountWallet(status: VaultStatus, account: VaultAccountRu
   const promise = (async () => {
     await account.previous
     if (account.disposed) throw new Error('Vault account closed during worker initialization')
-    const next = await createConnection(status, account.maintenance)
+    const next = await createConnection(status, account)
     if (account.disposed) {
       await disposeConnection(next)
       throw new Error('Vault account closed during worker initialization')
@@ -421,18 +432,11 @@ async function connectAccountWallet(status: VaultStatus, account: VaultAccountRu
 }
 
 export function subscribeVaultWalletEvents(status: VaultStatus, listener: () => void): () => void {
-  let active = true
-  let current: WalletConnection | undefined
-  void ensureVaultWalletWorker(status)
-    .then((next) => {
-      if (!active) return
-      current = next
-      current.listeners.add(listener)
-    })
-    .catch(() => undefined)
+  const account = vaultAccountRuntime(status)
+  account.listeners.add(listener)
+  void ensureVaultWalletWorker(status).catch(() => undefined)
   return () => {
-    active = false
-    current?.listeners.delete(listener)
+    account.listeners.delete(listener)
   }
 }
 
@@ -474,7 +478,7 @@ export async function reviveVaultWalletWorker(status: VaultStatus): Promise<Wall
 }
 
 export interface VaultBoardingSettlementRuntime {
-  listeners: Set<() => void>
+  notify: () => void
   boardingSettle?: Promise<void>
   boardingError?: string
   boardingRetryAfter?: number
@@ -554,7 +558,7 @@ export function scheduleVaultBoardingSettlement(
     .then(() => {
       current.boardingError = undefined
       current.boardingRetryAfter = undefined
-      current.listeners.forEach((listener) => listener())
+      current.notify()
     })
     .catch((error) => {
       // A listener refresh must not immediately start another failed attempt.
@@ -567,7 +571,7 @@ export function scheduleVaultBoardingSettlement(
             : 'Deposit boarding is delayed. The deposit is not yet available in Spending.'
         if (current.boardingError !== message) {
           current.boardingError = message
-          current.listeners.forEach((listener) => listener())
+          current.notify()
         }
       }
     })

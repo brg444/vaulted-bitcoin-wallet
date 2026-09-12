@@ -108,7 +108,7 @@ export default function VaultReceive() {
   }
 
   if (view === 'lightning' && spending && status)
-    return <LightningReceive status={status} refreshBalance={refreshBalance} onBack={() => setView('receive')} />
+    return <LightningReceive status={status} onBack={() => setView('receive')} />
 
   if (spending && status && lightningAddressEnabled() && vaultLightningReceiveEnabled(status.network, status.vaultId))
     return (

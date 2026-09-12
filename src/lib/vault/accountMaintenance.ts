@@ -27,6 +27,8 @@ interface Task {
   flight?: { observation: Observation; promise: Promise<unknown> }
   due: number
   dirty: boolean
+  cadences: Map<symbol, number>
+  completedAt?: number
 }
 
 /** One foreground clock and one pending result for each named account task. */
@@ -42,6 +44,15 @@ export function createVaultAccountMaintenance(
   let resume: Promise<void> | undefined
   let releasePause: (() => void) | undefined
   const visible = () => !disposed && !paused && isVisible()
+  const interval = (task: Task) => Math.min(task.observation?.intervalMs ?? Infinity, ...task.cadences.values())
+  const taskFor = (name: VaultMaintenanceName) => {
+    let task = tasks.get(name)
+    if (!task) {
+      task = { due: Infinity, dirty: false, cadences: new Map() }
+      tasks.set(name, task)
+    }
+    return task
+  }
 
   const arm = () => {
     window.clearTimeout(timer)
@@ -89,8 +100,9 @@ export function createVaultAccountMaintenance(
       })
       .finally(() => {
         if (task.flight?.promise === promise) task.flight = undefined
-        if (task.observation) task.due = Date.now() + (task.dirty ? 0 : task.observation.intervalMs)
-        else tasks.forEach((entry, name) => entry === task && tasks.delete(name))
+        task.completedAt = Date.now()
+        if (task.observation) task.due = task.completedAt + (task.dirty ? 0 : interval(task))
+        else if (!task.cadences.size) tasks.forEach((entry, name) => entry === task && tasks.delete(name))
         arm()
       })
     task.flight = { observation, promise }
@@ -124,6 +136,22 @@ export function createVaultAccountMaintenance(
   document.addEventListener('visibilitychange', visibility)
 
   return {
+    /** A view requests freshness from the existing owner without starting another poller. */
+    requestCadence(name: VaultMaintenanceName, intervalMs: number): () => void {
+      if (disposed) throw new Error('Account runtime is disposed')
+      if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new Error('Positive maintenance interval required')
+      const task = taskFor(name)
+      const consumer = Symbol(name)
+      task.cadences.set(consumer, intervalMs)
+      request(task)
+      return () => {
+        if (!task.cadences.delete(consumer)) return
+        if (!task.observation && !task.flight && !task.cadences.size) tasks.delete(name)
+        else if (task.observation && !task.flight && !task.dirty && task.completedAt !== undefined)
+          task.due = task.completedAt + interval(task)
+        arm()
+      }
+    },
     observe<T>(
       name: VaultMaintenanceName,
       run: (signal: AbortSignal) => Promise<T>,
@@ -136,7 +164,7 @@ export function createVaultAccountMaintenance(
       },
     ): VaultMaintenanceTask<T> {
       if (disposed) throw new Error('Account runtime is disposed')
-      const task = tasks.get(name) || { due: Infinity, dirty: false }
+      const task = taskFor(name)
       if (task.observation) throw new Error(`Account maintenance already owns ${name}`)
       const observation: Observation = {
         run,
@@ -148,12 +176,12 @@ export function createVaultAccountMaintenance(
         trailing: options.trailing ?? false,
       }
       task.observation = observation
-      tasks.set(name, task)
       for (const name of observation.events) {
         if (name === 'wallet' || name === 'visibilitychange' || events.has(name)) continue
         window.addEventListener(name, receive)
         events.add(name)
       }
+      if (task.cadences.size) request(task)
       return {
         refresh: () => refresh(task, observation) as Promise<T>,
         request: () => {
@@ -169,7 +197,7 @@ export function createVaultAccountMaintenance(
           }
           arm()
           await Promise.allSettled(task.flight ? [task.flight.promise] : [])
-          if (!task.observation && tasks.get(name) === task) tasks.delete(name)
+          if (!task.observation && !task.cadences.size && tasks.get(name) === task) tasks.delete(name)
         },
       }
     },

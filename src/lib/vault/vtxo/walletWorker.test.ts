@@ -46,7 +46,7 @@ describe('Vault service-worker isolation', () => {
     )
     const listener = vi.fn()
     const current = {
-      listeners: new Set([listener]),
+      notify: listener,
       boardingSettle: undefined,
     }
 
@@ -71,9 +71,9 @@ describe('Vault service-worker isolation', () => {
     try {
       const blocked = new Error('Settlement failed: named boarding is blocked: final authorization cannot be released')
       const settle = vi.fn().mockRejectedValue(blocked)
-      const current: VaultBoardingSettlementRuntime = { listeners: new Set() }
+      const current: VaultBoardingSettlementRuntime = { notify: () => {} }
       const listener = vi.fn(() => void scheduleVaultBoardingSettlement(current, settle))
-      current.listeners.add(listener)
+      current.notify = listener
 
       await scheduleVaultBoardingSettlement(current, settle)
       expect(current.boardingError).toContain('Deposit boarding needs attention')

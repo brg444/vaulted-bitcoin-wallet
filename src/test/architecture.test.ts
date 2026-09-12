@@ -85,6 +85,13 @@ it.each(['useSpendingRenewals', 'useSpendingBitcoin', 'useLedgerSavings', 'useRe
   },
 )
 
+it('Lightning invoice observation delegates reconciliation and cadence to the account owner', () => {
+  const screen = readFileSync(resolve(root, 'src/screens/Vault/LightningReceive.tsx'), 'utf8')
+  const observation = readFileSync(resolve(root, 'src/lib/vault/lightningReceiveObservation.ts'), 'utf8')
+  expect(screen).not.toMatch(/reconcileVaultLightningReceives|refreshBalance/)
+  expect(observation).not.toMatch(/reconcileVaultLightningReceives|setInterval|setTimeout/)
+})
+
 it('capture has no payment mutation or SDK history dependency', () => {
   const file = 'src/lib/vault/recovery/capture.ts'
   expect(imports(file)).not.toContain('src/lib/vault/vtxo/walletWorker.ts')
