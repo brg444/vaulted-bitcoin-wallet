@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { useRecoveryArchive } from './useRecoveryArchive'
+import { vaultAccountRuntime } from '../lib/vault/accountRuntime'
 import type { VaultStatus } from '../lib/vault/types'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 const mocks = vi.hoisted(() => ({
@@ -8,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   acknowledge: vi.fn(),
   open: vi.fn(),
   sync: vi.fn(),
-  subscribe: vi.fn(),
   header: vi.fn(),
   encrypt: vi.fn(),
   key: vi.fn(),
@@ -26,14 +26,13 @@ vi.mock('../lib/vault/recovery/backupCodec', () => ({
   recoveryBackupKey: mocks.key,
 }))
 vi.mock('../lib/vault/program/kitBackup', () => ({ kitFromFacts: () => ({ descriptorHash: 'aa' }) }))
-vi.mock('../lib/vault/vtxo/walletWorker', () => ({ subscribeVaultWalletEvents: mocks.subscribe }))
 vi.mock('../lib/vault/savingsSpend', () => ({ unlockPhoneBip340: mocks.unlock }))
-const status = { vaultId: 'test', enrolled: true } as VaultStatus
+const status = { vaultId: 'test', network: 'mainnet', enrolled: true } as VaultStatus
 const enrollment = { vaultId: 'test' } as EnrollmentSecrets
 const file = { header: { binding: { vaultId: 'test' } }, archive: { spending: {} } }
 const coverage = { vaultId: 'test', network: 'mainnet', descriptorHash: 'aa', fileDigest: 'bb', outputs: [] }
 const captured = { file, coverage }
-let event: () => void
+const event = () => vaultAccountRuntime(status).maintenance.invalidate('wallet')
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.capture.mockResolvedValue(captured)
@@ -49,10 +48,6 @@ beforeEach(() => {
   })
   mocks.header.mockReturnValue(file.header)
   mocks.encrypt.mockResolvedValue({ encrypted: true })
-  mocks.subscribe.mockImplementation((_status, callback) => {
-    event = callback
-    return vi.fn()
-  })
   mocks.unlock.mockResolvedValue(new Uint8Array(32).fill(1))
   mocks.key.mockResolvedValue({})
 })

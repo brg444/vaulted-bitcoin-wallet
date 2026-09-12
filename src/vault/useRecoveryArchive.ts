@@ -11,8 +11,7 @@ import {
 } from '../lib/vault/recovery/cloudBackup'
 import { buildRecoveryHeader, encryptRecoveryBackup, recoveryBackupKey } from '../lib/vault/recovery/backupCodec'
 import { kitFromFacts } from '../lib/vault/program/kitBackup'
-import { recoveryBackupScheduler } from '../lib/vault/recovery/backupScheduler'
-import { subscribeVaultWalletEvents } from '../lib/vault/vtxo/walletWorker'
+import { vaultAccountRuntime } from '../lib/vault/accountRuntime'
 import { createPortableRecoveryPackage } from '../lib/vault/recovery/portable'
 import { recordRecoveryFileCopy } from '../lib/vault/recovery/packageCheck'
 
@@ -37,13 +36,13 @@ export function useRecoveryArchive(
       contextEpoch.current++
       session.current = null
     }
-  }, [enrollment?.vaultId, locked])
-  const capture = useCallback(async (requireCloudBackup = false) => {
+  }, [enrollment?.vaultId, status?.network, locked])
+  const capture = useCallback(async (requireCloudBackup = false, signal?: AbortSignal) => {
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault to update recovery data')
     const context = contextEpoch.current
     const activity = activityEpoch.current
-    const unchanged = () => context === contextEpoch.current && activity === activityEpoch.current
+    const unchanged = () => !signal?.aborted && context === contextEpoch.current && activity === activityEpoch.current
     const { file, coverage } = await captureVaultRecoveryFile(status, enrollment)
     if (requireCloudBackup && context !== contextEpoch.current)
       throw new Error('Wallet session changed during recovery backup')
@@ -71,42 +70,35 @@ export function useRecoveryArchive(
   useEffect(() => {
     if (!enrollment || !status?.enrolled || locked) return
     let active = true
-    const scheduler = recoveryBackupScheduler(
-      async () => {
-        if (document.visibilityState !== 'hidden') await capture()
+    const task = vaultAccountRuntime(status).maintenance.observe(
+      'recovery-archive',
+      async (signal) => {
+        await capture(false, signal)
       },
-      (error) => {
-        if (active) {
-          setRecoveryArchiveStatus('Recovery data update incomplete')
-          setRecoveryArchiveError(
-            error instanceof Error ? error.message : 'Recovery update failed; the previous copy is retained',
-          )
-        }
+      {
+        intervalMs: 30_000,
+        events: ['wallet', 'focus', 'online', 'visibilitychange', 'vaulted-savings-setup'],
+        trailing: true,
+        requested: () => {
+          activityEpoch.current++
+          setRecoveryArchiveStatus('Checking recovery data against your wallet…')
+        },
+        failed: (error) => {
+          if (active) {
+            setRecoveryArchiveStatus('Recovery data update incomplete')
+            setRecoveryArchiveError(
+              error instanceof Error ? error.message : 'Recovery update failed; the previous copy is retained',
+            )
+          }
+        },
       },
     )
-    const request = () => {
-      activityEpoch.current++
-      setRecoveryArchiveStatus('Checking recovery data against your wallet…')
-      scheduler.request()
-    }
-    const unsubscribe = subscribeVaultWalletEvents(status, request)
-    request()
-    const timer = window.setInterval(request, 30000)
-    window.addEventListener('focus', request)
-    window.addEventListener('online', request)
-    window.addEventListener('vaulted-savings-setup', request)
-    document.addEventListener('visibilitychange', request)
+    task.request()
     return () => {
       active = false
-      scheduler.dispose()
-      unsubscribe()
-      clearInterval(timer)
-      window.removeEventListener('focus', request)
-      window.removeEventListener('online', request)
-      window.removeEventListener('vaulted-savings-setup', request)
-      document.removeEventListener('visibilitychange', request)
+      void task.dispose()
     }
-  }, [enrollment?.vaultId, status?.vaultId, locked, capture])
+  }, [enrollment?.vaultId, status?.vaultId, status?.network, locked, capture])
   const backupRecoveryArchive = useCallback(async () => {
     const { enrollment, status, locked } = current.current
     if (!enrollment || !status?.enrolled || locked) throw new Error('Unlock this vault first')

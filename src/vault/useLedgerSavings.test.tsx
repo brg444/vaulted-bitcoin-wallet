@@ -40,6 +40,7 @@ vi.mock('../lib/vault/esplora', () => ({ fetchFeeEstimates: api.fee }))
 const status = {
   enrolled: true,
   vaultId: 'vault-a',
+  network: 'mutinynet',
   templateVersion: LEDGER_NATIVE_TEMPLATE,
   ledgerSavings: { descriptorHash: 'bound-a', context: { vaultId: 'vault-a' }, spendingPolicy: {} },
 } as VaultStatus

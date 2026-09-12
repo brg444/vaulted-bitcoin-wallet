@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { vaultAccountRuntime } from '../lib/vault/accountRuntime'
+import type { VaultMaintenanceTask } from '../lib/vault/accountMaintenance'
 import type { LedgerSavingsRegistration } from '../lib/vault/ledgerClient'
 import {
   broadcastLedgerSavingsPayment,
@@ -33,7 +35,7 @@ export function useLedgerSavings(status: VaultStatus | null, enrollment: Enrollm
   const [view, setView] = useState<LedgerSavingsView | null>(null)
   const identity =
     !locked && status?.templateVersion === LEDGER_NATIVE_TEMPLATE
-      ? `${status.vaultId}:${status.ledgerSavings?.descriptorHash}`
+      ? `${status.vaultId}:${status.network}:${status.ledgerSavings?.descriptorHash}`
       : ''
   const generation = useMemo(() => ({ identity }), [identity])
   const active = useRef<typeof generation | null>(generation)
@@ -49,31 +51,35 @@ export function useLedgerSavings(status: VaultStatus | null, enrollment: Enrollm
     return { ...saved, enrollment: structuredClone(enrollment), status: structuredClone(status) }
   }, [identity, status, enrollment])
 
-  const refresh = useCallback(async () => {
-    const saved = access()
-    const retained = await loadLedgerSavingsPayment(saved.contract)
-    if (active.current === generation)
-      setView((previous) =>
-        retained
-          ? previous?.record.candidateId === retained.candidateId
-            ? previous
-            : {
-                record: retained,
-                registration: saved.registration,
-                outcome:
-                  retained.phase === 'prepared' ? 'prepared' : retained.phase === 'signing' ? 'signing' : 'unknown',
-              }
-          : null,
-      )
-    const result = await reconcileLedgerSavingsPayment(saved.contract)
-    if (active.current === generation)
-      setView(
-        result.kind !== 'none'
-          ? { record: result.record, registration: saved.registration, outcome: result.kind }
-          : null,
-      )
-    return result
-  }, [access, generation])
+  const read = useCallback(
+    async (signal: AbortSignal) => {
+      const saved = access()
+      const retained = await loadLedgerSavingsPayment(saved.contract)
+      if (active.current === generation && !signal.aborted)
+        setView((previous) =>
+          retained
+            ? previous?.record.candidateId === retained.candidateId
+              ? previous
+              : {
+                  record: retained,
+                  registration: saved.registration,
+                  outcome:
+                    retained.phase === 'prepared' ? 'prepared' : retained.phase === 'signing' ? 'signing' : 'unknown',
+                }
+            : null,
+        )
+      signal.throwIfAborted()
+      const result = await reconcileLedgerSavingsPayment(saved.contract)
+      if (active.current === generation && !signal.aborted)
+        setView(
+          result.kind !== 'none'
+            ? { record: result.record, registration: saved.registration, outcome: result.kind }
+            : null,
+        )
+      return result
+    },
+    [access, generation],
+  )
 
   useEffect(() => {
     active.current = generation
@@ -82,17 +88,30 @@ export function useLedgerSavings(status: VaultStatus | null, enrollment: Enrollm
       active.current = null
     }
   }, [generation])
+  const latest = useRef({ read, status })
+  latest.current = { read, status }
+  const observation = useRef<VaultMaintenanceTask<Awaited<ReturnType<typeof reconcileLedgerSavingsPayment>>>>()
   useEffect(() => {
-    if (!identity) return
-    const run = () => {
-      void refresh().catch(() => {
-        /* Retain the last verified payment while offline. */
-      })
+    const current = latest.current.status
+    if (!identity || !current?.enrolled) return
+    const task = vaultAccountRuntime(current).maintenance.observe(
+      'ledger-payment',
+      (signal) => latest.current.read(signal),
+      {
+        intervalMs: 20_000,
+      },
+    )
+    observation.current = task
+    task.request()
+    return () => {
+      if (observation.current === task) observation.current = undefined
+      void task.dispose()
     }
-    run()
-    const timer = window.setInterval(run, 20_000)
-    return () => window.clearInterval(timer)
-  }, [identity, refresh])
+  }, [identity])
+  const refresh = useCallback(() => {
+    if (!observation.current) return Promise.reject(new Error('Unlock this Ledger vault before refreshing Savings.'))
+    return observation.current.refresh()
+  }, [])
 
   const review = useCallback(
     async (draft: VaultSpend) => {

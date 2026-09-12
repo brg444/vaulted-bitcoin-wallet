@@ -59,7 +59,7 @@ it.each(['lock', 'unmount'])('does not begin acknowledgment after %s during reco
   const { rerender, unmount } = renderHook(({ locked }) => useSpendingBitcoin(status, locked), {
     initialProps: { locked: false },
   })
-  expect(mocks.check).toHaveBeenCalledOnce()
+  await waitFor(() => expect(mocks.check).toHaveBeenCalledOnce())
   if (change === 'lock') rerender({ locked: true })
   else unmount()
   await act(async () => {

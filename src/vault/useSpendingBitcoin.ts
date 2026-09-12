@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { vaultAccountRuntime } from '../lib/vault/accountRuntime'
 import {
   readSpendingBitcoin,
   BITCOIN_PAYMENT_EVENT,
@@ -26,8 +27,7 @@ export function useSpendingBitcoin(status: VaultStatus | null, locked: boolean) 
     }
   }, [])
   useEffect(() => {
-    let active = true,
-      running = false
+    let active = true
     const load = () => {
       if (!active) return
       try {
@@ -39,37 +39,36 @@ export function useSpendingBitcoin(status: VaultStatus | null, locked: boolean) 
         setPending({ operation: null, error: (error as Error).message })
       }
     }
-    const refresh = async () => {
+    const refresh = async (signal: AbortSignal) => {
       const { status, locked } = latest.current
-      if (running || locked || !status?.enrolled) return
-      running = true
+      if (locked || !status?.enrolled) return
       try {
         const operation = readSpendingBitcoin(status)
         if (operation) {
           if (operation.stage !== 'confirmed') await checkSpendingBitcoin(status)
-          if (!active || latest.current.locked) return
+          if (!active || signal.aborted || latest.current.locked) return
           await acknowledgeSpendingBitcoinRecovery(status)
         }
       } catch {
         // The saved operation stays visible during a network or reconciliation failure.
       } finally {
-        running = false
-        load()
+        if (!signal.aborted) load()
       }
     }
     load()
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 15000)
+    const task =
+      status?.enrolled && !locked
+        ? vaultAccountRuntime(status).maintenance.observe('bitcoin-payment', refresh, { intervalMs: 15_000 })
+        : undefined
+    task?.request()
     window.addEventListener(BITCOIN_PAYMENT_EVENT, load)
     window.addEventListener('storage', load)
-    window.addEventListener('focus', refresh)
     return () => {
       active = false
-      window.clearInterval(timer)
+      void task?.dispose()
       window.removeEventListener(BITCOIN_PAYMENT_EVENT, load)
       window.removeEventListener('storage', load)
-      window.removeEventListener('focus', refresh)
     }
-  }, [status?.vaultId, locked])
+  }, [status?.vaultId, status?.network, locked])
   return { snapshot: pending, acknowledgeRecovery }
 }

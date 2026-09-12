@@ -44,8 +44,17 @@ import { vaultOperatorOrigin } from '../networkPins'
 import { readSpendingBitcoin } from '../spendingBitcoinStore'
 import { vtxoBalanceWithPending } from './pendingBalance'
 import { requireBoardingStatus } from './board'
+import {
+  activeVaultAccountRuntime,
+  disposeVaultAccountRuntime,
+  vaultAccountRuntime,
+  vaultWalletRuntimeKey,
+  type VaultAccountRuntime,
+} from '../accountRuntime'
+import type { VaultAccountMaintenance, VaultMaintenanceTask } from '../accountMaintenance'
+export { vaultWalletRuntimeKey } from '../accountRuntime'
 
-type WalletRuntime = {
+export type WalletConnection = {
   key: string
   vaultId: string
   registration: ServiceWorkerRegistration
@@ -58,70 +67,13 @@ type WalletRuntime = {
   unsubscribeContract: () => void
   unsubscribeSwap: () => void
   onWorkerMessage: (event: MessageEvent) => void
-  lightningObserver: VaultLightningObserverScheduler
+  lightningObserver: VaultMaintenanceTask<void>
   boardingSettle?: Promise<void>
   boardingError?: string
   boardingRetryAfter?: number
 }
 
-let runtime: WalletRuntime | undefined
-let initialization: Promise<WalletRuntime> | undefined
-
-const VAULT_LIGHTNING_OBSERVER_INTERVAL_MS = 15_000
 const VAULT_WORKER_STOP_TIMEOUT_MS = 60_000
-
-export interface VaultLightningObserverScheduler {
-  refresh: () => Promise<void>
-  schedule: () => void
-  isDisposed: () => boolean
-  dispose: () => Promise<void>
-}
-
-/** Visible, coalesced foreground polling with deterministic resource cleanup. */
-export function createVaultLightningObserverScheduler(
-  run: () => Promise<void>,
-  options: {
-    intervalMs?: number
-    debounceMs?: number
-    isVisible?: () => boolean
-  } = {},
-): VaultLightningObserverScheduler {
-  const intervalMs = options.intervalMs ?? VAULT_LIGHTNING_OBSERVER_INTERVAL_MS
-  const debounceMs = options.debounceMs ?? 200
-  const isVisible = options.isVisible ?? (() => document.visibilityState !== 'hidden')
-  let activeRun: Promise<void> | undefined
-  let disposed = false
-  let scheduled = 0
-  const refresh = () => {
-    if (disposed || activeRun || !isVisible()) return activeRun || Promise.resolve()
-    const current = run()
-    const tracked = current.finally(() => {
-      if (activeRun === tracked) activeRun = undefined
-    })
-    activeRun = tracked
-    return activeRun
-  }
-  const schedule = () => {
-    if (disposed || activeRun || scheduled || !isVisible()) return
-    scheduled = window.setTimeout(() => {
-      scheduled = 0
-      void refresh().catch((error) => consoleError(error, 'Lightning observer refresh'))
-    }, debounceMs)
-  }
-  const interval = window.setInterval(schedule, intervalMs)
-  return {
-    refresh,
-    schedule,
-    isDisposed: () => disposed,
-    dispose: async () => {
-      disposed = true
-      window.clearInterval(interval)
-      window.clearTimeout(scheduled)
-      scheduled = 0
-      await Promise.allSettled(activeRun ? [activeRun] : [])
-    },
-  }
-}
 
 export function isVaultWalletStateUpdate(message: unknown, updaterTag: string): boolean {
   const value = message as { tag?: string; type?: string } | null
@@ -198,22 +150,7 @@ export function vaultWalletIdentity(status: VaultStatus) {
   return ReadonlySingleKey.fromPublicKey(hex.decode(descriptor.boardingPub))
 }
 
-export function vaultWalletRuntimeKey(status: VaultStatus) {
-  if (!status.enrolled || !status.vaultId) throw new Error('Enrolled vault required for VTXO state')
-  return JSON.stringify([
-    status.vaultId,
-    status.network,
-    String(status.phoneBip340Pub || '').toLowerCase(),
-    String(status.spendingArkScript || '').toLowerCase(),
-    String(status.spendingArkAddress || ''),
-    String(status.vtxoBoardingScript || '').toLowerCase(),
-    String(status.vtxoBoardingAddress || ''),
-    String(status.vtxoBoardingDescriptorHash || ''),
-    vaultOperatorOrigin(status.network),
-  ])
-}
-
-async function disposeRuntime(current: WalletRuntime | undefined) {
+async function disposeConnection(current: WalletConnection | undefined) {
   if (!current) return
   current.unsubscribeContract()
   current.unsubscribeSwap()
@@ -235,12 +172,12 @@ async function disposeRuntime(current: WalletRuntime | undefined) {
 export async function shutdownVaultWalletWorker(vaultId: string): Promise<void> {
   const id = String(vaultId || '').trim()
   if (!id) return
-  const pending = initialization
-  if (pending) await pending.catch(() => undefined)
-  const current = runtime?.vaultId === id ? runtime : undefined
-  if (current) await disposeRuntime(current)
-  if (runtime === current) runtime = undefined
-  if (current) return
+  const account = activeVaultAccountRuntime(id)
+  if (account) {
+    const connected = Boolean(account.connection || account.initialization || account.replacement)
+    await disposeVaultAccountRuntime(account)
+    if (connected) return
+  }
   const registration = await navigator.serviceWorker.getRegistration(vaultWalletWorkerScope(id))
   if (!registration) return
   const worker = registration.active || registration.waiting || registration.installing
@@ -248,7 +185,7 @@ export async function shutdownVaultWalletWorker(vaultId: string): Promise<void> 
   await registration.unregister()
 }
 
-async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
+async function createConnection(status: VaultStatus, maintenance: VaultAccountMaintenance): Promise<WalletConnection> {
   registerVaultPolicyV1ContractHandler()
   const key = vaultWalletRuntimeKey(status)
   const walletDatabase = vaultWalletDatabase(status.vaultId)
@@ -336,26 +273,33 @@ async function createRuntime(status: VaultStatus): Promise<WalletRuntime> {
       }
     }
     const listeners = new Set<() => void>()
-    const notify = () => listeners.forEach((listener) => listener())
-    let lightningObserver: VaultLightningObserverScheduler
-    lightningObserver = createVaultLightningObserverScheduler(async () => {
-      const attempt = await tryVaultLightningLifecycleLock(status.vaultId, maintainLightning)
-      if (!attempt.held) return
-      logMaintenanceFailures(attempt.value)
-      if (!lightningObserver.isDisposed()) notify()
-    })
+    const notify = () => {
+      listeners.forEach((listener) => listener())
+      maintenance.invalidate('wallet')
+    }
+    let lightningObserver: VaultMaintenanceTask<void>
+    lightningObserver = maintenance.observe(
+      'lightning-observer',
+      async () => {
+        const attempt = await tryVaultLightningLifecycleLock(status.vaultId, maintainLightning)
+        if (!attempt.held) return
+        logMaintenanceFailures(attempt.value)
+        if (!lightningObserver.isDisposed()) notify()
+      },
+      { intervalMs: 15_000, failed: (error) => consoleError(error, 'Lightning observer refresh') },
+    )
     const unsubscribeContract = manager.onContractEvent(() => {
       notify()
-      lightningObserver.schedule()
+      lightningObserver.request()
     })
     const unsubscribeSwap = subscribeVaultLightningObserver(activeSwapManager, () => {
       notify()
-      lightningObserver.schedule()
+      lightningObserver.request()
     })
     const onWorkerMessage = (event: MessageEvent) => {
       if (!isVaultWalletStateUpdate(event.data, updaterTag)) return
       notify()
-      lightningObserver.schedule()
+      lightningObserver.request()
     }
     navigator.serviceWorker.addEventListener('message', onWorkerMessage)
     return {
@@ -421,44 +365,54 @@ export async function withActiveVaultWalletState<T>(
   run: (session: VaultWalletStateSession) => Promise<T>,
 ): Promise<T> {
   const id = String(vaultId || '').trim()
-  if (!id || runtime?.vaultId !== id) throw new Error('Vault wallet state is not ready for this vault')
+  const current = activeVaultAccountRuntime(id)?.connection
+  if (!current) throw new Error('Vault wallet state is not ready for this vault')
   return run({
-    wallet: runtime.wallet,
-    contracts: await runtime.wallet.getContractManager(),
-    swapRepository: runtime.swapRepository,
-    swapManager: runtime.swapManager,
+    wallet: current.wallet,
+    contracts: await current.wallet.getContractManager(),
+    swapRepository: current.swapRepository,
+    swapManager: current.swapManager,
   })
 }
 
-export async function ensureVaultWalletWorker(status: VaultStatus): Promise<WalletRuntime> {
-  const key = vaultWalletRuntimeKey(status)
-  if (runtime?.key === key) return runtime
-  if (initialization) {
-    const pending = await initialization
-    if (pending.key === key) return pending
-  }
-  initialization = (async () => {
-    if (runtime?.key === key) return runtime
-    const previous = runtime
-    await disposeRuntime(previous)
-    if (runtime === previous) runtime = undefined
-    const next = await createRuntime(status)
-    runtime = next
-    // Incoming receipt and swap reconciliation can wait on remote services.
-    // Publish Spending first; the scheduler owns maintenance and drains it on disposal.
-    next.lightningObserver.schedule()
+export async function ensureVaultWalletWorker(status: VaultStatus): Promise<WalletConnection> {
+  const account = vaultAccountRuntime(status)
+  if (account.connection) return account.connection
+  if (account.initialization) return account.initialization
+  if (account.replacement) return account.replacement
+  return connectAccountWallet(status, account)
+}
+
+async function connectAccountWallet(status: VaultStatus, account: VaultAccountRuntime): Promise<WalletConnection> {
+  const promise = (async () => {
+    await account.previous
+    if (account.disposed) throw new Error('Vault account closed during worker initialization')
+    const next = await createConnection(status, account.maintenance)
+    if (account.disposed) {
+      await disposeConnection(next)
+      throw new Error('Vault account closed during worker initialization')
+    }
+    account.connection = next
+    account.closeConnection = async () => {
+      await disposeConnection(next)
+      if (account.connection === next) account.connection = undefined
+    }
+    account.maintenance.invalidate('wallet')
+    // Publish Spending before foreground receipt and swap reconciliation.
+    next.lightningObserver.request()
     return next
   })()
+  account.initialization = promise
   try {
-    return await initialization
+    return await promise
   } finally {
-    initialization = undefined
+    if (account.initialization === promise) account.initialization = undefined
   }
 }
 
 export function subscribeVaultWalletEvents(status: VaultStatus, listener: () => void): () => void {
   let active = true
-  let current: WalletRuntime | undefined
+  let current: WalletConnection | undefined
   void ensureVaultWalletWorker(status)
     .then((next) => {
       if (!active) return
@@ -476,16 +430,29 @@ export async function reloadVaultWalletWorker(status: VaultStatus) {
   const current = await ensureVaultWalletWorker(status)
   if (current.boardingSettle) return
   await current.wallet.reload()
-  current.lightningObserver.schedule()
+  current.lightningObserver.request()
 }
 
 /** Tear down a wedged worker and create a new one so boarding can resume. */
-export async function reviveVaultWalletWorker(status: VaultStatus): Promise<WalletRuntime> {
-  if (runtime?.vaultId === status.vaultId && runtime.boardingSettle) return runtime
-  await shutdownVaultWalletWorker(status.vaultId).catch((error) => {
-    consoleError(error, 'Vault wallet worker shutdown before revive')
+export async function reviveVaultWalletWorker(status: VaultStatus): Promise<WalletConnection> {
+  const account = vaultAccountRuntime(status)
+  if (account.connection?.boardingSettle) return account.connection
+  if (account.replacement) return account.replacement
+  const promise = account.maintenance.withPaused(async () => {
+    await account.initialization?.catch(() => undefined)
+    const previous = account.connection
+    account.connection = undefined
+    await account.closeConnection?.()
+    if (previous) account.closeConnection = undefined
+    if (account.disposed) throw new Error('Vault account closed during worker replacement')
+    return connectAccountWallet(status, account)
   })
-  return ensureVaultWalletWorker(status)
+  account.replacement = promise
+  try {
+    return await promise
+  } finally {
+    if (account.replacement === promise) account.replacement = undefined
+  }
 }
 
 export interface VaultBoardingSettlementRuntime {

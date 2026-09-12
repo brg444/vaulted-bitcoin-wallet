@@ -1,0 +1,203 @@
+export type VaultMaintenanceName =
+  | 'lightning-observer'
+  | 'spending-renewals'
+  | 'bitcoin-payment'
+  | 'ledger-payment'
+  | 'recovery-archive'
+
+export interface VaultMaintenanceTask<T> {
+  refresh: () => Promise<T>
+  request: () => void
+  isDisposed: () => boolean
+  dispose: () => Promise<void>
+}
+
+interface Observation {
+  run: (signal: AbortSignal) => Promise<unknown>
+  intervalMs: number
+  events: readonly string[]
+  failed?: (error: unknown) => void
+  requested?: () => void
+  controller: AbortController
+  trailing: boolean
+}
+
+interface Task {
+  observation?: Observation
+  flight?: { observation: Observation; promise: Promise<unknown> }
+  due: number
+  dirty: boolean
+}
+
+/** One foreground clock and one pending result for each named account task. */
+export function createVaultAccountMaintenance(
+  vaultId: string,
+  isVisible = () => document.visibilityState !== 'hidden',
+) {
+  const tasks = new Map<VaultMaintenanceName, Task>()
+  const events = new Set<string>()
+  let disposed = false
+  let paused = 0
+  let timer = 0
+  let resume: Promise<void> | undefined
+  let releasePause: (() => void) | undefined
+  const visible = () => !disposed && !paused && isVisible()
+
+  const arm = () => {
+    window.clearTimeout(timer)
+    timer = 0
+    if (!visible()) return
+    const due = Math.min(
+      ...[...tasks.values()].filter((task) => task.observation && !task.flight).map((task) => task.due),
+    )
+    if (!Number.isFinite(due)) return
+    timer = window.setTimeout(
+      () => {
+        timer = 0
+        if (!visible()) return
+        for (const task of tasks.values()) {
+          if (task.observation && !task.flight && task.due <= Date.now())
+            void refresh(task, task.observation).catch(() => undefined)
+        }
+        arm()
+      },
+      Math.max(0, due - Date.now()),
+    )
+  }
+
+  const refresh = (task: Task, observation: Observation): Promise<unknown> => {
+    if (disposed || observation.controller.signal.aborted || task.observation !== observation)
+      return Promise.reject(new DOMException('Account observation ended', 'AbortError'))
+    if (paused) return resume!.then(() => refresh(task, observation))
+    if (task.flight) {
+      if (task.flight.observation === observation) return task.flight.promise
+      // A replacement owner waits for the previous owner to drain. It must
+      // neither consume the previous result nor overlap the same named task.
+      return task.flight.promise.catch(() => undefined).then(() => refresh(task, observation))
+    }
+    if (!task.dirty) observation.requested?.()
+    task.dirty = false
+    task.due = Infinity
+    const promise = Promise.resolve()
+      .then(() => {
+        observation.controller.signal.throwIfAborted()
+        return observation.run(observation.controller.signal)
+      })
+      .catch((error) => {
+        if (!observation.controller.signal.aborted && task.observation === observation) observation.failed?.(error)
+        throw error
+      })
+      .finally(() => {
+        if (task.flight?.promise === promise) task.flight = undefined
+        if (task.observation) task.due = Date.now() + (task.dirty ? 0 : task.observation.intervalMs)
+        else tasks.forEach((entry, name) => entry === task && tasks.delete(name))
+        arm()
+      })
+    task.flight = { observation, promise }
+    arm()
+    return promise
+  }
+
+  const request = (task: Task) => {
+    if (disposed || !task.observation) return
+    if (task.flight?.observation === task.observation && !task.observation.trailing) return
+    task.observation.requested?.()
+    task.dirty = true
+    task.due = Math.min(task.due, Date.now() + 150)
+    arm()
+  }
+
+  const invalidate = (name: string, event?: Event) => {
+    if (disposed) return
+    const target = (event as CustomEvent<unknown> | undefined)?.detail
+    if (typeof target === 'string' && target && target !== vaultId) return
+    for (const task of tasks.values()) {
+      if (task.observation?.events.includes(name)) request(task)
+    }
+    arm()
+  }
+  const receive = (event: Event) => invalidate(event.type, event)
+  const visibility = () => {
+    if (isVisible()) invalidate('visibilitychange')
+    arm()
+  }
+  document.addEventListener('visibilitychange', visibility)
+
+  return {
+    observe<T>(
+      name: VaultMaintenanceName,
+      run: (signal: AbortSignal) => Promise<T>,
+      options: {
+        intervalMs: number
+        events?: readonly string[]
+        failed?: (error: unknown) => void
+        requested?: () => void
+        trailing?: boolean
+      },
+    ): VaultMaintenanceTask<T> {
+      if (disposed) throw new Error('Account runtime is disposed')
+      const task = tasks.get(name) || { due: Infinity, dirty: false }
+      if (task.observation) throw new Error(`Account maintenance already owns ${name}`)
+      const observation: Observation = {
+        run,
+        intervalMs: options.intervalMs,
+        events: options.events || ['focus', 'online', 'visibilitychange'],
+        failed: options.failed,
+        requested: options.requested,
+        controller: new AbortController(),
+        trailing: options.trailing ?? false,
+      }
+      task.observation = observation
+      tasks.set(name, task)
+      for (const name of observation.events) {
+        if (name === 'wallet' || name === 'visibilitychange' || events.has(name)) continue
+        window.addEventListener(name, receive)
+        events.add(name)
+      }
+      return {
+        refresh: () => refresh(task, observation) as Promise<T>,
+        request: () => {
+          if (task.observation === observation) request(task)
+        },
+        isDisposed: () => observation.controller.signal.aborted,
+        dispose: async () => {
+          observation.controller.abort()
+          if (task.observation === observation) {
+            task.observation = undefined
+            task.dirty = false
+            task.due = Infinity
+          }
+          arm()
+          await Promise.allSettled(task.flight ? [task.flight.promise] : [])
+          if (!task.observation && tasks.get(name) === task) tasks.delete(name)
+        },
+      }
+    },
+    invalidate,
+    /** SDK replacement drains its page-side consumers before stopping it. */
+    async withPaused<T>(run: () => Promise<T>): Promise<T> {
+      if (!paused) resume = new Promise<void>((resolve) => (releasePause = resolve))
+      paused++
+      arm()
+      try {
+        await Promise.allSettled([...tasks.values()].flatMap((task) => (task.flight ? [task.flight.promise] : [])))
+        return await run()
+      } finally {
+        paused--
+        if (!paused) releasePause?.()
+        arm()
+      }
+    },
+    async dispose() {
+      disposed = true
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', visibility)
+      for (const name of events) window.removeEventListener(name, receive)
+      for (const task of tasks.values()) task.observation?.controller.abort()
+      await Promise.allSettled([...tasks.values()].flatMap((task) => (task.flight ? [task.flight.promise] : [])))
+      tasks.clear()
+    },
+  }
+}
+
+export type VaultAccountMaintenance = ReturnType<typeof createVaultAccountMaintenance>

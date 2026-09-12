@@ -3,7 +3,6 @@ import { hex } from '@scure/base'
 import { describe, expect, it, vi } from 'vitest'
 import type { VaultStatus } from '../types'
 import {
-  createVaultLightningObserverScheduler,
   isVaultWalletStateUpdate,
   registerVaultWalletServiceWorker,
   scheduleVaultBoardingSettlement,
@@ -598,61 +597,5 @@ describe('Vault service-worker isolation', () => {
 
     unsubscribe()
     expect(unsubscribers.every((remove) => remove.mock.calls.length === 1)).toBe(true)
-  })
-
-  it('coalesces visible observer wakes and disposes every timer', async () => {
-    vi.useFakeTimers()
-    try {
-      const run = vi.fn(async () => undefined)
-      const scheduler = createVaultLightningObserverScheduler(run, {
-        intervalMs: 1_000,
-        debounceMs: 10,
-        isVisible: () => true,
-      })
-
-      scheduler.schedule()
-      scheduler.schedule()
-      await vi.advanceTimersByTimeAsync(10)
-      expect(run).toHaveBeenCalledOnce()
-
-      await vi.advanceTimersByTimeAsync(1_000)
-      expect(run).toHaveBeenCalledTimes(2)
-
-      await scheduler.dispose()
-      scheduler.schedule()
-      await vi.advanceTimersByTimeAsync(5_000)
-      expect(run).toHaveBeenCalledTimes(2)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('drains an in-flight observer pass and suppresses its late notification on disposal', async () => {
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const notify = vi.fn()
-    let scheduler: ReturnType<typeof createVaultLightningObserverScheduler>
-    scheduler = createVaultLightningObserverScheduler(
-      async () => {
-        await gate
-        if (!scheduler.isDisposed()) notify()
-      },
-      { isVisible: () => true },
-    )
-
-    const refresh = scheduler.refresh()
-    let disposed = false
-    const disposal = scheduler.dispose().then(() => {
-      disposed = true
-    })
-    await Promise.resolve()
-    expect(disposed).toBe(false)
-
-    release()
-    await Promise.all([refresh, disposal])
-    expect(disposed).toBe(true)
-    expect(notify).not.toHaveBeenCalled()
   })
 })

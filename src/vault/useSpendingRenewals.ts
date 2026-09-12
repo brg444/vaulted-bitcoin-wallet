@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { vaultAccountRuntime } from '../lib/vault/accountRuntime'
 import type { VaultStatus } from '../lib/vault/types'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import { clearSpendingRenewalReads, refreshSpendingRenewals } from '../lib/vault/vtxo/guardianRenewal'
@@ -19,45 +20,43 @@ export function useSpendingRenewals(status: VaultStatus | null, enrollment: Enro
       if (vaultId) clearSpendingRenewalReads(vaultId)
       return
     }
-    let active = true,
-      running = false
-    const load = async () => {
+    let active = true
+    const load = async (signal?: AbortSignal) => {
       const current = latest.current.status
       if (!current?.enrolled) return
       try {
         const saved = await loadSpendingRenewals(current)
-        if (active) setJournal(saved)
+        if (active && !signal?.aborted) setJournal(saved)
       } catch {
         /* Renewal failures stay separate from ordinary wallet availability. */
       }
     }
-    const refresh = async () => {
+    const refresh = async (signal: AbortSignal) => {
       const current = latest.current
-      if (running || !current.status?.enrolled || !current.enrollment) return
-      running = true
+      if (!current.status?.enrolled || !current.enrollment) return
       try {
         const saved = await refreshSpendingRenewals(current.status, current.enrollment)
-        if (active) setJournal(saved)
+        if (active && !signal.aborted) setJournal(saved)
       } catch {
-        await load()
-      } finally {
-        running = false
+        if (!signal.aborted) await load(signal)
       }
     }
     const onChange = (event: Event) => {
       if ((event as CustomEvent<string>).detail === vaultId) void load()
     }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 30000)
+    const task = latest.current.status?.enrolled
+      ? vaultAccountRuntime(latest.current.status).maintenance.observe('spending-renewals', refresh, {
+          intervalMs: 30_000,
+        })
+      : undefined
+    task?.request()
     window.addEventListener(SPENDING_RENEWAL_EVENT, onChange)
-    window.addEventListener('focus', refresh)
     return () => {
       active = false
       clearSpendingRenewalReads(vaultId)
-      window.clearInterval(timer)
+      void task?.dispose()
       window.removeEventListener(SPENDING_RENEWAL_EVENT, onChange)
-      window.removeEventListener('focus', refresh)
     }
-  }, [vaultId, locked])
+  }, [vaultId, status?.network, locked])
   return journal
 }

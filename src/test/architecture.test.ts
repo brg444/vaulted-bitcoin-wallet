@@ -48,21 +48,40 @@ function imports(path: string) {
   return paths
 }
 
-it.each(['src/lib/vault/networkPins.ts', 'src/lib/vault/recovery/finalization.ts'])(
-  '%s has no transitive dependency on payment coordination or screens',
-  (entry) => {
-    const seen = new Set<string>()
-    const visit = (path: string) => {
-      if (seen.has(path)) return
-      seen.add(path)
-      for (const target of imports(path)) {
-        expect(target, `${path} imports ${target}`).not.toMatch(
-          /\/screens\/|\/vtxo\/spend\.ts$|\/spendingBitcoinFunding\.ts$/,
-        )
-        visit(target)
-      }
+it.each([
+  'src/lib/vault/networkPins.ts',
+  'src/lib/vault/recovery/finalization.ts',
+  'src/lib/vault/accountRuntime.ts',
+  'src/lib/vault/accountMaintenance.ts',
+])('%s has no transitive dependency on payment coordination or screens', (entry) => {
+  const seen = new Set<string>()
+  const visit = (path: string) => {
+    if (seen.has(path)) return
+    seen.add(path)
+    for (const target of imports(path)) {
+      expect(target, `${path} imports ${target}`).not.toMatch(
+        /\/screens\/|\/vtxo\/spend\.ts$|\/vtxo\/walletWorker\.ts$|\/spendingBitcoinFunding\.ts$/,
+      )
+      visit(target)
     }
-    visit(entry)
+  }
+  visit(entry)
+})
+
+it.each(['useSpendingRenewals', 'useSpendingBitcoin', 'useLedgerSavings', 'useRecoveryArchive'])(
+  '%s uses the account maintenance clock',
+  (name) => {
+    const source = readFileSync(resolve(root, `src/vault/${name}.ts`), 'utf8')
+    const ast = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true)
+    const walk = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const call = node.expression
+        const identifier = ts.isPropertyAccessExpression(call) ? call.name.text : ts.isIdentifier(call) ? call.text : ''
+        expect(identifier).not.toMatch(/^set(Interval|Timeout)$/)
+      }
+      ts.forEachChild(node, walk)
+    }
+    walk(ast)
   },
 )
 

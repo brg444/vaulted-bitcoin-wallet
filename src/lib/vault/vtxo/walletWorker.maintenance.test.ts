@@ -3,10 +3,12 @@ import { ServiceWorkerWallet } from '@arkade-os/sdk'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getLogs } from '../../logs'
 import { sharedSpendingStatus } from './testdata/sharedSpending'
+import { vaultAccountRuntime } from '../accountRuntime'
 import {
   ensureVaultWalletWorker,
   fetchVaultWalletVtxoSnapshot,
   reloadVaultWalletWorker,
+  reviveVaultWalletWorker,
   shutdownVaultWalletWorker,
 } from './walletWorker'
 
@@ -60,7 +62,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-it('initializes and refreshes Spending while Lightning address receipts are stalled, then drains before teardown', async () => {
+function mockWallet() {
   const contracts = {
     getContracts: vi.fn().mockResolvedValue([{ script: status.spendingArkScript, state: 'active', watch: 'watched' }]),
     getContractsWithVtxos: vi.fn().mockResolvedValue([{ vtxos: [{ txid: '12'.repeat(32), vout: 0, value: 12_000 }] }]),
@@ -76,6 +78,11 @@ it('initializes and refreshes Spending while Lightning address receipts are stal
     reload: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
   }
+  return wallet
+}
+
+it('initializes and refreshes Spending while Lightning address receipts are stalled, then drains before teardown', async () => {
+  const wallet = mockWallet()
   vi.spyOn(ServiceWorkerWallet, 'create').mockResolvedValue(wallet as never)
   let ready = false
   const starting = ensureVaultWalletWorker(status).then(() => (ready = true))
@@ -103,4 +110,65 @@ it('initializes and refreshes Spending while Lightning address receipts are stal
   )
   expect(wallet.dispose).toHaveBeenCalledOnce()
   expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(wallet.dispose.mock.invocationCallOrder[0])
+})
+
+it('runs account maintenance while SDK initialization is pending', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const wallet = mockWallet()
+  let connect!: (value: typeof wallet) => void
+  const creation = vi.spyOn(ServiceWorkerWallet, 'create').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        connect = resolve as never
+      }),
+  )
+  const account = vaultAccountRuntime(status)
+  const read = vi.fn(async () => 12_000)
+  const savings = account.maintenance.observe('ledger-payment', read, { intervalMs: 20_000 })
+  const starting = ensureVaultWalletWorker(status)
+  await vi.waitFor(() => expect(creation).toHaveBeenCalledOnce())
+  expect(account.connection).toBeUndefined()
+  expect(await savings.refresh()).toBe(12_000)
+  connect(wallet)
+  await starting
+  expect(account.connection?.wallet).toBe(wallet)
+  await savings.dispose()
+})
+
+it('drains account consumers before one shared SDK replacement and preserves their task owners', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const first = mockWallet(),
+    second = mockWallet()
+  const creation = vi
+    .spyOn(ServiceWorkerWallet, 'create')
+    .mockResolvedValueOnce(first as never)
+    .mockResolvedValueOnce(second as never)
+  await ensureVaultWalletWorker(status)
+  const account = vaultAccountRuntime(status)
+  let finishCapture!: () => void
+  const capture = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCapture = resolve
+        }),
+    )
+    .mockResolvedValue(undefined)
+  const recovery = account.maintenance.observe('recovery-archive', capture, { intervalMs: 30_000 })
+  const flight = recovery.refresh()
+  await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce())
+  const replacing = reviveVaultWalletWorker(status)
+  const duplicate = reviveVaultWalletWorker(status)
+  await Promise.resolve()
+  expect(first.dispose).not.toHaveBeenCalled()
+  finishCapture()
+  await Promise.all([flight, replacing, duplicate])
+  expect(creation).toHaveBeenCalledTimes(2)
+  expect(first.dispose).toHaveBeenCalledOnce()
+  expect(vaultAccountRuntime(status)).toBe(account)
+  expect((await ensureVaultWalletWorker(status)).wallet).toBe(second)
+  await recovery.refresh()
+  expect(capture).toHaveBeenCalledTimes(2)
+  await recovery.dispose()
 })
