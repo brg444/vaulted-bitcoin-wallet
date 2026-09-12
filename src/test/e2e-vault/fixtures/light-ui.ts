@@ -41,6 +41,7 @@ export async function openLight(
 ) {
   const enrollment = sharedSpendingEnrollment()
   const status = sharedSpendingStatus()
+  status.clientOrigin = `${process.env.HTTPS === 'true' ? 'https' : 'http'}://localhost:${process.env.VAULT_E2E_PORT || '3003'}`
   const pending = pendingPayment && {
     ...pendingPayment,
     vaultId: status.vaultId,
