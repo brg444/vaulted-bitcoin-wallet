@@ -12,17 +12,18 @@ const { build } = createRequire(require.resolve('vite/package.json'))('esbuild')
     stdin: {
       resolveDir: root,
       contents: `
-import { recoveryFixture, sharedSpendingRecoveryFixture } from './src/lib/vault/recovery/testdata/helpers';
+import { sharedSpendingRecoveryFixture } from './src/lib/vault/recovery/testdata/helpers';
 import { scalarSecret, FIXTURE_PHONE_DIRECT_P256 } from './src/lib/vault/program/fixtures';
 import { wrapPhoneSecret } from './src/lib/vault/prfEnvelope';
 import { buildRecoveryHeader, recoveryBackupKey } from './src/lib/vault/recovery/backupCodec';
 import { createPortableRecoveryPackage } from './src/lib/vault/recovery/portable';
 import { Transaction } from '@arkade-os/sdk';
+import { HDKey } from '@scure/bip32';
+import { ledgerBip32Versions } from './src/lib/vault/program/ledgerNativeKeys';
+import { ledgerRecoveryFixture } from './src/lib/vault/recovery/testdata/ledger';
 export async function fixture() {
- const {archive,status,kit}=recoveryFixture(true);
- const enrollment={vaultId:status.vaultId,credId:'ab'.repeat(32),webauthnP256:FIXTURE_PHONE_DIRECT_P256,phoneBip340Pub:kit.descriptor.keys.phoneBip340,phoneDirectP256:kit.descriptor.keys.phoneDirectP256,...await wrapPhoneSecret(scalarSecret(9),scalarSecret(3))};
- const header=buildRecoveryHeader(kit,status,enrollment);
- return createPortableRecoveryPackage({name:'vaulted-recovery',version:1,header,archive},await recoveryBackupKey(scalarSecret(3),header));
+ const {file}=await ledgerRecoveryFixture(true);
+ return createPortableRecoveryPackage(file,await recoveryBackupKey(scalarSecret(3),file.header));
 }
 export async function lightFixture() {
  const {archive,status,kit}=sharedSpendingRecoveryFixture();
@@ -31,7 +32,17 @@ export async function lightFixture() {
  return createPortableRecoveryPackage({name:'vaulted-recovery',version:1,header,archive},await recoveryBackupKey(new Uint8Array(32).fill(7),header));
 }
 export function signLight(bytes) { const tx=Transaction.fromPSBT(bytes); tx.sign(new Uint8Array(32).fill(7)); return tx.toPSBT(); }
-export function sign(bytes) { const tx=Transaction.fromPSBT(bytes); tx.sign(scalarSecret(4)); tx.sign(scalarSecret(5)); return tx.toPSBT(); }
+export function sign(bytes) {
+ const tx=Transaction.fromPSBT(bytes);
+ for (const fill of [0x42,0x44]) {
+   const nodes=[HDKey.fromMasterSeed(new Uint8Array(32).fill(fill),ledgerBip32Versions('mutinynet'))];
+   try {
+     for (const index of [0x80000056,0x80000001,0x80000000,12,0]) nodes.push(nodes.at(-1).deriveChild(index));
+     tx.sign(nodes.at(-1).privateKey);
+   } finally { for (const node of nodes) node.wipePrivateData(); }
+ }
+ return tx.toPSBT();
+}
 `,
     },
     outfile: fixturePath,

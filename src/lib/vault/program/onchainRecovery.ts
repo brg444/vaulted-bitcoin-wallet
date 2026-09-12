@@ -11,7 +11,6 @@ import { HDKey } from '@scure/bip32'
 import { tapLeafHash } from '@scure/btc-signer/payment.js'
 import { bitcoinDustSats, scriptHexFromAddress } from '../bitcoin'
 import { requireExactDefaultTapscriptSignatures, tapscriptSignatureRecords } from '../taprootSignatures'
-import { isConnectorTemplate } from './connector'
 import { type Claimant } from './constants'
 import { familyFromDescriptor } from './descriptor'
 import {
@@ -126,8 +125,6 @@ function pathFacts(kit: RecoveryKit, path: SavingsRecoveryPath) {
   }
   const family = familyFromDescriptor(d)
   if (path.program === 'savings-admin') {
-    if (isConnectorTemplate(d.templateVersion))
-      throw new Error('Connector Savings requires its saved payment and cosigner authorization')
     return {
       tree: family.savings,
       leaf: family.savings.admin,

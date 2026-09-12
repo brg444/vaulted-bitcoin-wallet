@@ -4,8 +4,6 @@ import { schnorr } from '@noble/curves/secp256k1.js'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
 import type { VaultStatus } from '../types'
 import { isLedgerRecoveryKit, parseRecoveryKit, type RecoveryKit } from '../program/kit'
-import { validateConnectorRecoveryJournal, type ConnectorRecoveryJournal } from '../program/connectorStore'
-import { isConnectorTemplate } from '../program/connector'
 import { validateVaultRecoveryArchive, vaultRecoveryBinding, type VaultRecoveryArchive } from '../vtxo/recoveryArchive'
 import { unlockVaultPhoneKeys } from '../savingsSpend'
 import { canonicalLedgerValue, validateLedgerSavingsEnrollmentSecrets } from '../program/ledgerEnrollment'
@@ -37,7 +35,6 @@ export interface VaultRecoveryFile extends Partial<RecoveryJournals> {
   version: 1
   header: RecoveryHeader
   archive: VaultRecoveryArchive
-  connectorJournal?: ConnectorRecoveryJournal
 }
 export interface EncryptedRecoveryBackup {
   name: 'vaulted-recovery-backup'
@@ -58,9 +55,7 @@ export function recoveryBinding(kit: RecoveryKit, status: VaultStatus): Recovery
     spendingPolicyDigest: kit.spendingPolicyDigest,
     descriptorHash: isLedgerRecoveryKit(kit)
       ? kit.descriptor.enrollmentDescriptorHash
-      : isConnectorTemplate(status.templateVersion)
-        ? status.connectorEnrollment!.descriptorHash
-        : status.vtxoBoardingDescriptorHash!,
+      : status.vtxoBoardingDescriptorHash!,
   }
 }
 
@@ -100,7 +95,6 @@ export function recoveryStatusFacts(status: VaultStatus): VaultStatus {
     'vtxoBoardingAddress',
     'vtxoBoardingExitDelay',
     'vtxoBoardingExitDelayUnit',
-    'connectorEnrollment',
     'ledgerSavings',
     'spendingDescriptor',
   ] as const
@@ -207,12 +201,7 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
   )
     throw new Error('Invalid recovery file')
   const { header } = validateRecoveryDataBinding(file.header, file.archive)
-  if (isConnectorTemplate(header.binding.templateVersion)) {
-    validateConnectorRecoveryJournal(
-      { vaultId: header.binding.vaultId, enrollmentDigest: header.status.connectorEnrollment!.enrollmentDigest },
-      file.connectorJournal,
-    )
-  } else if (file.connectorJournal !== undefined) throw new Error('Connector journal on another program')
+  if ('connectorJournal' in file) throw new Error('Retired recovery journal')
   if (
     file.spendingJournal !== undefined ||
     file.lightningJournal !== undefined ||

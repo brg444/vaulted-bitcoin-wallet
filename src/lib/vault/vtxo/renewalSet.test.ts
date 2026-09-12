@@ -14,7 +14,22 @@ import {
   spendingRenewalSetDigest,
   validateSpendingRenewalSet,
 } from './renewalSet'
-import vectors from './testdata/renewal-context-v1.json'
+import expectedVectors from './testdata/renewal-context-v1.json'
+import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
+
+// Reuse independent tree/digest inputs for retained Ledger Spending. The
+// account template is outside the unchanged renewal context encoding.
+const vectors = expectedVectors
+  .filter((v) => v.status.templateVersion !== 'phone-connector-recovery-savings-v1')
+  .map((v) =>
+    v.context.protectionTier === 'light'
+      ? v
+      : {
+          ...v,
+          name: `${v.status.network}-${v.context.protectionTier}-${LEDGER_NATIVE_TEMPLATE}`,
+          status: { ...v.status, templateVersion: LEDGER_NATIVE_TEMPLATE },
+        },
+  )
 
 const owner = new Uint8Array(32).fill(1),
   scalar = new Uint8Array(32).fill(7)
@@ -55,7 +70,12 @@ describe('bounded all-program renewal sets using the installed SDK', () => {
   it('verifies the fixed cross-language set signature and digest', () => {
     expect(hex.encode(spendingRenewalSetDigest(setVector.set))).toBe(setVector.digest)
     expect(spendingRenewalSetBody(setVector.set)).toEqual(setVector.body)
-    expect(validateSpendingRenewalSet(setVector.set, setVector.status as VaultStatus)).toEqual(setVector.set)
+    expect(
+      validateSpendingRenewalSet(setVector.set, {
+        ...setVector.status,
+        templateVersion: LEDGER_NATIVE_TEMPLATE,
+      } as VaultStatus),
+    ).toEqual(setVector.set)
   })
   it.each(vectors)('prepares finite same-script authority for $name', async (vector) => {
     const f = await fixture(vector.status)

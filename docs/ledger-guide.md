@@ -1,9 +1,8 @@
 # Ledger and Vaulted Savings
 
 The native Ledger integration is under qualification and is not enabled for new
-RC enrollments yet. Existing wallets retain the contract selected when they were
-created. If your wallet asks for two 500-sat signer reserves, use the
-[existing connector wallet guide](ledger-connector-guide.md).
+RC enrollments yet. This cleanup candidate supports shared Spending with optional
+Ledger Savings and retires historical account programs.
 
 ## Native Savings setup
 
@@ -55,8 +54,7 @@ intervention window when the initiation keys are compromised.
 
 Simulator, complete backup restoration and funded service lifecycle tests pass,
 allowing software deployment with native enrollment disabled. Physical Ledger
-review remains required before enabling new enrollment, while existing funded
-connector wallets require an explicit migration transaction.
+review remains required before enabling new enrollment.
 
 The stock Ledger app cannot sign the existing Spending exit tree. Emergency
 Spending recovery therefore uses a separately bundled offline signing tool. In

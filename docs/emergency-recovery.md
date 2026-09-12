@@ -104,10 +104,6 @@ a missing Spending transaction graph.
 | Pending cancellation or Quarantine | The remaining keys required by that exact saved script                 |
 | Outbound Lightning lockup          | Phone sender refund through the saved contract and its refund delay    |
 
-Connector Savings requires its existing service approvals and hardware
-signature. A saved connector payment can finish when the archive contains
-those service approvals; an unrelated new payment cannot reuse them.
-
 Starting a new one-key delayed Savings recovery requires both recovery
 services. Its hardware, phone and separate recovery paths wait 6, 144 and
 288 Bitcoin blocks respectively after the initiating transaction confirms.

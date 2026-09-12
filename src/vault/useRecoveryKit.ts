@@ -9,8 +9,6 @@ import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
 import { signGuardianExitPsbt } from '../lib/vault/program/guardianExit'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { loadLocalKit, saveLocalKit } from '../lib/vault/program/kitStore'
-import { loadConnectorRecoveryKit } from '../lib/vault/program/connectorEnroll'
-import { isConnectorTemplate } from '../lib/vault/program/connector'
 import { kitMatchesLiveVault, selectLiveKit } from '../lib/vault/program/liveKit'
 import {
   alertCopy,
@@ -47,19 +45,11 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
     })
   }, [enrollment, hardwarePub, recoveryPub, status])
 
-  const resolveConnectorKit = useCallback(() => {
-    const id = status?.vaultId || enrollment?.vaultId || ''
-    if (!isConnectorTemplate(status?.templateVersion) || !id) return null
-    return loadConnectorRecoveryKit(id)
-  }, [enrollment?.vaultId, status?.templateVersion, status?.vaultId])
-
   const downloadRecoveryKit = useCallback(() => {
-    const connectorKit = resolveConnectorKit()
-    if (connectorKit) return JSON.stringify(connectorKit, null, 2)
     const kit = resolveKit()
     if (!kit) throw new Error('No Recovery Kit yet. Add recovery, or get the map with Face ID.')
     return JSON.stringify(kit, null, 2)
-  }, [resolveConnectorKit, resolveKit])
+  }, [resolveKit])
 
   const backupRecoveryKit = useCallback(async () => {
     clearError()
@@ -140,7 +130,7 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
   return {
     backupRecoveryKit,
     downloadRecoveryKit,
-    hasRecoveryKit: Boolean(resolveConnectorKit() || resolveKit()),
+    hasRecoveryKit: Boolean(resolveKit()),
     initiateAlert,
     initiateAlerts,
     restoreRecoveryKit,

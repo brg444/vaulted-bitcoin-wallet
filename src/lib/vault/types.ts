@@ -11,19 +11,9 @@ export interface LedgerSavingsStatus extends LedgerSavingsContract {
 
 // Exact JSON object emitted by GET /v1/status?vault=... . Keep normalized
 // compatibility aliases out of this type; they belong to VaultStatus below.
-export interface ConnectorEnrollmentIdentity {
-  connectorType: 'p2wpkh' | 'p2tr'
-  connectorPub: string
-  connectorFingerprint: number
-  connectorPath: number[]
-  enrollmentDigest: string
-  descriptorHash: string
-}
-
 export interface VaultStatusWire {
   spendingDescriptor?: SpendingEnrollmentDescriptor
   ledgerSavings?: LedgerSavingsStatus
-  connectorEnrollment?: ConnectorEnrollmentIdentity
   lightDescriptor?: LightDescriptor
   lightDescriptorHash?: string
   enrolled: boolean
@@ -79,7 +69,6 @@ export interface VaultStatusWire {
 export interface VaultStatus {
   spendingDescriptor?: SpendingEnrollmentDescriptor
   ledgerSavings?: LedgerSavingsStatus
-  connectorEnrollment?: ConnectorEnrollmentIdentity
   lightDescriptor?: LightDescriptor
   lightDescriptorHash?: string
   enrolled: boolean

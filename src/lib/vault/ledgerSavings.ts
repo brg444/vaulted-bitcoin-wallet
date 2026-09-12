@@ -60,7 +60,7 @@ function originFor(
 }
 
 /** Verifies the actual parent and enrolled receive/change coordinate before
- * building the same native transaction used by pre-connector Savings. */
+ * building the enrolled Ledger Savings transaction. */
 export function buildLedgerSavingsPsbt(input: LedgerSavingsPayment): string {
   const { context, spendingPolicy } = input.contract
   const family = buildLedgerNativeFamily(context, spendingPolicy)

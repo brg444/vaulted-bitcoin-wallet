@@ -63,7 +63,7 @@ confirmation, ambiguous responses, restart, fee funding, timelock maturity, and
 recovery from saved data. Local fixtures alone cannot establish these outcomes
 on a deployed network.
 
-[Signer tests](../tools/connector-signers/README.md),
+[Ledger tests](../tools/native-savings-signers/README.md),
 [Light qualification tools](../tools/light-qualification/README.md), and
 [renewal tools](../tools/guardian-delegation-qualification/README.md) document
 reproducible setups. Keep private keys and credentials out of test reports.

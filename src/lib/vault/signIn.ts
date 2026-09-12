@@ -79,7 +79,7 @@ export async function decryptPhoneSecret(
 }
 
 export async function beginPasskeySession(
-  purpose: 'recover' | 'install-envelope' | 'transition' | 'map-write' | 'connector-withdraw',
+  purpose: 'recover' | 'install-envelope' | 'transition' | 'map-write',
   status: VaultStatus,
   allowCredentialId?: string,
   candidateTxid?: string,

@@ -74,7 +74,7 @@ export interface VaultEnrollProposeResponse {
   descriptor: unknown
 }
 
-export type VaultPasskeyPurpose = 'recover' | 'install-envelope' | 'transition' | 'map-write' | 'connector-withdraw'
+export type VaultPasskeyPurpose = 'recover' | 'install-envelope' | 'transition' | 'map-write'
 
 export interface VaultPasskeyChallengeRequest {
   candidateTxid?: string

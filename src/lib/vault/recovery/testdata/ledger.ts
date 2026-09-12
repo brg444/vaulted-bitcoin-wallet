@@ -1,6 +1,10 @@
 import { hex } from '@scure/base'
 import { Transaction } from '@scure/btc-signer'
-import { recoveryFixture } from './helpers'
+import { recoveryArchiveFixture } from './helpers'
+import { ArkAddress, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
+import type { BoardingDescriptor, VaultStatus } from '../../types'
+import { POLICY_VERSION } from '../../constants'
+import { VaultPolicyV1Script } from '../../vtxo/script'
 import {
   ledgerAccountKey,
   ledgerSavingsContextDigest,
@@ -15,11 +19,10 @@ import {
 } from '../../program/ledgerRecoveryDescriptor'
 import { buildRecoveryKit } from '../../program/kit'
 import { ledgerWalletPolicyId } from '../../program/ledgerEnrollment'
-import { defaultSpendingPolicy } from '../../spendingPolicy'
+import { defaultSpendingPolicy, spendingPolicyDigest } from '../../spendingPolicy'
 import { networkPins } from '../../networkPins'
-import { vaultRecoveryBinding } from '../../vtxo/recoveryArchive'
-import { deriveBoardingKey } from '../../vtxo/board'
-import { scalarSecret } from '../../program/fixtures'
+import { deriveBoardingKey, BOARDING_PROGRAM, BOARDING_SCHEMA, BOARDING_TEMPLATE } from '../../vtxo/board'
+import { scalarSecret, compressedFromScalar, PROGRAM_FIXTURE } from '../../program/fixtures'
 import { wrapPhoneSecret } from '../../prfEnvelope'
 import { wrapLedgerPhoneSeed } from '../../ledgerPhoneBackup'
 import { buildRecoveryHeader, type VaultRecoveryFile } from '../backupCodec'
@@ -40,14 +43,95 @@ export async function ledgerRecoveryFixture(advanced = false, network: 'mainnet'
   const authority = (role: 'hardware' | 'recovery') =>
     '02' + hex.encode(ledgerAccountKey(context[role]!, network).deriveChild(12).deriveChild(0).publicKey!.slice(1))
   const board = await deriveBoardingKey(scalarSecret(3), context.vaultId, network)
-  const old = recoveryFixture(advanced, network, context.phoneDirectP256, board.boardingPub, undefined, {
-    hardwarePub: authority('hardware'),
-    ...(advanced ? { recoveryPub: authority('recovery') } : {}),
+  const pins = networkPins(network),
+    spendingPolicy = defaultSpendingPolicy(network),
+    phonePub = compressedFromScalar(3),
+    hardwarePub = authority('hardware'),
+    recoveryPub = advanced ? authority('recovery') : undefined,
+    cosignerPub = compressedFromScalar(18),
+    boardingGuardian = compressedFromScalar(20)
+  const spending = new VaultPolicyV1Script({
+    userPub: hex.decode(phonePub).slice(1),
+    vtxoVaultCosignerPub: hex.decode(cosignerPub).slice(1),
+    arkdServerPub: hex.decode(pins.operatorSignerPub).slice(1),
+    delegatePub: hex.decode(pins.delegatePub).slice(1),
+    exitDelay: BigInt(pins.policyExitDelay),
+    exitDelayUnit: 'seconds',
+    network,
+    exitDevicePub: hex.decode(phonePub).slice(1),
+    exitHardwarePub: hex.decode(hardwarePub).slice(1),
+    ...(recoveryPub ? { exitRecoveryPub: hex.decode(recoveryPub).slice(1) } : {}),
   })
+  const boardingTree = createBoardingProgramScript(
+    {
+      name: BOARDING_PROGRAM,
+      boardingPubKey: hex.decode(board.boardingPub).slice(1),
+      cosignerPubKey: hex.decode(boardingGuardian).slice(1),
+      recoveryPubKey: hex.decode(phonePub).slice(1),
+    },
+    hex.decode(pins.operatorSignerPub).slice(1),
+    { type: 'seconds', value: BigInt(pins.boardExitDelay) },
+  )
+  const boarding: BoardingDescriptor = {
+    schema: BOARDING_SCHEMA,
+    program: BOARDING_PROGRAM,
+    template: BOARDING_TEMPLATE,
+    network,
+    boardingPub: board.boardingPub,
+    recoveryPhonePub: phonePub,
+    vaultBoardCosignerPub: boardingGuardian,
+    operatorPub: pins.operatorSignerPub,
+    exitDelay: pins.boardExitDelay,
+    exitDelayUnit: 'seconds',
+    script: hex.encode(boardingTree.pkScript),
+    address: boardingTree.onchainAddress(getNetwork(pins.sdkNetwork)),
+  }
   board.secret.fill(0)
-  const status = old.status,
-    pins = networkPins(network),
-    spendingPolicy = defaultSpendingPolicy(network)
+  const status: VaultStatus = {
+    enrolled: true,
+    network,
+    clientOrigin: 'https://vault.example',
+    rpId: 'vault.example',
+    vaultId: context.vaultId,
+    templateVersion: context.templateVersion,
+    policyVersion: POLICY_VERSION,
+    protectionTier: advanced ? 'advanced' : 'standard',
+    phoneBip340Pub: phonePub,
+    phoneDirectP256: context.phoneDirectP256,
+    externalOwnerWalletPub: hardwarePub,
+    recoveryPub,
+    vaultCosignerBasePub: PROGRAM_FIXTURE.vaultCosignerBase,
+    arkadeCosignerBasePub: PROGRAM_FIXTURE.arkadeCosignerBase,
+    arkadeCosignerOrigin: PROGRAM_FIXTURE.arkadeCosigner.origin,
+    arkadeCosignerVersion: PROGRAM_FIXTURE.arkadeCosigner.version,
+    savingsAddress: '',
+    savingsScript: '',
+    spendingPolicy,
+    spendingPolicyDigest: spendingPolicyDigest(spendingPolicy, network),
+    periodAllowance: spendingPolicy.periodAllowanceSats,
+    periodSpent: 0,
+    periodRemaining: spendingPolicy.periodAllowanceSats,
+    txCap: spendingPolicy.txRecipientCapSats,
+    absoluteFeeCap: spendingPolicy.absoluteFeeCapSats,
+    feerateCapSatVb: spendingPolicy.feerateCapSatPerV,
+    vtxoVaultCosignerPub: cosignerPub,
+    vtxoDelegatePub: pins.delegatePub,
+    vtxoExitDelay: pins.policyExitDelay,
+    vtxoExitDelayUnit: 'seconds',
+    spendingArkAddress: new ArkAddress(
+      hex.decode(pins.operatorSignerPub).slice(1),
+      spending.tweakedPublicKey,
+      pins.arkHrp,
+    ).encode(),
+    spendingArkScript: hex.encode(spending.pkScript),
+    vtxoBoardingActive: true,
+    vtxoBoardingProgram: BOARDING_PROGRAM,
+    vtxoBoardingDescriptor: boarding,
+    vtxoBoardingScript: boarding.script,
+    vtxoBoardingAddress: boarding.address,
+    vtxoBoardingExitDelay: boarding.exitDelay,
+    vtxoBoardingExitDelayUnit: boarding.exitDelayUnit,
+  }
   const composite: LedgerSavingsEnrollmentDescriptor = {
     schema: LEDGER_ENROLLMENT_SCHEMA,
     vaultId: context.vaultId,
@@ -78,12 +162,7 @@ export async function ledgerRecoveryFixture(advanced = false, network: 'mainnet'
     ledgerSavings: { context, spendingPolicy, descriptorHash: hashLedgerSavingsEnrollment(composite) },
   })
   status.vtxoBoardingDescriptorHash = status.ledgerSavings!.descriptorHash
-  const archive = {
-    ...old.archive,
-    kit,
-    status,
-    spending: { ...old.archive.spending, descriptorHash: vaultRecoveryBinding(kit, status).descriptorHash },
-  }
+  const { archive } = recoveryArchiveFixture(kit, status, spending)
   const trees = [
     kit.descriptor.savings,
     kit.descriptor.savingsChange,

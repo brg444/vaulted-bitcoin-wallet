@@ -43,9 +43,8 @@ export interface LedgerSavingsEnrollmentDescriptor {
 }
 
 export interface LedgerRecoveryDescriptor
-  extends Omit<VaultProgramDescriptor, 'schema' | 'tweaks' | 'arkadeCosigner' | 'p2a' | 'connectorType'> {
+  extends Omit<VaultProgramDescriptor, 'schema' | 'tweaks' | 'arkadeCosigner' | 'p2a'> {
   schema: typeof LEDGER_RECOVERY_SCHEMA
-  connectorType?: never
   /** These keys remain the enrolled Spending identities; Savings uses ledgerSavings origins. */
   keys: VaultProgramDescriptor['keys']
   ledgerSavings: LedgerSavingsContract

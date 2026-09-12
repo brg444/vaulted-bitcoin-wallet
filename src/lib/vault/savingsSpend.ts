@@ -1,4 +1,3 @@
-import { isConnectorTemplate } from './program/connector'
 import { LIGHT_PROFILE } from './light/contract'
 import { unlockLightOwnerKey } from './light/keyBackup'
 import { requireLightStatus } from './light/status'
@@ -66,8 +65,6 @@ export function buildSavingsPsbt(input: {
   ) {
     throw new Error('Savings map does not match the hardware key')
   }
-  if (isConnectorTemplate(kit.descriptor.templateVersion))
-    throw new Error('Use the Savings connector approval flow for this vault.')
   const tree = familyFromDescriptor(kit.descriptor).savings
   return buildNativeSavingsPsbt({
     ...input,

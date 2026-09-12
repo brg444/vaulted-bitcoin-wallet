@@ -1,4 +1,3 @@
-import { isConnectorTemplate } from '../../../lib/vault/program/connector'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { CircleHelp, X } from 'lucide-react'
 import { VaultContext } from '../../../vault/context'
@@ -76,7 +75,7 @@ export default function WalletHelp() {
                   {!wallet.light ? (
                     <a
                       className='qg-secondary'
-                      href={`https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/${isConnectorTemplate(status?.templateVersion) ? 'ledger-connector-guide.md' : 'ledger-guide.md'}`}
+                      href='https://github.com/brg444/vaulted-bitcoin-wallet/blob/main/docs/ledger-guide.md'
                       target='_blank'
                       rel='noopener noreferrer'
                       aria-label='Ledger setup and signing guide (opens in a new tab)'

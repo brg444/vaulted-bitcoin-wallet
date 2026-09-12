@@ -37,7 +37,6 @@ export function passkeyProofDigest(purpose: string, challenge: Uint8Array, crede
     purpose !== 'install-envelope' &&
     purpose !== 'transition' &&
     purpose !== 'map-write' &&
-    purpose !== 'connector-withdraw' &&
     purpose !== 'light-backup-open' &&
     purpose !== 'recovery-archive-open' &&
     purpose !== 'lnurl-register' &&

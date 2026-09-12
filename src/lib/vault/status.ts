@@ -3,7 +3,6 @@ import { readBounded } from './bounded'
 import { POLICY_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
 import { authorizerWalletHref, requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
-import type { ConnectorCapability } from './program/connectorEnroll'
 import { SAVINGS_TEMPLATE } from './program/constants'
 import { bindStatusToLocalPin } from './pin'
 import type { VaultStatus, VaultStatusWire } from './types'
@@ -37,10 +36,6 @@ export type PublicAuthorizerStatus = {
   enrollmentExpiresAt?: string
   vtxoBoardingProgram?: string
   spendingPolicyCapabilities: SpendingPolicyCapabilities
-  // Versioned connector enrollment capability. Absent on Guardians that
-  // predate connector enrollment; the wallet refuses connector setup before
-  // passkey creation unless it matches exactly.
-  connectorCapability?: ConnectorCapability
 }
 
 export type VaultReadyStatus = {
@@ -230,7 +225,7 @@ export function requireStatusIdentity(
   const network = requireReleaseNetwork(status.network)
   if (status.templateVersion !== SPENDING_ONLY_TEMPLATE && status.templateVersion !== LEDGER_NATIVE_TEMPLATE)
     throw new Error('template version is not this release')
-  if (status.connectorEnrollment || status.lightDescriptor || status.lightDescriptorHash)
+  if ('connectorEnrollment' in status || status.lightDescriptor || status.lightDescriptorHash)
     throw new Error('status contains a retired account program')
   if (status.policyVersion !== POLICY_VERSION) throw new Error('policy version is not this release')
   const selected = validateSpendingPolicy(status.spendingPolicy, network)

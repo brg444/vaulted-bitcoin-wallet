@@ -2,12 +2,11 @@ import { requireSavingsRecoveryKit } from '../program/kit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Transaction, type OnchainProvider } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
-import { CONNECTOR_TEMPLATE, DUAL_CONNECTOR_TEMPLATE } from '../program/connector'
-import { recoveryFixture } from './testdata/helpers'
-import { scalarSecret, FIXTURE_PHONE_DIRECT_P256 } from '../program/fixtures'
-import { wrapPhoneSecret } from '../prfEnvelope'
+import { HDKey } from '@scure/bip32'
+import { ledgerBip32Versions } from '../program/ledgerNativeKeys'
+import { ledgerRecoveryFixture } from './testdata/ledger'
+import { scalarSecret } from '../program/fixtures'
 import {
-  buildRecoveryHeader,
   decryptRecoveryBackup,
   recoveryBackupKey,
   validateVaultRecoveryFile,
@@ -15,52 +14,23 @@ import {
 } from './backupCodec'
 import { createPortableRecoveryPackage, parsePortableRecoveryPackage, portableRecoverySource } from './portable'
 import { prepareVaultSpendingRecovery } from '../vtxo/spendingRecovery'
-import { recoveryLightningBinding } from './journals'
 
 afterEach(() => vi.restoreAllMocks())
-async function fixture(advanced = true, connector?: Parameters<typeof recoveryFixture>[4]) {
-  const { archive, status, kit } = recoveryFixture(advanced, 'mutinynet', undefined, undefined, connector)
-  const enrollment = {
-    vaultId: status.vaultId,
-    credId: 'ab'.repeat(32),
-    webauthnP256: FIXTURE_PHONE_DIRECT_P256,
-    phoneBip340Pub: kit.descriptor.keys.phoneBip340,
-    phoneDirectP256: kit.descriptor.keys.phoneDirectP256,
-    ...(await wrapPhoneSecret(scalarSecret(9), scalarSecret(3))),
-  }
-  const header = buildRecoveryHeader(kit, status, enrollment)
-  const file: VaultRecoveryFile = {
-    name: 'vaulted-recovery',
-    version: 1,
-    header,
-    archive,
-    ...(connector ? { connectorJournal: { version: 1 as const, pending: null, history: [] } } : {}),
-    spendingJournal: { version: 1, vaultId: status.vaultId, operations: [] },
-    lightningJournal: {
-      name: 'vaulted-lightning-recovery',
-      version: 1,
-      binding: recoveryLightningBinding(status),
-      entries: [],
-    },
-  }
-  const key = await recoveryBackupKey(scalarSecret(3), header)
-  return { file, key }
+async function fixture(advanced = true) {
+  const { file } = await ledgerRecoveryFixture(advanced)
+  return { file, key: await recoveryBackupKey(scalarSecret(3), file.header) }
 }
 
 describe('portable recovery data', () => {
-  for (const templateVersion of [CONNECTOR_TEMPLATE, DUAL_CONNECTOR_TEMPLATE]) {
-    for (const connectorType of ['p2wpkh', 'p2tr'] as const) {
-      it.each([false, true])(
-        `exports ${templateVersion} ${connectorType} without changing enrollment, advanced=%s`,
-        async (advanced) => {
-          const { file, key } = await fixture(advanced, { templateVersion, connectorType })
-          const pkg = await createPortableRecoveryPackage(file, key)
-          expect(pkg.backup.header).toEqual(file.header)
-          expect(portableRecoverySource(pkg).archive.kit).toEqual(file.header.kit)
-        },
-      )
-    }
-  }
+  it.each([false, true])(
+    'exports retained Ledger identity without changing enrollment, advanced=%s',
+    async (advanced) => {
+      const { file, key } = await fixture(advanced)
+      const pkg = await createPortableRecoveryPackage(file, key)
+      expect(pkg.backup.header).toEqual(file.header)
+      expect(portableRecoverySource(pkg).archive.kit).toEqual(file.header.kit)
+    },
+  )
   it('accepts reordered JSON properties and rejects unknown public identity fields', async () => {
     const { file, key } = await fixture()
     const reordered = structuredClone(file)
@@ -116,8 +86,24 @@ describe('portable recovery data', () => {
       async ({ psbt, requiredKeys }) => {
         expect(requiredKeys.map((item) => item.role)).toEqual(['hardware', 'recovery'])
         const tx = Transaction.fromPSBT(hex.decode(psbt))
-        tx.sign(scalarSecret(4))
-        tx.sign(scalarSecret(5))
+        const context = (file.header.kit as import('../program/kit').LedgerRecoveryKit).descriptor.ledgerSavings.context
+        for (const role of ['hardware', 'recovery'] as const) {
+          const root = HDKey.fromMasterSeed(
+            new Uint8Array(32).fill(role === 'hardware' ? 0x42 : 0x44),
+            ledgerBip32Versions(context.network),
+          )
+          const nodes = [root]
+          try {
+            let node = root
+            for (const index of [...context[role]!.path, 12, 0]) {
+              node = node.deriveChild(index)
+              nodes.push(node)
+            }
+            tx.sign(node.privateKey!)
+          } finally {
+            for (const node of nodes) node.wipePrivateData()
+          }
+        }
         return hex.encode(tx.toPSBT())
       },
       provider,

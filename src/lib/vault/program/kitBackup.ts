@@ -1,6 +1,5 @@
 import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from '../spendingEnrollment'
 import { buildSpendingRecoveryDescriptor } from './spendingRecoveryDescriptor'
-import { isConnectorTemplate } from './connector'
 import { vaultCosignerClient } from '../cosignerClient'
 import { beginPasskeySession } from '../signIn'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
@@ -106,7 +105,7 @@ export function kitFromFacts(input: {
     protectionTier &&
     protectionTier !== 'light' &&
     isSupportedVaultNetwork(input.status?.network) &&
-    (liveTemplate === SAVINGS_TEMPLATE || isConnectorTemplate(liveTemplate))
+    liveTemplate === SAVINGS_TEMPLATE
   ) {
     try {
       const descriptor = buildVaultProgramDescriptor({
@@ -123,7 +122,6 @@ export function kitFromFacts(input: {
           version: signerVersion,
         },
         templateVersion: liveTemplate,
-        connectorType: input.status?.connectorEnrollment?.connectorType,
         protectionTier,
         spendingPolicy,
       })

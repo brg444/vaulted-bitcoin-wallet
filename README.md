@@ -13,7 +13,7 @@ admission requirements come from the connected Guardian.
 | Mode     | Spending                                                                       | Savings                                                              |
 | -------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
 | Light    | Passkey-owned Spending with an immutable policy and a delayed owner exit       | Watch-only Bitcoin account                                           |
-| Standard | Policy-controlled Spending; delayed exit requires the device and hardware keys | Savings with device, external signer, and enrolled service approvals |
+| Standard | Policy-controlled Spending; delayed exit requires the device and hardware keys | Ledger Savings with device and hardware approval |
 | Advanced | Policy-controlled Spending; delayed exit requires hardware and recovery keys   | Savings with an additional, separate recovery key                    |
 
 Light, Standard, and Advanced use the same Spending payment and receive routes,
@@ -22,17 +22,15 @@ send, invoice creation, and Lightning addresses require the corresponding
 build configuration and services. A configured Lightning address appears on
 the primary Receive screen alongside access to invoices and Bitcoin receive.
 
-New Savings connector enrollments use two 500-sat signer reserves. The external
-signer approves the transaction before the passkey and online services. Existing
-vaults retain the scripts and signing order selected at enrollment. See
-[programs](docs/program.md) and [signer compatibility](docs/connector-signers.md)
-for the differences and device requirements.
+Protected Savings uses Ledger registration and its enrolled receive/change policies.
+See the [Ledger guide](docs/ledger-guide.md) for setup, signing and recovery
+requirements. This cleanup candidate accepts shared Spending and Ledger accounts;
+historical account programs are retired.
 
 Per-payment and rolling 24-hour limits are fixed at enrollment. Admission may
 be open or invitation-based; the wallet follows the Guardian's advertised mode.
-Standard and Advanced require a public signer descriptor, imported by QR,
-file upload, or an explicitly selected paste field. Private hardware and
-recovery keys remain in their signing devices.
+Standard and Advanced use the Ledger setup flow, with a separate recovery
+authority in Advanced. Ordinary signing keeps hardware keys on their devices.
 
 ## Backups and recovery
 

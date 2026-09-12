@@ -1,5 +1,4 @@
 import { BitcoinPaymentError } from './bitcoinPaymentError'
-import { ConnectorUserError } from './connectorError'
 import { LightningPaymentError } from './lightningError'
 import { isVaultConcurrencyUnavailableError } from './vtxo/lock'
 import {
@@ -42,8 +41,7 @@ const LEDGER_ENROLLMENT_MESSAGES: Readonly<Record<string, string>> = {
 }
 
 export function humanizeVaultError(err: unknown): string {
-  if (err instanceof ConnectorUserError || err instanceof BitcoinPaymentError || err instanceof LightningPaymentError)
-    return err.message
+  if (err instanceof BitcoinPaymentError || err instanceof LightningPaymentError) return err.message
   const parts = nestedErrorMessages(err)
   const raw = parts[0] || (err instanceof Error ? err.message : String(err || 'Something went wrong'))
   if (raw === 'This Savings program is no longer supported.') return raw
@@ -246,15 +244,6 @@ export function humanizeVaultError(err: unknown): string {
   }
   if (msg.includes('different key') || msg.includes('must be different')) {
     return 'Use a different hardware key.'
-  }
-  if (msg.includes('connector') || msg.includes('guardian does not support')) {
-    if (msg.includes('descriptor'))
-      return 'Use a supported public wpkh or tr wallet descriptor with its fingerprint and derivation path.'
-    if (msg.includes('busy') || msg.includes('pending') || msg.includes('active'))
-      return 'A Savings transfer is pending. Open it in History to continue.'
-    if (msg.includes('does not support'))
-      return 'This Guardian does not support Savings connectors yet. Setup has not continued.'
-    return 'This Savings transfer could not be verified. Reopen the pending transfer before trying again.'
   }
   return 'Something went wrong. Try again.'
 }

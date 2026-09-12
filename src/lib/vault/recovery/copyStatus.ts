@@ -8,7 +8,6 @@ export type RecoveryContents = {
   digest: string
   pendingPayments: number
   lightningContracts: number
-  pendingConnector: boolean
   journalsPresent: boolean
 }
 export type RecoveryCopies = Partial<
@@ -117,5 +116,5 @@ export function recoveryContentsDescription(copies: RecoveryCopies, kind: Recove
         : contents.digest === local.digest
           ? 'Matches the locally saved recovery data, including'
           : 'Differs from the locally saved recovery data. This copy includes'
-  return `${comparison} ${contents.pendingPayments} unresolved payment records, ${contents.lightningContracts} Lightning contract records${contents.pendingConnector ? ', and a pending Savings action' : ''}. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals.'}`.trim()
+  return `${comparison} ${contents.pendingPayments} unresolved payment records, ${contents.lightningContracts} Lightning contract records. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals.'}`.trim()
 }

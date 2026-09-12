@@ -93,7 +93,7 @@ export function validateLightningAddress(value: LightningAddress, status: VaultS
   const descriptor =
     status.templateVersion === SPENDING_ONLY_TEMPLATE
       ? spendingEnrollmentHash(requireSpendingEnrollmentStatus(status))
-      : (status.lightDescriptorHash ?? status.connectorEnrollment?.descriptorHash)
+      : status.lightDescriptorHash
   if (
     !/^v[0-9a-f]{16}$/.test(value.id) ||
     (name !== value.id && !validLightningName(name)) ||

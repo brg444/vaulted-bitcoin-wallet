@@ -1,4 +1,5 @@
 import { hex } from '@scure/base'
+import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
 import { describe, expect, it } from 'vitest'
 import type { VaultStatus } from '../types'
 import vectors from './testdata/renewal-context-v1.json'
@@ -12,7 +13,7 @@ import { spendingRenewalSetDigest, type SpendingRenewalSet } from './renewalSet'
 // Existing plan signatures are payload here; this checks serialization, not renewed authorization.
 describe('opaque renewal identity Go signing parity', () => {
   const vaultId = 'vault<>&\u2028\u2029é'
-  const status = { ...vectors[1].status, vaultId } as VaultStatus
+  const status = { ...vectors[1].status, vaultId, templateVersion: LEDGER_NATIVE_TEMPLATE } as VaultStatus
   const descriptorHash = expected['vaulted-vtxo/renewal-context/v1']
   const set = { ...setVector.set, vaultId, descriptorHash } as SpendingRenewalSet
 

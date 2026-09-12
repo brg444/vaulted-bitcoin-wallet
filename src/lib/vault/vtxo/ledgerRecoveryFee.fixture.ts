@@ -73,7 +73,7 @@ export async function fixture(advanced = false, network: 'mainnet' | 'mutinynet'
           r.wipe()
         }
         try {
-          const old = recoveryFixture(advanced, network, context.phoneDirectP256, undefined, undefined, {
+          const old = recoveryFixture(advanced, network, context.phoneDirectP256, undefined, {
             hardwarePub: '02' + hex.encode(hExit.key.publicKey!.slice(1)),
             ...(rExit ? { recoveryPub: '02' + hex.encode(rExit.key.publicKey!.slice(1)) } : {}),
           })

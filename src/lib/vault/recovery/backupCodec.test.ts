@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { scalarSecret, FIXTURE_PHONE_DIRECT_P256 } from '../program/fixtures'
 import { wrapPhoneSecret } from '../prfEnvelope'
 import { recoveryFixture } from './testdata/helpers'
+import { ledgerRecoveryFixture } from './testdata/ledger'
 import {
   buildRecoveryHeader,
+  validateVaultRecoveryFile,
   encryptRecoveryBackup,
   decryptRecoveryBackup,
   recoveryBackupKey,
@@ -27,6 +29,18 @@ async function fixture(advanced = true) {
 }
 
 describe('program recovery encrypted archives', () => {
+  it('rejects retired connector journals and identity extensions on retained accounts', async () => {
+    const { file } = await ledgerRecoveryFixture()
+    expect(() => validateVaultRecoveryFile({ ...file, connectorJournal: {} } as VaultRecoveryFile)).toThrow(
+      'Retired recovery journal',
+    )
+    const extended = structuredClone(file)
+    Object.assign(extended.archive.status, { connectorEnrollment: {} })
+    expect(() => validateVaultRecoveryFile(extended)).toThrow('Retired recovery account metadata')
+    Object.assign(file.header.status, { connectorEnrollment: {} })
+    expect(() => validateVaultRecoveryFile(file)).toThrow('Retired recovery account metadata')
+  })
+
   it.each([false, true])(
     'round trips complete transaction data without retaining a signing key (advanced=%s)',
     async (advanced) => {

@@ -4,6 +4,20 @@ import { PROGRAM_FIXTURE } from './fixtures'
 import { buildRecoveryKit, inspectRecoveryKit, parseRecoveryKit } from './kit'
 
 describe('Recovery Kit', () => {
+  it.each(['phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2'])(
+    'rejects retired %s descriptors and enrollment kits',
+    (templateVersion) => {
+      expect(() => buildVaultProgramDescriptor({ ...PROGRAM_FIXTURE, templateVersion })).toThrow('template version')
+      const kit = buildRecoveryKit(buildVaultProgramDescriptor(PROGRAM_FIXTURE))
+      expect(() => parseRecoveryKit({ ...kit, descriptor: { ...kit.descriptor, templateVersion } })).toThrow(
+        'template version',
+      )
+      expect(() =>
+        parseRecoveryKit({ name: 'arkade-connector-enrollment', version: 1, descriptor: kit.descriptor }),
+      ).toThrow('Recovery Kit')
+    },
+  )
+
   it('rebuilds the descriptor and lists the seven Savings trees', () => {
     const kit = buildRecoveryKit(buildVaultProgramDescriptor(PROGRAM_FIXTURE))
     const report = inspectRecoveryKit(kit)

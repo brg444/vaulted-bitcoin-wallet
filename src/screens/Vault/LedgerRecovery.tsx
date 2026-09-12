@@ -61,7 +61,7 @@ const chain = {
   broadcast: broadcastTx,
 }
 
-/** Explicit native Ledger route. Legacy and connector recovery retain their existing planners. */
+/** Ledger recovery uses the enrolled contract and its saved registration. */
 export default function LedgerRecovery({
   kit,
   status,

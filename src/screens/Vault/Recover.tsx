@@ -982,7 +982,7 @@ export default function VaultRecover() {
                     .then(({ contents }) => {
                       if (revision !== fileRead.current) return
                       setProtectedCheck(
-                        `Original passkey opened this file. It contains ${contents.pendingPayments} unresolved payment records and ${contents.lightningContracts} Lightning contract records${contents.pendingConnector ? ', plus a pending Savings action' : ''}. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals. '}Hardware and recovery keys remain untested. No funds moved.`,
+                        `Original passkey opened this file. It contains ${contents.pendingPayments} unresolved payment records and ${contents.lightningContracts} Lightning contract records. ${contents.journalsPresent ? '' : 'This older file has no complete payment journals. '}Hardware and recovery keys remain untested. No funds moved.`,
                       )
                     })
                     .catch((err) => {

@@ -8,7 +8,6 @@ import { buildLightDescriptor, defaultLightPolicy } from '../light/contract'
 import { lightTestStatus } from '../light/testdata/helpers'
 import { requireLightStatus } from '../light/status'
 import { networkPins } from '../networkPins'
-import { CONNECTOR_TEMPLATE } from '../program/connector'
 import { SAVINGS_TEMPLATE } from '../program/constants'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../spendingPolicy'
 import type { VaultStatus } from '../types'
@@ -34,7 +33,7 @@ const fixtures = (['mainnet', 'mutinynet'] as const).flatMap((network) => {
   return [
     light,
     ...(['standard', 'advanced'] as const).flatMap((tier) =>
-      [SAVINGS_TEMPLATE, CONNECTOR_TEMPLATE].map((templateVersion) => {
+      [SAVINGS_TEMPLATE].map((templateVersion) => {
         const policy = { ...defaultSpendingPolicy(network), txRecipientCapSats: 12000, periodAllowanceSats: 35000 }
         const script = new VaultPolicyV1Script({
           network,
@@ -80,6 +79,13 @@ const fixtures = (['mainnet', 'mutinynet'] as const).flatMap((network) => {
 })
 
 describe('shared Spending renewal identity', () => {
+  it.each(['phone-connector-recovery-savings-v1', 'phone-connector-recovery-savings-v2'])(
+    'rejects the retired renewal program %s',
+    (templateVersion) => {
+      expect(() => guardianRenewalContext({ ...fixtures[1], templateVersion })).toThrow('Unsupported renewal program')
+    },
+  )
+
   it.each(fixtures)('binds $network $protectionTier $templateVersion to the complete original tree', (status) => {
     const context = guardianRenewalContext(status)
     expect(context.scriptPubKey).toBe(status.spendingArkScript)
@@ -123,7 +129,7 @@ describe('shared Spending renewal identity', () => {
     expect(() => guardianRenewalContext({ ...status, protectionTier: 'advanced' })).toThrow()
     expect(() => guardianRenewalContext({ ...status, spendingPolicyDigest: '00'.repeat(32) })).toThrow()
     expect(() => guardianRenewalContext({ ...status, templateVersion: 'future-program' })).toThrow()
-    expect(guardianRenewalContextDigest(fixtures[1])).not.toBe(guardianRenewalContextDigest(fixtures[3]))
+    expect(guardianRenewalContextDigest(fixtures[1])).not.toBe(guardianRenewalContextDigest(fixtures[2]))
   })
 
   it.each(expectedVectors.filter((vector) => vector.status.templateVersion === SAVINGS_TEMPLATE))(
@@ -144,7 +150,9 @@ describe('shared Spending renewal identity', () => {
       context: guardianRenewalContext(status),
       descriptorHash: guardianRenewalContextDigest(status),
     }))
-    expect(vectors).toEqual(expectedVectors)
-    expect(vectors).toHaveLength(10)
+    expect(vectors).toEqual(
+      expectedVectors.filter((v) => v.status.templateVersion !== 'phone-connector-recovery-savings-v1'),
+    )
+    expect(vectors).toHaveLength(6)
   })
 })

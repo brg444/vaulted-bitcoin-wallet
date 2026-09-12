@@ -154,7 +154,7 @@ export async function signLedgerSavings(
 }
 
 /** Desktop WebHID only. Mobile Safari must use the dedicated desktop signing
- * workflow; transport availability must never silently select connector signing. */
+ * workflow; transport availability never changes the enrolled signing contract. */
 export async function connectLedgerSavings() {
   if (!globalThis.isSecureContext || typeof navigator === 'undefined' || !('hid' in navigator))
     throw new Error('Connect your Ledger using a desktop browser with USB device support.')

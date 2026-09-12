@@ -187,18 +187,6 @@ export async function createPortableRecoveryPackage(file: VaultRecoveryFile, key
       address,
     }
   }
-  if (status.connectorEnrollment) {
-    const { connectorType, connectorPub, connectorFingerprint, connectorPath, enrollmentDigest, descriptorHash } =
-      status.connectorEnrollment
-    status.connectorEnrollment = {
-      connectorType,
-      connectorPub,
-      connectorFingerprint,
-      connectorPath: [...connectorPath],
-      enrollmentDigest,
-      descriptorHash,
-    }
-  }
   const header = buildRecoveryHeader(kit, status, valid.header.enrollment)
   // An unexpected extension in the public identity requires review before export.
   if (canonical(header) !== canonical(valid.header))

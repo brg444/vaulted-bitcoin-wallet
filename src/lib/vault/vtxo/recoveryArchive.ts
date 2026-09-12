@@ -18,8 +18,6 @@ import { vaultExitRepository } from './exitRepository'
 import { vaultWalletDatabase } from './walletWorkerNames'
 import { networkPins } from '../networkPins'
 import { readBounded } from '../bounded'
-import { isConnectorTemplate } from '../program/connector'
-import { connectorPinFromVerifiedStatus } from '../program/connectorEnroll'
 import {
   loadBoardingTranscripts,
   mergeBoardingTranscripts,
@@ -41,6 +39,7 @@ export interface VaultRecoveryArchive<K extends RecoveryKit = RecoveryKit> {
 }
 
 export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
+  if ('connectorEnrollment' in status) throw new Error('Retired recovery account metadata')
   const valid = parseRecoveryKit(kit)
   const rebuilt = kitFromFacts({ status })
   if (!rebuilt || rebuilt.descriptorHash !== valid.descriptorHash || status.vaultId !== valid.descriptor.vaultId)
@@ -49,8 +48,7 @@ export function vaultRecoveryBinding(kit: RecoveryKit, status: VaultStatus) {
   if (hex.encode(script.params.arkdServerPub) !== networkPins(status.network).operatorSignerPub.slice(2))
     throw new Error('Recovery Operator does not match this release')
   const boarding = requireBoardingStatus(status, String(status.vtxoBoardingDescriptor?.boardingPub || ''))
-  if (isConnectorTemplate(status.templateVersion)) connectorPinFromVerifiedStatus(status)
-  else if (isLedgerRecoveryKit(valid)) {
+  if (isLedgerRecoveryKit(valid)) {
     if (valid.descriptor.enrollmentDescriptorHash !== status.ledgerSavings?.descriptorHash)
       throw new Error('Ledger recovery enrollment composite changed')
   } else if (isSpendingRecoveryKit(valid)) {

@@ -21,14 +21,7 @@ import type { LedgerSavingsKeyContext, LedgerAccountOrigin } from './program/led
 type ExpectedVaultStatusWire = {
   spendingDescriptor?: import('./spendingEnrollment').SpendingEnrollmentDescriptor
   ledgerSavings?: { context: LedgerSavingsKeyContext; spendingPolicy: SpendingPolicy; descriptorHash: string }
-  connectorEnrollment?: {
-    connectorType: 'p2wpkh' | 'p2tr'
-    connectorPub: string
-    connectorFingerprint: number
-    connectorPath: number[]
-    enrollmentDigest: string
-    descriptorHash: string
-  }
+
   lightDescriptor?: LightDescriptor
   lightDescriptorHash?: string
   enrolled: boolean

@@ -40,14 +40,12 @@ export function recoveryFileFacts(raw: CompleteRecoveryFile) {
               .sort((a, b) => `${a.txid}:${a.vout}`.localeCompare(`${b.txid}:${b.vout}`)),
             spendingJournal: file.spendingJournal,
             lightningJournal: file.lightningJournal,
-            connectorJournal: standard?.connectorJournal,
           }),
         ),
       ),
     ),
     pendingPayments: file.spendingJournal?.operations.length || 0,
     lightningContracts: file.lightningJournal?.entries.length || 0,
-    pendingConnector: Boolean(standard?.connectorJournal?.pending),
     journalsPresent: Boolean(file.spendingJournal && file.lightningJournal),
   }
   return {

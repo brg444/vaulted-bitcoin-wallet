@@ -73,13 +73,6 @@ import {
   type BoardingRecoverySource,
 } from '../../src/lib/vault/vtxo/boardingRecoveryFile'
 import {
-  validateConnectorRecoveryFile,
-  connectorRecoveryHandoff,
-  acceptConnectorRecoverySignature,
-  executeConnectorRecovery,
-  type ConnectorRecoveryFile,
-} from '../../src/lib/vault/program/connectorRecovery'
-import {
   prepareLightningRecovery,
   validateLightningRecoveryPackage,
   executeLightningRecovery,
@@ -92,7 +85,6 @@ import {
   recoveryPsbtHasAllSignatures,
 } from '../../src/lib/vault/recovery/signatureImport'
 import { familyFromDescriptor } from '../../src/lib/vault/program/descriptor'
-import { isConnectorTemplate } from '../../src/lib/vault/program/connector'
 import { requireReleaseNetwork } from '../../src/lib/vault/releaseNetwork'
 import { networkPins } from '../../src/lib/vault/networkPins'
 import { readBounded } from '../../src/lib/vault/bounded'
@@ -121,7 +113,6 @@ type Prepared =
   | SavingsRecoveryFile
   | SpendingRecoveryPackage
   | BoardingRecoveryFile
-  | ConnectorRecoveryFile
   | LightningRecoveryPackage
   | LightRecoveryFile
 type Draft = {
@@ -274,17 +265,16 @@ function review() {
     ? `${spendingRecoveryCoverage(source.full.archive.spending, vaultRecoveryBinding(source.full.header.kit, source.full.header.status), null).archivedSats.toLocaleString()} sats in saved Spending paths`
     : ''
   el('coverage').textContent = source.full
-    ? `Saved ${new Date(source.full.archive.spending.capturedAt).toLocaleString()}. Later wallet activity may need a newer file. ${source.full?.name === 'vaulted-readable-recovery' ? 'Unlock the protected backup only for payment journals or saved connector approvals.' : ''}`
+    ? `Saved ${new Date(source.full.archive.spending.capturedAt).toLocaleString()}. Later wallet activity may need a newer file. ${source.full?.name === 'vaulted-readable-recovery' ? 'Unlock the protected backup only for payment journals.' : ''}`
     : source.light
       ? `Saved ${source.light.createdAt}. The archive covers its saved Spending and Lightning lockup paths.`
-      : `${(source.originalKit as { name?: string })?.name === 'arkade-connector-enrollment' ? 'Connector enrollment kit' : `Recovery Kit version ${(source.originalKit as { version?: number })?.version || k?.version}`}. Public transaction scripts are verified independently; offchain Spending needs a complete archive. ${k && kitHasUnlock(k as PublicKit) ? 'This file can unlock the phone key with its original passkey.' : ''}`
+      : `Recovery Kit version ${(source.originalKit as { version?: number })?.version || k?.version}. Public transaction scripts are verified independently; offchain Spending needs a complete archive. ${k && kitHasUnlock(k as PublicKit) ? 'This file can unlock the phone key with its original passkey.' : ''}`
   const options: { value: string; label: string }[] = []
   if (source.full || source.light) options.push({ value: 'spending', label: 'Spending — unilateral Bitcoin exit' })
   if (source.full || source.publicKit?.boarding)
     options.push({ value: 'boarding', label: 'Boarding — phone recovery after its delay' })
   if (k && !isSpendingRecoveryKit(k)) {
-    if (!isConnectorTemplate(k.descriptor.templateVersion))
-      options.push({ value: 'savings-admin', label: 'Savings — phone and hardware' })
+    options.push({ value: 'savings-admin', label: 'Savings — phone and hardware' })
     if (k.descriptor.schema === LEDGER_RECOVERY_SCHEMA)
       options.push({ value: 'savings-admin-change', label: 'Savings change — phone and hardware' })
     for (const claimant of ['phone', 'hardware', 'recovery'] as const)
@@ -311,8 +301,6 @@ function review() {
       value: `lightning:${entry.record.rfqId}`,
       label: `Lightning ${entry.record.kind === 'lightning_receive' ? 'receive claim' : 'refund'}: ${entry.record.rfqId.slice(0, 12)}`,
     })
-  if (source.full?.name === 'vaulted-recovery' && source.full.connectorJournal?.pending)
-    options.push({ value: 'connector', label: 'Saved connector payment — resume exact approval' })
   select('program', options)
   select(
     'fee-key',
@@ -352,15 +340,11 @@ function programChanged() {
   el('requirements').textContent =
     program === 'spending'
       ? `Required: ${source.light || source.full?.header.kit.protectionTier === 'light' ? 'the wallet key unlocked by your original passkey' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
-      : program === 'connector'
-        ? 'This finishes the saved payment using its retained service approvals and the required hardware signature.'
-        : 'Use the keys and waiting conditions in this saved account. Review the signing request before approving.'
-  el('fee-label').hidden =
-    program === 'spending' || program === 'boarding' || program === 'connector' || program.startsWith('lightning:')
-  el('coin-label').hidden = program === 'spending' || program === 'connector' || program.startsWith('lightning:')
-  el('scan').hidden =
-    Boolean(source.light) || program === 'spending' || program.startsWith('lightning:') || program === 'connector'
-  el<HTMLInputElement>('destination').disabled = program === 'boarding' || program === 'connector'
+      : 'Use the keys and waiting conditions in this saved account. Review the signing request before approving.'
+  el('fee-label').hidden = program === 'spending' || program === 'boarding' || program.startsWith('lightning:')
+  el('coin-label').hidden = program === 'spending' || program.startsWith('lightning:')
+  el('scan').hidden = Boolean(source.light) || program === 'spending' || program.startsWith('lightning:')
+  el<HTMLInputElement>('destination').disabled = program === 'boarding'
   if (program === 'boarding')
     el<HTMLInputElement>('destination').value = p2tr(
       hex.decode(keys().find((k) => k.role === 'phone')!.publicKey).slice(1),
@@ -735,24 +719,6 @@ async function prepare() {
     } finally {
       key.fill(0)
     }
-  } else if (d.program === 'connector') {
-    if (source.full?.name !== 'vaulted-recovery' || !source.full.connectorJournal?.pending)
-      throw new Error('No saved connector operation')
-    let file: ConnectorRecoveryFile = {
-      name: 'vaulted-connector-recovery',
-      version: 1,
-      header: source.full.header,
-      record: source.full.connectorJournal.pending,
-    }
-    if (!file.record.signedTxHex) {
-      const psbt = connectorRecoveryHandoff(file)
-      const signed = await requestSignature(
-        psbt,
-        keys().filter((k) => k.role === 'hardware'),
-      )
-      file = acceptConnectorRecoverySignature(file, signed)
-    }
-    prepared = file
   } else if (d.program.startsWith('lightning:')) {
     const journal =
       (source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined) ||
@@ -889,8 +855,6 @@ el('export-psbt').onclick = () => {
   if (!prepared) return
   if ('psbt' in prepared) save('Vaulted recovery.psbt', prepared.psbt)
   else if ('sweeps' in prepared) prepared.sweeps.forEach((raw, i) => save(`Vaulted sweep ${i + 1}.psbt`, raw))
-  else if (prepared.name === 'vaulted-connector-recovery')
-    save('Vaulted connector.psbt', connectorRecoveryHandoff(prepared))
 }
 function clearSource() {
   prepared = undefined
@@ -1010,11 +974,6 @@ function validatePrepared() {
       validateSavingsRecovery(prepared)
       if (prepared.kit.descriptorHash !== kit().descriptorHash) throw new Error('Prepared wallet changed')
       break
-    case 'vaulted-connector-recovery':
-      validateConnectorRecoveryFile(prepared)
-      if (prepared.header.binding.descriptorHash !== source.full?.header.binding.descriptorHash)
-        throw new Error('Prepared wallet changed')
-      break
     case 'vaulted-lightning-refund':
       validateLightningRecoveryPackage(prepared, recoveryLightningBinding(status()!), feeLimits())
       break
@@ -1070,10 +1029,6 @@ el('execute').onclick = () =>
     try {
       if (file.name === 'vaulted-savings-recovery') {
         el('status').textContent = JSON.stringify(await executeSavingsRecovery(file, chain))
-        return
-      }
-      if (file.name === 'vaulted-connector-recovery') {
-        el('status').textContent = JSON.stringify(await executeConnectorRecovery(file, chain))
         return
       }
       if (file.name === 'vaulted-light-recovery') {

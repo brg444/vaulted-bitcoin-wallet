@@ -48,8 +48,8 @@ verification.
 
 ## Availability and recovery
 
-Online service failure can pause cooperative Spending, new connector Savings
-payments, and service-assisted recovery. An independent exit requires the
+Online service failure can pause cooperative Spending and Guardian-assisted
+recovery. An independent exit requires the
 signatures, saved transaction paths, fees, and delays of its exact script.
 A public Recovery Kit alone may lack the data needed to spend.
 
@@ -69,7 +69,7 @@ finish during logout. Web Locks and acknowledged teardown protect concurrent
 work; they cannot forcibly terminate an executing browser service worker.
 
 Software-wallet and firmware-simulator tests qualify only their documented
-scope. See [signer compatibility](connector-signers.md) before selecting a
+scope. See [Ledger qualification](ledger-guide.md) before selecting a
 signing device. Keep raw hardware and recovery keys out of the wallet page.
 
 Report suspected vulnerabilities through [SECURITY.md](../SECURITY.md).

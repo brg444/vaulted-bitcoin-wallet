@@ -40,7 +40,7 @@ export async function renewFromLocalUnlock(
   }
 }
 
-/** Fresh/connector restore has already consumed its login assertion; use a separate bounded ceremony. */
+/** Fresh sign-in has already consumed its login assertion; use a separate bounded ceremony. */
 export async function setupSpendingRenewals(status: VaultStatus, enrollment: EnrollmentSecrets) {
   if (status.templateVersion === LIGHT_PROFILE) return
   try {
