@@ -8,6 +8,7 @@ export type VaultMaintenanceName =
   | 'bitcoin-payment'
   | 'ledger-payment'
   | 'recovery-archive'
+  | 'recovery-watch'
 
 export interface VaultMaintenanceTask<T> {
   refresh: () => Promise<T>

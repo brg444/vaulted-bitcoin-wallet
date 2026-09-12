@@ -1,19 +1,10 @@
-import { isSpendingRecoveryKit } from '../lib/vault/program/kit'
-import { useCallback, useEffect, useState } from 'react'
-import { fetchAddressUtxos } from '../lib/vault/esplora'
+import { useCallback } from 'react'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import type { VaultStatus } from '../lib/vault/types'
 import { unlockLocalEnrollment } from '../lib/vault/signIn'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from '../lib/vault/program/kitBackup'
 import { loadLocalKit, saveLocalKit } from '../lib/vault/program/kitStore'
-import { kitMatchesLiveVault, selectLiveKit } from '../lib/vault/program/liveKit'
-import {
-  alertCopy,
-  loadSeenOutpoints,
-  pollPendingInitiates,
-  saveSeenOutpoints,
-  type InitiateAlert,
-} from '../lib/vault/program/watch'
+import { kitMatchesLiveVault } from '../lib/vault/program/liveKit'
 
 interface RecoveryKitOptions {
   enrollment: EnrollmentSecrets | null
@@ -23,12 +14,8 @@ interface RecoveryKitOptions {
   clearError: () => void
 }
 
-// useRecoveryKit owns recovery-map persistence and the best-effort local
-// alert poll. It has no signing, navigation or wallet-balance responsibilities.
+// Recovery-map commands bind the current enrollment and stored kit.
 export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, clearError }: RecoveryKitOptions) {
-  const [initiateAlert, setInitiateAlert] = useState('')
-  const [initiateAlerts, setInitiateAlerts] = useState<InitiateAlert[]>([])
-
   const resolveKit = useCallback(() => {
     const id = status?.vaultId || enrollment?.vaultId || ''
     const stored = id ? loadLocalKit(id) : null
@@ -78,44 +65,10 @@ export function useRecoveryKit({ enrollment, status, hardwarePub, recoveryPub, c
     saveLocalKit(kit)
   }, [clearError, enrollment, hardwarePub, recoveryPub, status])
 
-  useEffect(() => {
-    const id = status?.vaultId || enrollment?.vaultId || ''
-    setInitiateAlerts([])
-    setInitiateAlert('')
-    const kit = status?.enrolled ? selectLiveKit({ status, stored: id ? loadLocalKit(id) : null }) : null
-    if (!kit || isSpendingRecoveryKit(kit)) return
-    let cancelled = false
-    const poll = async () => {
-      try {
-        const seen = loadSeenOutpoints(kit.descriptor.vaultId)
-        const next = await pollPendingInitiates({ descriptor: kit.descriptor, fetchUtxos: fetchAddressUtxos, seen })
-        if (cancelled) return
-        saveSeenOutpoints(kit.descriptor.vaultId, next.seen)
-        if (next.alerts.length) {
-          setInitiateAlerts((previous) => [...next.alerts, ...previous].slice(0, 12))
-          setInitiateAlert(alertCopy(next.alerts[0]))
-        }
-      } catch {
-        // This local poll is a convenience signal, not a watchtower.
-      }
-    }
-    void poll()
-    const timer = window.setInterval(() => void poll(), 20_000)
-    const onFocus = () => void poll()
-    window.addEventListener('focus', onFocus)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [enrollment?.vaultId, status?.templateVersion, status?.vaultId])
-
   return {
     backupRecoveryKit,
     downloadRecoveryKit,
     hasRecoveryKit: Boolean(resolveKit()),
-    initiateAlert,
-    initiateAlerts,
     restoreRecoveryKit,
   }
 }

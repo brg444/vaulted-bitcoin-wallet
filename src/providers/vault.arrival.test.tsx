@@ -18,7 +18,6 @@ function DebugProbe() {
   const vault = useContext(VaultContext)
   return (
     <div>
-      <span data-testid='dbg-arrivals'>{vault.arrivals.length}</span>
       <span data-testid='dbg-vault'>{vault.status?.vaultId || 'none'}</span>
       <span data-testid='dbg-history'>{vault.allHistory.length}</span>
       <span data-testid='dbg-screen'>{vault.screen}</span>
@@ -33,12 +32,16 @@ const balances = vi.hoisted(() => ({
   history: [] as VaultHistoryItem[],
   snapshotFresh: false,
   balancesLoaded: false,
+  savingsFresh: false,
   fetchStatus: vi.fn(),
 }))
 
 vi.mock('../vault/useVaultBalances', () => ({
   useVaultBalances: () => ({
-    accountReads: accountBalanceReads({ loaded: balances.balancesLoaded, fresh: balances.snapshotFresh }),
+    accountReads: {
+      ...accountBalanceReads({ loaded: balances.balancesLoaded, fresh: balances.snapshotFresh }),
+      savings: { loaded: balances.balancesLoaded, fresh: balances.savingsFresh, refreshing: false, error: '' },
+    },
     snapshotFresh: balances.snapshotFresh,
     history: balances.history,
     positions: {
@@ -59,13 +62,12 @@ vi.mock('../vault/useVaultSession', () => ({
     restoreRecoveryArchive: vi.fn().mockResolvedValue(undefined),
   }),
 }))
+vi.mock('../vault/useRecoveryAlerts', () => ({ useRecoveryAlerts: () => '' }))
 vi.mock('../vault/useRecoveryKit', () => ({
   useRecoveryKit: () => ({
     backupRecoveryKit: vi.fn().mockResolvedValue(false),
     downloadRecoveryKit: vi.fn().mockReturnValue(''),
     hasRecoveryKit: false,
-    initiateAlert: '',
-    initiateAlerts: [],
     restoreRecoveryKit: vi.fn().mockResolvedValue(undefined),
   }),
 }))
@@ -160,6 +162,7 @@ describe('provider arrival delivery', () => {
     balances.history = []
     balances.snapshotFresh = false
     balances.balancesLoaded = false
+    balances.savingsFresh = false
     balances.fetchStatus.mockReset().mockResolvedValue(STATUS)
     localStorage.setItem(SELECTED_VAULT_STORE, 'vault-a')
     localStorage.setItem(
@@ -182,9 +185,13 @@ describe('provider arrival delivery', () => {
     vi.unstubAllGlobals()
   })
 
-  it.each(['spend', 'savings'] as const)(
-    'uses native delivery ownership for a new %s receipt without banners',
-    async (account) => {
+  it.each([
+    { account: 'spend', spendFresh: true },
+    { account: 'savings', spendFresh: true },
+    { account: 'savings', spendFresh: false },
+  ] as const)(
+    'uses native delivery for $account with Spending freshness $spendFresh',
+    async ({ account, spendFresh }) => {
       const showNotification = vi.fn().mockResolvedValue(undefined)
       vi.stubGlobal('Notification', { permission: 'granted' })
       Object.defineProperty(navigator, 'serviceWorker', {
@@ -199,7 +206,8 @@ describe('provider arrival delivery', () => {
       await waitFor(() => expect(screen.getByTestId('dbg-vault')).toHaveTextContent('vault-a'))
       act(() => {
         balances.balancesLoaded = true
-        balances.snapshotFresh = true
+        balances.snapshotFresh = spendFresh
+        balances.savingsFresh = true
       })
       rerender(renderHomeTree())
       act(() => {
@@ -209,7 +217,6 @@ describe('provider arrival delivery', () => {
       })
       rerender(renderHomeTree())
       await waitFor(() => expect(screen.getByTestId('dbg-history')).toHaveTextContent('1'))
-      expect(screen.getByTestId('dbg-arrivals')).toHaveTextContent('0')
       expect(screen.queryByTestId(/^payment-arrival-/)).toBeNull()
       expect(screen.queryByTestId('payment-catch-up')).toBeNull()
       if (account === 'savings') await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))

@@ -1,9 +1,7 @@
 /**
  * Atomic native-delivery receipts for foreground OS notifications. Only
  * opaque payment-identity keys are stored; no payment or signing data enters
- * this ledger. This is a separate claim domain from the legacy banner
- * receipts (`vaulted-arrival-delivery-v1`): banner claims must never suppress
- * a native notice, and native claims never suppress a banner.
+ * this ledger. Native delivery has one claim domain shared across tabs.
  *
  * At-most-once per device: the claim arbitrates tabs, and a crash between
  * claim and show can lose one notice. Activity remains the source of truth.

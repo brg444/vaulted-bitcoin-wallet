@@ -4,7 +4,7 @@ import type { PaymentScope } from './payments'
  * Device-local arrival baseline, scoped to one network and vault. It records
  * every observed payment key with whether it already counted as available,
  * so a reload or a staged history hydration replays nothing: known keys
- * resume their state, genuinely new available keys banner once, and a first
+ * resume their state, genuinely new available keys announce once, and a first
  * observation with no stored baseline seeds quietly. Entries grant nothing;
  * they carry payment keys only, and clearing local data reseeds quietly from
  * whatever history loads first. The cap stays above the loaded-activity

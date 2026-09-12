@@ -4,10 +4,7 @@ import { useLedgerSavings } from '../vault/useLedgerSavings'
 import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import { useNativePaymentNotifications } from '../vault/useNativePaymentNotifications'
-import type { PaymentArrival } from '../vault/usePaymentArrivals'
 
-/** Inert arrivals shape: the banner detector is retired; native delivery owns arrivals. */
-const EMPTY_NATIVE_ARRIVALS: PaymentArrival[] = []
 import { NOTIFY_WORKER_SCOPE } from '../lib/vault/nativeNotifications'
 import { parsePushNavScreen } from '../lib/vault/notificationEnvelope'
 import { disableBackgroundPush, isPushSubscribed, refreshBackgroundPush } from '../lib/vault/pushSubscription'
@@ -101,6 +98,7 @@ import {
   type VaultSpend,
 } from '../vault/context'
 import { useRecoveryKit } from '../vault/useRecoveryKit'
+import { useRecoveryAlerts } from '../vault/useRecoveryAlerts'
 import { useVaultBalances } from '../vault/useVaultBalances'
 import { useVaultSession } from '../vault/useVaultSession'
 import { ledgerSpendingPublicKey, parseLedgerAccountOrigin } from '../lib/vault/ledgerSetup'
@@ -497,26 +495,20 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     () => ({ network: status?.network || '', vaultId: status?.vaultId || '' }),
     [status?.network, status?.vaultId],
   )
-  const arrivalReady = snapshotFresh && Boolean(status?.vaultId) && Boolean(status?.network)
+  const activityReady = snapshotFresh && Boolean(status?.vaultId) && Boolean(status?.network)
   // Browsing history loaded beyond the recent window never feeds arrival
   // observation; those receipts stay visible without announcing as new.
   const excludedArrivalKeys = useMemo(() => new Set((olderHistory || []).map(olderRowKey)), [olderHistory])
-  // The legacy in-app banner detector is retired: native delivery owns
-  // arrivals outright, so no second detector may seed or merge the shared
-  // baseline ahead of it. Context keeps inert empty values for shape.
-  const arrivals: PaymentArrival[] = EMPTY_NATIVE_ARRIVALS
-  const catchUp = null
-  const dismissArrival = useCallback(() => undefined, [])
-  const dismissCatchUp = useCallback(() => undefined, [])
-  const openArrivalKey = useCallback(() => null, [])
   // Foreground OS notices for verified receipts the server cannot see
   // (confirmed Savings deposits). Server-owned Spending receipts stay silent
   // here under every subscription state; push owns them, even app-open.
+  const nativeArrivalReady =
+    accountReads.savings.loaded && accountReads.savings.fresh && Boolean(status?.vaultId) && Boolean(status?.network)
   const notifyRegistration = useCallback(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return Promise.resolve(undefined)
     return navigator.serviceWorker.getRegistration(NOTIFY_WORKER_SCOPE).catch(() => undefined)
   }, [])
-  useNativePaymentNotifications(visibleHistory, arrivalScope, busy || locked, arrivalReady, excludedArrivalKeys, {
+  useNativePaymentNotifications(visibleHistory, arrivalScope, busy || locked, nativeArrivalReady, excludedArrivalKeys, {
     getRegistration: notifyRegistration,
     enabled: status !== null && isPushSubscribed(status),
   })
@@ -528,7 +520,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   // Native tap flow: a worker tap opens `/?notify=activity`. After unlock,
   // with a fresh snapshot, land on verified Activity and strip the param.
   useEffect(() => {
-    if (locked || !arrivalReady) return
+    if (locked || !activityReady) return
     let screen: string | null = null
     try {
       screen = new URLSearchParams(window.location.search).get('notify')
@@ -547,16 +539,16 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     void refreshBalance().catch(() => undefined)
     // Runs once per unlock-ready transition; navigation consumes the param.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locked, arrivalReady])
+  }, [locked, activityReady])
 
-  const { backupRecoveryKit, downloadRecoveryKit, hasRecoveryKit, initiateAlert, initiateAlerts, restoreRecoveryKit } =
-    useRecoveryKit({
-      enrollment,
-      status,
-      hardwarePub: setup.hardwarePub,
-      recoveryPub: setup.recoveryPub,
-      clearError,
-    })
+  const initiateAlert = useRecoveryAlerts(status, locked)
+  const { backupRecoveryKit, downloadRecoveryKit, hasRecoveryKit, restoreRecoveryKit } = useRecoveryKit({
+    enrollment,
+    status,
+    hardwarePub: setup.hardwarePub,
+    recoveryPub: setup.recoveryPub,
+    clearError,
+  })
 
   const { backupRecoveryArchive, downloadRecoveryArchive, recoveryArchiveStatus, recoveryArchiveError } =
     useRecoveryArchive(enrollment, status, locked, acknowledgeBitcoinRecovery)
@@ -1463,7 +1455,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       restoreRecoveryArchive,
       hasRecoveryKit,
       initiateAlert,
-      initiateAlerts,
       approveSend,
       busy,
       canSend: spendingAvailableSats >= DUST_SATS,
@@ -1503,13 +1494,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       allHistory: visibleHistory,
       loadOlderActivity,
       olderActivity,
-      arrivals,
-      dismissArrival,
-      catchUp,
-      dismissCatchUp,
-      openArrival: () => {
-        // Retired with the banner detector: arrivals open from Activity.
-      },
       openTx: (tx) => {
         const ledger = ledgerSavings.view
         if (
@@ -1605,7 +1589,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       restoreRecoveryArchive,
       hasRecoveryKit,
       initiateAlert,
-      initiateAlerts,
       approveSend,
       busy,
       confirmConditions,
@@ -1636,11 +1619,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       lastTxid,
       lastTxKind,
       visibleHistory,
-      arrivals,
-      dismissArrival,
-      catchUp,
-      dismissCatchUp,
-      openArrivalKey,
       txReturn,
       loadOlderActivity,
       olderActivity,

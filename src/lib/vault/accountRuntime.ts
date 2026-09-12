@@ -2,6 +2,7 @@ import { createVaultAccountMaintenance, type VaultAccountMaintenance } from './a
 import { vaultOperatorOrigin } from './networkPins'
 import type { VaultStatus } from './types'
 import type { VaultBalanceController } from './accountBalances'
+import type { VaultRecoveryWatch } from './accountRecoveryWatch'
 import type { WalletConnection } from './vtxo/walletWorker'
 
 export interface VaultAccountRuntime {
@@ -10,6 +11,7 @@ export interface VaultAccountRuntime {
   network: string
   enrolled: boolean
   balances?: VaultBalanceController
+  recoveryWatch?: VaultRecoveryWatch
   maintenance: VaultAccountMaintenance
   listeners: Set<() => void>
   disposed: boolean
@@ -48,6 +50,7 @@ export function disposeVaultAccountRuntime(account: VaultAccountRuntime): Promis
   account.disposed = true
   account.listeners.clear()
   account.balances?.dispose()
+  account.recoveryWatch?.dispose()
   if (current === account) current = undefined
   const drain = account.maintenance.dispose()
   account.disposal = (async () => {

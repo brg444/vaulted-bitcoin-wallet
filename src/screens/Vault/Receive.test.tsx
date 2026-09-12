@@ -295,8 +295,6 @@ it('shares the destination for the selected receiving method', async () => {
 
 describe('Receive arrival and contract changes', () => {
   it('keeps receive addresses visible without an in-app arrival banner', () => {
-    const openArrival = vi.fn()
-    const dismissArrival = vi.fn()
     const value = {
       account: 'spend',
       boardingAddress: 'tb1qboarding',
@@ -305,14 +303,6 @@ describe('Receive arrival and contract changes', () => {
       refreshBalance: vi.fn().mockResolvedValue(undefined),
       savingsAddress: 'tb1qsavings',
       spendingArkAddress: 'tark1spending',
-      arrivals: [
-        {
-          key: 'tx:mutinynet:vault:spend:deposit:received',
-          item: { txid: 'deposit', type: 'received', amount: 12_000, confirmed: true, account: 'spend' },
-        },
-      ],
-      dismissArrival,
-      openArrival,
     } as unknown as VaultContextProps
     render(
       <ToastProvider>

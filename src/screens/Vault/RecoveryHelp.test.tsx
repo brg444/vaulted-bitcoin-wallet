@@ -25,7 +25,6 @@ function context(fixture = standard) {
     hasLocalEnrollment: true,
     navigate: vi.fn(),
     signIn: vi.fn(),
-    initiateAlerts: [],
     recoverEntry: 'lost',
     recoverExit: 'keys',
     status: fixture.status,

@@ -47,25 +47,41 @@ for (const width of [320, 390, 1440]) {
   }
 }
 
-test('native delivery claims arbitrate one announcement across two tabs', async ({ context }) => {
+test('native Savings observation announces once across two tabs and stays quiet after reload', async ({ context }) => {
   const first = await context.newPage()
   const second = await context.newPage()
   for (const page of [first, second]) {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'Notification', { configurable: true, value: { permission: 'granted' } })
+    })
     await mockEnrollmentAccess(page, 'open')
     await page.route('**/src/screens/Vault/Welcome.tsx*', (route) =>
       route.fulfill({
         contentType: 'application/javascript',
         body: `
         import React from '/node_modules/.vite/deps/react.js';
-        import { claimNativeDelivery } from '/src/lib/vault/nativeDelivery.ts';
-        export default function NativeClaimFixture(){
-          const [winner,setWinner]=React.useState('pending');
+        import { useNativePaymentNotifications } from '/src/vault/useNativePaymentNotifications.ts';
+        export default function NativeFixture(){
+          const [rows,setRows]=React.useState([]);
+          const [count,setCount]=React.useState(0);
+          const [observed,setObserved]=React.useState(false);
+          const registration=React.useMemo(()=>({showNotification:async()=>setCount(n=>n+1)}),[]);
+          const scope={network:'mutinynet',vaultId:'native-two-tab'};
+          useNativePaymentNotifications(rows,scope,false,true,new Set(),{
+            enabled:true,getRegistration:async()=>registration
+          });
           React.useEffect(()=>{
-            const run=()=>claimNativeDelivery(['two-tab-native:payment-1']).then(keys=>setWinner(keys.length ? 'announced' : 'quiet'));
+            const run=()=>{
+              setRows([{txid:'native-receipt',type:'received',amount:12000,confirmed:true,account:'savings'}]);
+              setObserved(true);
+            };
             window.addEventListener('test-arrival',run);
             return ()=>window.removeEventListener('test-arrival',run);
           },[]);
-          return React.createElement('main',null,React.createElement('h1',null,'Native fixture'),React.createElement('p',{'data-testid':'verdict'},winner));
+          return React.createElement('main',null,
+            React.createElement('h1',null,'Native fixture'),
+            React.createElement('p',{'data-testid':'observed'},String(observed)),
+            React.createElement('p',{'data-testid':'notice-count'},String(count)));
         }
       `,
       }),
@@ -73,11 +89,37 @@ test('native delivery claims arbitrate one announcement across two tabs', async 
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Native fixture' })).toBeVisible()
   }
-  await Promise.all([first, second].map((page) => page.evaluate(() => window.dispatchEvent(new Event('test-arrival')))))
-  await expect
-    .poll(async () => {
-      const verdicts = await Promise.all([first, second].map((page) => page.getByTestId('verdict').textContent()))
-      return verdicts.filter((verdict) => verdict === 'announced').length
-    })
-    .toBe(1)
+  const inject = async () => {
+    await Promise.all(
+      [first, second].map((page) => page.evaluate(() => window.dispatchEvent(new Event('test-arrival')))),
+    )
+    for (const page of [first, second]) await expect(page.getByTestId('observed')).toHaveText('true')
+  }
+  const total = async () =>
+    (await Promise.all([first, second].map((page) => page.getByTestId('notice-count').textContent()))).reduce(
+      (sum, count) => sum + Number(count),
+      0,
+    )
+  await inject()
+  await expect.poll(total).toBe(1)
+  await inject()
+  // Drain the retained native claim domain in each document before asserting
+  // no replay, including after a fresh hook and staged history hydration.
+  const drain = async () => {
+    for (const page of [first, second])
+      await page.evaluate(async () => {
+        const source = '/src/lib/vault/nativeDelivery.ts'
+        const { claimNativeDelivery } = await import(source)
+        await claimNativeDelivery(['tx:mutinynet:native-two-tab:savings:native-receipt:received'])
+      })
+  }
+  await drain()
+  expect(await total()).toBe(1)
+  for (const page of [first, second]) {
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Native fixture' })).toBeVisible()
+  }
+  await inject()
+  await drain()
+  expect(await total()).toBe(0)
 })

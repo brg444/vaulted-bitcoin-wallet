@@ -50,7 +50,6 @@ function renderKit(extra: Partial<VaultContextProps> = {}) {
     restoreRecoveryKit: async () => {},
     hasRecoveryKit: true,
     initiateAlert: '',
-    initiateAlerts: [],
     busy: false,
     error: '',
     navigate: () => {},

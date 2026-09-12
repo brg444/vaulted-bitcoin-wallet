@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ledgerRecoveryFacts } from '../recovery/testdata/helpers'
-import { alertCopy, outpointId, pollPendingInitiates } from './watch'
+import { alertCopy, loadSeenOutpoints, outpointId, pollPendingInitiates, saveSeenOutpoints } from './watch'
 
 describe.each(['mainnet', 'mutinynet'] as const)('Ledger Savings pending watcher on %s', (network) => {
   it('alerts the first time a pending coin appears and does not repeat', async () => {
@@ -59,4 +59,17 @@ describe.each(['mainnet', 'mutinynet'] as const)('Ledger Savings pending watcher
       descriptor.pending['savings-hardware'].address,
     ])
   })
+})
+
+it('scopes seen evidence to the network and exact Ledger descriptor', () => {
+  const facts = ledgerRecoveryFacts(true, 'mutinynet')
+  const scope = {
+    vaultId: facts.status.vaultId,
+    network: facts.kit.descriptor.network,
+    descriptorHash: facts.kit.descriptorHash,
+  }
+  saveSeenOutpoints(scope, ['aa:0'])
+  expect(loadSeenOutpoints(scope).has('aa:0')).toBe(true)
+  expect(loadSeenOutpoints({ ...scope, network: 'mainnet' }).size).toBe(0)
+  expect(loadSeenOutpoints({ ...scope, descriptorHash: 'ff'.repeat(32) }).size).toBe(0)
 })

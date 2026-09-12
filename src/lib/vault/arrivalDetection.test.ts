@@ -1,9 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { detectPaymentArrivals } from '../../vault/usePaymentArrivals'
-import type { VaultHistoryItem } from '../../lib/vault/history'
-import PaymentArrivalBanners from './PaymentArrivals'
+import { afterEach, describe, expect, it } from 'vitest'
+import { detectPaymentArrivals, seedArrivalBaseline } from './arrivalDetection'
+import { saveArrivalBaseline } from './arrivalBaseline'
+import { paymentIdentityForItem } from './payments'
+import type { VaultHistoryItem } from './history'
 
 const SCOPE = { network: 'mutinynet', vaultId: 'vault-1' }
 
@@ -12,7 +11,7 @@ function row(partial: Partial<VaultHistoryItem> & { txid: string }): VaultHistor
 }
 
 describe('arrival detection', () => {
-  it('stays quiet for pre-existing rows and banners only newly available funds', () => {
+  it('detects newly available funds once per payment identity', () => {
     const old = row({ txid: 'old-deposit' })
     const seen = new Map([['seed', true]])
     const first = detectPaymentArrivals(seen, [old], SCOPE)
@@ -30,7 +29,7 @@ describe('arrival detection', () => {
     expect(again.arrivals).toEqual([])
   })
 
-  it('banners a Savings deposit when its confirmation lands', () => {
+  it('detects a Savings deposit when its confirmation lands', () => {
     const pending = row({ txid: 'savings-in', account: 'savings', confirmed: false, blockTime: 1_700_000_000 })
     const first = detectPaymentArrivals(new Map(), [pending], SCOPE)
     expect(first.arrivals).toEqual([])
@@ -40,7 +39,7 @@ describe('arrival detection', () => {
     expect(second.arrivals.map((arrival) => arrival.item.txid)).toEqual(['savings-in'])
   })
 
-  it('banners a Lightning receive only when the verified payout completes', () => {
+  it('detects a Lightning receive only when the verified payout completes', () => {
     const rfq = 'rfq-arrival'
     const processing = row({
       txid: 'funding',
@@ -66,7 +65,7 @@ describe('arrival detection', () => {
     expect(second.arrivals).toHaveLength(1)
   })
 
-  it('never banners an older browsed receipt passed through exclusion', () => {
+  it('never detects an older browsed receipt passed through exclusion', () => {
     const older = row({ txid: 'older-receipt', account: 'savings', blockTime: 100 })
     const excluded = new Set(['savings:older-receipt:received'])
     const skipped = detectPaymentArrivals(new Map(), [older], SCOPE, excluded)
@@ -74,8 +73,8 @@ describe('arrival detection', () => {
     expect(skipped.seen.get('tx:mutinynet:vault-1:savings:older-receipt:received')).toBe(true)
 
     const fresh = row({ txid: 'fresh-receipt', account: 'savings', blockTime: 200 })
-    const bannered = detectPaymentArrivals(skipped.seen, [older, fresh], SCOPE, excluded)
-    expect(bannered.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh-receipt'])
+    const detected = detectPaymentArrivals(skipped.seen, [older, fresh], SCOPE, excluded)
+    expect(detected.arrivals.map((arrival) => arrival.item.txid)).toEqual(['fresh-receipt'])
   })
 
   it('records an excluded available transition so removing exclusion cannot replay it', () => {
@@ -127,7 +126,7 @@ describe('arrival detection', () => {
     expect(first.arrivals.map((arrival) => arrival.item.txid).sort()).toEqual(['deposit-a', 'deposit-b'])
   })
 
-  it('never banners outflows, internal movement, uncertain receipts, or incomplete rows', () => {
+  it('never detects outflows, internal movement, uncertain receipts, or incomplete rows', () => {
     const rows = [
       row({ txid: 'out', type: 'sent' }),
       row({
@@ -157,30 +156,26 @@ describe('arrival detection', () => {
   })
 })
 
-describe('arrival banners', () => {
-  it('names amount and account, opens details, and dismisses', async () => {
-    const user = userEvent.setup()
-    const onOpen = vi.fn()
-    const onDismiss = vi.fn()
-    const arrivals = [
-      { key: 'a', item: row({ txid: 'a', amount: 12_000 }) },
-      { key: 'b', item: row({ txid: 'b', amount: 5_000, account: 'savings' }) },
-    ]
-    render(<PaymentArrivalBanners arrivals={arrivals} onOpen={onOpen} onDismiss={onDismiss} />)
+describe('arrival baseline seeding', () => {
+  afterEach(() => localStorage.clear())
 
-    expect(screen.getByRole('status', { name: 'New payments received' })).toBeVisible()
-    expect(screen.getByText('Received ₿12,000 in Spending.')).toBeVisible()
-    expect(screen.getByText('Received ₿5,000 in Savings.')).toBeVisible()
-    expect(screen.queryByText(/from|sender/i)).toBeNull()
-
-    await user.click(screen.getAllByRole('button', { name: 'View details' })[0])
-    expect(onOpen).toHaveBeenCalledWith(arrivals[0])
-    await user.click(screen.getByRole('button', { name: 'Dismiss arrival of ₿5,000 in Savings' }))
-    expect(onDismiss).toHaveBeenCalledWith('b')
+  it('seeds unknown historical IDs quietly even with a partial stored baseline', () => {
+    const old = row({ txid: 'old', account: 'savings' })
+    saveArrivalBaseline(SCOPE, new Map([[paymentIdentityForItem(old, SCOPE).key, true]]))
+    const history = [old, row({ txid: 'omitted', account: 'savings' })]
+    const seeded = seedArrivalBaseline(history, SCOPE)
+    expect(detectPaymentArrivals(seeded, history, SCOPE).arrivals).toEqual([])
+    expect(detectPaymentArrivals(seeded, [...history, row({ txid: 'live' })], SCOPE).arrivals).toHaveLength(1)
   })
 
-  it('renders nothing without arrivals', () => {
-    const { container } = render(<PaymentArrivalBanners arrivals={[]} onOpen={vi.fn()} onDismiss={vi.fn()} />)
-    expect(container).toBeEmptyDOMElement()
+  it('retains pending transitions across reopen and keeps equal payments distinct', () => {
+    const pending = ['pending-a', 'pending-b'].map((txid) => row({ txid, account: 'savings', confirmed: false }))
+    saveArrivalBaseline(SCOPE, seedArrivalBaseline(pending, SCOPE))
+    const confirmed = pending.map((item) => ({ ...item, confirmed: true }))
+    const reopened = seedArrivalBaseline(confirmed, SCOPE)
+    const detected = detectPaymentArrivals(reopened, confirmed, SCOPE)
+    expect(detected.arrivals.map((arrival) => arrival.item.txid)).toEqual(['pending-a', 'pending-b'])
+    expect(detectPaymentArrivals(detected.seen, pending, SCOPE).seen).toEqual(detected.seen)
+    expect(detectPaymentArrivals(detected.seen, confirmed, SCOPE).arrivals).toEqual([])
   })
 })

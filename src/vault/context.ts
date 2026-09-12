@@ -4,12 +4,10 @@ import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
 import type { OlderActivityState } from '../lib/vault/accountBalances'
-import type { PaymentArrival, PaymentCatchUp } from './usePaymentArrivals'
 import { createContext } from 'react'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import { emptySetupPlan, type VaultSetupPlan } from '../lib/vault/setupPlan'
 import type { VaultStatus } from '../lib/vault/types'
-import type { InitiateAlert } from '../lib/vault/program/watch'
 import {
   CURRENT_SPENDING_POLICY_CAPABILITIES,
   type SpendingPolicy,
@@ -92,7 +90,6 @@ export interface VaultContextProps {
   restoreRecoveryKit: () => Promise<void>
   hasRecoveryKit: boolean
   initiateAlert: string
-  initiateAlerts: InitiateAlert[]
   approveSend: () => Promise<void>
   busy: boolean
   canSend: boolean
@@ -129,11 +126,6 @@ export interface VaultContextProps {
   allHistory: VaultHistoryItem[]
   loadOlderActivity: () => Promise<{ added: number; exhausted: boolean }>
   olderActivity: OlderActivityState
-  arrivals: PaymentArrival[]
-  dismissArrival: (key: string) => void
-  openArrival: (key: string) => void
-  catchUp: PaymentCatchUp | null
-  dismissCatchUp: () => void
   liveNetwork: boolean
   navigate: (screen: VaultScreen) => void
   openRecover: (view?: 'kit' | 'lost', exit?: VaultScreen) => void
@@ -193,7 +185,6 @@ export const VaultContext = createContext<VaultContextProps>({
   restoreRecoveryKit: async () => {},
   hasRecoveryKit: false,
   initiateAlert: '',
-  initiateAlerts: [],
   approveSend: async () => {},
   busy: false,
   canSend: false,
@@ -228,11 +219,6 @@ export const VaultContext = createContext<VaultContextProps>({
   allHistory: [],
   loadOlderActivity: async () => ({ added: 0, exhausted: true }),
   olderActivity: { status: 'idle', error: '' },
-  arrivals: [],
-  dismissArrival: () => {},
-  openArrival: () => {},
-  catchUp: null,
-  dismissCatchUp: () => {},
   liveNetwork: false,
   navigate: () => {},
   openRecover: () => {},

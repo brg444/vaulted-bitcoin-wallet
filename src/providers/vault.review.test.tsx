@@ -161,13 +161,12 @@ vi.mock('../vault/useVaultSession', () => ({
   }),
 }))
 
+vi.mock('../vault/useRecoveryAlerts', () => ({ useRecoveryAlerts: () => '' }))
 vi.mock('../vault/useRecoveryKit', () => ({
   useRecoveryKit: () => ({
     backupRecoveryKit: vi.fn().mockResolvedValue(false),
     downloadRecoveryKit: vi.fn().mockReturnValue(''),
     hasRecoveryKit: false,
-    initiateAlert: '',
-    initiateAlerts: [],
     restoreRecoveryKit: vi.fn().mockResolvedValue(undefined),
   }),
 }))

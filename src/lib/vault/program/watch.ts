@@ -2,7 +2,9 @@ import type { EsploraUtxo } from '../esplora'
 import { familyKeysFor, type FamilyKey } from './constants'
 import type { LedgerRecoveryDescriptor } from './ledgerRecoveryDescriptor'
 
-export const WATCH_SEEN_STORE = 'arkade-vault-savings-v1-watch-seen-v1'
+const WATCH_SEEN_STORE = 'vaulted-ledger-recovery-watch-v1'
+
+export type RecoveryWatchScope = Pick<LedgerRecoveryDescriptor, 'vaultId' | 'network'> & { descriptorHash: string }
 
 export interface InitiateAlert {
   familyKey: FamilyKey
@@ -17,10 +19,12 @@ export function outpointId(txid: string, vout: number): string {
   return `${txid.trim().toLowerCase()}:${vout}`
 }
 
-export function loadSeenOutpoints(vaultId: string, storage: Storage = localStorage): Set<string> {
-  const id = vaultId.trim()
-  if (!id) return new Set()
-  const raw = storage.getItem(`${WATCH_SEEN_STORE}:${id}`)
+function storeKey(scope: RecoveryWatchScope) {
+  return `${WATCH_SEEN_STORE}:${scope.network}:${scope.vaultId}:${scope.descriptorHash}`
+}
+
+export function loadSeenOutpoints(scope: RecoveryWatchScope, storage: Storage = localStorage): Set<string> {
+  const raw = storage.getItem(storeKey(scope))
   if (!raw) return new Set()
   try {
     const parsed = JSON.parse(raw) as string[]
@@ -30,23 +34,24 @@ export function loadSeenOutpoints(vaultId: string, storage: Storage = localStora
   }
 }
 
-export function saveSeenOutpoints(vaultId: string, seen: Iterable<string>, storage: Storage = localStorage) {
-  const id = vaultId.trim()
-  if (!id) throw new Error('vault id required')
-  storage.setItem(`${WATCH_SEEN_STORE}:${id}`, JSON.stringify([...seen]))
+export function saveSeenOutpoints(scope: RecoveryWatchScope, seen: Iterable<string>, storage: Storage = localStorage) {
+  storage.setItem(storeKey(scope), JSON.stringify([...seen]))
 }
 
 export async function pollPendingInitiates(input: {
   descriptor: Pick<LedgerRecoveryDescriptor, 'keys' | 'pending'>
-  fetchUtxos: (address: string) => Promise<EsploraUtxo[]>
+  fetchUtxos: (address: string, signal?: AbortSignal) => Promise<EsploraUtxo[]>
   seen: Set<string>
+  signal?: AbortSignal
 }): Promise<{ alerts: InitiateAlert[]; seen: Set<string> }> {
   const next = new Set(input.seen)
   const alerts: InitiateAlert[] = []
   const now = new Date().toISOString()
   for (const key of familyKeysFor(Boolean(input.descriptor.keys.recovery))) {
+    input.signal?.throwIfAborted()
     const address = input.descriptor.pending[key].address
-    const utxos = await input.fetchUtxos(address)
+    const utxos = await input.fetchUtxos(address, input.signal)
+    input.signal?.throwIfAborted()
     for (const coin of utxos) {
       const id = outpointId(coin.txid, coin.vout)
       if (next.has(id)) continue

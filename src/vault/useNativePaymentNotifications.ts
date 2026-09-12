@@ -4,7 +4,7 @@ import { describePayment, paymentIdentityForItem, type PaymentScope } from '../l
 import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
 import { claimNativeDelivery } from '../lib/vault/nativeDelivery'
 import { showForegroundPaymentNotice } from '../lib/vault/nativeNotifications'
-import { detectPaymentArrivals, seedArrivalBaseline } from './usePaymentArrivals'
+import { detectPaymentArrivals, seedArrivalBaseline } from '../lib/vault/arrivalDetection'
 
 export interface NativeForegroundDeps {
   /** Narrow-scope notify registration for showNotification; falls back to window Notification. */
@@ -55,10 +55,18 @@ export function useNativePaymentNotifications(
   const scopeKey = `${scope.network}:${scope.vaultId}`
   const scopeRef = useRef(scopeKey)
   const generationRef = useRef(0)
+  const enabled = deps.enabled !== false
+  const enabledRef = useRef(enabled)
   if (scopeRef.current !== scopeKey) {
     generationRef.current += 1
     scopeRef.current = scopeKey
     seenRef.current = null
+    pendingRef.current = []
+  }
+
+  if (enabledRef.current !== enabled) {
+    generationRef.current += 1
+    enabledRef.current = enabled
     pendingRef.current = []
   }
 
@@ -115,7 +123,7 @@ export function useNativePaymentNotifications(
     })()
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, ready, excludedKeys])
+  }, [history, ready, excludedKeys, scopeKey, enabled])
 
   useEffect(() => {
     if (depsRef.current.enabled === false) {
@@ -147,7 +155,7 @@ export function useNativePaymentNotifications(
         }
       }
     })()
-  }, [paused])
+  }, [paused, scopeKey, enabled])
 }
 
 /**

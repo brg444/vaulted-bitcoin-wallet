@@ -3,7 +3,7 @@ import { mockEnrollmentAccess } from './fixtures/enrollmentAccess'
 import { expectWalletLayout } from './fixtures/layout'
 
 // In-app arrival/catch-up banners are rejected: Home renders no banner
-// surfaces even when legacy arrival context is populated. Verified receipts
+// surfaces. Verified receipts
 // notify only as native device notices; Activity remains the source of truth.
 function fixtureBody(): string {
   return `
@@ -11,15 +11,11 @@ function fixtureBody(): string {
     import { ToastProvider } from '/src/components/Toast.tsx';
     import { VaultContext } from '/src/vault/context.ts';
     import Home from '/src/screens/Vault/Home.tsx';
-    export default function CatchUpFixture() {
+    export default function HomeFixture() {
       const current = React.useContext(VaultContext);
-      const [dismissed, setDismissed] = React.useState(false);
-      const catchUp = dismissed ? null : { count: 3, totalSats: 2100000000000, keys: ['a', 'b', 'c'] };
       return React.createElement(ToastProvider, null,
         React.createElement(VaultContext.Provider, { value: {
-          ...current, account: 'spend', balancesLoaded: true, history: [], arrivals: [],
-          dismissArrival: () => {}, openArrival: () => {}, catchUp,
-          dismissCatchUp: () => setDismissed(true),
+          ...current, account: 'spend', balancesLoaded: true, history: [],
           navigate: () => {}, openTx: () => {}, refreshingBalance: false,
           positions: { spending: { availableSats: 12000, pendingSats: 0, totalSats: 12000 }, savings: { availableSats: 0, pendingSats: 0, totalSats: 0 } },
           setAccount: () => {}, clearSpendDraft: () => {}, setSpendDraft: () => {},
@@ -42,7 +38,7 @@ for (const width of [320, 390]) {
       await expect(page.locator('[data-testid^="payment-arrival-"]')).toHaveCount(0)
       await expect(page.getByTestId('payment-catch-up')).toHaveCount(0)
       await expectWalletLayout(page)
-      await page.screenshot({ path: testInfo.outputPath(`catchup-${width}-${theme}.png`) })
+      await page.screenshot({ path: testInfo.outputPath(`home-notifications-${width}-${theme}.png`) })
 
       await page.evaluate(() => (document.documentElement.style.fontSize = '32px'))
       await expectWalletLayout(page)

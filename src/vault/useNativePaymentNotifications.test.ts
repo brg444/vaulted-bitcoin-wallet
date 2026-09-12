@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { IDBFactory } from 'fake-indexeddb'
 import { isServerCovered, useNativePaymentNotifications } from './useNativePaymentNotifications'
 import type { VaultHistoryItem } from '../lib/vault/history'
+import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
+import { paymentIdentityForItem } from '../lib/vault/payments'
 
 const scope = { network: 'mainnet', vaultId: 'vault-1' }
 const arkadeReceive: VaultHistoryItem = {
@@ -136,6 +138,7 @@ describe('foreground native notifications', () => {
     hook.rerender({ rows: rowsA, current: scopeA })
     // Switch scope before async delivery resolves: A work must not show.
     hook.rerender({ rows: [], current: scopeB })
+    hook.rerender({ rows: rowsA, current: scopeA })
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(showNotification).not.toHaveBeenCalled()
   })
@@ -149,6 +152,123 @@ describe('foreground native notifications', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(requestPermission).not.toHaveBeenCalled()
+    expect(showNotification).not.toHaveBeenCalled()
+  })
+})
+
+describe('native arrival freshness and interruption', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
+  it('ignores partial hydration, seeds every first fresh row quietly, and does not replay on reload', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const { showNotification, deps: d } = deps()
+    const stored = { ...savingsReceive, txid: 'old' }
+    const omitted = { ...savingsReceive, txid: 'omitted' }
+    saveArrivalBaseline(scope, new Map([[paymentIdentityForItem(stored, scope).key, true]]))
+    const hook = renderHook(
+      ({ rows, ready }) => useNativePaymentNotifications(rows, scope, false, ready, new Set(), d),
+      {
+        initialProps: { rows: [stored], ready: false },
+      },
+    )
+    hook.rerender({ rows: [stored, omitted], ready: false })
+    expect(loadArrivalBaseline(scope).has(paymentIdentityForItem(omitted, scope).key)).toBe(false)
+    hook.rerender({ rows: [stored, omitted], ready: true })
+    const rows = [stored, omitted, savingsReceive]
+    hook.rerender({ rows, ready: true })
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+    hook.unmount()
+    const reloaded = renderHook(({ rows }) => useNativePaymentNotifications(rows, scope, false, true, new Set(), d), {
+      initialProps: { rows: [] as VaultHistoryItem[] },
+    })
+    reloaded.rerender({ rows: [stored] })
+    reloaded.rerender({ rows })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)))
+    expect(showNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces known pending Savings confirmations after reopen while excluding older browsing', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const { showNotification, deps: d } = deps()
+    const pending = { ...savingsReceive, confirmed: false }
+    const first = renderHook(() => useNativePaymentNotifications([pending], scope, false, true, new Set(), d))
+    first.unmount()
+    const older = { ...savingsReceive, txid: 'older', confirmed: false }
+    const excluded = new Set(['savings:older:received'])
+    const reopened = renderHook(({ rows }) => useNativePaymentNotifications(rows, scope, false, true, excluded, d), {
+      initialProps: { rows: [savingsReceive, older] },
+    })
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+    reopened.rerender({ rows: [savingsReceive, { ...older, confirmed: true }] })
+    excluded.clear()
+    reopened.rerender({ rows: [savingsReceive, { ...older, confirmed: true }] })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)))
+    expect(showNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a notice across disable and re-enable while registration is pending', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    let resolveRegistration!: (value: ServiceWorkerRegistration) => void
+    const registration = new Promise<ServiceWorkerRegistration>((resolve) => {
+      resolveRegistration = resolve
+    })
+    const getRegistration = vi.fn(() => registration)
+    const { showNotification, deps: d } = deps({ getRegistration })
+    const hook = renderHook(
+      ({ rows, enabled }) => useNativePaymentNotifications(rows, scope, false, true, new Set(), { ...d, enabled }),
+      {
+        initialProps: { rows: [] as VaultHistoryItem[], enabled: true },
+      },
+    )
+    hook.rerender({ rows: [savingsReceive], enabled: true })
+    await waitFor(() => expect(getRegistration).toHaveBeenCalledTimes(1))
+    hook.rerender({ rows: [savingsReceive], enabled: false })
+    hook.rerender({ rows: [savingsReceive], enabled: true })
+    await act(async () => {
+      resolveRegistration({ showNotification } as unknown as ServiceWorkerRegistration)
+      await registration
+    })
+    expect(showNotification).not.toHaveBeenCalled()
+    hook.rerender({ rows: [savingsReceive, { ...savingsReceive, txid: 'later' }], enabled: true })
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+  })
+
+  it('discards locked notices when disabled and does not replay disabled-period receipts', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const { showNotification, deps: d } = deps()
+    const hook = renderHook(
+      ({ rows, enabled, paused }) =>
+        useNativePaymentNotifications(rows, scope, paused, true, new Set(), { ...d, enabled }),
+      {
+        initialProps: { rows: [] as VaultHistoryItem[], enabled: true, paused: true },
+      },
+    )
+    hook.rerender({ rows: [savingsReceive], enabled: true, paused: true })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)))
+    hook.rerender({ rows: [savingsReceive], enabled: false, paused: true })
+    const rows = [savingsReceive, { ...savingsReceive, txid: 'disabled' }]
+    hook.rerender({ rows, enabled: false, paused: true })
+    hook.rerender({ rows, enabled: true, paused: false })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)))
+    expect(showNotification).not.toHaveBeenCalled()
+    hook.rerender({ rows: [...rows, { ...savingsReceive, txid: 'later' }], enabled: true, paused: false })
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+  })
+
+  it('seeds a new scope when history and excluded keys retain the same references', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const { showNotification, deps: d } = deps()
+    const rows = [savingsReceive]
+    const excluded = new Set<string>()
+    const other = { ...scope, vaultId: 'other' }
+    const hook = renderHook(({ current }) => useNativePaymentNotifications(rows, current, false, true, excluded, d), {
+      initialProps: { current: scope },
+    })
+    hook.rerender({ current: other })
+    expect(loadArrivalBaseline(other).get(paymentIdentityForItem(savingsReceive, other).key)).toBe(true)
     expect(showNotification).not.toHaveBeenCalled()
   })
 })
