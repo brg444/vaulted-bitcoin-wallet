@@ -4,12 +4,12 @@ import type { VaultStatus } from '../types'
 import { vaultExitRepository } from '../vtxo/exitRepository'
 import { vaultWalletDatabase } from '../vtxo/walletWorkerNames'
 import { vaultLightningSwapStorageName } from '../lightningLifecycle'
+import { vaultPolicyV1ScriptFromStatus } from '../vtxo/spendingTransaction'
 import {
-  vaultPolicyV1ScriptFromStatus,
   exportSpendingRecoveryJournal,
   validateSpendingRecoveryJournal,
   type SpendingRecoveryJournal,
-} from '../vtxo/spend'
+} from '../vtxo/spendingJournal'
 import { vaultRecoveryBinding } from '../vtxo/recoveryArchive'
 import { kitFromFacts } from '../program/kitBackup'
 import { hex } from '@scure/base'

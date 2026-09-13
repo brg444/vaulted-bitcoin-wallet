@@ -19,18 +19,13 @@ import type { VaultLightningQuote } from './lightningLifecycle'
 import { ensureVaultWalletWorker } from './vtxo/walletWorker'
 import {
   SPENDING_PAYMENT_EVENT,
-  createVtxoSpendUnlocker,
-  isSameVtxoPayment,
-  isVtxoAbortFailedError,
-  isVtxoLivePendingError,
-  isVtxoReceiptPendingError,
-  isVtxoReservedReplaceError,
-  isVtxoReviewedReservationError,
-  isVtxoSameSendInProgressError,
-  isVtxoSpendInFlightError,
   listPersistedVtxoSpends,
   loadPersistedVtxoSpend,
   loadPersistedVtxoSpendById,
+} from './vtxo/spendingJournal'
+import {
+  createVtxoSpendUnlocker,
+  isSameVtxoPayment,
   newVtxoSpendChallenge,
   previewVaultVtxoSend,
   quoteFromPersistedVtxoSpend,
@@ -40,6 +35,15 @@ import {
   vtxoSpendIsLivePending,
   type VaultVtxoSpendQuote,
 } from './vtxo/spend'
+import {
+  isVtxoAbortFailedError,
+  isVtxoLivePendingError,
+  isVtxoReceiptPendingError,
+  isVtxoReservedReplaceError,
+  isVtxoReviewedReservationError,
+  isVtxoSameSendInProgressError,
+  isVtxoSpendInFlightError,
+} from './vtxo/spendingErrors'
 
 export interface SpendingPaymentDraft {
   address: string

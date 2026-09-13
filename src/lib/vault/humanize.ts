@@ -7,7 +7,7 @@ import {
   isVtxoReservedReplaceError,
   isVtxoSameSendInProgressError,
   isVtxoSpendInFlightError,
-} from './vtxo/spend'
+} from './vtxo/spendingErrors'
 
 function nestedErrorMessages(err: unknown, seen = new Set<unknown>()): string[] {
   if (err == null || seen.has(err)) return []

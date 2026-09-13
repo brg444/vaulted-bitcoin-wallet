@@ -25,7 +25,7 @@ import {
   vaultWalletUpdaterTagForNamespace,
   vaultWalletDatabaseForNamespace,
 } from './lib/vault/vtxo/walletWorkerNames'
-import { vaultPolicyV1ScriptFromStatus } from './lib/vault/vtxo/spend'
+import { vaultPolicyV1ScriptFromStatus } from './lib/vault/vtxo/spendingTransaction'
 import { vaultOperatorOrigin } from './lib/vault/networkPins'
 import { RecoveryWalletRepository } from './lib/vault/recovery/walletRepository'
 

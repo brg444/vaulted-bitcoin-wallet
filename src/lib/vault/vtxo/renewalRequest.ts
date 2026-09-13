@@ -23,7 +23,7 @@ import { networkPins } from '../networkPins'
 import { scriptHexFromAddress } from '../bitcoin'
 import { requireExitArchiveInfo } from '../recovery/exitArchive'
 import type { VaultStatus } from '../types'
-import { vaultPolicyV1ScriptFromStatus } from './spend'
+import { vaultPolicyV1ScriptFromStatus } from './spendingTransaction'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './renewalContext'
 
 export interface SpendingDelegateInfo extends DelegateInfo {

@@ -33,3 +33,18 @@ export function isVaultConcurrencyUnavailableError(err: unknown): err is VaultCo
     (typeof err === 'object' && err !== null && 'code' in err && err.code === VAULT_CONCURRENCY_CAPABILITY_CODE)
   )
 }
+
+export async function withVtxoSendLock<T>(
+  vaultId: string,
+  run: () => Promise<T>,
+  locks: VaultLockManager | null | undefined = browserVaultLockManager(),
+): Promise<T> {
+  return requireVaultLockManager(locks).request(
+    `arkade-vault-vtxo-send:${vaultId}`,
+    { mode: 'exclusive' },
+    async (lock) => {
+      if (!lock) throw new Error('Web Locks API returned no exclusive send lock')
+      return run()
+    },
+  )
+}

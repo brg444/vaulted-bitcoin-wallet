@@ -17,14 +17,10 @@ import { traceBitcoinBatch } from './bitcoinBatchTrace'
 import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
 import { vaultGet, vaultPost } from './api'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
-import {
-  vaultPolicyV1ScriptFromStatus,
-  createVtxoOperationId,
-  createVtxoSpendUnlocker,
-  newVtxoSpendChallenge,
-  vtxoSpendDirectSig,
-  withVtxoSendLock,
-} from './vtxo/spend'
+import { vaultPolicyV1ScriptFromStatus } from './vtxo/spendingTransaction'
+import { createVtxoOperationId } from './vtxo/spendingJournal'
+import { createVtxoSpendUnlocker, newVtxoSpendChallenge, vtxoSpendDirectSig } from './vtxo/spend'
+import { withVtxoSendLock } from './vtxo/lock'
 import {
   installVaultSettlementEventSource,
   markVaultSettlementStreamParticipating,

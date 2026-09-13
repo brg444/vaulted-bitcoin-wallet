@@ -105,15 +105,14 @@ export async function openLight(
     reserveVaultVtxo: `async (_record,_status,address,amount) => ({destAddress:address,amountSats:amount,feeSats:20})`,
     sendVaultVtxo: `async () => ({txid:'${'ef'.repeat(32)}',feeSats:20})`,
     createVtxoSpendUnlocker: `() => ({unlock:async () => ({phoneSecret:new Uint8Array(32).fill(1),scalar:new Uint8Array(32).fill(1),assertion:{}}),dispose(){}})`,
-    ...(pendingPayment
-      ? {
-          loadPersistedVtxoSpend: `() => (${JSON.stringify(pending)})`,
-          listPersistedVtxoSpends: `() => [${JSON.stringify(pending)}]`,
-          loadPersistedVtxoSpendById: `() => (${JSON.stringify(pending)})`,
-          quoteFromPersistedVtxoSpend: `(payment) => payment`,
-        }
-      : {}),
+    ...(pendingPayment ? { quoteFromPersistedVtxoSpend: `(payment) => payment` } : {}),
   })
+  if (pendingPayment)
+    await override(page, 'lib/vault/vtxo/spendingJournal.ts', {
+      loadPersistedVtxoSpend: `() => (${JSON.stringify(pending)})`,
+      listPersistedVtxoSpends: `() => [${JSON.stringify(pending)}]`,
+      loadPersistedVtxoSpendById: `() => (${JSON.stringify(pending)})`,
+    })
   await override(page, 'lib/vault/lightning.ts', {
     loadVaultLightningFundingQuote: `async () => undefined`,
     withVaultLightningRepository: `async (_id, run) => run({})`,

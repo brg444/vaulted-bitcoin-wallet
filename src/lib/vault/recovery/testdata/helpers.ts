@@ -25,7 +25,7 @@ import { packExitArchive } from '../exitArchive'
 import { sharedSpendingStatus, sharedSpendingStatusForNetwork } from '../../vtxo/testdata/sharedSpending'
 import { spendingEnrollmentHash } from '../../spendingEnrollment'
 import { buildSpendingRecoveryDescriptor } from '../../program/spendingRecoveryDescriptor'
-import { vaultPolicyV1ScriptFromStatus } from '../../vtxo/spend'
+import { vaultPolicyV1ScriptFromStatus } from '../../vtxo/spendingTransaction'
 import { vaultRecoveryBinding, type VaultRecoveryArchive } from '../../vtxo/recoveryArchive'
 
 export function ledgerRecoveryFacts(

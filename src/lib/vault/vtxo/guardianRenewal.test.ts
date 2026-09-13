@@ -14,7 +14,7 @@ import { validateSpendingRenewalSet } from './renewalSet'
 import { authorizeSpendingRenewals, clearSpendingRenewalReads } from './guardianRenewal'
 import { loadSpendingRenewals } from './renewalStore'
 import { setupSpendingRenewals } from './renewalCeremony'
-import * as spending from './spend'
+import * as spending from './spendingJournal'
 
 const mocks = vi.hoisted(() => ({ ancestry: vi.fn() }))
 vi.mock('./renewalRecovery', async (original) => ({

@@ -5,13 +5,10 @@ import type { VaultSessionSnapshot } from './session'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP } from './lightningTestUtils'
 import { MUTINYNET_LIGHTNING_SOLVER } from './lightningConfig'
-import {
-  SPENDING_PAYMENT_EVENT,
-  VtxoReceiptPendingError,
-  VtxoReservedReplaceError,
-  type PersistedVtxoSpend,
-  type VaultVtxoSpendQuote,
-} from './vtxo/spend'
+import { SPENDING_PAYMENT_EVENT } from './vtxo/spendingJournal'
+import { VtxoReceiptPendingError, VtxoReservedReplaceError } from './vtxo/spendingErrors'
+import { type PersistedVtxoSpend } from './vtxo/spendingTransaction'
+import { type VaultVtxoSpendQuote } from './vtxo/spend'
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
@@ -32,12 +29,15 @@ const api = vi.hoisted(() => ({
   refundStatus: vi.fn(),
   ensure: vi.fn(),
 }))
-vi.mock('./vtxo/spend', async (original) => ({
-  ...(await original<typeof import('./vtxo/spend')>()),
+vi.mock('./vtxo/spendingJournal', async (original) => ({
+  ...(await original<typeof import('./vtxo/spendingJournal')>()),
   listPersistedVtxoSpends: api.list,
   loadPersistedVtxoSpend: (vault: string) => api.list(vault).at(-1),
   loadPersistedVtxoSpendById: (vault: string, id: string) =>
     api.list(vault).find((record: PersistedVtxoSpend) => record.operationId === id),
+}))
+vi.mock('./vtxo/spend', async (original) => ({
+  ...(await original<typeof import('./vtxo/spend')>()),
   quoteFromPersistedVtxoSpend: (record: PersistedVtxoSpend) => ({
     operationId: record.operationId,
     bundleDigest: record.bundleDigest,

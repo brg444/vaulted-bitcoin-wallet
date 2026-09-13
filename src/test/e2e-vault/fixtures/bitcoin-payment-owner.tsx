@@ -11,7 +11,7 @@ import {
 import { vaultAccountRuntime } from '../../../lib/vault/accountRuntime'
 import { vaultOperatorOrigin } from '../../../lib/vault/networkPins'
 import { registerVaultPolicyV1ContractHandler, vaultPolicyV1Contract } from '../../../lib/vault/vtxo/contractHandler'
-import { vaultPolicyV1ScriptFromStatus } from '../../../lib/vault/vtxo/spend'
+import { vaultPolicyV1ScriptFromStatus } from '../../../lib/vault/vtxo/spendingTransaction'
 import { ledgerRecoveryFixture, ledgerFixturePRF } from '../../../lib/vault/recovery/testdata/ledger'
 import { guardianRenewalContextDigest } from '../../../lib/vault/vtxo/renewalContext'
 import {

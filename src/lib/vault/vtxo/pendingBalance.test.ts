@@ -1,7 +1,7 @@
 import type { VirtualCoin } from '@arkade-os/sdk'
 import { describe, expect, it } from 'vitest'
 import { vtxoBalanceWithPending } from './pendingBalance'
-import type { PersistedVtxoSpend } from './spend'
+import { type PersistedVtxoSpend } from './spendingTransaction'
 
 const pending = {
   operationId: 'payment',

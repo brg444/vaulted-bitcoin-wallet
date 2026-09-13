@@ -39,7 +39,7 @@ import {
   vaultWalletWorkerPath,
   vaultWalletWorkerScope,
 } from './walletWorkerNames'
-import { listPersistedVtxoSpends } from './spend'
+import { listPersistedVtxoSpends } from './spendingJournal'
 import { vaultOperatorOrigin } from '../networkPins'
 import { readSpendingBitcoin } from '../spendingBitcoinStore'
 import { vtxoBalanceWithPending } from './pendingBalance'

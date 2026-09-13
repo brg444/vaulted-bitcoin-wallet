@@ -13,7 +13,7 @@ import {
 } from '../recovery/exitArchive'
 import type { VaultStatus } from '../types'
 import { requireBoardingStatus } from './board'
-import { vaultPolicyV1ScriptFromStatus } from './spend'
+import { vaultPolicyV1ScriptFromStatus } from './spendingTransaction'
 import { vaultExitRepository } from './exitRepository'
 import { vaultWalletDatabase } from './walletWorkerNames'
 import { networkPins } from '../networkPins'

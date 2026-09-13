@@ -66,6 +66,13 @@ function imports(path: string) {
 it.each([
   'src/lib/vault/networkPins.ts',
   'src/lib/vault/recovery/finalization.ts',
+  'src/lib/vault/recovery/capture.ts',
+  'src/lib/vault/recovery/restore.ts',
+  'src/lib/vault/recovery/backupCodec.ts',
+  'src/lib/vault/recovery/journals.ts',
+  'src/lib/vault/vtxo/recoveryArchive.ts',
+  'src/lib/vault/vtxo/spendingJournal.ts',
+  'src/lib/vault/vtxo/spendingTransaction.ts',
   'src/lib/vault/accountRuntime.ts',
   'src/lib/vault/accountMaintenance.ts',
 ])('%s has no transitive dependency on payment coordination or screens', (entry) => {

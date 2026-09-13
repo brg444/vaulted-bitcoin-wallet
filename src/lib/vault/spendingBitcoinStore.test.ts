@@ -6,6 +6,8 @@ import { buildRecoveryHeader, type VaultRecoveryFile } from './recovery/backupCo
 import { readCommittedRecoveryCoverage } from './recovery/committedCoverage'
 import * as delegation from './vtxo/guardianRenewal'
 import * as spendModule from './vtxo/spend'
+import * as spendingJournal from './vtxo/spendingJournal'
+import { vaultPolicyV1ScriptFromStatus } from './vtxo/spendingTransaction'
 import * as apiModule from './api'
 import * as streamModule from './vtxo/settlementEventSource'
 import { humanizeVaultError } from './humanize'
@@ -55,7 +57,7 @@ import {
 
 async function bitcoinFixture(count = 1, light = false, network: 'mainnet' | 'mutinynet' = 'mainnet') {
   const source = light ? sharedSpendingRecoveryFixture(undefined, network) : await ledgerRecoveryFixture(false, network)
-  const spending = spendModule.vaultPolicyV1ScriptFromStatus(source.status)
+  const spending = vaultPolicyV1ScriptFromStatus(source.status)
   const coin = JSON.parse(source.archive.spending.coins)[0]
   // Public deterministic key from the shared Spending vector, or the Ledger fixture phone key.
   const phoneSecret = light ? new Uint8Array(32).fill(7) : scalarSecret(3)
@@ -475,7 +477,7 @@ it.each(
     unlock,
     dispose,
   } as never)
-  vi.spyOn(spendModule, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
+  vi.spyOn(spendingJournal, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
   vi.spyOn(apiModule, 'vaultGet').mockResolvedValue({
     version: 1,
     maxInputs: 1,
@@ -569,7 +571,7 @@ it('checks the enrolled Light output before asking for a Bitcoin payment signatu
     maxInputs: 1,
     descriptorHash: guardianRenewalContextDigest(status),
   })
-  const account = mockBitcoinAccount({ status, spending: spendModule.vaultPolicyV1ScriptFromStatus(status) })
+  const account = mockBitcoinAccount({ status, spending: vaultPolicyV1ScriptFromStatus(status) })
   const coins = account.getContractsWithVtxos
   const approve = vi.fn()
   await expect(
@@ -805,7 +807,7 @@ it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session', 'contrac
       return { phoneSecret: f.phoneSecret, scalar: scalarSecret(4), assertion: {} }
     })
     const unlocker = vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({ unlock, dispose } as never)
-    vi.spyOn(spendModule, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
+    vi.spyOn(spendingJournal, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
     vi.spyOn(apiModule, 'vaultGet').mockResolvedValue({
       version: 1,
       maxInputs: 1,

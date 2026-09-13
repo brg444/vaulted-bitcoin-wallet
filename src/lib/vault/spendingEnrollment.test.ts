@@ -9,7 +9,7 @@ import {
   validateSpendingEnrollment,
 } from './spendingEnrollment'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
-import { vaultPolicyV1ScriptFromStatus } from './vtxo/spend'
+import { vaultPolicyV1ScriptFromStatus } from './vtxo/spendingTransaction'
 import { pinFromEnrolledStatus, requireStatusMatchesPin } from './pin'
 import { buildRecoveryKit, inspectRecoveryKit, parseRecoveryKit } from './program/kit'
 import { buildSpendingRecoveryDescriptor } from './program/spendingRecoveryDescriptor'

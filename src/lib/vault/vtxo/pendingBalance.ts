@@ -1,5 +1,5 @@
 import { hasTerminalSpend } from '@arkade-os/sdk'
-import type { PersistedVtxoSpend } from './spend'
+import { type PersistedVtxoSpend } from './spendingTransaction'
 
 type BalanceCoin = Parameters<typeof hasTerminalSpend>[0] & { txid: string; vout: number; value: number }
 

@@ -531,7 +531,7 @@ test('keeps a submitted payment and its change visible after reload and opens it
   await seedReviewedSpend(page, status, destination, 1505, 0, 31953)
   await page.evaluate(
     async ({ vaultId, script }) => {
-      const modulePath = '/src/lib/vault/vtxo/spend.ts'
+      const modulePath = '/src/lib/vault/vtxo/spendingJournal.ts'
       const spends = await import(/* @vite-ignore */ modulePath)
       const pending = spends.loadPersistedVtxoSpend(vaultId)
       spends.persistVtxoSpend({

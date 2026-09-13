@@ -8,7 +8,7 @@ import { networkPins } from '../networkPins'
 import { requireProtectionTierMatchesRecovery, type ProtectionTier } from '../protectionTier'
 import { spendingPolicyDigest, validateSpendingPolicy, type SpendingPolicy } from '../spendingPolicy'
 import type { VaultStatus } from '../types'
-import { vaultPolicyV1ScriptFromStatus } from './spend'
+import { vaultPolicyV1ScriptFromStatus } from './spendingTransaction'
 
 export interface GuardianRenewalContext {
   program: SpendingPolicy['program']

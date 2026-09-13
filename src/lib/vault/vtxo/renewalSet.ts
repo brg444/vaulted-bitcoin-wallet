@@ -6,7 +6,7 @@ import { signDirectP256, verifyDirectP256 } from '../ceremony/directauth'
 import type { VaultStatus } from '../types'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './renewalContext'
 import { canonicalHex, validateSpendingSchedule, type SpendingScheduleRequest } from './renewalRequest'
-import type { VtxoSpendPasskey } from './spend'
+import { type VtxoSpendPasskey } from './spend'
 
 export type SpendingRenewalSetPlan = Omit<SpendingScheduleRequest, 'program' | 'descriptorHash' | 'vaultId'>
 export interface SpendingRenewalSet {

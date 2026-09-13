@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { VaultConcurrencyUnavailableError, type VaultLockManager } from './lock'
-import { withVtxoSendLock } from './spend'
+import { VaultConcurrencyUnavailableError, withVtxoSendLock, type VaultLockManager } from './lock'
 
 class DeterministicLockManager implements VaultLockManager {
   private readonly held = new Set<string>()

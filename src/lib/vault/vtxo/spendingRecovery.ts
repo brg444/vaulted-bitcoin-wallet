@@ -23,7 +23,7 @@ import { scriptHexFromAddress, bitcoinDustSats } from '../bitcoin'
 import { networkPins } from '../networkPins'
 import { requireExactDefaultTapscriptSignatures } from '../taprootSignatures'
 import { VaultPolicyV1ContractHandler } from './contractHandler'
-import { vaultPolicyV1ScriptFromStatus } from './spend'
+import { vaultPolicyV1ScriptFromStatus } from './spendingTransaction'
 import {
   validateVaultRecoveryArchive,
   vaultArchiveProviders,

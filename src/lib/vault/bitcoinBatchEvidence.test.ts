@@ -3,7 +3,7 @@ import { base64, hex } from '@scure/base'
 import { Transaction, TxTree, CosignerPublicKey, getArkPsbtFields, SingleKey, buildForfeitTx } from '@arkade-os/sdk'
 import { serializeBitcoinForfeit, serializeBitcoinBatchTree } from './bitcoinBatchEvidence'
 import { sharedSpendingStatus, sharedSpendingStatusForNetwork } from './vtxo/testdata/sharedSpending'
-import { vaultPolicyV1ScriptFromStatus } from './vtxo/spend'
+import { vaultPolicyV1ScriptFromStatus } from './vtxo/spendingTransaction'
 const testOwner = new Uint8Array(32).fill(1)
 describe('Bitcoin batch evidence', () => {
   it('canonicalizes the SDK default-sighash field without changing its owner signature', async () => {

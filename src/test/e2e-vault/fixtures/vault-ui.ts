@@ -9,7 +9,8 @@ import { ledgerRecoveryFixture } from '../../../lib/vault/recovery/testdata/ledg
 import { saveSetupPlan } from '../../../lib/vault/setupPlan'
 import type { VaultStatus } from '../../../lib/vault/types'
 import { activateBoardingKey, stageBoardingKey, MUTINYNET_OPERATOR_SIGNER_PUB } from '../../../lib/vault/vtxo/board'
-import { persistVtxoSpend, type PersistedVtxoSpend } from '../../../lib/vault/vtxo/spend'
+import { persistVtxoSpend } from '../../../lib/vault/vtxo/spendingJournal'
+import { type PersistedVtxoSpend } from '../../../lib/vault/vtxo/spendingTransaction'
 
 export const VAULT_UI_ID = 'e2'.repeat(16)
 export const OPERATOR_XONLY = MUTINYNET_OPERATOR_SIGNER_PUB.slice(2)
