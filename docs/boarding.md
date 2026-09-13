@@ -127,9 +127,15 @@ Phases are `signed`, `dispatched`, `uncertain`, `conflict` and `confirmed`. A
 lost broadcast response or missing indexer read stays uncertain and retries the
 same bytes. Absence from an indexer or archive cannot prove consumption or
 authorize a replacement attempt. Positive outspend evidence of a different
-transaction is a conflict. The journal retires only after the exact transaction
-is confirmed, matching history or receipt facts exist, and the committed
-recovery file contains the same signed evidence.
+transaction is a conflict. The recovery command retires the journal only after
+the exact transaction is confirmed, the committed recovery file contains the
+same signed bytes, and history shows a received amount equal to the saved
+destination output. That received amount is the recovered sats after fees. A
+sent row, including an outflow of the boarding inputs, does not retire this
+sweep. The command captures that signed record before acknowledgment. An
+absent or stale file, delayed history, uncertain chain read, different
+transaction or failed storage keeps the operation. After retirement, later
+mature inputs may be swept, including after reload.
 
 This path is not automatic and does not construct a parallel Vault transaction
 lifecycle. It does not recover an immature, foreign, or already-spent output.

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   pull: vi.fn(),
   boarding: vi.fn(),
+  acknowledgeBoarding: vi.fn(),
   refreshBalance: vi.fn(),
   kitFromFacts: vi.fn(),
   loadLocalKit: vi.fn(),
@@ -57,7 +58,10 @@ vi.mock('./program/kitBackup', () => ({
 vi.mock('./program/kitStore', () => ({ loadLocalKit: mocks.loadLocalKit, saveLocalKit: mocks.save }))
 vi.mock('./program/liveKit', () => ({ kitMatchesLiveVault: mocks.kitMatches }))
 vi.mock('./savingsSpend', () => ({ unlockPhoneBip340: mocks.unlock }))
-vi.mock('./vtxo/boardingRecovery', () => ({ recoverMatureBoardingInputs: mocks.boarding }))
+vi.mock('./vtxo/boardingRecovery', () => ({
+  recoverMatureBoardingInputs: mocks.boarding,
+  acknowledgeMatureBoardingRecovery: mocks.acknowledgeBoarding,
+}))
 vi.mock('./ceremony/directauth', () => ({ zeroBytes: (bytes: Uint8Array) => bytes.fill(0) }))
 
 import { recoveryCommandsForSession } from './recoveryCommands'
@@ -131,6 +135,7 @@ beforeEach(() => {
   mocks.key.mockResolvedValue({})
   mocks.unlock.mockResolvedValue(new Uint8Array(32).fill(1))
   mocks.boarding.mockResolvedValue('00'.repeat(32))
+  mocks.acknowledgeBoarding.mockResolvedValue(false)
   mocks.refreshBalance.mockResolvedValue(undefined)
   mocks.kitFromFacts.mockReturnValue(kit)
   mocks.loadLocalKit.mockReturnValue(null)
@@ -157,6 +162,10 @@ describe('session-owned recovery commands', () => {
     expect(exported).toContain('encrypted')
     expect(mocks.open).not.toHaveBeenCalled()
     expect(mocks.acknowledge).toHaveBeenCalledWith(coverage)
+    expect(mocks.acknowledgeBoarding).toHaveBeenCalledWith(
+      status,
+      expect.objectContaining({ coverage, signal: expect.any(AbortSignal) }),
+    )
     expect(mocks.record).toHaveBeenCalledWith('local', file)
     expect(phone.every((byte) => byte === 0)).toBe(true)
     release()
@@ -339,6 +348,8 @@ describe('session-owned recovery commands', () => {
     )
     finish('66'.repeat(32))
     await expect(first).resolves.toBe('66'.repeat(32))
+    expect(mocks.capture).toHaveBeenCalled()
+    expect(mocks.acknowledgeBoarding).toHaveBeenCalled()
     await vi.waitFor(() => expect(mocks.refreshBalance).toHaveBeenCalledWith('test'))
     release()
   })

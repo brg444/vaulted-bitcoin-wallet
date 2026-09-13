@@ -13,7 +13,7 @@ import { recordRecoveryFileCopy } from './recovery/packageCheck'
 import { kitFromFacts, pullMapBackup, pushMapBackup } from './program/kitBackup'
 import { loadLocalKit, saveLocalKit } from './program/kitStore'
 import { kitMatchesLiveVault } from './program/liveKit'
-import { recoverMatureBoardingInputs } from './vtxo/boardingRecovery'
+import { acknowledgeMatureBoardingRecovery, recoverMatureBoardingInputs } from './vtxo/boardingRecovery'
 
 /** Recovery commands bind the enrolled session identity and own their flights. */
 interface RecoverySnapshot {
@@ -145,6 +145,8 @@ function createRecoveryCommands(session: SessionSource) {
       await account.bitcoinPayments?.acknowledgeRecovery(coverage)
       if (current()) await account.spendingPayments?.acknowledgeSettledRecovery(coverage)
     }
+    if (context !== generation) throw new RecoveryError('Wallet session changed during recovery backup')
+    if (current()) await acknowledgeMatureBoardingRecovery(status, { coverage, signal })
     if (context !== generation) throw new RecoveryError('Wallet session changed during recovery backup')
     await recordRecoveryFileCopy('local', file)
     return { status, file, context, epoch, activity, current }
@@ -392,6 +394,9 @@ function createRecoveryCommands(session: SessionSource) {
       return run('boarding', 'mature-boarding', async (check, signal) => {
         const { status, enrollment } = unlocked()
         const txid = await recoverMatureBoardingInputs(enrollment, status, { check, signal })
+        check()
+        activityEpoch++
+        await captureFor(currentFence(), signal).catch(() => undefined)
         check()
         await Promise.resolve(vaultAccountRuntime(status).balances?.refreshBalance(status.vaultId)).catch(
           () => undefined,

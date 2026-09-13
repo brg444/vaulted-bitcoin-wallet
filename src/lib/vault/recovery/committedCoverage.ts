@@ -7,6 +7,7 @@ import { recoveryBinding, recoveryStatusFacts, validateVaultRecoveryFile, type V
 import { validateExitArchive } from './exitArchive'
 import { recoveryFileStore } from './fileStore'
 import type { RecoveryOutput } from './coverage'
+import { validateMatureBoardingAttempt, type MatureBoardingAttempt } from '../vtxo/matureBoardingJournal'
 
 export interface CommittedRecoveryCoverage {
   vaultId: string
@@ -37,4 +38,21 @@ export async function readCommittedRecoveryCoverage(status: VaultStatus): Promis
     fileDigest: hex.encode(sha256(new TextEncoder().encode(JSON.stringify(file)))),
     outputs: coins.map(({ txid, vout, value, script }) => ({ txid, vout, value, script })),
   }
+}
+
+/** Independent recovery evidence is the committed file's signed journal, not caller-supplied strings. */
+export async function readCommittedMatureBoardingJournal(status: VaultStatus): Promise<MatureBoardingAttempt | null> {
+  const kit = kitFromFacts({ status })
+  if (!kit) throw new Error('Committed recovery descriptor is unavailable')
+  const expected = recoveryBinding(kit, status)
+  const saved = await recoveryFileStore<VaultRecoveryFile>(expected.descriptorHash)
+  if (!saved) return null
+  const file = validateVaultRecoveryFile(saved)
+  if (
+    JSON.stringify(file.header.binding) !== JSON.stringify(expected) ||
+    JSON.stringify(file.header.status) !== JSON.stringify(recoveryStatusFacts(status))
+  )
+    throw new Error('Committed recovery coverage belongs to another account')
+  if (!file.matureBoardingJournal) return null
+  return validateMatureBoardingAttempt(status, file.matureBoardingJournal)
 }

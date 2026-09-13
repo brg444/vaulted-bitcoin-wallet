@@ -80,7 +80,7 @@ function allowPhase(from: MatureBoardingAttempt['phase'], to: MatureBoardingAtte
   if (from === to) return true
   if (from === 'confirmed') return false
   if (from === 'conflict') return to === 'confirmed'
-  if (from === 'signed') return to === 'dispatched' || to === 'uncertain'
+  if (from === 'signed') return to === 'dispatched' || to === 'uncertain' || to === 'confirmed'
   return to === 'dispatched' || to === 'uncertain' || to === 'conflict' || to === 'confirmed'
 }
 
@@ -176,6 +176,14 @@ export async function persistMatureBoardingAttempt(status: VaultStatus, next: Ma
   })
 }
 
+/** Destination output of the saved sweep: recovered sats after fees. `sent` is boarding-input outflow and does not retire this journal. */
+export function matureBoardingOutputSats(record: MatureBoardingAttempt): number {
+  const view = validateMatureBoardingRecoveryFile(record.evidence)
+  const amount = Number(view.tx.getOutput(0).amount)
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Mature boarding recovery output changed')
+  return amount
+}
+
 export function canRetireMatureBoardingAttempt(
   record: MatureBoardingAttempt,
   evidence: MatureBoardingRetirementEvidence,
@@ -185,9 +193,8 @@ export function canRetireMatureBoardingAttempt(
   if (!Number.isSafeInteger(evidence.confirmation.blockHeight) || evidence.confirmation.blockHeight <= 0) return false
   if (
     evidence.history?.txid !== record.txid ||
-    (evidence.history.kind !== 'received' && evidence.history.kind !== 'sent') ||
-    !Number.isSafeInteger(evidence.history.amountSats) ||
-    evidence.history.amountSats <= 0
+    evidence.history.kind !== 'received' ||
+    evidence.history.amountSats !== matureBoardingOutputSats(record)
   )
     return false
   const recovery = evidence.recovery

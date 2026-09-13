@@ -25,11 +25,19 @@ import {
   type MatureBoardingRecoveryFile,
 } from './boardingRecoveryFile'
 import {
+  canRetireMatureBoardingAttempt,
   inspectMatureBoardingConflict,
   loadMatureBoardingAttempt,
+  matureBoardingOutputSats,
   persistMatureBoardingAttempt,
+  retireMatureBoardingAttempt,
   type MatureBoardingAttempt,
 } from './matureBoardingJournal'
+import {
+  readCommittedMatureBoardingJournal,
+  readCommittedRecoveryCoverage,
+  type CommittedRecoveryCoverage,
+} from '../recovery/committedCoverage'
 
 type RecoveryDependencies = {
   getBoardingUtxos?: (status: VaultStatus) => Promise<ExtendedCoin[]>
@@ -41,6 +49,9 @@ type RecoveryDependencies = {
   check?: () => void
   loadAttempt?: (status: VaultStatus) => Promise<MatureBoardingAttempt | null>
   persistAttempt?: (status: VaultStatus, record: MatureBoardingAttempt) => Promise<MatureBoardingAttempt>
+  retireAttempt?: typeof retireMatureBoardingAttempt
+  readCommittedJournal?: (status: VaultStatus) => Promise<MatureBoardingAttempt | null>
+  readCoverage?: (status: VaultStatus) => Promise<CommittedRecoveryCoverage | null>
 }
 
 function exactProgram(status: VaultStatus) {
@@ -123,6 +134,7 @@ async function dispatchExact(
 ) {
   fence(dependencies)
   const dispatched = await persistPhase(status, persist, attempt, 'dispatched')
+  fence(dependencies)
   try {
     const txid = await provider.broadcastTransaction(dispatched.hex)
     if (txid !== dispatched.txid) throw new Error('Mature boarding recovery identity changed')
@@ -300,6 +312,96 @@ async function startAttempt(
   } finally {
     if (phoneSecret) zeroBytes(phoneSecret)
   }
+}
+
+function destinationReceive(
+  record: MatureBoardingAttempt,
+  txs: Awaited<ReturnType<OnchainProvider['getTransactions']>>,
+) {
+  const expected = matureBoardingOutputSats(record)
+  for (const tx of txs) {
+    if (tx.txid !== record.txid || !tx.status?.confirmed) continue
+    const paid = tx.vout.reduce((sum, output) => {
+      if (output.scriptpubkey_address !== record.evidence.destination) return sum
+      const value = Number(output.value)
+      return Number.isFinite(value) ? sum + value : sum
+    }, 0)
+    if (paid === expected) return { txid: record.txid, kind: 'received' as const, amountSats: paid }
+  }
+  return null
+}
+
+/** Retires a confirmed sweep only from committed file evidence and chain observations. */
+export async function acknowledgeMatureBoardingRecovery(
+  status: VaultStatus,
+  options: RecoveryDependencies & { coverage?: CommittedRecoveryCoverage } = {},
+): Promise<boolean> {
+  const locks = requireVaultLockManager(options.locks === undefined ? browserVaultLockManager() : options.locks)
+  const load = options.loadAttempt || loadMatureBoardingAttempt
+  const persist = options.persistAttempt || persistMatureBoardingAttempt
+  const retire = options.retireAttempt || retireMatureBoardingAttempt
+  const readJournal = options.readCommittedJournal || readCommittedMatureBoardingJournal
+  const readCoverage = options.readCoverage || readCommittedRecoveryCoverage
+  return locks.request(`arkade-vault-boarding-recovery:${status.vaultId}`, { mode: 'exclusive' }, async (lock) => {
+    if (!lock) throw new Error('Web Locks API returned no exclusive boarding recovery lock')
+    fence(options)
+    const live = await load(status)
+    if (!live) return false
+    const provider = providerOf(options)
+    let confirmation: { txid: string; confirmed: true; blockHeight: number } | undefined
+    try {
+      const seen = await provider.getTxStatus(live.txid)
+      if (seen.confirmed && seen.blockHeight > 0)
+        confirmation = { txid: live.txid, confirmed: true, blockHeight: seen.blockHeight }
+    } catch {
+      return false
+    }
+    if (!confirmation) return false
+    let current = live
+    if (current.phase !== 'confirmed') current = await persistPhase(status, persist, current, 'confirmed')
+    fence(options)
+    const committed = await readJournal(status)
+    const coverage = await readCoverage(status)
+    if (
+      !committed ||
+      committed.txid !== current.txid ||
+      committed.hex !== current.hex ||
+      !coverage ||
+      (options.coverage &&
+        (options.coverage.vaultId !== coverage.vaultId ||
+          options.coverage.network !== coverage.network ||
+          options.coverage.descriptorHash !== coverage.descriptorHash ||
+          options.coverage.fileDigest !== coverage.fileDigest))
+    )
+      return false
+    let history
+    try {
+      history = destinationReceive(current, await provider.getTransactions(current.evidence.destination))
+    } catch {
+      return false
+    }
+    if (!history) return false
+    const still = await load(status)
+    if (!still || still.txid !== current.txid || still.hex !== current.hex) return false
+    const evidence = {
+      confirmation,
+      history,
+      recovery: {
+        vaultId: committed.vaultId,
+        network: committed.network,
+        descriptorHash: committed.descriptorHash,
+        attemptTxid: committed.txid,
+        attemptHex: committed.hex,
+      },
+    }
+    if (still.phase !== 'confirmed' || !canRetireMatureBoardingAttempt(still, evidence)) return false
+    try {
+      await retire(status, evidence)
+    } catch {
+      return false
+    }
+    return true
+  })
 }
 
 export async function recoverMatureBoardingInputs(

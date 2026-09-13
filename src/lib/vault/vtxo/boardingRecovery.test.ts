@@ -221,6 +221,64 @@ describe('vault-board-v1 one-shot recovery', () => {
 })
 
 describe('durable mature boarding recovery', () => {
+  it.each([false, true])('does not broadcast when dispatched persistence is cancelled: cancel=%s', async (cancel) => {
+    const { enrollment, mature, phoneSecret, status } = fixture()
+    const abort = new AbortController()
+    const store = memoryAttemptStore()
+    const provider = chainProvider()
+    const result = await recoverMatureBoardingInputs(enrollment, status, {
+      getBoardingUtxos: async () => [mature],
+      unlockPhone: async () => phoneSecret,
+      onchainProvider: provider,
+      locks: exclusiveVaultLocks(),
+      signal: abort.signal,
+      loadAttempt: store.loadAttempt,
+      persistAttempt: async (nextStatus, next) => {
+        const saved = await store.persistAttempt(nextStatus, next)
+        if (cancel && next.phase === 'dispatched') abort.abort(new DOMException('Session ended', 'AbortError'))
+        return saved
+      },
+    }).then(
+      (txid) => ({ txid, aborted: false }),
+      (error) => ({ aborted: error instanceof DOMException && error.name === 'AbortError' }),
+    )
+    expect(store.get()?.hex).toBeTruthy()
+    expect(provider.broadcast).toHaveBeenCalledTimes(cancel ? 0 : 1)
+    expect(result.aborted).toBe(cancel)
+  })
+
+  it('resumes exact bytes and still fences dispatch after cancelled dispatched persistence', async () => {
+    const { enrollment, mature, phoneSecret, status } = fixture()
+    const signed = await signLiveMatureBoarding({
+      enrollment,
+      status,
+      inputs: [mature],
+      phoneSecret,
+    })
+    const pending = { ...signed.store.get()!, phase: 'signed' as const, conflictTxid: undefined }
+    const store = memoryAttemptStore()
+    store.set(pending)
+    const abort = new AbortController()
+    const retry = chainProvider()
+    await expect(
+      recoverMatureBoardingInputs(enrollment, status, {
+        getBoardingUtxos: async () => [mature],
+        unlockPhone: vi.fn(),
+        onchainProvider: retry,
+        locks: exclusiveVaultLocks(),
+        signal: abort.signal,
+        loadAttempt: store.loadAttempt,
+        persistAttempt: async (nextStatus, next) => {
+          const saved = await store.persistAttempt(nextStatus, next)
+          if (next.phase === 'dispatched') abort.abort(new DOMException('Session ended', 'AbortError'))
+          return saved
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(retry.broadcast).not.toHaveBeenCalled()
+    expect(store.get()).toMatchObject({ txid: pending.txid, hex: pending.hex, phase: 'dispatched' })
+  })
+
   it('cancels after discovery without unlocking or signing', async () => {
     const { enrollment, mature, status } = fixture()
     const recover = vi.fn()

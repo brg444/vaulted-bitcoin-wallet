@@ -148,6 +148,7 @@ export function chainProvider(
       txid: string,
     ) => Promise<{ confirmed: false } | { confirmed: true; blockHeight: number; blockTime: number }>
     outspends?: (txid: string) => Promise<{ spent: boolean; txid?: string }[]>
+    transactions?: OnchainProvider['getTransactions']
   } = {},
 ): OnchainProvider & { broadcast: ReturnType<typeof vi.fn> } {
   const broadcast = options.broadcast
@@ -162,7 +163,7 @@ export function chainProvider(
     },
     getChainTip: async () => ({ height: 10000, time: 2_000_000_000, hash: 'ab'.repeat(32) }),
     getTxOutspends: async (txid) => options.outspends?.(txid) ?? [{ spent: false }],
-    getTransactions: async () => [],
+    getTransactions: options.transactions || (async () => []),
     watchAddresses: async () => () => {},
     broadcastTransaction: broadcast,
     broadcast,
@@ -189,6 +190,8 @@ export async function signLiveMatureBoarding(args: {
   store?: ReturnType<typeof memoryAttemptStore>
   provider?: OnchainProvider
   locks?: VaultLockManager
+  persistAttempt?: (status: VaultStatus, record: MatureBoardingAttempt) => Promise<MatureBoardingAttempt>
+  signal?: AbortSignal
 }) {
   const store = args.store ?? memoryAttemptStore()
   const provider = args.provider ?? chainProvider()
@@ -197,8 +200,9 @@ export async function signLiveMatureBoarding(args: {
     unlockPhone: async () => args.phoneSecret,
     onchainProvider: provider,
     locks: args.locks ?? exclusiveVaultLocks(),
+    signal: args.signal,
     loadAttempt: store.loadAttempt,
-    persistAttempt: store.persistAttempt,
+    persistAttempt: args.persistAttempt || store.persistAttempt,
   })
   return { txid, store, provider }
 }
