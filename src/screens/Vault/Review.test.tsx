@@ -1,3 +1,4 @@
+import type { SpendingPaymentContextProps } from '../../vault/spendingPaymentContext'
 import type { BitcoinPaymentContextProps } from '../../vault/bitcoinPaymentContext'
 import {
   VaultTestProvider,
@@ -10,7 +11,11 @@ import { ToastProvider } from '../../components/Toast'
 import VaultReview from './Review'
 import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 
-function review(overrides: Partial<VaultContextProps> = {}, bitcoinPayment?: Partial<BitcoinPaymentContextProps>) {
+function review(
+  overrides: Partial<VaultContextProps> = {},
+  bitcoinPayment?: Partial<BitcoinPaymentContextProps>,
+  spendingPayment?: Partial<SpendingPaymentContextProps>,
+) {
   const value = {
     account: 'spend',
     busy: false,
@@ -23,7 +28,7 @@ function review(overrides: Partial<VaultContextProps> = {}, bitcoinPayment?: Par
   } as unknown as VaultContextProps
   const tree = (state: VaultContextProps) => (
     <ToastProvider>
-      <VaultTestProvider value={state} bitcoinPayment={bitcoinPayment}>
+      <VaultTestProvider value={state} bitcoinPayment={bitcoinPayment} spendingPayment={spendingPayment}>
         <VaultReview />
       </VaultTestProvider>
     </ToastProvider>
@@ -53,7 +58,7 @@ describe('payment review continuity', () => {
   })
 
   it('keeps the saved operation immutable while allowing destination verification', () => {
-    const { value } = review({ resumingPayment: true })
+    const { value } = review({}, undefined, { resumingPayment: true })
     expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Reveal' }))
     expect(screen.getByText(value.spend.address)).toBeVisible()

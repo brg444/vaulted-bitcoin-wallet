@@ -1,3 +1,4 @@
+import type { SpendingPaymentContextProps } from '../../vault/spendingPaymentContext'
 import {
   VaultTestProvider,
   type VaultTestContextProps as VaultContextProps,
@@ -33,7 +34,10 @@ vi.mock('./Scanner', () => ({
   ),
 }))
 
-function renderSend(overrides: Partial<VaultContextProps> & { balanceUnit?: VaultBalanceUnit } = {}) {
+function renderSend(
+  overrides: Partial<VaultContextProps> & { balanceUnit?: VaultBalanceUnit } = {},
+  spendingPayment?: Partial<SpendingPaymentContextProps>,
+) {
   const { balanceUnit: initialUnit = 'sats', ...rest } = overrides
   const value = {
     account: 'spend',
@@ -81,6 +85,7 @@ function renderSend(overrides: Partial<VaultContextProps> & { balanceUnit?: Vaul
     return (
       <ToastProvider>
         <VaultTestProvider
+          spendingPayment={spendingPayment}
           value={
             {
               ...value,
@@ -160,40 +165,37 @@ describe('Vault send scanner origin', () => {
   })
 
   it('offers abort for a reserved send and never a localStorage-only Send anyway', () => {
-    const value = renderSend({
-      canReplaceInFlightSend: true,
-      error: 'A reserved send is still open. Abort it before sending a different amount.',
-      replaceInFlightSend: vi.fn(),
-      spend: { address: 'tark1same', amount: 20_000, fee: 0 },
-    })
+    const replaceInFlightSend = vi.fn()
+    renderSend(
+      {
+        error: 'A reserved send is still open. Abort it before sending a different amount.',
+        spend: { address: 'tark1same', amount: 20_000, fee: 0 },
+      },
+      { canReplaceInFlightSend: true, replaceInFlightSend },
+    )
     expect(screen.queryByRole('button', { name: 'Send anyway' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Abort reserved send' }))
-    expect(value.replaceInFlightSend).toHaveBeenCalled()
+    expect(replaceInFlightSend).toHaveBeenCalled()
   })
 
   it('shows the reserved value and resumes the exact persisted payment instead of displaying zero', () => {
-    localStorage.setItem(
-      'arkade-vault-vtxo-spend:vault-a',
-      JSON.stringify({
-        vaultId: 'vault-a',
-        operationId: '11'.repeat(16),
-        bundleDigest: '',
-        destAddress: 'tark1same',
-        amountSats: 15_000,
-        arkTxid: '',
-        stage: 'pre-reserve',
-      }),
-    )
     const reviewSpend = vi.fn()
-    renderSend({
-      reviewSpend,
-      spend: { address: 'tark1same', amount: 15_000, fee: 0 },
-      status: { network: 'mutinynet', vaultId: 'vault-a' } as VaultContextProps['status'],
-      positions: {
-        spending: { availableSats: 0, pendingSats: 0, totalSats: 0 },
-        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+    renderSend(
+      {
+        reviewSpend,
+        spend: { address: 'tark1same', amount: 15_000, fee: 0 },
+        status: { network: 'mutinynet', vaultId: 'vault-a' } as VaultContextProps['status'],
+        positions: {
+          spending: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+          savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+        },
       },
-    })
+      {
+        pendingPayments: [
+          { operationId: '11'.repeat(16), destination: 'tark1same', amountSats: 15_000, authorized: false },
+        ],
+      },
+    )
 
     expect(screen.getByText('₿15,000 reserved for this payment')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Resume payment' }))

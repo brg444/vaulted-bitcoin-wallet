@@ -1,3 +1,4 @@
+import { SpendingPaymentContext, type SpendingPaymentContextProps } from '../../vault/spendingPaymentContext'
 import { BitcoinPaymentContext, type BitcoinPaymentContextProps } from '../../vault/bitcoinPaymentContext'
 import { useContext, type ReactNode } from 'react'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
@@ -51,15 +52,18 @@ export function VaultTestProvider({
   children,
   ledgerPayment,
   bitcoinPayment,
+  spendingPayment,
 }: {
   value?: Partial<VaultTestContextProps>
   children: ReactNode
   ledgerPayment?: Partial<LedgerPaymentContextProps>
   bitcoinPayment?: Partial<BitcoinPaymentContextProps>
+  spendingPayment?: Partial<SpendingPaymentContextProps>
 }) {
   const defaults = useContext(VaultContext)
   const inherited = useContext(VaultSessionContext)
   const inheritedBitcoin = useContext(BitcoinPaymentContext)
+  const inheritedSpending = useContext(SpendingPaymentContext)
   const inheritedLedger = useContext(LedgerPaymentContext)
   return (
     <VaultSessionContext.Provider value={{ ...emptySession, ...inherited, ...value }}>
@@ -79,7 +83,20 @@ export function VaultTestProvider({
             ...bitcoinPayment,
           }}
         >
-          <VaultContext.Provider value={{ ...defaults, ...value }}>{children}</VaultContext.Provider>
+          <SpendingPaymentContext.Provider
+            value={{
+              pendingPayments: [],
+              resumingPayment: false,
+              canReplaceInFlightSend: false,
+              openPendingPayment: async () => {},
+              replaceInFlightSend: async () => {},
+              retryLightningRefund: async () => {},
+              ...inheritedSpending,
+              ...spendingPayment,
+            }}
+          >
+            <VaultContext.Provider value={{ ...defaults, ...value }}>{children}</VaultContext.Provider>
+          </SpendingPaymentContext.Provider>
         </BitcoinPaymentContext.Provider>
       </LedgerPaymentContext.Provider>
     </VaultSessionContext.Provider>

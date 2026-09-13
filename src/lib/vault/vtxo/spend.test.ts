@@ -51,12 +51,14 @@ import {
   persistVtxoReserveSignature,
   preReserveVtxoSpend,
   previewVaultVtxoSend,
+  reserveVaultVtxo,
   reconcilePersistedVtxoSpend,
   requireReviewedVtxoReservation,
   requireAuthorizedPendingProof,
   requireOperatorSignedCheckpoint,
   requireUserSignedArkInputs,
   VtxoLivePendingError,
+  VtxoReservedReplaceError,
   VtxoReceiptPendingError,
   VtxoSpendInFlightError,
   VtxoReviewedReservationError,
@@ -2432,6 +2434,153 @@ describe('regular VTXO spend coordinator', () => {
     expect(loadPersistedVtxoSpendById('vault-a', OP_1)?.stage).toBe('authorized')
     expect(listPersistedVtxoSpends('vault-a')).toHaveLength(1)
     clearPersistedVtxoSpend('vault-a')
+  })
+})
+
+describe('Spending command cancellation', () => {
+  it.each(['before request', 'waiting for lock', 'status response'])(
+    'preserves the reviewed journal after cancellation at %s',
+    async (phase) => {
+      clearPersistedVtxoSpend('vault-a')
+      const pending = freshPolicyPending()
+      persistVtxoSpend(pending)
+      const abort = new AbortController()
+      const restoreLock = installImmediateNavigatorLock()
+      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        abort.abort()
+        return new Response(JSON.stringify(reviewedOperation(pending)), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      })
+      if (phase === 'before request') abort.abort()
+      if (phase === 'waiting for lock')
+        vi.spyOn(navigator.locks, 'request').mockImplementation((async (
+          _name: string,
+          _options: unknown,
+          callback: (lock: unknown) => unknown,
+        ) => {
+          abort.abort()
+          return callback({})
+        }) as never)
+      try {
+        await expect(
+          sendVaultVtxo({} as never, status(), reviewedQuote(pending), stubPasskeyUnlocker(), abort.signal),
+        ).rejects.toMatchObject({ name: 'AbortError' })
+        expect(fetch).toHaveBeenCalledTimes(phase === 'status response' ? 1 : 0)
+        expect(loadPersistedVtxoSpendById('vault-a', pending.operationId)).toEqual(pending)
+      } finally {
+        clearPersistedVtxoSpend('vault-a')
+        restoreLock()
+      }
+    },
+  )
+
+  it('refuses a replacement if the reserved operation changed before acquiring the command lock', async () => {
+    clearPersistedVtxoSpend('vault-a')
+    const pending = freshPolicyPending()
+    persistVtxoSpend(pending)
+    const restoreLock = installImmediateNavigatorLock()
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(reviewedOperation(pending)), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    try {
+      await expect(
+        reserveVaultVtxo({} as never, status(), destination(), pending.amountSats + 100, {
+          replaceExisting: true,
+          replacementIds: [OP_2],
+          phoneSecret: new Uint8Array(32).fill(1),
+        }),
+      ).rejects.toBeInstanceOf(VtxoReservedReplaceError)
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(loadPersistedVtxoSpendById('vault-a', pending.operationId)).toEqual(pending)
+    } finally {
+      clearPersistedVtxoSpend('vault-a')
+      restoreLock()
+    }
+  })
+
+  it('retains a recovered Operator response after cancellation without authorizing checkpoints or finalizing', async () => {
+    clearPersistedVtxoSpend('vault-a')
+    const fixture = await authorizedPendingFixture()
+    const pending = { ...freshPolicyPending(fixture.pending), reservationExpires: '2020-08-20T00:02:00Z' }
+    persistVtxoSpend(pending)
+    const abort = new AbortController()
+    const restoreLock = installImmediateNavigatorLock()
+    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(currentOperatorInfo(pending))
+    const submit = vi.spyOn(RestArkProvider.prototype, 'submitTx').mockImplementation(async () => {
+      abort.abort(new Error('account locked'))
+      throw new TypeError('submit response lost')
+    })
+    const getPending = vi.spyOn(RestArkProvider.prototype, 'getPendingTxs').mockResolvedValue([fixture.candidate])
+    const authorize = vi.spyOn(vaultCosignerClient.spending, 'authorizeCheckpoints')
+    const finalize = vi.spyOn(RestArkProvider.prototype, 'finalizeTx')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(reviewedOperation(pending, { state: 'signed' })), { status: 200 }),
+    )
+    try {
+      await expect(
+        sendVaultVtxo({} as never, fixture.current, reviewedQuote(pending), stubPasskeyUnlocker(), abort.signal),
+      ).rejects.toThrow('account locked')
+      expect(submit).toHaveBeenCalledOnce()
+      expect(getPending).toHaveBeenCalledOnce()
+      expect(authorize).not.toHaveBeenCalled()
+      expect(finalize).not.toHaveBeenCalled()
+      expect(loadPersistedVtxoSpendById('vault-a', pending.operationId)).toMatchObject({
+        stage: 'operator-submitted',
+        operatorSubmitAttempted: true,
+        operatorArkPsbt: fixture.candidate.finalArkTx,
+        operatorCheckpointPsbts: fixture.candidate.signedCheckpointTxs,
+      })
+    } finally {
+      clearPersistedVtxoSpend('vault-a')
+      restoreLock()
+    }
+  })
+
+  it('retains signed checkpoints and refuses final dispatch when cancellation arrives during recovery persistence', async () => {
+    clearPersistedVtxoSpend('vault-a')
+    const fixture = await authorizedPendingFixture()
+    const checkpointPsbts: string[] = []
+    for (const raw of fixture.candidate.signedCheckpointTxs) {
+      const phoneSigned = await fixture.phone.sign(Transaction.fromPSBT(base64.decode(raw)))
+      checkpointPsbts.push(base64.encode((await fixture.vault.sign(phoneSigned)).toPSBT()))
+    }
+    const pending: PersistedVtxoSpend = {
+      ...freshPolicyPending(fixture.pending),
+      reservationExpires: '2020-08-20T00:02:00Z',
+      stage: 'checkpoints-authorized',
+      operatorArkPsbt: fixture.candidate.finalArkTx,
+      operatorCheckpointPsbts: fixture.candidate.signedCheckpointTxs,
+      checkpointPsbts,
+    }
+    persistVtxoSpend(pending)
+    const abort = new AbortController()
+    const restoreLock = installImmediateNavigatorLock()
+    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(currentOperatorInfo(pending))
+    const finalize = vi.spyOn(RestArkProvider.prototype, 'finalizeTx').mockResolvedValue(undefined)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(reviewedOperation(pending, { state: 'submitted' })), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.mocked(retainFinalizationRecovery).mockImplementationOnce(async () => {
+      abort.abort()
+    })
+    try {
+      await expect(
+        sendVaultVtxo({} as never, fixture.current, reviewedQuote(pending), undefined, abort.signal),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+      expect(finalize).not.toHaveBeenCalled()
+      expect(loadPersistedVtxoSpendById('vault-a', pending.operationId)?.checkpointPsbts).toEqual(checkpointPsbts)
+    } finally {
+      clearPersistedVtxoSpend('vault-a')
+      restoreLock()
+    }
   })
 })
 

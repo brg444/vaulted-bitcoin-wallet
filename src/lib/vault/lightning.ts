@@ -117,35 +117,62 @@ export function validateVaultLightningRefund(
   return refund
 }
 
+/** A canceled approval can drain a response, but cannot issue another signing or Operator call. */
+function cancellableLightningCapability<T extends object>(target: T, signal?: AbortSignal): T {
+  return new Proxy(target, {
+    get(object, property) {
+      const value = Reflect.get(object, property)
+      if (typeof value !== 'function') return value
+      return (...args: unknown[]) => {
+        signal?.throwIfAborted()
+        const result = Reflect.apply(value, object, args)
+        return property === 'signerSession' ? cancellableLightningCapability(result, signal) : result
+      }
+    },
+  })
+}
+
 export async function withVaultLightningSdkWallet<T>(
   phoneSecret: Uint8Array,
   status: VaultStatus,
   run: (session: VaultLightningSession) => Promise<T>,
-  options: { refundRfqId?: string } = {},
+  options: { refundRfqId?: string; signal?: AbortSignal } = {},
 ): Promise<T> {
-  return withVaultLightningLifecycleLock(status.vaultId, () =>
-    withUnlockedVaultLightningSdkWallet(phoneSecret, status, run, options),
-  )
+  options.signal?.throwIfAborted()
+  const lifetime = new AbortController()
+  const cancel = () => lifetime.abort(options.signal?.reason)
+  options.signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    return await withVaultLightningLifecycleLock(status.vaultId, () =>
+      withUnlockedVaultLightningSdkWallet(phoneSecret, status, run, { ...options, signal: lifetime.signal }),
+    )
+  } finally {
+    options.signal?.removeEventListener('abort', cancel)
+    lifetime.abort(new DOMException('Lightning approval ended', 'AbortError'))
+  }
 }
 
 async function withUnlockedVaultLightningSdkWallet<T>(
   phoneSecret: Uint8Array,
   status: VaultStatus,
   run: (session: VaultLightningSession) => Promise<T>,
-  options: { refundRfqId?: string },
+  options: { refundRfqId?: string; signal?: AbortSignal },
 ): Promise<T> {
+  options.signal?.throwIfAborted()
   if (!status.spendingArkAddress) throw new Error('Vault has no Spending address.')
-  const identity = SingleKey.fromPrivateKey(phoneSecret)
+  const identity = cancellableLightningCapability(SingleKey.fromPrivateKey(phoneSecret), options.signal)
   if (hex.encode(await identity.compressedPublicKey()) !== String(status.phoneBip340Pub || '')) {
     throw new Error('Phone key does not match this vault.')
   }
   const arkServerUrl = vaultOperatorOrigin(status.network)
-  const operator = new RestArkProvider(arkServerUrl)
+  const operator = cancellableLightningCapability(new RestArkProvider(arkServerUrl), options.signal)
   const indexer = new RestIndexerProvider(arkServerUrl)
   const info = await operator.getInfo()
   requireMatchingLightningOperatorNetwork(status.network, info.network)
   validateVaultLightningRefund(status, info.network as NetworkName, info.signerPubkey)
+  options.signal?.throwIfAborted()
   return withVaultWalletState(status, async ({ contracts, swapRepository, swapManager }) => {
+    options.signal?.throwIfAborted()
     const requestWallet = vaultLightningRequestWallet(identity, status.spendingArkAddress!, contracts)
     const session: VaultLightningSession = {
       wallet: requestWallet,
@@ -163,6 +190,7 @@ async function withUnlockedVaultLightningSdkWallet<T>(
         indexer,
         repository: swapRepository,
       })
+      options.signal?.throwIfAborted()
       return run(session)
     }
     if (!/^[0-9a-f]{64}$/.test(options.refundRfqId)) throw new Error('Lightning refund id is invalid.')
@@ -174,7 +202,10 @@ async function withUnlockedVaultLightningSdkWallet<T>(
       swapManager,
       options.refundRfqId,
       arkadeRefunder({ ark: operator, indexer, wallet: requestWallet, repository: swapRepository }),
-      () => run(session),
+      () => {
+        options.signal?.throwIfAborted()
+        return run(session)
+      },
     )
   })
 }

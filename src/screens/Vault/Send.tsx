@@ -1,3 +1,4 @@
+import { useSpendingPayment } from '../../vault/spendingPaymentContext'
 import { useSession } from '../../vault/sessionContext'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
@@ -17,7 +18,6 @@ import {
 import { decodeVaultLightningInvoice } from '../../lib/vault/lightningInvoice'
 import { humanizeVaultError } from '../../lib/vault/humanize'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
-import { isSameVtxoPayment, loadPersistedVtxoSpend } from '../../lib/vault/vtxo/spend'
 import { VaultContext } from '../../vault/context'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import Scanner from './Scanner'
@@ -59,6 +59,7 @@ function payloadFromScan(raw: string, allowLightning = true): { address: string;
 }
 
 export default function VaultSend({ denomination }: { denomination?: BalanceDenomination }) {
+  const { pendingPayments, openPendingPayment, canReplaceInFlightSend, replaceInFlightSend } = useSpendingPayment()
   const { setup, status } = useSession()
   const {
     account,
@@ -69,10 +70,6 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
     error,
     navigate,
     reviewSpend,
-    pendingPayments = [],
-    openPendingPayment,
-    canReplaceInFlightSend,
-    replaceInFlightSend,
     scanOnSend,
     setSpendDraft,
     spend,
@@ -101,9 +98,13 @@ export default function VaultSend({ denomination }: { denomination?: BalanceDeno
     0,
     Math.min(available - Math.max(0, spend.fee) - bitcoinChange, fromSavings ? available : setup.txCapSats),
   )
-  const pendingSend = !fromSavings && status?.vaultId ? loadPersistedVtxoSpend(status.vaultId) : undefined
-  const resumingPayment = Boolean(pendingSend && isSameVtxoPayment(pendingSend, spend.address, spend.amount))
-  const reservedSats = pendingSend?.reservedInputs?.reduce((total, input) => total + input.valueSats, 0)
+  const pendingSend = !fromSavings
+    ? pendingPayments.find(
+        (payment) => payment.destination.trim() === spend.address.trim() && payment.amountSats === spend.amount,
+      )
+    : undefined
+  const resumingPayment = Boolean(pendingSend)
+  const reservedSats = pendingSend?.reservedSats
   const blockedByPending = !fromSavings && pendingPayments.some((payment) => payment.authorized) && !resumingPayment
   const amountError = blockedByPending
     ? 'A payment is still pending. Resume it below before starting another.'

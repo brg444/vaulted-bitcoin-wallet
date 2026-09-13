@@ -244,3 +244,19 @@ it('Bitcoin review, reconciliation and recovery acknowledgment have one controll
   const context = readFileSync(resolve(root, 'src/vault/context.ts'), 'utf8')
   expect(context).not.toMatch(/spendingBitcoin|bitcoinOutputs|paymentError/)
 })
+
+it('Spending payment ownership keeps signing and journal mutation out of presentation', () => {
+  const provider = readFileSync(resolve(root, 'src/providers/vault.tsx'), 'utf8')
+  const owner = readFileSync(resolve(root, 'src/lib/vault/spendingPayments.ts'), 'utf8')
+  const send = readFileSync(resolve(root, 'src/screens/Vault/Send.tsx'), 'utf8')
+  expect(provider).not.toMatch(
+    /reserveVaultVtxo|sendVaultVtxo|unlockPhoneBip340|createVtxoSpendUnlocker|withVaultLightning/,
+  )
+  expect(send).not.toMatch(/loadPersistedVtxoSpend|vtxo\/spend/)
+  expect(owner).not.toMatch(/setInterval|setTimeout|Wallet\.create|InMemory.*Repository/)
+  expect(
+    imports('src/lib/vault/spendingPayments.ts').some(
+      (path) => path.includes('/screens/') || path.includes('/providers/'),
+    ),
+  ).toBe(false)
+})

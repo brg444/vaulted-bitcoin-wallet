@@ -1,3 +1,4 @@
+import type { SpendingPaymentContextProps } from '../../vault/spendingPaymentContext'
 import type { BitcoinPaymentContextProps } from '../../vault/bitcoinPaymentContext'
 import {
   VaultTestProvider,
@@ -19,6 +20,7 @@ vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.re
 function renderHome(
   overrides: Partial<VaultContextProps> & { balanceUnit?: VaultBalanceUnit },
   bitcoinPayment?: Partial<BitcoinPaymentContextProps>,
+  spendingPayment?: Partial<SpendingPaymentContextProps>,
 ) {
   const { balanceUnit: initialUnit = 'sats', ...rest } = overrides
   const value = {
@@ -75,6 +77,7 @@ function renderHome(
       <ToastProvider>
         <VaultTestProvider
           bitcoinPayment={bitcoinPayment}
+          spendingPayment={spendingPayment}
           value={
             {
               ...value,
@@ -118,15 +121,20 @@ describe('Vault home account boundaries', () => {
   it('keeps an authorized payment reachable even when available balance is zero', async () => {
     const user = userEvent.setup()
     const openPendingPayment = vi.fn().mockResolvedValue(undefined)
-    renderHome({
-      canSend: false,
-      openPendingPayment,
-      pendingPayments: [{ operationId: 'original', amountSats: 1505, authorized: true }],
-      positions: {
-        spending: { availableSats: 0, pendingSats: 31953, totalSats: 31953 },
-        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+    renderHome(
+      {
+        canSend: false,
+        positions: {
+          spending: { availableSats: 0, pendingSats: 31953, totalSats: 31953 },
+          savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+        },
       },
-    })
+      undefined,
+      {
+        openPendingPayment,
+        pendingPayments: [{ operationId: 'original', amountSats: 1505, destination: 'tark1pending', authorized: true }],
+      },
+    )
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
     expect(screen.getByRole('region', { name: 'Pending payment' })).toHaveTextContent('Not confirmed as paid')
     await user.click(screen.getByRole('button', { name: 'Resume payment' }))
@@ -331,7 +339,7 @@ describe('Vault home account boundaries', () => {
   })
 
   it('shows a rejected Bitcoin payment even with no retained pending operation', () => {
-    renderHome({ error: 'Bitcoin payment was not sent. Registration was rejected.', pendingPayments: [] })
+    renderHome({ error: 'Bitcoin payment was not sent. Registration was rejected.' })
     expect(screen.getByRole('alert')).toHaveTextContent('Bitcoin payment was not sent')
   })
 

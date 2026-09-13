@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hex } from '@scure/base'
 import * as webauthn from './webauthn'
 import * as phoneBackup from './ledgerPhoneBackup'
+import * as phoneEncryption from './signIn'
 import { ledgerRecoveryFixture, ledgerFixturePRF, ledgerFixtureSeed } from './recovery/testdata/ledger'
-import { unlockLedgerSavingsSeed, unlockVaultPhoneKeys } from './savingsSpend'
+import { unlockPhoneBip340, unlockLedgerSavingsSeed, unlockVaultPhoneKeys } from './savingsSpend'
 import { scalarSecret } from './program/fixtures'
 import {
   assertRecoveryBindingMatchesStatus,
@@ -27,6 +28,35 @@ function credential(enrollment: EnrollmentSecrets, prf = ledgerFixturePRF.slice(
     getClientExtensionResults: () => ({ prf: { results: { first: prf.buffer } } }),
   }
 }
+
+describe('Spending phone access cancellation', () => {
+  it.each(['before prompt', 'late PRF', 'late decryption'])('wipes owned material after %s', async (phase) => {
+    const { enrollment, status } = await ledgerRecoveryFixture()
+    Object.assign(status, { rpId: location.hostname, clientOrigin: location.origin })
+    const abort = new AbortController()
+    const prf = ledgerFixturePRF.slice()
+    vi.spyOn(webauthn, 'prfFrom').mockReturnValue(prf)
+    const decrypt = phoneEncryption.decryptPhoneSecret
+    let secret: Uint8Array | undefined
+    const decryptSpy = vi.spyOn(phoneEncryption, 'decryptPhoneSecret').mockImplementation(async (...args) => {
+      secret = await decrypt(...args)
+      abort.abort()
+      return secret
+    })
+    const get = vi.fn(async (options: CredentialRequestOptions) => {
+      expect(options.signal).toBe(abort.signal)
+      if (phase === 'late PRF') abort.abort()
+      return credential(enrollment)
+    })
+    vi.stubGlobal('navigator', { credentials: { get } })
+    if (phase === 'before prompt') abort.abort()
+    await expect(unlockPhoneBip340(enrollment, status, abort.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    if (phase === 'before prompt') expect(get).not.toHaveBeenCalled()
+    else expect(prf.every((byte) => byte === 0)).toBe(true)
+    if (phase === 'late decryption') expect(secret!.every((byte) => byte === 0)).toBe(true)
+    else expect(decryptSpy).not.toHaveBeenCalled()
+  })
+})
 
 describe('Ledger passkey access keeps both phone identities', () => {
   it('does not prompt or decrypt after cancellation', async () => {

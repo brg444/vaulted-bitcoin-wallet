@@ -10,10 +10,10 @@ function renderTx(selectedTx: VaultContextProps['selectedTx'], network = 'mutiny
   const retryLightningRefund = vi.fn(async () => {})
   render(
     <VaultTestProvider
+      spendingPayment={{ retryLightningRefund }}
       value={
         {
           navigate: vi.fn(),
-          retryLightningRefund,
           selectedTx,
           status: { network },
         } as unknown as VaultContextProps

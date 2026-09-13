@@ -1,3 +1,4 @@
+import { useSpendingPayment } from '../../vault/spendingPaymentContext'
 import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
 import { useSession } from '../../vault/sessionContext'
 import BitcoinPaymentStatus from './BitcoinPaymentStatus'
@@ -16,9 +17,10 @@ import WalletScreen from './qg/WalletScreen'
 import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 export default function VaultTx({ denomination }: { denomination?: BalanceDenomination }) {
+  const { retryLightningRefund } = useSpendingPayment()
   const { status: vaultStatus } = useSession()
   const spendingBitcoin = useBitcoinPayment()
-  const { busy, error, navigate, retryLightningRefund, selectedTx, txReturn } = useContext(VaultContext)
+  const { busy, error, navigate, selectedTx, txReturn } = useContext(VaultContext)
   const denom = useBalanceDenomination(denomination)
   const money = { unit: denom.unit, rate: denom.rate }
   const bitcoin = selectedTx?.activity === 'bitcoin'

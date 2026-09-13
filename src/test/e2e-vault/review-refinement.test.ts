@@ -21,10 +21,10 @@ for (const width of [320, 375, 1440]) {
               const current = React.useContext(VaultContext);
               return React.createElement(VaultTestProvider, {value: {
                 ...current, account: ${JSON.stringify(state === 'processing' ? 'savings' : 'spend')},
-                busy: ${state === 'processing'}, resumingPayment: ${state === 'resume'},
+                busy: ${state === 'processing'},
                 spend: {amount: 1234567890, fee: 240, address: 'tark1${'a'.repeat(100)}'},
                 status: {network: 'mutinynet'}, approveSend: () => {}, navigate: () => {}
-              }}, React.createElement(Review));
+              }, spendingPayment: { resumingPayment: ${state === 'resume'} }}, React.createElement(Review));
             }
           `,
         }),

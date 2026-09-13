@@ -162,12 +162,24 @@ function ledgerEnrollmentForUnlock(rec: EnrollmentSecrets, status: VaultStatus) 
   })
 }
 
-export async function unlockPhoneBip340(rec: EnrollmentSecrets, status: VaultStatus): Promise<Uint8Array> {
+export async function unlockPhoneBip340(
+  rec: EnrollmentSecrets,
+  status: VaultStatus,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  signal?.throwIfAborted()
   rec = structuredClone(rec)
   status = structuredClone(status)
-  const prf = await unlockVaultPrf(rec, status)
+  const prf = await unlockVaultPrf(rec, status, signal)
+  let secret: Uint8Array | undefined
   try {
-    return await decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
+    signal?.throwIfAborted()
+    secret = await decryptPhoneSecret(prf, rec.nonce, rec.ciphertext)
+    signal?.throwIfAborted()
+    return secret
+  } catch (error) {
+    secret?.fill(0)
+    throw error
   } finally {
     zeroBytes(prf)
   }

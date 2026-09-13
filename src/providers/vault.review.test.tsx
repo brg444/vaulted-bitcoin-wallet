@@ -1,3 +1,5 @@
+import { useSpendingPayment } from '../vault/spendingPaymentContext'
+import { vaultAccountRuntime } from '../lib/vault/accountRuntime'
 import { useSession } from '../vault/sessionContext'
 import { accountBalanceReads } from '../test/accountBalances'
 import {
@@ -5,7 +7,7 @@ import {
   sharedSpendingDescriptor,
   sharedSpendingStatus,
 } from '../lib/vault/vtxo/testdata/sharedSpending'
-import { pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
+import { clearAddressPin, pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
 import { Address, OutScript, TEST_NETWORK } from '@scure/btc-signer'
 const bitcoinDestination = Address(TEST_NETWORK).encode(OutScript.decode(hex.decode('0014' + '43'.repeat(20))))
 import { ArkAddress } from '@arkade-os/sdk'
@@ -15,7 +17,6 @@ import { useContext } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 import { ledgerRecoveryFixture } from '../lib/vault/recovery/testdata/ledger'
-import { POLICY_VERSION } from '../lib/vault/constants'
 import { getLogs } from '../lib/logs'
 import { ENROLL_STORE, SELECTED_VAULT_STORE, SESSION_LOCK_STORE } from '../lib/vault/enrollmentStore'
 import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP } from '../lib/vault/lightningTestUtils'
@@ -156,19 +157,26 @@ vi.mock('../lib/vault/lightningConfig', async (importOriginal) => ({
 }))
 
 vi.mock('../vault/useVaultBalances', () => ({
-  useVaultBalances: () => ({
-    accountReads: accountBalanceReads(),
-    snapshotFresh: true,
-    history: [],
-    positions: {
-      spending: { availableSats: mocks.availableSats, pendingSats: 0, totalSats: mocks.availableSats },
-      savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
-    },
-    refreshBalance: mocks.refreshBalance,
-    loadOlderActivity: vi.fn().mockResolvedValue({ added: 0, exhausted: true }),
-    olderActivity: { status: 'idle', error: '' },
-    olderHistory: [],
-  }),
+  useVaultBalances: ({ status }: { status: VaultStatus | null }) => {
+    if (status?.enrolled)
+      vaultAccountRuntime(status).balances = {
+        getSnapshot: () => ({ positions: { spending: { availableSats: mocks.availableSats } } }),
+        dispose: () => {},
+      } as never
+    return {
+      accountReads: accountBalanceReads(),
+      snapshotFresh: true,
+      history: [],
+      positions: {
+        spending: { availableSats: mocks.availableSats, pendingSats: 0, totalSats: mocks.availableSats },
+        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+      },
+      refreshBalance: mocks.refreshBalance,
+      loadOlderActivity: vi.fn().mockResolvedValue({ added: 0, exhausted: true }),
+      olderActivity: { status: 'idle', error: '' },
+      olderHistory: [],
+    }
+  },
 }))
 
 vi.mock('../vault/useRecoveryAlerts', () => ({ useRecoveryAlerts: () => '' }))
@@ -187,25 +195,7 @@ const destination = new ArkAddress(
   'tark',
 ).encode()
 
-const status: VaultStatus = {
-  enrolled: true,
-  network: 'mutinynet',
-  clientOrigin: 'https://vault.test',
-  rpId: 'vault.test',
-  vaultId: 'vault-a',
-  templateVersion: LEDGER_NATIVE_TEMPLATE,
-  policyVersion: POLICY_VERSION,
-  protectionTier: 'standard',
-  savingsAddress: '',
-  savingsScript: '',
-  periodAllowance: 100_000,
-  periodSpent: 0,
-  periodRemaining: 100_000,
-  txCap: 50_000,
-  absoluteFeeCap: 5_000,
-  feerateCapSatVb: 10,
-  spendingArkAddress: destination,
-}
+let status: VaultStatus
 
 const reviewed: VaultVtxoSpendQuote = {
   operationId: '11'.repeat(16),
@@ -220,11 +210,12 @@ const reviewed: VaultVtxoSpendQuote = {
 }
 
 function Probe() {
+  const useSpending = useSpendingPayment()
   const vault = useContext(VaultContext)
   const session = useSession()
   return (
     <div>
-      <button onClick={() => vault.openPendingPayment('11'.repeat(16))}>Open pending</button>
+      <button onClick={() => useSpending.openPendingPayment('11'.repeat(16))}>Open pending</button>
       <button onClick={() => session.setPrivacyLock(!session.privacyLock)}>Toggle privacy</button>
       <span data-testid='privacy'>{String(session.privacyLock)}</span>
       <span data-testid='screen'>{vault.screen}</span>
@@ -268,7 +259,7 @@ function Probe() {
       <button type='button' onClick={() => vault.history[0] && vault.openTx(vault.history[0])}>
         Open first activity
       </button>
-      <button type='button' onClick={() => vault.retryLightningRefund('44'.repeat(32))}>
+      <button type='button' onClick={() => useSpending.retryLightningRefund('44'.repeat(32))}>
         Return Lightning
       </button>
     </div>
@@ -296,7 +287,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     vi.unstubAllGlobals()
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ledgerView = { record: { payment: { feeSats: 212 } } } as LedgerSavingsView
     mocks.ledgerReview.mockReset().mockResolvedValue(ledgerView)
     mocks.ledgerApprove.mockReset().mockResolvedValue(ledgerView)
@@ -326,19 +317,11 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     mocks.availableSats = 20000
     mocks.loadLightningFunding.mockResolvedValue(undefined)
     localStorage.clear()
-    localStorage.setItem(SELECTED_VAULT_STORE, 'vault-a')
-    localStorage.setItem(
-      `${ENROLL_STORE}:vault-a`,
-      JSON.stringify({
-        vaultId: 'vault-a',
-        credId: '00',
-        webauthnP256: '02',
-        phoneDirectP256: '02',
-        phoneBip340Pub: '02',
-        nonce: '00',
-        ciphertext: '00',
-      }),
-    )
+    localStorage.setItem(SELECTED_VAULT_STORE, '12121212121212121212121212121212')
+    const fixture = await ledgerRecoveryFixture(false, 'mutinynet', '12121212121212121212121212121212')
+    status = fixture.status
+    localStorage.setItem(`${ENROLL_STORE}:12121212121212121212121212121212`, JSON.stringify(fixture.enrollment))
+    saveAddressPin(pinFromEnrolledStatus(status))
     mocks.fetchStatus.mockResolvedValue(status)
     mocks.lightningEnabled.mockReturnValue(false)
     mocks.discoverLightning.mockResolvedValue(MUTINYNET_LIGHTNING_SOLVER)
@@ -555,7 +538,13 @@ describe('VaultProvider reviewed VTXO reservation', () => {
           expect(screen.getByTestId('fee')).toHaveTextContent('500')
           expect(mocks.send).not.toHaveBeenCalled()
         } else {
-          expect(mocks.send).toHaveBeenCalledWith(record.enrollment, bound, expect.any(Object), expect.any(Function))
+          expect(mocks.send).toHaveBeenCalledWith(
+            record.enrollment,
+            bound,
+            expect.any(Object),
+            expect.any(Function),
+            expect.any(AbortSignal),
+          )
           expect(screen.getByTestId('screen')).toHaveTextContent('success')
         }
       }
@@ -655,14 +644,21 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     expect(screen.getByTestId('screen')).toHaveTextContent('home')
   })
   it('starts another vault with a fresh Ledger account without changing the enrolled vault', async () => {
+    const errors = vi.spyOn(await import('../lib/vault/humanize'), 'humanizeVaultError')
+    const { IDBFactory } = await import('fake-indexeddb')
+    vi.stubGlobal('indexedDB', new IDBFactory())
     vi.stubGlobal('isSecureContext', true)
     vi.stubGlobal(
       'navigator',
-      new Proxy(navigator, { has: (target, key) => key === 'hid' || Reflect.has(target, key) }),
+      new Proxy(navigator, {
+        has: (target, key) => key === 'hid' || Reflect.has(target, key),
+        get: (target, key) =>
+          key === 'serviceWorker' ? { getRegistration: async () => undefined } : Reflect.get(target, key),
+      }),
     )
     const origin = ledgerVectors.find((v) => v.input.network === 'mutinynet')!.input.hardware
     mocks.readLedgerAccount.mockResolvedValue(origin)
-    const oldStatus = { ...status, externalOwnerWalletPub: golden.fixtures.exitHardwarePub }
+    const oldStatus = status
     mocks.fetchStatus.mockResolvedValue(oldStatus)
     localStorage.setItem(
       SETUP_STORE_KEY,
@@ -673,7 +669,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
         hardwarePub: oldStatus.externalOwnerWalletPub,
       }),
     )
-    const savedEnrollment = localStorage.getItem(`${ENROLL_STORE}:vault-a`)
+    const savedEnrollment = localStorage.getItem(`${ENROLL_STORE}:12121212121212121212121212121212`)
     function SetupProbe() {
       const vault = useContext(VaultContext)
       const session = useSession()
@@ -692,19 +688,26 @@ describe('VaultProvider reviewed VTXO reservation', () => {
         <SetupProbe />
       </VaultProvider>,
     )
-    await waitFor(() => expect(screen.getByTestId('old-vault')).toHaveTextContent('vault-a'))
+    await waitFor(() => expect(screen.getByTestId('old-vault')).toHaveTextContent('12121212121212121212121212121212'))
+    await waitFor(() => expect(screen.getByTestId('setup-screen')).toHaveTextContent('home'))
     fireEvent.click(screen.getByText('Start another vault'))
     expect(screen.queryByRole('textbox')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Connect Ledger' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Connect Ledger' })))
+    expect(errors.mock.calls.map(([error]) => String(error))).toEqual([])
     await waitFor(() => expect(screen.getByTestId('setup-screen')).toHaveTextContent('conditions'))
     expect(screen.getByTestId('new-key')).toHaveTextContent(ledgerSpendingPublicKey(origin, 'mutinynet'))
     expect(mocks.closeLedger).toHaveBeenCalled()
-    expect(localStorage.getItem(`${ENROLL_STORE}:vault-a`)).toBe(savedEnrollment)
+    expect(localStorage.getItem(`${ENROLL_STORE}:12121212121212121212121212121212`)).toBe(savedEnrollment)
   })
 
   it('resumes an existing Arkade payment with no available balance and without another reservation', async () => {
     mocks.availableSats = 0
-    persistVtxoSpend({ ...reviewed, vaultId: 'vault-a', arkTxid: 'aa'.repeat(32), stage: 'operator-submitted' })
+    persistVtxoSpend({
+      ...reviewed,
+      vaultId: '12121212121212121212121212121212',
+      arkTxid: 'aa'.repeat(32),
+      stage: 'operator-submitted',
+    })
     render(
       <VaultProvider>
         <Probe />
@@ -717,13 +720,24 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     fireEvent.click(screen.getByText('Approve'))
     await waitFor(() => expect(mocks.send).toHaveBeenCalled())
     expect(mocks.reserve).not.toHaveBeenCalled()
-    expect(mocks.send).toHaveBeenCalledWith(expect.anything(), status, reviewed, expect.any(Function))
+    expect(mocks.send).toHaveBeenCalledWith(
+      expect.anything(),
+      status,
+      reviewed,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
   })
 
   it('restores an authorized Lightning payment without a new quote, balance, or expiry gate', async () => {
     mocks.availableSats = 0
     const funding = { ...reviewed, amountSats: 2125, feeSats: 50 }
-    persistVtxoSpend({ ...funding, vaultId: 'vault-a', arkTxid: 'aa'.repeat(32), stage: 'operator-submitted' })
+    persistVtxoSpend({
+      ...funding,
+      vaultId: '12121212121212121212121212121212',
+      arkTxid: 'aa'.repeat(32),
+      stage: 'operator-submitted',
+    })
     const quote = {
       rfqId: '44'.repeat(32),
       invoice: MUTINYNET_INVOICE,
@@ -887,10 +901,12 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       status,
       { ...reviewed, feeSats: 0 },
       expect.any(Function),
+      expect.any(AbortSignal),
     )
   })
 
   it('does not open Home when a stored enrollment has no pinned Vault Program', async () => {
+    clearAddressPin(localStorage, '12121212121212121212121212121212')
     render(
       <VaultProvider>
         <Probe />
@@ -959,7 +975,10 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review' })))
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
     expect(screen.getByTestId('fee')).toHaveTextContent('75')
-    expect(mocks.reserve).toHaveBeenCalledWith(expect.any(Object), status, destination, 2_125, { phoneSecret })
+    expect(mocks.reserve).toHaveBeenCalledWith(expect.any(Object), status, destination, 2_125, {
+      phoneSecret,
+      signal: expect.any(AbortSignal),
+    })
     expect(mocks.unlock).toHaveBeenCalledTimes(1)
     expect(phoneSecret).toEqual(new Uint8Array(32))
 
@@ -979,8 +998,14 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       }),
     )
     expect(mocks.recordLightningFunding).toHaveBeenCalledWith(expect.any(Object), '44'.repeat(32), '55'.repeat(32))
-    expect(mocks.send).toHaveBeenCalledWith(expect.any(Object), status, lightningFunding)
-    expect(mocks.sdkWallet.mock.calls[0]?.[3]).toBeUndefined()
+    expect(mocks.send).toHaveBeenCalledWith(
+      expect.any(Object),
+      status,
+      lightningFunding,
+      undefined,
+      expect.any(AbortSignal),
+    )
+    expect(mocks.sdkWallet.mock.calls[0]?.[3]).toEqual({ signal: expect.any(AbortSignal) })
   })
 
   it('requests the Lightning passkey in the Review click before asynchronous solver verification', async () => {
@@ -1076,7 +1101,10 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Return Lightning' })))
 
     expect(mocks.getLightningStatus).toHaveBeenCalledWith(expect.any(Object), '44'.repeat(32))
-    expect(mocks.sdkWallet.mock.calls.at(-1)?.[3]).toEqual({ refundRfqId: '44'.repeat(32) })
+    expect(mocks.sdkWallet.mock.calls.at(-1)?.[3]).toEqual({
+      refundRfqId: '44'.repeat(32),
+      signal: expect.any(AbortSignal),
+    })
     expect(phoneSecret).toEqual(new Uint8Array(32))
     expect(screen.getByTestId('error')).toHaveTextContent('')
   })

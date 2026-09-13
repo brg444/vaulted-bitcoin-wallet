@@ -5,6 +5,7 @@ import type { VaultBalanceController } from './accountBalances'
 import type { VaultRecoveryWatch } from './accountRecoveryWatch'
 import type { LedgerPayments } from './ledgerPayments'
 import type { BitcoinPayments } from './bitcoinPayments'
+import type { SpendingPayments } from './spendingPayments'
 import type { WalletConnection } from './vtxo/walletWorker'
 
 export interface VaultAccountRuntime {
@@ -16,6 +17,7 @@ export interface VaultAccountRuntime {
   recoveryWatch?: VaultRecoveryWatch
   ledgerPayments?: LedgerPayments
   bitcoinPayments?: BitcoinPayments
+  spendingPayments?: SpendingPayments
   maintenance: VaultAccountMaintenance
   listeners: Set<() => void>
   disposed: boolean
@@ -57,12 +59,14 @@ export function disposeVaultAccountRuntime(account: VaultAccountRuntime): Promis
   account.recoveryWatch?.dispose()
   const payments = account.ledgerPayments?.suspend()
   const bitcoin = account.bitcoinPayments?.suspend()
+  const spending = account.spendingPayments?.suspend()
   if (current === account) current = undefined
   const drain = account.maintenance.dispose()
   account.disposal = (async () => {
     await drain
     await payments
     await bitcoin
+    await spending
     await account.initialization?.catch(() => undefined)
     await account.replacement?.promise.catch(() => undefined)
     await account.closeConnection?.()

@@ -100,13 +100,7 @@ export interface VaultContextProps {
   networkLabel: string
   spendingArkAddress: string
   refreshBalance: () => Promise<void>
-  retryLightningRefund: (rfqId: string) => Promise<void>
   reviewSpend: () => Promise<void>
-  resumingPayment: boolean
-  pendingPayments: { operationId: string; amountSats: number; authorized: boolean }[]
-  openPendingPayment: (operationId: string) => Promise<void>
-  canReplaceInFlightSend: boolean
-  replaceInFlightSend: () => Promise<void>
   openSendScan: () => void
   scanOnSend: boolean
   clearSendScan: () => void
@@ -168,13 +162,7 @@ export const VaultContext = createContext<VaultContextProps>({
   networkLabel: 'Test network',
   spendingArkAddress: '',
   refreshBalance: async () => {},
-  retryLightningRefund: async () => {},
   reviewSpend: async () => {},
-  resumingPayment: false,
-  pendingPayments: [],
-  openPendingPayment: async () => {},
-  canReplaceInFlightSend: false,
-  replaceInFlightSend: async () => {},
   openSendScan: () => {},
   scanOnSend: false,
   clearSendScan: () => {},

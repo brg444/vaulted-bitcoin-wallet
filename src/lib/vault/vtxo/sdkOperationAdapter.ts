@@ -59,6 +59,7 @@ export type SubmitExactVaultSdkOperationParams = Pick<
   callbacks: VaultSdkOperationCallbacks
   /** Bounds one operation. Every callback receives the same abort signal. */
   timeoutMs: number
+  signal?: AbortSignal
 }
 
 export class VaultSdkOperationTimeoutError extends Error {
@@ -138,6 +139,7 @@ export async function submitExactVaultSdkOperation(params: SubmitExactVaultSdkOp
     throw new Error('Vault SDK operation timeout must be a positive integer')
   }
 
+  params.signal?.throwIfAborted()
   const reference = buildOffchainTx(params.inputs, params.outputs, params.serverUnrollScript)
   if (reference.checkpoints.length === 0) throw new Error('Vault operation requires at least one checkpoint')
   const expectedArkTxid = reference.arkTx.id
@@ -145,6 +147,15 @@ export async function submitExactVaultSdkOperation(params: SubmitExactVaultSdkOp
   const controller = new AbortController()
   const timeout = globalThis.setTimeout(() => controller.abort(new VaultSdkOperationTimeoutError()), params.timeoutMs)
   const signal = controller.signal
+  const abort = () => controller.abort(params.signal?.reason)
+  params.signal?.addEventListener('abort', abort, { once: true })
+  const active = new Set<Promise<unknown>>()
+  const invoke = <T>(work: () => Promise<T>): Promise<T> => {
+    const promise = work()
+    active.add(promise)
+    void promise.finally(() => active.delete(promise)).catch(() => undefined)
+    return promise
+  }
 
   let arkAuthorized = false
   let operatorSubmitted = false
@@ -175,10 +186,12 @@ export async function submitExactVaultSdkOperation(params: SubmitExactVaultSdkOp
     try {
       throwIfAborted(signal)
       const orderedOperator = reference.checkpoints.map((tx) => operatorCheckpoints.get(tx.id)!)
-      const result = await params.callbacks.authorizeCheckpoints({
-        operatorCheckpointPsbts: orderedOperator,
-        signal,
-      })
+      const result = await invoke(() =>
+        params.callbacks.authorizeCheckpoints({
+          operatorCheckpointPsbts: orderedOperator,
+          signal,
+        }),
+      )
       throwIfAborted(signal)
       const authorized = exactCheckpointSet(
         result.authorizedCheckpointPsbts,
@@ -201,11 +214,13 @@ export async function submitExactVaultSdkOperation(params: SubmitExactVaultSdkOp
       if (!arkAuthorized) {
         exactTransaction(tx, expectedArkTxid, 'SDK Ark transaction')
         params.validation.assertArkTransaction(tx, 'unsigned')
-        const result = await params.callbacks.authorizeArk({
-          unsignedArkPsbt: base64.encode(tx.toPSBT()),
-          unsignedCheckpointPsbts,
-          signal,
-        })
+        const result = await invoke(() =>
+          params.callbacks.authorizeArk({
+            unsignedArkPsbt: base64.encode(tx.toPSBT()),
+            unsignedCheckpointPsbts,
+            signal,
+          }),
+        )
         throwIfAborted(signal)
         const authorized = decodePsbt(result.authorizedArkPsbt, 'Vault-authorized Ark transaction')
         exactTransaction(authorized, expectedArkTxid, 'Vault authorization')
@@ -240,11 +255,13 @@ export async function submitExactVaultSdkOperation(params: SubmitExactVaultSdkOp
         exactTransaction(authorizedArk, expectedArkTxid, 'Operator submission')
         params.validation.assertArkTransaction(authorizedArk, 'vault-authorized')
         exactCheckpointSet(checkpoints, reference.checkpoints, 'unsigned', params.validation)
-        const response = await params.callbacks.submitOperator({
-          authorizedArkPsbt,
-          unsignedCheckpointPsbts,
-          signal,
-        })
+        const response = await invoke(() =>
+          params.callbacks.submitOperator({
+            authorizedArkPsbt,
+            unsignedCheckpointPsbts,
+            signal,
+          }),
+        )
         throwIfAborted(signal)
         if (response.arkTxid !== expectedArkTxid) throw new Error('Operator returned the wrong Ark transaction id')
         const finalArk = decodePsbt(response.finalArkTx, 'Operator-signed Ark transaction')
@@ -273,11 +290,13 @@ export async function submitExactVaultSdkOperation(params: SubmitExactVaultSdkOp
         // durable operation recovery owns slow/ambiguous network finalization;
         // reporting a timeout after finalization succeeded could invite retry.
         globalThis.clearTimeout(timeout)
-        await params.callbacks.finalize({
-          arkTxid,
-          authorizedCheckpointPsbts: actual.encoded,
-          signal,
-        })
+        await invoke(() =>
+          params.callbacks.finalize({
+            arkTxid,
+            authorizedCheckpointPsbts: actual.encoded,
+            signal,
+          }),
+        )
         finalized = true
       } catch (error) {
         return fail(error)
@@ -303,7 +322,9 @@ export async function submitExactVaultSdkOperation(params: SubmitExactVaultSdkOp
     throw error
   } finally {
     globalThis.clearTimeout(timeout)
+    params.signal?.removeEventListener('abort', abort)
     if (!signal.aborted) controller.abort(new Error('Vault SDK operation disposed'))
+    await Promise.allSettled([...active])
     try {
       await params.callbacks.dispose?.()
     } catch (cleanupError) {

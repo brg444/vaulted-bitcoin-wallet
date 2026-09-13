@@ -250,6 +250,37 @@ describe('exact Vault SDK operation adapter', () => {
     expect(harness.callbacks.finalize).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['authorizeArk', 'submitOperator', 'authorizeCheckpoints', 'finalize'] as const)(
+    'drains %s after account cancellation before disposing and refuses the next phase',
+    async (phase) => {
+      const harness = passingHarness()
+      const abort = new AbortController()
+      const cancellation = new Error('Account locked')
+      harness.params.signal = abort.signal
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const original = harness.callbacks[phase]
+      harness.callbacks[phase] = vi.fn(async (args) => {
+        await gate
+        return Reflect.apply(original, harness.callbacks, [args])
+      }) as never
+      const result = submitExactVaultSdkOperation(harness.params)
+      const rejected = expect(result).rejects.toBe(cancellation)
+      await vi.waitFor(() => expect(harness.callbacks[phase]).toHaveBeenCalledOnce())
+      abort.abort(cancellation)
+      await Promise.resolve()
+      expect(harness.dispose).not.toHaveBeenCalled()
+      release()
+      await rejected
+      expect(harness.dispose).toHaveBeenCalledOnce()
+      if (phase === 'authorizeArk') expect(harness.callbacks.submitOperator).not.toHaveBeenCalled()
+      if (phase === 'submitOperator') expect(harness.callbacks.authorizeCheckpoints).not.toHaveBeenCalled()
+      if (phase === 'authorizeCheckpoints') expect(harness.callbacks.finalize).not.toHaveBeenCalled()
+    },
+  )
+
   it('does not time out after exact finalization has begun', async () => {
     const harness = passingHarness()
     harness.params.timeoutMs = 10

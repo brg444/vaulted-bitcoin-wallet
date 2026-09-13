@@ -528,6 +528,8 @@ function readVtxoSpendJournal(vaultId: string): PersistedVtxoSpend[] {
   }
 }
 
+export const SPENDING_PAYMENT_EVENT = 'vaulted-spending-payment'
+
 function writeVtxoSpendJournal(
   vaultId: string,
   operations: PersistedVtxoSpend[],
@@ -538,6 +540,7 @@ function writeVtxoSpendJournal(
   const history = resolved ?? previous?.resolved ?? []
   localStorage.setItem(vtxoSpendJournalKey(vaultId), JSON.stringify({ version: 1, operations, resolved: history }))
   localStorage.removeItem(vtxoSpendStorageKey(vaultId))
+  window.dispatchEvent(new Event(SPENDING_PAYMENT_EVENT))
 }
 
 export function listPersistedVtxoSpends(vaultId: string): PersistedVtxoSpend[] {
@@ -618,6 +621,7 @@ export function clearPersistedVtxoSpend(vaultId: string, operationId?: string) {
   if (!operationId) {
     localStorage.removeItem(vtxoSpendJournalKey(vaultId))
     localStorage.removeItem(vtxoSpendStorageKey(vaultId))
+    window.dispatchEvent(new Event(SPENDING_PAYMENT_EVENT))
     return
   }
   const operations = readVtxoSpendJournal(vaultId)
@@ -1700,7 +1704,9 @@ async function reservePersistedVtxoSpend(
   status: VaultStatus,
   pending: PersistedVtxoSpend,
   providedPhoneSecret?: Uint8Array,
+  signal?: AbortSignal,
 ): Promise<PersistedVtxoSpend> {
+  signal?.throwIfAborted()
   if (!pending.reservePhoneSignature) {
     if (
       !sameBytes(
@@ -1710,13 +1716,15 @@ async function reservePersistedVtxoSpend(
     ) {
       throw new Error('enrollment phone key does not match this vault')
     }
-    const phoneSecret = providedPhoneSecret || (await unlockPhoneBip340(enrollment, status))
+    const phoneSecret = providedPhoneSecret || (await unlockPhoneBip340(enrollment, status, signal))
     try {
+      signal?.throwIfAborted()
       pending = persistVtxoReserveSignature(pending, status, phoneSecret)
     } finally {
       if (!providedPhoneSecret) zeroBytes(phoneSecret)
     }
   }
+  signal?.throwIfAborted()
   const reserve: VtxoReserveResponse = await vaultCosignerClient.spending.reserve(vtxoReserveRequest(pending, status))
   if (reserve.operationId !== pending.operationId) throw new Error('VTXO reservation returned a different operation id')
   const operator = new RestArkProvider(vaultOperatorOrigin(status.network))
@@ -1887,11 +1895,15 @@ async function prepareVtxoSpendLocked(
   amountSats: number,
   replaceExisting = false,
   phoneSecret?: Uint8Array,
+  signal?: AbortSignal,
+  replacementIds?: readonly string[],
 ): Promise<PersistedVtxoSpend> {
+  signal?.throwIfAborted()
   const operations = listPersistedVtxoSpends(status.vaultId)
   const synced: PersistedVtxoSpend[] = []
   for (const record of operations) {
     const next = await syncPersistedSpendWithOperation(record)
+    signal?.throwIfAborted()
     if (next) synced.push(next)
   }
   const matching = synced.find((record) => isSameVtxoPayment(record, destAddress, amountSats))
@@ -1904,15 +1916,28 @@ async function prepareVtxoSpendLocked(
     throw new VtxoReservedReplaceError(synced.find(vtxoSpendIsAbortable)?.operationId || '')
   }
   if (action === 'abort-reserved' && replaceExisting) {
+    if (
+      replacementIds &&
+      JSON.stringify(
+        synced
+          .filter(vtxoSpendIsAbortable)
+          .map((r) => r.operationId)
+          .sort(),
+      ) !== JSON.stringify([...replacementIds].sort())
+    )
+      throw new VtxoReservedReplaceError(synced.find(vtxoSpendIsAbortable)?.operationId || '')
     for (const record of synced.filter(vtxoSpendIsAbortable)) {
+      signal?.throwIfAborted()
       await abortPersistedVtxoSpend(record, status, phoneSecret)
+      signal?.throwIfAborted()
     }
   }
+  signal?.throwIfAborted()
   let pending =
     matching && action === 'resume' ? matching : loadPersistedVtxoSpendById(status.vaultId, matching?.operationId || '')
   if (action === 'abort-reserved' || !pending) pending = preReserveVtxoSpend(status.vaultId, destAddress, amountSats)
   if (pending.stage === 'pre-reserve') {
-    pending = await reservePersistedVtxoSpend(enrollment, status, pending, phoneSecret)
+    pending = await reservePersistedVtxoSpend(enrollment, status, pending, phoneSecret, signal)
   }
   return pending
 }
@@ -1956,8 +1981,14 @@ export async function reserveVaultVtxo(
   status: VaultStatus,
   destAddress: string,
   amountSats: number,
-  options?: { replaceExisting?: boolean; phoneSecret?: Uint8Array },
+  options?: {
+    replaceExisting?: boolean
+    phoneSecret?: Uint8Array
+    signal?: AbortSignal
+    replacementIds?: readonly string[]
+  },
 ): Promise<VaultVtxoSpendQuote> {
+  options?.signal?.throwIfAborted()
   requireEnrolledSpendingStatus(status)
   if (!Number.isSafeInteger(amountSats) || amountSats < VTXO_DUST_SATS) throw new Error('VTXO amount is below dust')
   return withVtxoSendLock(status.vaultId, async () =>
@@ -1969,6 +2000,8 @@ export async function reserveVaultVtxo(
         amountSats,
         Boolean(options?.replaceExisting),
         options?.phoneSecret,
+        options?.signal,
+        options?.replacementIds,
       ),
     ),
   )
@@ -2093,21 +2126,25 @@ async function authorizeReservedVtxoSpend(
   status: VaultStatus,
   pending: PersistedVtxoSpend,
   auth: VtxoSpendPasskey,
+  signal?: AbortSignal,
 ): Promise<PersistedVtxoSpend> {
   if (!pending.unsignedArkPsbt || !pending.unsignedCheckpointPsbts?.length) {
     throw new VtxoSpendInFlightError(pending.arkTxid, pending.operationId)
   }
   await requireCurrentReservationPolicy(new RestArkProvider(vaultOperatorOrigin(status.network)), status, pending)
+  signal?.throwIfAborted()
   const identity = SingleKey.fromPrivateKey(auth.phoneSecret)
   const arkTx = Transaction.fromPSBT(base64.decode(pending.unsignedArkPsbt))
   const userSignedArk = await identity.sign(arkTx)
   requireUserSignedArkInputs(userSignedArk, xOnly(status.phoneBip340Pub, 'phone pubkey'))
   const unsignedArkPsbt = base64.encode(userSignedArk.toPSBT())
+  signal?.throwIfAborted()
   const pendingProof = await createPhoneSignedPendingProof(
     pending.unsignedCheckpointPsbts,
     identity,
     xOnly(status.phoneBip340Pub, 'phone pubkey'),
   )
+  signal?.throwIfAborted()
   persistVtxoSpend({ ...pending, unsignedArkPsbt })
   const authorized: VtxoAuthorizeResponse = await vaultCosignerClient.spending.authorize({
     vaultId: status.vaultId,
@@ -2250,13 +2287,16 @@ async function authorizeSubmittedVtxoCheckpoints(
   pending: PersistedVtxoSpend,
   operatorPub: Uint8Array,
   auth: VtxoSpendPasskey,
+  signal?: AbortSignal,
 ): Promise<PersistedVtxoSpend> {
   if (pending.stage !== 'operator-submitted' || !pending.operatorCheckpointPsbts?.length) {
     throw new VtxoSpendInFlightError(pending.arkTxid, pending.operationId)
   }
+  signal?.throwIfAborted()
   const identity = SingleKey.fromPrivateKey(auth.phoneSecret)
   const userAndOperatorCheckpoints: string[] = []
   for (const [index, raw] of pending.operatorCheckpointPsbts.entries()) {
+    signal?.throwIfAborted()
     const checkpoint = Transaction.fromPSBT(base64.decode(raw))
     const original = pending.unsignedCheckpointPsbts?.[index]
       ? Transaction.fromPSBT(base64.decode(pending.unsignedCheckpointPsbts[index]))
@@ -2264,6 +2304,7 @@ async function authorizeSubmittedVtxoCheckpoints(
     requireOperatorSignedCheckpoint(original, checkpoint, operatorPub)
     userAndOperatorCheckpoints.push(base64.encode((await identity.sign(checkpoint)).toPSBT()))
   }
+  signal?.throwIfAborted()
   const checkpoints: VtxoCheckpointAuthorizeResponse = await vaultCosignerClient.spending.authorizeCheckpoints({
     vaultId: status.vaultId,
     operationId: pending.operationId,
@@ -2300,6 +2341,7 @@ async function completeFreshSdkVtxoSpend(
   status: VaultStatus,
   initial: PersistedVtxoSpend,
   unlocker: VtxoSpendUnlocker,
+  signal?: AbortSignal,
 ): Promise<VaultVtxoSpendResult> {
   const bundle = buildPersistedVtxoSdkBundle(status, initial)
   const operator = new RestArkProvider(vaultOperatorOrigin(status.network))
@@ -2307,7 +2349,9 @@ async function completeFreshSdkVtxoSpend(
   const operatorPub = xOnly(operatorInfo.signerPubkey, 'Operator signer pubkey')
   let pending = initial
   const feeSats = quoteFromPersistedVtxoSpend(initial).feeSats
+  signal?.throwIfAborted()
   const txid = await submitExactVaultSdkOperation({
+    signal,
     inputs: bundle.inputs,
     outputs: bundle.outputs,
     serverUnrollScript: bundle.serverUnrollScript,
@@ -2323,7 +2367,7 @@ async function completeFreshSdkVtxoSpend(
         ) {
           throw new Error('SDK rebuilt a different reserved transaction bundle')
         }
-        pending = await authorizeReservedVtxoSpend(status, pending, await unlocker.unlock())
+        pending = await authorizeReservedVtxoSpend(status, pending, await unlocker.unlock(), signal)
         if (!pending.authorizedPsbt) throw new Error('Vault authorization omitted the Ark PSBT')
         return { authorizedArkPsbt: pending.authorizedPsbt }
       },
@@ -2347,14 +2391,16 @@ async function completeFreshSdkVtxoSpend(
       },
       async authorizeCheckpoints({ signal }) {
         if (signal.aborted) throw signal.reason
-        pending = await authorizeSubmittedVtxoCheckpoints(status, pending, operatorPub, await unlocker.unlock())
+        pending = await authorizeSubmittedVtxoCheckpoints(status, pending, operatorPub, await unlocker.unlock(), signal)
         return { authorizedCheckpointPsbts: pending.checkpointPsbts! }
       },
       dispose: unlocker.dispose,
-      async finalize({ authorizedCheckpointPsbts }) {
+      async finalize({ authorizedCheckpointPsbts, signal }) {
         pending = { ...pending, checkpointPsbts: authorizedCheckpointPsbts }
         await requireCurrentReservationPolicy(operator, status, pending)
+        signal.throwIfAborted()
         await retainFinalizationRecovery(status, pending)
+        signal.throwIfAborted()
         await operator.finalizeTx(pending.arkTxid, authorizedCheckpointPsbts)
         pending = { ...pending, stage: 'operator-finalized', checkpointPsbts: authorizedCheckpointPsbts }
         persistVtxoSpend(pending)
@@ -2375,12 +2421,21 @@ async function continueSameVtxoSpend(
   status: VaultStatus,
   pending: PersistedVtxoSpend,
   unlocker: VtxoSpendUnlocker,
+  signal?: AbortSignal,
 ): Promise<VaultVtxoSpendResult> {
+  signal?.throwIfAborted()
   if (pending.stage === 'pre-reserve') {
-    pending = await reservePersistedVtxoSpend(enrollment, status, pending, (await unlocker.unlock()).phoneSecret)
+    pending = await reservePersistedVtxoSpend(
+      enrollment,
+      status,
+      pending,
+      (await unlocker.unlock()).phoneSecret,
+      signal,
+    )
   }
+  signal?.throwIfAborted()
   if (pending.stage === 'reserved' && pending.sdkBundleVersion === 1) {
-    return completeFreshSdkVtxoSpend(status, pending, unlocker)
+    return completeFreshSdkVtxoSpend(status, pending, unlocker, signal)
   }
   requireRecoveryProofForAuthorizedSpend(pending)
   const operator = new RestArkProvider(vaultOperatorOrigin(status.network))
@@ -2392,32 +2447,40 @@ async function continueSameVtxoSpend(
       status,
       xOnly(info.signerPubkey, 'Operator signer pubkey'),
     )
+    signal?.throwIfAborted()
     await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
+    signal?.throwIfAborted()
     await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
     persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
     return finishOperatorFinalized({ ...pending, stage: 'operator-finalized', checkpointPsbts })
   }
   if (pending.stage === 'reserved') {
-    pending = await authorizeReservedVtxoSpend(status, pending, await unlocker.unlock())
+    pending = await authorizeReservedVtxoSpend(status, pending, await unlocker.unlock(), signal)
   }
+  signal?.throwIfAborted()
   if (pending.stage === 'authorized' && pending.authorizedPsbt && pending.unsignedCheckpointPsbts?.length) {
     const operatorInfo = await requireCurrentReservationPolicy(operator, status, pending)
     const operatorPub = xOnly(operatorInfo.signerPubkey, 'Operator signer pubkey')
+    signal?.throwIfAborted()
     pending = await advanceAuthorizedVtxoSpend(operator, pending, status, operatorPub)
   }
   if (pending.stage !== 'operator-submitted' || !pending.operatorCheckpointPsbts?.length) {
     throw new VtxoSpendInFlightError(pending.arkTxid, pending.operationId)
   }
   const operatorInfo = await requireCurrentReservationPolicy(operator, status, pending)
+  signal?.throwIfAborted()
   pending = await authorizeSubmittedVtxoCheckpoints(
     status,
     pending,
     xOnly(operatorInfo.signerPubkey, 'Operator signer pubkey'),
     await unlocker.unlock(),
+    signal,
   )
   const checkpointPsbts = pending.checkpointPsbts!
   await requireCurrentReservationPolicy(operator, status, pending)
+  signal?.throwIfAborted()
   await retainFinalizationRecovery(status, { ...pending, checkpointPsbts })
+  signal?.throwIfAborted()
   await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
   persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
   try {
@@ -2442,7 +2505,9 @@ export async function sendVaultVtxo(
   status: VaultStatus,
   reviewed: VaultVtxoSpendQuote,
   createUnlocker: typeof createVtxoSpendUnlocker = createVtxoSpendUnlocker,
+  signal?: AbortSignal,
 ): Promise<VaultVtxoSpendResult> {
+  signal?.throwIfAborted()
   requireEnrolledSpendingStatus(status)
   if (!Number.isSafeInteger(reviewed.amountSats) || reviewed.amountSats < VTXO_DUST_SATS) {
     throw new VtxoReviewedReservationError()
@@ -2451,10 +2516,12 @@ export async function sendVaultVtxo(
     loadPersistedVtxoSpendById(status.vaultId, reviewed.operationId) || loadPersistedVtxoSpend(status.vaultId),
     reviewed,
   )
-  const unlocker = createUnlocker(enrollment, status, reviewed.bundleDigest)
+  const unlocker = createUnlocker(enrollment, status, reviewed.bundleDigest, undefined, signal)
   try {
     if (vtxoSpendNeedsPasskey(local.stage)) await unlocker.unlock()
+    signal?.throwIfAborted()
     return await withVtxoSendLock(status.vaultId, async () => {
+      signal?.throwIfAborted()
       const pending =
         loadPersistedVtxoSpendById(status.vaultId, reviewed.operationId) || loadPersistedVtxoSpend(status.vaultId)
       if (!pending) throw new VtxoReviewedReservationError()
@@ -2468,10 +2535,11 @@ export async function sendVaultVtxo(
         }
         throw err
       }
+      signal?.throwIfAborted()
       requireReviewedVtxoReservation(pending, view, reviewed)
       const synced = applyVtxoOperationView(pending, view)
       if (!synced) throw new VtxoReviewedReservationError()
-      return continueSameVtxoSpend(enrollment, status, synced, unlocker)
+      return continueSameVtxoSpend(enrollment, status, synced, unlocker, signal)
     })
   } finally {
     unlocker.dispose()

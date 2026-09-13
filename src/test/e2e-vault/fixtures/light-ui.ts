@@ -5,12 +5,12 @@ import { ENROLL_STORE, SELECTED_VAULT_STORE } from '../../../lib/vault/enrollmen
 
 // UI-only fixtures: render the real Light screens with deterministic data. No signing,
 // enrollment, broadcast, or recovery is exercised by this suite.
-async function override(page: Page, path: string, exports: Record<string, string>) {
+async function override(page: Page, path: string, exports: Record<string, string>, imports = '') {
   await page.route(`**/src/${path}*`, async (route) => {
     if (new URL(route.request().url()).searchParams.has('light-ui-original')) return route.continue()
     await route.fulfill({
       contentType: 'application/javascript',
-      body: `export * from '/src/${path}?light-ui-original';\n${Object.entries(exports)
+      body: `${imports}\nexport * from '/src/${path}?light-ui-original';\n${Object.entries(exports)
         .map(([name, value]) => `export const ${name} = ${value};`)
         .join('\n')}`,
     })
@@ -22,14 +22,22 @@ export async function mockVaultBalances(
   { balance, pendingBalance, history }: { balance: number; pendingBalance: number; history: Record<string, unknown>[] },
   savingsBalance = 0,
 ) {
-  await override(page, 'vault/useVaultBalances.ts', {
-    useVaultBalances: `() => ({
-    balanceError:'',boardingError:'',balancesLoaded:true,snapshotFresh:true,
+  await override(
+    page,
+    'vault/useVaultBalances.ts',
+    {
+      useVaultBalances: `({status}) => {
+    if(status?.enrolled) vaultAccountRuntime(status).balances={getSnapshot:()=>({positions:{spending:{availableSats:${balance}}}}),dispose(){}};
+    return {
+    accountReads:accountBalanceReads({fresh:true}),boardingError:'',snapshotFresh:true,
     history:${JSON.stringify(history)},
     positions:{spending:{availableSats:${balance},pendingSats:${pendingBalance},totalSats:${balance + pendingBalance}},savings:{availableSats:${savingsBalance},pendingSats:0,totalSats:${savingsBalance}}},
-    refreshBalance:async()=>{},refreshingBalance:false,loadOlderActivity:async()=>({added:0,exhausted:true}),olderActivity:{status:'idle',error:''},olderHistory:[]
-  })`,
-  })
+    refreshBalance:async()=>{},loadOlderActivity:async()=>({added:0,exhausted:true}),olderActivity:{status:'idle',error:''},olderHistory:[]
+  }}`,
+    },
+    `import {vaultAccountRuntime} from '/src/lib/vault/accountRuntime.ts';
+     import {accountBalanceReads} from '/src/test/accountBalances.ts';`,
+  )
 }
 
 export async function openLight(
