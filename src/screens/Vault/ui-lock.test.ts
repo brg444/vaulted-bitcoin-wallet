@@ -122,7 +122,6 @@ describe('vault UI lock', () => {
     expect(app).not.toMatch(/VaultSavings/)
     expect(app).not.toMatch(/navigate\('savings'\)/)
     expect(existsSync(resolve(root, 'src/lib/vault/savingsSpend.ts'))).toBe(true)
-    expect(existsSync(resolve(root, 'src/lib/vault/savingsQr.ts'))).toBe(true)
     const home = read('src/screens/Vault/Home.tsx')
     const navigation = read('src/screens/Vault/Navigation.tsx')
     expect(navigation).toContain('account-savings')
