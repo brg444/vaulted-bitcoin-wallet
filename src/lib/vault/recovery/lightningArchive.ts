@@ -18,6 +18,7 @@ import {
 } from '@arkade-os/swap'
 import { storedLightningProfile } from '../lightningLifecycle'
 import {
+  mergeLightningRefundAttempts,
   readLightningRefundAttempt,
   seedRestoredRefundAttempt,
   validateLightningRefundAttempt,
@@ -336,17 +337,23 @@ export async function captureLightningRecoveryJournal(input: {
       let refundAttempt: VaultLightningRefundAttempt | undefined
       try {
         const local = readLightningRefundAttempt(record.rfqId)
-        if (local) {
-          if (previousAttempt && previousAttempt.updatedAt > local.updatedAt) {
-            refundAttempt = previousAttempt
-          } else {
-            validateLightningRefundAttempt(local)
-            refundAttempt = local.rfqId === record.rfqId ? local : undefined
-          }
+        if (local && previousAttempt) {
+          refundAttempt = mergeLightningRefundAttempts(previousAttempt, local)
+        } else if (local) {
+          validateLightningRefundAttempt(local)
+          refundAttempt = local.rfqId === record.rfqId ? local : undefined
         } else {
           refundAttempt = previousAttempt
         }
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message === 'Conflicting Lightning refund restore.' ||
+            error.message === 'Lightning refund evidence changed.' ||
+            error.message === 'Lightning refund inputs changed.')
+        ) {
+          throw error
+        }
         refundAttempt = previousAttempt
       }
       entries.set(record.rfqId, { ...partial, exit, ...(refundAttempt ? { refundAttempt } : {}) })

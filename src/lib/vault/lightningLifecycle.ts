@@ -996,25 +996,27 @@ export function recordingVaultLightningRefundArk(
           }
           const serverRefundPsbt =
             typeof submitted.finalArkTx === 'string' && submitted.finalArkTx ? submitted.finalArkTx : undefined
-          if (serverRefundPsbt) {
-            const serverRefund = Transaction.fromPSBT(base64.decode(serverRefundPsbt))
-            if (serverRefund.id !== derived.txid) {
-              throw new Error('Lightning refund Operator response changed the transaction.')
-            }
+          if (
+            !serverRefundPsbt ||
+            !Array.isArray(submitted.signedCheckpointTxs) ||
+            submitted.signedCheckpointTxs.length !== checkpoints.length
+          ) {
+            throw new Error('Lightning refund Operator response is incomplete.')
           }
-          recordRefundAttemptProgress(
-            {
-              ...facts,
-              fundedInputs,
-              signedRefundPsbt,
-              submittedRefundTxid: derived.txid,
-              submittedCheckpointPsbts: [...checkpoints],
-              refundOutputSats: Number(paymentTotal),
-              serverCheckpointPsbts: [...submitted.signedCheckpointTxs],
-              ...(serverRefundPsbt ? { serverRefundPsbt } : {}),
-            },
-            'submitted',
-          )
+          const observed: VaultLightningRefundAttempt = {
+            ...facts,
+            fundedInputs,
+            signedRefundPsbt,
+            submittedRefundTxid: derived.txid,
+            submittedCheckpointPsbts: [...checkpoints],
+            refundOutputSats: Number(paymentTotal),
+            serverCheckpointPsbts: [...submitted.signedCheckpointTxs],
+            serverRefundPsbt,
+            stage: 'submitted',
+            updatedAt: Math.floor(Date.now() / 1000),
+          }
+          validateLightningRefundGraph(observed)
+          recordRefundAttemptProgress(observed, 'submitted')
           return submitted
         }
       }
@@ -1024,12 +1026,27 @@ export function recordingVaultLightningRefundArk(
           if (!/^[0-9a-f]{64}$/.test(arkTxid) || !validRefundPsbtList(checkpoints)) {
             throw new Error('Lightning refund finalization is malformed.')
           }
-          // A final checkpoint is a signature over the recorded unsigned
-          // twin by the enrolled sender and Operator, never a replacement
-          // graph: validate before persisting or releasing.
+          // First-attempt finalization requires the complete retained graph,
+          // including the Operator-signed successor. Missing, sender-only or
+          // forged successors never reach the Operator finalize call.
           const previous = readLightningRefundAttempt(facts.rfqId)
+          if (
+            !previous?.serverRefundPsbt ||
+            !previous.serverCheckpointPsbts?.length ||
+            !previous.submittedCheckpointPsbts?.length
+          ) {
+            throw new Error('Lightning refund Operator response is incomplete.')
+          }
+          if (previous.submittedRefundTxid && previous.submittedRefundTxid !== arkTxid) {
+            throw new Error('Lightning refund transaction changed.')
+          }
+          validateLightningRefundGraph({
+            ...previous,
+            finalCheckpointPsbts: [...checkpoints],
+            stage: 'finalized',
+          })
           validateLightningRefundFinals(
-            previous?.submittedCheckpointPsbts,
+            previous.submittedCheckpointPsbts,
             checkpoints,
             facts.senderPub,
             facts.serverPub,

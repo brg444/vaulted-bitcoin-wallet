@@ -1,4 +1,4 @@
-import { ArkAddress, P2A, Transaction } from '@arkade-os/sdk'
+import { ArkAddress, P2A, Transaction, matchServerCheckpoints } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { requireExactDefaultTapscriptSignatures } from './taprootSignatures'
 
@@ -116,6 +116,40 @@ export function readLightningRefundAttempt(rfqId: string): VaultLightningRefundA
   }
 }
 
+/** One monotonic merge for live progress, archive capture and restore.
+ * Conflicting identity or signed bytes reject the caller. Defined evidence
+ * is retained. The highest phase wins independently of wall-clock stamps. */
+export function mergeLightningRefundAttempts(
+  previous: VaultLightningRefundAttempt | null,
+  incoming: VaultLightningRefundFacts &
+    Partial<VaultLightningRefundAttempt> & { stage: VaultLightningRefundAttempt['stage'] },
+): VaultLightningRefundAttempt {
+  if (previous) {
+    if (incoming.rfqId !== undefined && incoming.rfqId !== previous.rfqId) {
+      throw new Error('Conflicting Lightning refund restore.')
+    }
+    assertSameRefundOperation(previous, incoming)
+    assertSameRefundEvidence(previous, incoming)
+  }
+  let stage = incoming.stage
+  if (previous && REFUND_STAGE_RANK[previous.stage] > REFUND_STAGE_RANK[stage]) {
+    stage = previous.stage
+  }
+  const defined = Object.fromEntries(Object.entries(incoming).filter(([, value]) => value !== undefined))
+  const incomingUpdatedAt = incoming.updatedAt
+  const updatedAt =
+    previous && typeof incomingUpdatedAt === 'number'
+      ? Math.max(previous.updatedAt, incomingUpdatedAt)
+      : typeof incomingUpdatedAt === 'number'
+        ? incomingUpdatedAt
+        : Math.floor(Date.now() / 1000)
+  return { ...(previous ?? {}), ...defined, stage, updatedAt } as VaultLightningRefundAttempt
+}
+
+function refundAttemptBody(attempt: VaultLightningRefundAttempt): string {
+  return JSON.stringify({ ...attempt, updatedAt: undefined })
+}
+
 /** Merge-only persistence: identity facts and signed evidence, once
  * observed, are never overwritten by a later phase. Conflicting identity
  * facts reject the caller; conflicting signed bytes reject the caller;
@@ -127,20 +161,8 @@ export function recordRefundAttemptProgress(
 ): void {
   const store = requireAttemptStore()
   const previous = readLightningRefundAttempt(facts.rfqId)
-  if (previous) {
-    assertSameRefundOperation(previous, facts)
-    assertSameRefundEvidence(previous, facts)
-    if (REFUND_STAGE_RANK[previous.stage] > REFUND_STAGE_RANK[stage]) {
-      stage = previous.stage
-    }
-  }
-  // Explicit undefined fields never wipe retained evidence: only defined
-  // values merge over the previous attempt.
-  const defined = Object.fromEntries(Object.entries(facts).filter(([, value]) => value !== undefined))
-  store.setItem(
-    attemptKey(facts.rfqId),
-    JSON.stringify({ ...(previous ?? {}), ...defined, stage, updatedAt: Math.floor(Date.now() / 1000) }),
-  )
+  const merged = mergeLightningRefundAttempts(previous, { ...facts, stage })
+  store.setItem(attemptKey(facts.rfqId), JSON.stringify({ ...merged, updatedAt: Math.floor(Date.now() / 1000) }))
 }
 
 const REFUND_STAGE_RANK: Record<VaultLightningRefundAttempt['stage'], number> = {
@@ -203,28 +225,35 @@ function assertSameRefundEvidence(
 /** Seed a restored attempt without downgrading newer local evidence. A
  * corrupt local copy yields to the validated file; an attempt for a
  * different operation never overwrites local evidence and fails closed;
- * storage failures propagate instead of silently dropping the restore. */
+ * storage failures propagate instead of silently dropping the restore.
+ * Timestamps never choose the winner: the shared merge keeps the highest
+ * phase and every accepted byte. */
 export function seedRestoredRefundAttempt(attempt: VaultLightningRefundAttempt): boolean {
   const validated = validateLightningRefundAttempt(attempt)
   const store = requireAttemptStore()
   const raw = store.getItem(attemptKey(validated.rfqId))
+  let previous: VaultLightningRefundAttempt | null = null
   if (raw !== null) {
     try {
-      const local = validateLightningRefundAttempt(JSON.parse(raw))
-      if (local.rfqId === validated.rfqId) {
-        for (const field of REFUND_IDENTITY_FACTS) {
-          if (local[field] !== validated[field]) {
-            throw new Error('Conflicting Lightning refund restore.')
-          }
-        }
-        if (local.updatedAt >= validated.updatedAt) return false
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message === 'Conflicting Lightning refund restore.') throw error
-      // A corrupt local copy yields to the validated file below.
+      previous = validateLightningRefundAttempt(JSON.parse(raw))
+    } catch {
+      previous = null
     }
   }
-  store.setItem(attemptKey(validated.rfqId), JSON.stringify(validated))
+  let merged: VaultLightningRefundAttempt
+  try {
+    merged = mergeLightningRefundAttempts(previous, validated)
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === 'Lightning refund inputs changed.' || error.message === 'Lightning refund evidence changed.')
+    ) {
+      throw new Error('Conflicting Lightning refund restore.')
+    }
+    throw error
+  }
+  if (previous && refundAttemptBody(previous) === refundAttemptBody(merged)) return false
+  store.setItem(attemptKey(validated.rfqId), JSON.stringify(merged))
   return true
 }
 
@@ -323,9 +352,10 @@ export function requireRefundSigners(refundPsbt: string, expectedPubs: string[],
 }
 
 /** Two serializations of one checkpoint: identical version, locktime,
- * inputs and outputs, differing only in signature fields. An outpoint-only
- * comparison would accept a re-cut checkpoint transaction. */
-function sameCheckpointGraph(unsignedPsbt: string, signedPsbt: string): boolean {
+ * transaction id, inputs and outputs, differing only in signature fields.
+ * Callers pair by transaction id, matching the SDK, so a reordered Operator
+ * response is accepted and a re-cut checkpoint is not. */
+export function sameCheckpointGraph(unsignedPsbt: string, signedPsbt: string): boolean {
   let unsigned: Transaction
   let signed: Transaction
   try {
@@ -334,6 +364,8 @@ function sameCheckpointGraph(unsignedPsbt: string, signedPsbt: string): boolean 
   } catch {
     return false
   }
+  if (unsigned.id !== signed.id) return false
+  if (unsigned.version !== signed.version || unsigned.lockTime !== signed.lockTime) return false
   if (
     unsigned.inputsLength !== signed.inputsLength ||
     unsigned.outputsLength !== signed.outputsLength ||
@@ -359,6 +391,24 @@ function sameCheckpointGraph(unsignedPsbt: string, signedPsbt: string): boolean 
     if ((a.amount ?? 0n) !== (b.amount ?? 0n)) return false
   }
   return true
+}
+
+function pairCheckpointPsbts(unsignedPsbts: readonly string[], signedPsbts: readonly string[], label: string): void {
+  if (unsignedPsbts.length !== signedPsbts.length) {
+    throw new Error(`${label} are incomplete.`)
+  }
+  const unsignedTxs = unsignedPsbts.map((raw) => Transaction.fromPSBT(base64.decode(raw)))
+  let pairs: ReturnType<typeof matchServerCheckpoints>
+  try {
+    pairs = matchServerCheckpoints([...signedPsbts], unsignedTxs, label)
+  } catch {
+    throw new Error(`${label} changed inputs.`)
+  }
+  for (const { server, local } of pairs) {
+    if (!sameCheckpointGraph(base64.encode(local.toPSBT()), base64.encode(server.toPSBT()))) {
+      throw new Error(`${label} changed inputs.`)
+    }
+  }
 }
 
 /** Bind every recorded byte of an attempt to one package graph, with
@@ -496,24 +546,28 @@ export function validateLightningRefundGraph(attempt: VaultLightningRefundAttemp
     if (attempt.serverCheckpointPsbts.length !== checkpointOutpoints.length) {
       throw new Error('Lightning refund Operator checkpoints are incomplete.')
     }
-    attempt.serverCheckpointPsbts.forEach((raw, position) => {
+    attempt.serverCheckpointPsbts.forEach((raw) => {
       requireRefundSigners(raw, [server], 'Operator checkpoint')
-      if (!sameCheckpointGraph(attempt.submittedCheckpointPsbts![position], raw)) {
-        throw new Error('Lightning refund Operator checkpoint changed inputs.')
-      }
     })
+    pairCheckpointPsbts(
+      attempt.submittedCheckpointPsbts!,
+      attempt.serverCheckpointPsbts,
+      'Lightning refund Operator checkpoint',
+    )
   }
   if (completeResponse) {
     if (!attempt.finalCheckpointPsbts?.length) throw new Error('Lightning refund final evidence is incomplete.')
     if (attempt.finalCheckpointPsbts.length !== checkpointOutpoints.length) {
       throw new Error('Lightning refund final checkpoints are incomplete.')
     }
-    attempt.finalCheckpointPsbts.forEach((raw, position) => {
+    attempt.finalCheckpointPsbts.forEach((raw) => {
       requireRefundSigners(raw, [sender, server], 'final checkpoint')
-      if (!sameCheckpointGraph(attempt.submittedCheckpointPsbts![position], raw)) {
-        throw new Error('Lightning refund final checkpoint changed inputs.')
-      }
     })
+    pairCheckpointPsbts(
+      attempt.submittedCheckpointPsbts!,
+      attempt.finalCheckpointPsbts,
+      'Lightning refund final checkpoint',
+    )
   }
   if (attempt.stage === 'result') {
     if (attempt.refundArkTxid !== refund.id) throw new Error('Lightning refund transaction changed.')
@@ -534,13 +588,12 @@ export function validateLightningRefundFinals(
   if (unsignedCheckpointPsbts?.length && unsignedCheckpointPsbts.length !== finalCheckpointPsbts.length) {
     throw new Error('Lightning refund final checkpoints are incomplete.')
   }
-  finalCheckpointPsbts.forEach((raw, position) => {
+  finalCheckpointPsbts.forEach((raw) => {
     requireRefundSigners(raw, [senderPub, serverPub], 'final checkpoint')
-    const unsigned = unsignedCheckpointPsbts?.[position]
-    if (unsigned !== undefined && !sameCheckpointGraph(unsigned, raw)) {
-      throw new Error('Lightning refund final checkpoint changed inputs.')
-    }
   })
+  if (unsignedCheckpointPsbts?.length) {
+    pairCheckpointPsbts(unsignedCheckpointPsbts, finalCheckpointPsbts, 'Lightning refund final checkpoint')
+  }
 }
 
 /** Retirement receipt for a funded Lightning record. The package may prune

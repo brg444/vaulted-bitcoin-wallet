@@ -16,8 +16,10 @@ import {
   type VaultLightningRefundRecorder,
 } from './lightningLifecycle'
 import {
+  mergeLightningRefundAttempts,
   readLightningRefundAttempt,
   recordRefundAttemptProgress,
+  sameCheckpointGraph,
   seedRestoredRefundAttempt,
   validateLightningRefundGraph,
   type VaultLightningRefundAttempt,
@@ -142,6 +144,34 @@ function refundPsbtBytes(txid = 'ee'.repeat(32), vout = 0, valueSats = 2125n) {
   tx.addOutput({ amount: valueSats, script: hex.decode('ab'.repeat(34)) })
   const psbt = base64.encode(tx.toPSBT())
   return { psbt, txid: tx.id }
+}
+
+function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
+  if (!needle.length) return -1
+  for (let index = 0; index + needle.length <= haystack.length; index++) {
+    let match = true
+    for (let position = 0; position < needle.length; position++) {
+      if (haystack[index + position] !== needle[position]) {
+        match = false
+        break
+      }
+    }
+    if (match) return index
+  }
+  return -1
+}
+
+function corruptFirstInputSignature(psbt: string): string {
+  const tx = Transaction.fromPSBT(base64.decode(psbt))
+  const entries = (tx.getInput(0).tapScriptSig as [unknown, Uint8Array][] | undefined) ?? []
+  if (!entries.length) throw new Error('test setup has no signatures to corrupt')
+  const raw = base64.decode(psbt)
+  const at = indexOfBytes(raw, entries[0][1])
+  if (at < 0) throw new Error('test setup could not locate the signature')
+  const corrupted = Uint8Array.from(raw)
+  corrupted[at] ^= 1
+  Transaction.fromPSBT(corrupted)
+  return base64.encode(corrupted)
 }
 
 function neverRecord(): VaultLightningRefundRecorder {
@@ -644,7 +674,7 @@ describe('Lightning refund merge hardening', () => {
     })
   })
 
-  it('seeds restores without downgrading or mixing operations', () => {
+  it('seeds restores by highest phase and accepted bytes, not wall-clock', () => {
     const attempt: VaultLightningRefundAttempt = {
       ...submitted,
       stage: 'submitted',
@@ -652,12 +682,42 @@ describe('Lightning refund merge hardening', () => {
     } as VaultLightningRefundAttempt
     expect(seedRestoredRefundAttempt(attempt)).toBe(true)
     expect(seedRestoredRefundAttempt({ ...attempt, updatedAt: 9 })).toBe(false)
-    expect(seedRestoredRefundAttempt({ ...attempt, updatedAt: 10 })).toBe(false)
-    expect(seedRestoredRefundAttempt({ ...attempt, updatedAt: 11 })).toBe(true)
+    expect(seedRestoredRefundAttempt({ ...attempt, updatedAt: 99 })).toBe(false)
+    expect(() =>
+      seedRestoredRefundAttempt({
+        ...attempt,
+        signedRefundPsbt: refundPsbtBytes('ff'.repeat(32)).psbt,
+        updatedAt: 99,
+      }),
+    ).toThrow('Conflicting')
+    expect(
+      seedRestoredRefundAttempt({
+        ...attempt,
+        stage: 'finalized',
+        serverCheckpointPsbts: ['cp-server'],
+        serverRefundPsbt: 'server-psbt',
+        finalCheckpointPsbts: ['cp-final'],
+        updatedAt: 1,
+      }),
+    ).toBe(true)
+    expect(readLightningRefundAttempt(facts.rfqId)).toMatchObject({
+      stage: 'finalized',
+      signedRefundPsbt: signed.psbt,
+      serverRefundPsbt: 'server-psbt',
+      finalCheckpointPsbts: ['cp-final'],
+    })
+    expect(seedRestoredRefundAttempt({ ...attempt, updatedAt: 500 })).toBe(false)
+    expect(readLightningRefundAttempt(facts.rfqId)?.stage).toBe('finalized')
     expect(() => seedRestoredRefundAttempt({ ...attempt, lockupAddress: 'tark1other', updatedAt: 12 })).toThrow(
       'Conflicting',
     )
-    expect(readLightningRefundAttempt(facts.rfqId)).toMatchObject({ lockupAddress: 'tark1lockup', updatedAt: 11 })
+    const merged = mergeLightningRefundAttempts(readLightningRefundAttempt(facts.rfqId), {
+      ...attempt,
+      stage: 'submitted',
+      updatedAt: 800,
+    })
+    expect(merged.stage).toBe('finalized')
+    expect(merged.signedRefundPsbt).toBe(signed.psbt)
     localStorage.setItem(`vaulted-lightning-refund-attempt:${facts.rfqId}`, 'not-json')
     expect(seedRestoredRefundAttempt({ ...attempt, updatedAt: 13 })).toBe(true)
   })
@@ -719,6 +779,35 @@ describe('Lightning refund graph validation', () => {
     expect(fixture.resultAmount).toBe(2400)
   })
 
+  it('accepts a reversed Operator checkpoint list and rejects version or locktime changes', async () => {
+    const { fixture, attempt } = await submittedAttempt()
+    const reversed = {
+      ...attempt,
+      serverCheckpointPsbts: [...fixture.serverCheckpointPsbts].reverse(),
+      serverRefundPsbt: fixture.serverRefundPsbt,
+    }
+    validateLightningRefundGraph(reversed)
+    validateLightningRefundGraph({
+      ...reversed,
+      stage: 'finalized',
+      finalCheckpointPsbts: [...fixture.finalCheckpointPsbts].reverse(),
+    })
+    const unsigned = fixture.submittedCheckpointPsbts[0]
+    const source = Transaction.fromPSBT(base64.decode(unsigned))
+    const clone = (version: number, lockTime: number) => {
+      const tx = new Transaction({ version, lockTime })
+      for (let index = 0; index < source.inputsLength; index++) tx.addInput(source.getInput(index))
+      for (let index = 0; index < source.outputsLength; index++) {
+        const output = source.getOutput(index)
+        if (!output?.script) throw new Error('test checkpoint output is incomplete')
+        tx.addOutput({ amount: output.amount ?? 0n, script: output.script })
+      }
+      return base64.encode(tx.toPSBT())
+    }
+    expect(sameCheckpointGraph(unsigned, clone(source.version, source.lockTime + 1))).toBe(false)
+    expect(sameCheckpointGraph(unsigned, clone(source.version === 3 ? 2 : 3, source.lockTime))).toBe(false)
+  })
+
   it('rejects a forged input set, a replaced transaction, and a diverted destination', async () => {
     const { fixture, record, attempt } = await submittedAttempt()
     expect(() =>
@@ -756,35 +845,6 @@ describe('Lightning refund graph validation', () => {
       'incomplete',
     )
   })
-
-  function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
-    if (!needle.length) return -1
-    for (let index = 0; index + needle.length <= haystack.length; index++) {
-      let match = true
-      for (let position = 0; position < needle.length; position++) {
-        if (haystack[index + position] !== needle[position]) {
-          match = false
-          break
-        }
-      }
-      if (match) return index
-    }
-    return -1
-  }
-
-  function corruptFirstInputSignature(psbt: string): string {
-    const tx = Transaction.fromPSBT(base64.decode(psbt))
-    const entries = (tx.getInput(0).tapScriptSig as [unknown, Uint8Array][] | undefined) ?? []
-    if (!entries.length) throw new Error('test setup has no signatures to corrupt')
-    const raw = base64.decode(psbt)
-    const at = indexOfBytes(raw, entries[0][1])
-    if (at < 0) throw new Error('test setup could not locate the signature')
-    const corrupted = Uint8Array.from(raw)
-    corrupted[at] ^= 1
-    // The patched bytes must still parse, so the failure lands on verification.
-    Transaction.fromPSBT(corrupted)
-    return base64.encode(corrupted)
-  }
 
   it('rejects wrong enrolled signers on real package bytes', async () => {
     const { fixture, attempt } = await submittedAttempt()
@@ -920,6 +980,41 @@ describe('Lightning refund recording against real package bytes', () => {
     const cancelled = recordingVaultLightningRefundArk(base, facts, controller.signal)
     await expect(cancelled.submitTx('signed-psbt', ['cp-a'])).rejects.toThrow()
     expect(base.submitTx).not.toHaveBeenCalled()
+  })
+
+  it('withholds first-attempt finalization without a validated Operator successor', async () => {
+    const { fixture, facts, base, ark } = await recordingHarness()
+    base.submitTx.mockResolvedValueOnce({
+      arkTxid: fixture.refundId,
+      signedCheckpointTxs: [...fixture.serverCheckpointPsbts],
+      finalArkTx: undefined,
+    })
+    await expect(ark.submitTx(fixture.signedRefundPsbt, [...fixture.submittedCheckpointPsbts])).rejects.toThrow(
+      'incomplete',
+    )
+    expect(readLightningRefundAttempt(facts.rfqId)?.serverRefundPsbt).toBeUndefined()
+    await expect(ark.finalizeTx(fixture.refundId, [...fixture.finalCheckpointPsbts])).rejects.toThrow('incomplete')
+    expect(base.finalizeTx).not.toHaveBeenCalled()
+
+    base.submitTx.mockResolvedValueOnce({
+      arkTxid: fixture.refundId,
+      signedCheckpointTxs: [...fixture.serverCheckpointPsbts],
+      finalArkTx: fixture.signedRefundPsbt,
+    })
+    await expect(ark.submitTx(fixture.signedRefundPsbt, [...fixture.submittedCheckpointPsbts])).rejects.toThrow(
+      'invalid signer',
+    )
+    expect(base.finalizeTx).not.toHaveBeenCalled()
+
+    base.submitTx.mockResolvedValueOnce({
+      arkTxid: fixture.refundId,
+      signedCheckpointTxs: [...fixture.serverCheckpointPsbts],
+      finalArkTx: corruptFirstInputSignature(fixture.serverRefundPsbt),
+    })
+    await expect(ark.submitTx(fixture.signedRefundPsbt, [...fixture.submittedCheckpointPsbts])).rejects.toThrow(
+      'invalid signer',
+    )
+    expect(base.finalizeTx).not.toHaveBeenCalled()
   })
 })
 
