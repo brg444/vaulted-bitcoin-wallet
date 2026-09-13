@@ -101,7 +101,7 @@ vi.mock('../lib/vault/status', () => ({
 }))
 
 const spendingPolicy = defaultSpendingPolicy()
-const STATUS: VaultStatus = {
+const STATUS = {
   enrolled: true,
   network: 'mutinynet',
   clientOrigin: 'https://vault.test',
@@ -132,7 +132,7 @@ const STATUS: VaultStatus = {
   vtxoBoardingScript: `5120${'44'.repeat(32)}`,
   vtxoBoardingExitDelay: 604672,
   vtxoBoardingExitDelayUnit: 'seconds',
-}
+} as unknown as VaultStatus
 
 void golden
 

@@ -1,7 +1,7 @@
 import { HDKey } from '@scure/bip32'
 import { hex, base64 } from '@scure/base'
 import { ArkAddress, ChainTxType, Transaction, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
-import type { BoardingDescriptor, VaultStatus } from '../../types'
+import type { BoardingDescriptor, LedgerVaultStatus, VaultStatus } from '../../types'
 import { POLICY_VERSION } from '../../constants'
 import { VaultPolicyV1Script } from '../../vtxo/script'
 import { ledgerAccountKey, ledgerBip32Versions, type LedgerSavingsKeyContext } from '../../program/ledgerNativeKeys'
@@ -90,7 +90,7 @@ export function ledgerRecoveryFacts(
     script: hex.encode(boardingTree.pkScript),
     address: boardingTree.onchainAddress(getNetwork(pins.sdkNetwork)),
   }
-  const status: VaultStatus = {
+  const base: Omit<LedgerVaultStatus, 'ledgerSavings'> = {
     enrolled: true,
     network,
     clientOrigin: 'https://vault.example',
@@ -140,31 +140,33 @@ export function ledgerRecoveryFacts(
     vaultId: context.vaultId,
     savings: { context, spendingPolicy },
     spendingAuthorities: {
-      phoneBip340Pub: status.phoneBip340Pub!,
-      externalOwnerWalletPub: status.externalOwnerWalletPub!,
-      recoveryKeyPub: status.recoveryPub || '',
-      vaultCosignerBasePub: status.vaultCosignerBasePub!,
-      arkadeCosignerBasePub: status.arkadeCosignerBasePub!,
-      phoneDirectP256: status.phoneDirectP256!,
-      vtxoVaultCosignerPub: status.vtxoVaultCosignerPub!,
+      phoneBip340Pub: base.phoneBip340Pub!,
+      externalOwnerWalletPub: base.externalOwnerWalletPub!,
+      recoveryKeyPub: base.recoveryPub || '',
+      vaultCosignerBasePub: base.vaultCosignerBasePub!,
+      arkadeCosignerBasePub: base.arkadeCosignerBasePub!,
+      phoneDirectP256: base.phoneDirectP256!,
+      vtxoVaultCosignerPub: base.vtxoVaultCosignerPub!,
       operatorPub: pins.operatorSignerPub,
-      vtxoDelegatePub: status.vtxoDelegatePub!,
-      vtxoExitDelay: status.vtxoExitDelay!,
-      vtxoExitDelayUnit: status.vtxoExitDelayUnit!,
-      spendingArkAddress: status.spendingArkAddress!,
-      spendingArkScript: status.spendingArkScript!,
+      vtxoDelegatePub: base.vtxoDelegatePub!,
+      vtxoExitDelay: base.vtxoExitDelay!,
+      vtxoExitDelayUnit: base.vtxoExitDelayUnit!,
+      spendingArkAddress: base.spendingArkAddress!,
+      spendingArkScript: base.spendingArkScript!,
     },
-    boarding: status.vtxoBoardingDescriptor!,
+    boarding: base.vtxoBoardingDescriptor!,
   }
   const kit = buildRecoveryKit(buildLedgerRecoveryDescriptor(composite)),
-    family = buildLedgerNativeFamily(context, spendingPolicy)
-  Object.assign(status, {
+    family = buildLedgerNativeFamily(context, spendingPolicy),
+    descriptorHash = hashLedgerSavingsEnrollment(composite)
+  const status: LedgerVaultStatus = {
+    ...base,
     templateVersion: context.templateVersion,
     savingsAddress: family.receive.address,
     savingsScript: hex.encode(family.receive.script),
-    ledgerSavings: { context, spendingPolicy, descriptorHash: hashLedgerSavingsEnrollment(composite) },
-  })
-  status.vtxoBoardingDescriptorHash = status.ledgerSavings!.descriptorHash
+    ledgerSavings: { context, spendingPolicy, descriptorHash },
+    vtxoBoardingDescriptorHash: descriptorHash,
+  }
   return { ...recoveryArchiveFixture(kit, status, spending), composite, family, board: boardingTree }
 }
 

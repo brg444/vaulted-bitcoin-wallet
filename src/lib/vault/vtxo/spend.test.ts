@@ -189,7 +189,7 @@ function status(): VaultStatus {
     vtxoExitDelayUnit: 'seconds',
     spendingArkAddress: address.encode(),
     spendingArkScript: hex.encode(script.pkScript),
-  }
+  } as unknown as VaultStatus
 }
 
 function reserve(): VtxoReserveResponse {

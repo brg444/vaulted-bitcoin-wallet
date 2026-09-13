@@ -73,7 +73,9 @@ describe('shared Spending renewal identity', () => {
     'phone-connector-recovery-savings-v1',
     'phone-connector-recovery-savings-v2',
   ])('rejects the retired renewal program %s', (templateVersion) => {
-    expect(() => guardianRenewalContext({ ...fixtures[1], templateVersion })).toThrow('Unsupported renewal program')
+    expect(() => guardianRenewalContext({ ...fixtures[1], templateVersion } as unknown as VaultStatus)).toThrow(
+      'Unsupported renewal program',
+    )
   })
 
   it.each(fixtures)('binds $network $protectionTier $templateVersion to the complete original tree', (status) => {
@@ -118,7 +120,9 @@ describe('shared Spending renewal identity', () => {
     const status = fixtures[1]
     expect(() => guardianRenewalContext({ ...status, protectionTier: 'advanced' })).toThrow()
     expect(() => guardianRenewalContext({ ...status, spendingPolicyDigest: '00'.repeat(32) })).toThrow()
-    expect(() => guardianRenewalContext({ ...status, templateVersion: 'future-program' })).toThrow()
+    expect(() =>
+      guardianRenewalContext({ ...status, templateVersion: 'future-program' } as unknown as VaultStatus),
+    ).toThrow()
     expect(guardianRenewalContextDigest(fixtures[1])).not.toBe(guardianRenewalContextDigest(fixtures[2]))
   })
 

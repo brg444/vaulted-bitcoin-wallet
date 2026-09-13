@@ -67,7 +67,7 @@ describe('fresh-device program archive restore', () => {
     'phone-connector-recovery-savings-v2',
   ])('rejects %s before opening storage or activating keys', async (templateVersion) => {
     const file = await fixture(false)
-    file.archive.status.templateVersion = templateVersion
+    ;(file.archive.status as unknown as { templateVersion: string }).templateVersion = templateVersion
     await expect(restoreVaultRecoveryFile(file, scalarSecret(3), ledgerFixtureSeed)).rejects.toThrow('template version')
     expect(navigator.locks.request).not.toHaveBeenCalled()
     expect(localStorage.length).toBe(0)

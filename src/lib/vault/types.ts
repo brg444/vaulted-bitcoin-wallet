@@ -1,4 +1,5 @@
-import type { SpendingEnrollmentDescriptor } from './spendingEnrollment'
+import { SPENDING_ONLY_TEMPLATE, type SpendingEnrollmentDescriptor } from './spendingEnrollment'
+import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import type { VaultNetwork } from './constants'
 import type { SpendingPolicy } from './spendingPolicy'
 import type { ProtectionTier } from './protectionTier'
@@ -62,16 +63,16 @@ export interface VaultStatusWire {
 }
 
 // Wallet domain view. recoveryPub is a normalized compatibility alias and is
-// never represented as a server wire field.
-export interface VaultStatus {
+// never represented as a server wire field. The admitted account keeps shared
+// Spending facts and an explicit Savings alternative: absent or Ledger. The
+// Ledger case owns its required descriptor, registration and descriptor hash.
+export interface VaultStatusShared {
   spendingDescriptor?: SpendingEnrollmentDescriptor
-  ledgerSavings?: LedgerSavingsStatus
   enrolled: boolean
   network: string
   clientOrigin: string
   rpId: string
   vaultId: string
-  templateVersion: string
   policyVersion: string
   protectionTier: ProtectionTier | 'light'
   externalOwnerWalletPub?: string
@@ -112,6 +113,18 @@ export interface VaultStatus {
   vtxoBoardingDescriptor?: BoardingDescriptor
   vtxoBoardingDescriptorHash?: string
 }
+
+export interface SpendingOnlyVaultStatus extends VaultStatusShared {
+  templateVersion: typeof SPENDING_ONLY_TEMPLATE
+  ledgerSavings?: undefined
+}
+
+export interface LedgerVaultStatus extends VaultStatusShared {
+  templateVersion: typeof LEDGER_NATIVE_TEMPLATE
+  ledgerSavings: LedgerSavingsStatus
+}
+
+export type VaultStatus = SpendingOnlyVaultStatus | LedgerVaultStatus
 
 export interface BoardingDescriptor {
   schema: 'arkade-vault/board-v1'

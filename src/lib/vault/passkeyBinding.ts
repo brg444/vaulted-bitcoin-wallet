@@ -167,7 +167,7 @@ export function assertRecoveryBindingMatchesStatus(binding: string | RecoveryBin
     )
       throw new Error('Ledger recovery binding does not match vault status')
     ledgerEnrollmentFromBinding(value, status)
-  } else if (status.ledgerSavings || status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
+  } else if (status.ledgerSavings) {
     throw new Error('Ledger Savings requires version 6 recovery binding')
   }
   return value

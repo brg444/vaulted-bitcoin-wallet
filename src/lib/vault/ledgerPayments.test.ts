@@ -305,7 +305,7 @@ it.each([
     ...status,
     templateVersion,
     ledgerSavings: undefined,
-  })
+  } as unknown as VaultStatus)
   await expect(payments.review(draft)).rejects.toThrow(/Unlock this Ledger/)
   await expect(payments.approve(draft)).rejects.toThrow(/Unlock this Ledger/)
   expect(api.load).not.toHaveBeenCalled()

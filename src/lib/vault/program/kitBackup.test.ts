@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { VaultStatus } from '../types'
 import { ledgerRecoveryFacts, sharedSpendingRecoveryFixture } from '../recovery/testdata/helpers'
 import { defaultSpendingPolicy, spendingPolicyDigest } from '../spendingPolicy'
 import { buildMapBackup, kitFromFacts, parseMapBackup } from './kitBackup'
@@ -26,7 +27,7 @@ describe('retained map backup', () => {
           { spendingPolicyDigest: '00'.repeat(32) },
           { spendingPolicy: undefined },
         ])
-          expect(kitFromFacts({ status: { ...status, ...patch } })).toBeNull()
+          expect(kitFromFacts({ status: { ...status, ...patch } as unknown as VaultStatus })).toBeNull()
         expect(kitFromFacts({ status, hardwarePub: status.phoneBip340Pub })).toBeNull()
       }
     },
@@ -47,7 +48,9 @@ describe('retained map backup', () => {
       'phone-connector-recovery-savings-v2',
       '',
     ])
-      expect(kitFromFacts({ status: { ...ledgerRecoveryFacts().status, templateVersion } })).toBeNull()
+      expect(
+        kitFromFacts({ status: { ...ledgerRecoveryFacts().status, templateVersion } as unknown as VaultStatus }),
+      ).toBeNull()
     expect(kitFromFacts({})).toBeNull()
   })
 })

@@ -89,7 +89,7 @@ function sampleStatus(over: Partial<VaultStatus> = {}): VaultStatus {
     vtxoBoardingExitDelay: 604672,
     vtxoBoardingExitDelayUnit: 'seconds',
     ...over,
-  }
+  } as unknown as VaultStatus
 }
 
 function tenantStatus(over: Partial<VaultStatus> = {}): VaultStatus {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { VaultStatus } from '../types'
 import { ledgerRecoveryFacts, sharedSpendingRecoveryFixture } from '../recovery/testdata/helpers'
 import { LEDGER_NATIVE_TEMPLATE } from './ledgerNativeKeys'
 import { kitMatchesLiveVault, selectLiveKit, watcherEnabledForTemplate } from './liveKit'
@@ -27,7 +28,7 @@ describe('live retained kit policy', () => {
       { ledgerSavings: undefined },
       { enrolled: false },
     ])
-      expect(kitMatchesLiveVault(kit, { ...status, ...patch })).toBe(false)
+      expect(kitMatchesLiveVault(kit, { ...status, ...patch } as unknown as VaultStatus)).toBe(false)
     expect(selectLiveKit({ status: { ...status, enrolled: false }, stored: kit })).toBeNull()
   })
   it('matches shared Spending without starting a Savings watcher', () => {

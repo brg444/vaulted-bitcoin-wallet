@@ -4,7 +4,7 @@ import { POLICY_VERSION, RUNTIME_SCHEMA_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
 import { authorizerWalletHref, requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
 import { bindStatusToLocalPin } from './pin'
-import type { VaultStatus, VaultStatusWire } from './types'
+import type { LedgerVaultStatus, SpendingOnlyVaultStatus, VaultStatus, VaultStatusWire } from './types'
 import {
   requireCurrentSpendingPolicyCapabilities,
   spendingPolicyDigest,
@@ -260,9 +260,22 @@ export function requireStatusIdentity(
   }
   const recovery = recoveryKeyPub || recoveryPub
   requireProtectionTierMatchesRecovery(status.protectionTier, recovery)
+  const recoveryFields = recovery ? { recoveryPub: recovery, recoveryKeyPub: recovery } : {}
   if (status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
     ledgerEnrollmentFromStatus(status as VaultStatus)
-    status = { ...status, vtxoBoardingDescriptorHash: status.ledgerSavings!.descriptorHash }
-  } else if (status.ledgerSavings) throw new Error('Ledger Savings metadata requires its enrolled template')
-  return (recovery ? { ...status, recoveryPub: recovery, recoveryKeyPub: recovery } : status) as VaultStatus
+    return {
+      ...status,
+      ...recoveryFields,
+      templateVersion: LEDGER_NATIVE_TEMPLATE,
+      ledgerSavings: status.ledgerSavings!,
+      vtxoBoardingDescriptorHash: status.ledgerSavings!.descriptorHash,
+    } as LedgerVaultStatus
+  }
+  if (status.ledgerSavings) throw new Error('Ledger Savings metadata requires its enrolled template')
+  return {
+    ...status,
+    ...recoveryFields,
+    templateVersion: SPENDING_ONLY_TEMPLATE,
+    ledgerSavings: undefined,
+  } as SpendingOnlyVaultStatus
 }
