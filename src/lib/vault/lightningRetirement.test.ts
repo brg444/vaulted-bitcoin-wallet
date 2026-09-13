@@ -40,14 +40,14 @@ const fateState = vi.hoisted(() => ({
   checkpointTxid: '',
   checkpointPsbt: '',
   arkTxid: undefined as string | undefined,
-  vtxos: undefined as { txid: string; vout: number }[] | undefined,
+  vtxos: undefined as { txid: string; vout: number; spent?: boolean }[] | undefined,
 }))
 function fateVtxos() {
   const coins = fateState.vtxos ?? [{ txid: 'ee'.repeat(32), vout: 0 }]
   return coins.map((coin) => ({
     txid: coin.txid,
     vout: coin.vout,
-    spentBy: fateState.checkpointTxid,
+    ...(coin.spent === false ? {} : { spentBy: fateState.checkpointTxid }),
     ...(fateState.arkTxid ? { arkTxId: fateState.arkTxid } : {}),
   }))
 }
@@ -555,6 +555,30 @@ describe('Lightning funded-record retirement', () => {
     }
   }
 
+  function attachRefundFacts(
+    prepared: ReturnType<typeof twoOutputRecovery>,
+    inputs: readonly { txid: string; vout: number; value?: number }[],
+  ) {
+    prepared.journal.entries[0].refundAttempt = {
+      rfqId: prepared.journal.entries[0].record.rfqId,
+      lockupAddress: prepared.journal.entries[0].record.lockupAddress,
+      lockupPkScriptHex: prepared.journal.entries[0].contract.script,
+      amountSats: 2125,
+      destination: prepared.status.spendingArkScript,
+      vaultId: prepared.status.vaultId,
+      network: String(prepared.status.network),
+      senderPub: '11'.repeat(32),
+      serverPub: '22'.repeat(32),
+      fundedInputs: inputs.map((coin) => ({
+        txid: coin.txid,
+        vout: coin.vout,
+        value: coin.value ?? 2125,
+      })),
+      stage: 'dispatched',
+      updatedAt: 1,
+    }
+  }
+
   it('retains a two-output funded swap when the indexer omits one original output, then retires on complete consumption', async () => {
     const restoreLock = installImmediateLock()
     try {
@@ -614,6 +638,96 @@ describe('Lightning funded-record retirement', () => {
         ),
       ).resolves.toBe(false)
       expect(await swaps.getRfqSwap(prepared.journal.entries[0].record.rfqId)).not.toBeNull()
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('retains contradictory archive and refund-fact outpoints even when the indexer reports complete consumption', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      const prepared = twoOutputRecovery()
+      attachRefundFacts(prepared, [
+        prepared.coins[0],
+        { txid: 'dd'.repeat(32), vout: 0, value: prepared.coins[1].value },
+      ])
+      const repository = new InMemoryAssetSwapRepository()
+      await repository.saveRfqSwap(structuredClone(prepared.journal.entries[0].record))
+      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(prepared.coverage)
+      fateState.vtxos = prepared.coins
+      await expect(
+        acknowledgeVaultLightningRecovery(
+          prepared.status,
+          repository,
+          prepared.journal.entries[0].record.rfqId,
+          historyFor(FUNDING_TXID),
+          prepared.journal,
+          prepared.coverage,
+        ),
+      ).resolves.toBe(false)
+      expect(await repository.getRfqSwap(prepared.journal.entries[0].record.rfqId)).not.toBeNull()
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('retains a contradictory non-terminal indexer observation for one of two original outputs', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      const prepared = twoOutputRecovery()
+      const repository = new InMemoryAssetSwapRepository()
+      await repository.saveRfqSwap(structuredClone(prepared.journal.entries[0].record))
+      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(prepared.coverage)
+      fateState.vtxos = [prepared.coins[0], { ...prepared.coins[1], spent: false }]
+      await expect(
+        acknowledgeVaultLightningRecovery(
+          prepared.status,
+          repository,
+          prepared.journal.entries[0].record.rfqId,
+          historyFor(FUNDING_TXID),
+          prepared.journal,
+          prepared.coverage,
+        ),
+      ).resolves.toBe(false)
+      expect(await repository.getRfqSwap(prepared.journal.entries[0].record.rfqId)).not.toBeNull()
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('falls back to refund facts for a malformed archive and still requires every original output', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      const prepared = twoOutputRecovery()
+      prepared.journal.entries[0].exit = { ...prepared.journal.entries[0].exit, coins: '{' }
+      attachRefundFacts(prepared, prepared.coins)
+      const repository = new InMemoryAssetSwapRepository()
+      await repository.saveRfqSwap(structuredClone(prepared.journal.entries[0].record))
+      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(prepared.coverage)
+      fateState.vtxos = [prepared.coins[0]]
+      await expect(
+        acknowledgeVaultLightningRecovery(
+          prepared.status,
+          repository,
+          prepared.journal.entries[0].record.rfqId,
+          historyFor(FUNDING_TXID),
+          prepared.journal,
+          prepared.coverage,
+        ),
+      ).resolves.toBe(false)
+      expect(await repository.getRfqSwap(prepared.journal.entries[0].record.rfqId)).not.toBeNull()
+      fateState.vtxos = prepared.coins
+      await expect(
+        acknowledgeVaultLightningRecovery(
+          prepared.status,
+          repository,
+          prepared.journal.entries[0].record.rfqId,
+          historyFor(FUNDING_TXID),
+          prepared.journal,
+          prepared.coverage,
+        ),
+      ).resolves.toBe(true)
+      expect(await repository.getRfqSwap(prepared.journal.entries[0].record.rfqId)).toBeUndefined()
     } finally {
       restoreLock()
     }
