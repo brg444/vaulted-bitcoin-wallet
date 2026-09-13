@@ -1,3 +1,4 @@
+import type { BitcoinPaymentContextProps } from '../../vault/bitcoinPaymentContext'
 import {
   VaultTestProvider,
   type VaultTestContextProps as VaultContextProps,
@@ -15,7 +16,10 @@ import VaultHome from './Home'
 
 vi.mock('../../lib/vault/update', () => ({ reloadIfNewerWallet: () => Promise.resolve(false) }))
 
-function renderHome(overrides: Partial<VaultContextProps> & { balanceUnit?: VaultBalanceUnit }) {
+function renderHome(
+  overrides: Partial<VaultContextProps> & { balanceUnit?: VaultBalanceUnit },
+  bitcoinPayment?: Partial<BitcoinPaymentContextProps>,
+) {
   const { balanceUnit: initialUnit = 'sats', ...rest } = overrides
   const value = {
     account: 'spend',
@@ -70,6 +74,7 @@ function renderHome(overrides: Partial<VaultContextProps> & { balanceUnit?: Vaul
     return (
       <ToastProvider>
         <VaultTestProvider
+          bitcoinPayment={bitcoinPayment}
           value={
             {
               ...value,
@@ -140,16 +145,18 @@ describe('Vault home account boundaries', () => {
       activity: 'bitcoin' as const,
       bitcoinOperationId: 'payment',
     }
-    renderHome({
-      canSend: false,
-      openTx,
-      spendingBitcoin: { operation: { operationId: 'payment' } as never, error: '' },
-      history: [tx],
-      positions: {
-        spending: { availableSats: 0, pendingSats: 25859, totalSats: 25859 },
-        savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+    renderHome(
+      {
+        canSend: false,
+        openTx,
+        history: [tx],
+        positions: {
+          spending: { availableSats: 0, pendingSats: 25859, totalSats: 25859 },
+          savings: { availableSats: 0, pendingSats: 0, totalSats: 0 },
+        },
       },
-    })
+      { operation: { operationId: 'payment' } as never },
+    )
     expect(screen.getByTestId('vault-balance')).toHaveTextContent('₿25,859')
     expect(screen.queryByText(/available ·/)).toBeNull()
     expect(screen.queryByText('Bitcoin payment from Spending')).toBeNull()

@@ -1,3 +1,4 @@
+import type { BitcoinPaymentContextProps } from '../../vault/bitcoinPaymentContext'
 import {
   VaultTestProvider,
   type VaultTestContextProps as VaultContextProps,
@@ -9,7 +10,7 @@ import { ToastProvider } from '../../components/Toast'
 import VaultReview from './Review'
 import { LEDGER_NATIVE_TEMPLATE } from '../../lib/vault/program/ledgerNativeKeys'
 
-function review(overrides: Partial<VaultContextProps> = {}) {
+function review(overrides: Partial<VaultContextProps> = {}, bitcoinPayment?: Partial<BitcoinPaymentContextProps>) {
   const value = {
     account: 'spend',
     busy: false,
@@ -22,7 +23,7 @@ function review(overrides: Partial<VaultContextProps> = {}) {
   } as unknown as VaultContextProps
   const tree = (state: VaultContextProps) => (
     <ToastProvider>
-      <VaultTestProvider value={state}>
+      <VaultTestProvider value={state} bitcoinPayment={bitcoinPayment}>
         <VaultReview />
       </VaultTestProvider>
     </ToastProvider>
@@ -64,14 +65,18 @@ describe('payment review continuity', () => {
 
   it.each([false, true])('preserves the fixed Bitcoin outputs across approval, busy=%s', (busy) => {
     const address = Address(TEST_NETWORK).encode({ type: 'wpkh', hash: new Uint8Array(20).fill(0x43) })
-    const { value } = review({
-      busy,
-      spend: { address, amount: 1000, fee: 400 },
-      bitcoinOutputs: [
-        { script: '0014' + '43'.repeat(20), amountSats: 500 },
-        { script: '0014' + '43'.repeat(20), amountSats: 500 },
-      ],
-    })
+    const { value } = review(
+      {
+        busy,
+        spend: { address, amount: 1000, fee: 400 },
+      },
+      {
+        outputs: [
+          { script: '0014' + '43'.repeat(20), amountSats: 500 },
+          { script: '0014' + '43'.repeat(20), amountSats: 500 },
+        ],
+      },
+    )
     expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull()
     expect(screen.getByText('2 separate Bitcoin outputs: 500 sats + 500 sats.')).toBeVisible()
     expect(screen.getByText('Total').parentElement).toHaveTextContent('₿1,400')

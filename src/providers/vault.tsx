@@ -2,16 +2,14 @@ import { requireSupportedVaultNetwork, DUST_SATS } from '../lib/vault/constants'
 import { loadWatchedSavings, saveWatchedSavings, type WatchedSavingsAddress } from '../lib/vault/watchSavings'
 import { useLedgerPayments } from '../vault/useLedgerPayments'
 import { ledgerPaymentView, LedgerPaymentContext } from '../vault/ledgerPaymentContext'
-import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import { useNativePaymentNotifications } from '../vault/useNativePaymentNotifications'
 
 import { NOTIFY_WORKER_SCOPE } from '../lib/vault/nativeNotifications'
 import { parsePushNavScreen } from '../lib/vault/notificationEnvelope'
 import { isPushSubscribed, refreshBackgroundPush } from '../lib/vault/pushSubscription'
-import type { BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
-import { sendSpendingToBitcoin } from '../lib/vault/spendingBitcoinFunding'
-import { useSpendingBitcoin } from '../vault/useSpendingBitcoin'
+import { useBitcoinPayments } from '../vault/useBitcoinPayments'
+import { bitcoinPaymentView, BitcoinPaymentContext } from '../vault/bitcoinPaymentContext'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
 import { useRecoveryArchive } from '../vault/useRecoveryArchive'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -22,7 +20,7 @@ import { unlockPhoneBip340 } from '../lib/vault/savingsSpend'
 import { consoleError } from '../lib/logs'
 import { requireSdkNetworkName, vaultOperatorOrigin } from '../lib/vault/networkPins'
 import { humanizeVaultError } from '../lib/vault/humanize'
-import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress, scriptHexFromAddress } from '../lib/vault/bitcoin'
+import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress, isVaultBitcoinAddress } from '../lib/vault/bitcoin'
 import {
   discoverVaultLightningSolver,
   isVaultLightningInput,
@@ -111,34 +109,33 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     error: sessionError,
   } = sessionState
   const ledgerSavings = useLedgerPayments(session)
+  const bitcoinPayments = useBitcoinPayments(session)
   const [screen, setScreen] = useState<VaultScreen>('welcome')
   const [recoverEntry, setRecoverEntry] = useState<'kit' | 'lost'>('kit')
   const [recoverExit, setRecoverExit] = useState<VaultScreen>('keys')
   const [operationError, setOperationError] = useState('')
-  const error = operationError || sessionError || ledgerSavings.error
+  const error = operationError || sessionError || ledgerSavings.error || bitcoinPayments.error
   const setError = useCallback(
     (message: string) => {
       session.clearError()
       ledgerSavings.payments.clearError()
+      bitcoinPayments.payments.clearError()
       setOperationError(message)
     },
-    [session, ledgerSavings.payments],
+    [session, ledgerSavings.payments, bitcoinPayments.payments],
   )
-  const [paymentError, setPaymentError] = useState<BitcoinPaymentError | undefined>()
   const [paymentBusy, setPaymentBusy] = useState(false)
-  const busy = paymentBusy || ledgerSavings.pending !== null || (pending !== null && pending !== 'boot')
+  const busy =
+    paymentBusy ||
+    (bitcoinPayments.pending !== null && !['approval', 'acknowledge'].includes(bitcoinPayments.pending)) ||
+    ledgerSavings.pending !== null ||
+    (pending !== null && pending !== 'boot')
   const [spend, setSpend] = useState<VaultSpend>({ address: '', amount: 0, fee: 0 })
   const spendRef = useRef(spend)
   spendRef.current = spend
   const [reviewedVtxoQuote, setReviewedVtxoQuote] = useState<VaultVtxoSpendQuote | null>(null)
   const [lightningQuote, setLightningQuote] = useState<VaultLightningQuote | null>(null)
   const [canReplaceInFlightSend, setCanReplaceInFlightSend] = useState(false)
-  const bitcoinApproval = useRef<{
-    resolve: (approved: boolean) => void
-    address: string
-    amount: number
-    fee: number
-  } | null>(null)
   const replaceExistingVtxoRef = useRef(false)
   const [lastSend, setLastSend] = useState<VaultSpend | null>(null)
   const [lastTxid, setLastTxid] = useState('')
@@ -148,17 +145,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<VaultAccount>('spend')
   const [scanOnSend, setScanOnSend] = useState(false)
   useEffect(() => {
-    if (bitcoinApproval.current && screen !== 'review') {
-      bitcoinApproval.current.resolve(false)
-      bitcoinApproval.current = null
-    }
-  }, [screen])
-  useEffect(
-    () => () => {
-      bitcoinApproval.current?.resolve(false)
-    },
-    [],
-  )
+    if (screen !== 'review') bitcoinPayments.payments.cancelReview()
+  }, [screen, bitcoinPayments.payments])
 
   const [fiatDisplayRate, setFiatDisplayRate] = useState<VaultFiatDisplayRate | null>(null)
   const [fiatDisplayEnabled, setFiatDisplayEnabled] = useState(false)
@@ -251,13 +239,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const liveNetwork = activeNetwork === 'mutinynet'
   const selectAccount = useCallback(
     (next: VaultAccount) => {
+      bitcoinPayments.payments.cancelReview()
       setAccount(next)
       setScreen('home')
       setReviewedVtxoQuote(null)
       setLightningQuote(null)
       setSpend((previous) => ({ ...previous, fee: vaultDraftFee(next, liveNetwork) }))
     },
-    [liveNetwork],
+    [liveNetwork, bitcoinPayments.payments],
   )
   const reportError = setError
   const {
@@ -285,13 +274,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const networkLabel = activeNetwork === 'mainnet' ? 'Bitcoin' : liveNetwork ? 'Mutinynet' : 'Unavailable'
   const clearError = useCallback(() => reportError(''), [reportError])
 
-  const { snapshot: spendingBitcoin, acknowledgeRecovery: acknowledgeBitcoinRecovery } = useSpendingBitcoin(
-    status,
-    locked,
-  )
+  const acknowledgeBitcoinRecovery = bitcoinPayments.payments.acknowledgeRecovery
   const historyWithBitcoin = useMemo(
-    () => withBitcoinPaymentHistory(history, spendingBitcoin.operation),
-    [history, spendingBitcoin.operation],
+    () => withBitcoinPaymentHistory(history, bitcoinPayments.operation),
+    [history, bitcoinPayments.operation],
   )
   const visibleHistory = useMemo<VaultHistoryItem[]>(() => {
     const pending = ledgerSavings.view
@@ -417,16 +403,18 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const clearSpendDraft = useCallback(
     (acct: VaultAccount = account) => {
+      bitcoinPayments.payments.cancelReview()
       setReviewedVtxoQuote(null)
       setLightningQuote(null)
       setSpend({ address: '', amount: 0, fee: vaultDraftFee(acct, liveNetwork) })
     },
-    [account, liveNetwork],
+    [account, liveNetwork, bitcoinPayments.payments],
   )
 
   const setSpendDraft = useCallback(
     (draft: Partial<VaultSpend>) => {
       ledgerSavings.payments.cancelReview()
+      bitcoinPayments.payments.cancelReview()
       setReviewedVtxoQuote(null)
       setLightningQuote(null)
       setCanReplaceInFlightSend(false)
@@ -437,7 +425,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       })
       setError('')
     },
-    [account, liveNetwork, ledgerSavings.payments, setError],
+    [account, liveNetwork, ledgerSavings.payments, bitcoinPayments.payments, setError],
   )
 
   const reviewedPendingPayment =
@@ -600,67 +588,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
   }, [account, enrollment, setup.txCapSats, spend.address, spendingAvailableSats, status])
 
-  const [bitcoinOutputs, setBitcoinOutputs] = useState<BitcoinPaymentOutput[] | undefined>()
-  const reviewBitcoinPayment = useCallback(
-    async (outputs: BitcoinPaymentOutput[], draft: VaultSpend) => {
-      if (!status?.enrolled || !enrollment) {
-        setError('Sign in with the passkey that created this vault.')
-        return
-      }
-      setPaymentError(undefined)
-      setError('')
-      setBitcoinOutputs(outputs)
-      setPaymentBusy(true)
-      setLightningQuote(null)
-      let approvedFee = 0
-      let approvalAccepted = false
-      try {
-        const result = await sendSpendingToBitcoin(
-          enrollment,
-          status,
-          outputs,
-          (plan) =>
-            new Promise<boolean>((resolve) => {
-              if (spendRef.current.address !== draft.address || spendRef.current.amount !== draft.amount) {
-                resolve(false)
-                return
-              }
-              approvedFee = plan.feeSats
-              bitcoinApproval.current = { resolve, address: draft.address, amount: draft.amount, fee: plan.feeSats }
-              setSpend({ ...draft, fee: plan.feeSats })
-              setScreen('review')
-              setPaymentBusy(false)
-            }).then((accepted) => {
-              approvalAccepted = accepted
-              return accepted
-            }),
-          () => {},
-        )
-        if (['submitted', 'confirmed'].includes(result.state) && result.commitmentTxid) {
-          setLastTxid(result.commitmentTxid)
-          setLastTxKind('onchain')
-          setLastSend({ ...draft, fee: approvedFee })
-          setSpend({ address: '', amount: 0, fee: 0 })
-          setScreen('success')
-        } else if (approvalAccepted) {
-          setScreen('home')
-        }
-        try {
-          await refreshBalance(status.vaultId)
-        } catch {
-          /* Payment outcome is independent of balance refresh. */
-        }
-      } catch (err) {
-        setPaymentError(err instanceof BitcoinPaymentError ? err : undefined)
-        setError(humanizeVaultError(err))
-        if (approvalAccepted) setScreen('home')
-      } finally {
-        bitcoinApproval.current = null
-        setPaymentBusy(false)
-      }
-    },
-    [enrollment, status, refreshBalance],
-  )
   const reviewSpend = useCallback(async () => {
     setError('')
     setReviewedVtxoQuote(null)
@@ -691,10 +618,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setError(`At least ₿${bitcoinDustSats(spend.address, destNetwork)}.`)
         return
       }
-      await reviewBitcoinPayment(
-        [{ script: scriptHexFromAddress(spend.address, destNetwork), amountSats: spend.amount }],
-        spend,
-      )
+      setLightningQuote(null)
+      try {
+        const reviewed = await bitcoinPayments.payments.review(spend)
+        if (!reviewed || bitcoinPayments.payments.getSnapshot().review !== reviewed) return
+        setSpend(reviewed.payment)
+        setScreen('review')
+      } catch {
+        // The owner keeps errors bound to the current payment session.
+      }
       return
     }
     const minimumAmount = account === 'savings' ? bitcoinDustSats(spend.address, destNetwork) : DUST_SATS
@@ -770,7 +702,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     account,
     enrollment,
     reviewLightningSpend,
-    reviewBitcoinPayment,
+    bitcoinPayments.payments,
     ledgerSavings.payments,
     setup.txCapSats,
     spend,
@@ -820,6 +752,20 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     void refreshBalance().catch(() => undefined)
   }, [ledgerCompletion, ledgerSavings.payments, liveNetwork, refreshBalance])
 
+  const bitcoinCompletion = bitcoinPayments.completion
+  useEffect(() => {
+    if (!bitcoinCompletion || bitcoinPayments.payments.getSnapshot().completion !== bitcoinCompletion) return
+    if (!bitcoinPayments.payments.consumeCompletion(bitcoinCompletion.id)) return
+    if (bitcoinCompletion.txid) {
+      setLastTxid(bitcoinCompletion.txid)
+      setLastTxKind('onchain')
+      setLastSend(bitcoinCompletion.payment)
+      setSpend({ address: '', amount: 0, fee: 0 })
+      setScreen('success')
+    } else setScreen('home')
+    void refreshBalance().catch(() => undefined)
+  }, [bitcoinCompletion, bitcoinPayments.payments, refreshBalance])
+
   const approveSend = useCallback(async () => {
     if (account === 'savings') {
       setError('')
@@ -831,17 +777,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       }
       return
     }
-    if (bitcoinApproval.current) {
-      const approval = bitcoinApproval.current
-      bitcoinApproval.current = null
-      const matches =
-        account === 'spend' &&
-        spend.address === approval.address &&
-        spend.amount === approval.amount &&
-        spend.fee === approval.fee
-      setPaymentBusy(matches)
-      if (!matches) setError('Payment details changed. Review the payment again.')
-      approval.resolve(matches)
+    if (isVaultBitcoinAddress(spend.address, status?.network)) {
+      bitcoinPayments.payments.approve(spend)
       return
     }
     setPaymentBusy(true)
@@ -1030,6 +967,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [
     account,
     ledgerSavings.payments,
+    bitcoinPayments.payments,
     enrollment,
     finishBroadcast,
     lightningQuote,
@@ -1095,7 +1033,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       watchedSavingsTotalSats: status?.protectionTier === 'light' ? positions.savings.totalSats : undefined,
       account,
       spendingRenewals,
-      spendingBitcoin,
       downloadRecoveryKit,
       backupRecoveryKit,
       backupRecoveryArchive,
@@ -1116,7 +1053,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       dailyRemaining,
       dailySpent: status?.enrolled ? (status.periodSpent ?? 0) : Math.max(0, dailyLimit - dailyRemaining),
       error,
-      paymentError: paymentError?.message === error ? paymentError : undefined,
       dismissError: clearError,
       fiatDisplayRate,
       fiatDisplayEnabled,
@@ -1185,7 +1121,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       refreshBalance,
       retryLightningRefund,
       reviewSpend,
-      bitcoinOutputs,
       resumingPayment,
       pendingPayments,
       openPendingPayment,
@@ -1213,7 +1148,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       updateWatchedSavings,
       account,
       spendingRenewals,
-      spendingBitcoin,
       downloadRecoveryKit,
       backupRecoveryKit,
       backupRecoveryArchive,
@@ -1234,7 +1168,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       dailyRemaining,
       enrollment,
       error,
-      paymentError,
       clearError,
       fiatDisplayRate,
       fiatDisplayEnabled,
@@ -1262,7 +1195,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       refreshBalance,
       retryLightningRefund,
       reviewSpend,
-      bitcoinOutputs,
       resumingPayment,
       pendingPayments,
       openPendingPayment,
@@ -1286,7 +1218,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   return (
     <VaultSessionContext.Provider value={sessionValue}>
       <LedgerPaymentContext.Provider value={ledgerPaymentView(ledgerSavings, ledgerSavings.payments)}>
-        <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+        <BitcoinPaymentContext.Provider value={bitcoinPaymentView(bitcoinPayments, bitcoinPayments.payments)}>
+          <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+        </BitcoinPaymentContext.Provider>
       </LedgerPaymentContext.Provider>
     </VaultSessionContext.Provider>
   )

@@ -1,3 +1,4 @@
+import { BitcoinPaymentContext, type BitcoinPaymentContextProps } from '../../vault/bitcoinPaymentContext'
 import { useContext, type ReactNode } from 'react'
 import { VaultContext, type VaultContextProps } from '../../vault/context'
 import { VaultSessionContext, type VaultSessionContextProps } from '../../vault/sessionContext'
@@ -49,18 +50,37 @@ export function VaultTestProvider({
   value,
   children,
   ledgerPayment,
+  bitcoinPayment,
 }: {
   value?: Partial<VaultTestContextProps>
   children: ReactNode
   ledgerPayment?: Partial<LedgerPaymentContextProps>
+  bitcoinPayment?: Partial<BitcoinPaymentContextProps>
 }) {
   const defaults = useContext(VaultContext)
   const inherited = useContext(VaultSessionContext)
+  const inheritedBitcoin = useContext(BitcoinPaymentContext)
   const inheritedLedger = useContext(LedgerPaymentContext)
   return (
     <VaultSessionContext.Provider value={{ ...emptySession, ...inherited, ...value }}>
       <LedgerPaymentContext.Provider value={{ ...emptyLedgerPayment, ...inheritedLedger, ...ledgerPayment }}>
-        <VaultContext.Provider value={{ ...defaults, ...value }}>{children}</VaultContext.Provider>
+        <BitcoinPaymentContext.Provider
+          value={{
+            operation: null,
+            journalError: '',
+            outputs: undefined,
+            pending: null,
+            error: '',
+            paymentError: undefined,
+            notice: null,
+            check: async () => null,
+            cancel: async () => null,
+            ...inheritedBitcoin,
+            ...bitcoinPayment,
+          }}
+        >
+          <VaultContext.Provider value={{ ...defaults, ...value }}>{children}</VaultContext.Provider>
+        </BitcoinPaymentContext.Provider>
       </LedgerPaymentContext.Provider>
     </VaultSessionContext.Provider>
   )

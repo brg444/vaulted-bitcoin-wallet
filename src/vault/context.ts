@@ -1,6 +1,4 @@
 import type { WatchedSavingsAddress } from '../lib/vault/watchSavings'
-import type { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
-import type { BitcoinPaymentJournal, BitcoinPaymentOutput } from '../lib/vault/spendingBitcoinStore'
 import type { SpendingRenewalJournal } from '../lib/vault/vtxo/renewalStore'
 import type { OlderActivityState } from '../lib/vault/accountBalances'
 import { createContext } from 'react'
@@ -56,7 +54,6 @@ export interface VaultContextProps {
   watchedSavingsTotalSats?: number | null
   account: VaultAccount
   spendingRenewals?: SpendingRenewalJournal | null
-  spendingBitcoin?: { operation: BitcoinPaymentJournal | null; error: string }
   positions: VaultAccountPositions
   downloadRecoveryKit: () => string
   backupRecoveryArchive: () => Promise<void>
@@ -78,7 +75,6 @@ export interface VaultContextProps {
   dailyRemaining: number
   dailySpent: number
   error: string
-  paymentError?: BitcoinPaymentError
   dismissError?: () => void
   fiatDisplayRate: VaultFiatDisplayRate | null
   fiatDisplayEnabled: boolean
@@ -106,7 +102,6 @@ export interface VaultContextProps {
   refreshBalance: () => Promise<void>
   retryLightningRefund: (rfqId: string) => Promise<void>
   reviewSpend: () => Promise<void>
-  bitcoinOutputs?: BitcoinPaymentOutput[]
   resumingPayment: boolean
   pendingPayments: { operationId: string; amountSats: number; authorized: boolean }[]
   openPendingPayment: (operationId: string) => Promise<void>

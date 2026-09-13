@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
 import { Address, OutScript } from '@scure/btc-signer'
 import { hex } from '@scure/base'
 import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { vaultAddressNetwork } from '../../lib/vault/bitcoin'
 import { bitcoinPlanOutputs, type BitcoinPaymentJournal } from '../../lib/vault/spendingBitcoinStore'
-import { checkSpendingBitcoin, cancelSpendingBitcoin } from '../../lib/vault/spendingBitcoinFunding'
 import type { VaultStatus } from '../../lib/vault/types'
 import { QgSecondary } from './qg/QgScreen'
 import { useBalanceDenomination } from './AccountBalance'
@@ -19,8 +18,10 @@ export default function BitcoinPaymentStatus({
   operation: BitcoinPaymentJournal | null
   error?: string
 }) {
-  const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
+  const payment = useBitcoinPayment()
+  const busy = payment.pending !== null
+  const message =
+    payment.error || (payment.notice?.operationId === operation?.operationId ? payment.notice?.message : '')
   const denom = useBalanceDenomination()
   const money = { unit: denom.unit, rate: denom.rate }
   if (!operation) return error ? <p role='alert'>{error}</p> : null
@@ -58,15 +59,7 @@ export default function BitcoinPaymentStatus({
         label={busy ? 'Checking…' : 'Check payment status'}
         disabled={busy}
         onClick={() => {
-          setBusy(true)
-          setMessage('')
-          void checkSpendingBitcoin(status)
-            .then((result) => {
-              if (result && ['released', 'cancelled', 'rejected'].includes(result.state))
-                setMessage('This payment was not completed. Its reservation has been released.')
-            })
-            .catch((error) => setMessage((error as Error).message))
-            .finally(() => setBusy(false))
+          void payment.check(operation.operationId).catch(() => undefined)
         }}
       />
       {!operation.final && !operation.receipt?.commitmentTxid ? (
@@ -74,18 +67,7 @@ export default function BitcoinPaymentStatus({
           label='Cancel payment'
           disabled={busy}
           onClick={() => {
-            setBusy(true)
-            setMessage('')
-            void cancelSpendingBitcoin(status)
-              .then((result) =>
-                setMessage(
-                  result && ['released', 'cancelled', 'rejected'].includes(result.state)
-                    ? 'Payment cancelled. Its reservation has been released.'
-                    : 'Cancellation is still being checked. Funds remain reserved until it is confirmed.',
-                ),
-              )
-              .catch((error) => setMessage((error as Error).message))
-              .finally(() => setBusy(false))
+            void payment.cancel(operation.operationId).catch(() => undefined)
           }}
         />
       ) : null}

@@ -56,10 +56,10 @@ export default function BitcoinPaymentUi() {
           )
     return (
       <VaultTestProvider
+        bitcoinPayment={{ paymentError }}
         value={{
           ...context,
           error: mode === 5 || mode === 7 ? paymentError.message : '',
-          paymentError,
           dismissError: () => setMode(mode + 1),
         }}
       >
@@ -98,10 +98,10 @@ export default function BitcoinPaymentUi() {
   if (mode === 4)
     return (
       <VaultTestProvider
+        bitcoinPayment={{ operation }}
         value={{
           ...context,
           selectedTx: history[0],
-          spendingBitcoin: { operation, error: '' },
           navigate: () => setMode(3),
         }}
       >
@@ -110,15 +110,14 @@ export default function BitcoinPaymentUi() {
     )
   return (
     <VaultTestProvider
+      bitcoinPayment={{ outputs, paymentError: reviewError }}
       value={{
         ...context,
         account: 'spend',
         error: reviewError?.message || '',
-        paymentError: reviewError,
         dismissError: () => setMode(1),
         busy: false,
         spend: { address, amount, fee: 400 },
-        bitcoinOutputs: outputs,
         approveSend: async () => {},
         navigate: () => {},
       }}

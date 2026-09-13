@@ -716,3 +716,142 @@ describe('payment-owned recovery acknowledgment', () => {
     expect(f.snapshot).toHaveBeenCalledTimes(1)
   })
 })
+
+it.each([checkSpendingBitcoin, cancelSpendingBitcoin])(
+  'binds a manual Bitcoin command to the journal under the send lock',
+  async (command) => {
+    const f = await bitcoinFixture()
+    saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'prepared' })
+    const status = vi.spyOn(bitcoinPaymentClient, 'status')
+    const release = vi.spyOn(bitcoinPaymentClient, 'release')
+    await expect(command(f.status, { operationId: 'another-operation' })).rejects.toThrow(
+      'saved Bitcoin payment changed',
+    )
+    const abort = new AbortController()
+    abort.abort()
+    await expect(command(f.status, { operationId: f.plan.operationId, signal: abort.signal })).rejects.toThrow()
+    expect(status).not.toHaveBeenCalled()
+    expect(release).not.toHaveBeenCalled()
+    expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
+  },
+)
+
+it('does not dispatch expiry release when the observing account locks during status lookup', async () => {
+  const f = await bitcoinFixture()
+  saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'prepared' })
+  vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
+  const abort = new AbortController()
+  vi.spyOn(bitcoinPaymentClient, 'status').mockImplementation(async () => {
+    abort.abort()
+    return { state: 'prepared' }
+  })
+  const release = vi.spyOn(bitcoinPaymentClient, 'release')
+  await expect(
+    checkSpendingBitcoin(f.status, { operationId: f.plan.operationId, signal: abort.signal }),
+  ).rejects.toThrow()
+  expect(release).not.toHaveBeenCalled()
+  expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
+})
+
+it('preserves confirmed evidence when the account locks during SDK history observation', async () => {
+  const f = await confirmedBitcoinFixture()
+  await recoveryFileStore(f.key, f.file)
+  const abort = new AbortController()
+  f.snapshot.mockImplementationOnce(async () => {
+    abort.abort()
+    return { history: f.history } as never
+  })
+  await expect(acknowledgeSpendingBitcoinRecovery(f.status, undefined, abort.signal)).rejects.toThrow()
+  expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.journal.operationId)
+  await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(true)
+})
+
+it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session'])(
+  'fences canceled Bitcoin %s before registration while retaining the exact operation',
+  async (phase) => {
+    const f = await bitcoinFixture()
+    vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt - 240) * 1000)
+    const abort = new AbortController()
+    const dispose = vi.fn()
+    const unlock = vi.fn(async () => {
+      if (phase === 'passkey') abort.abort()
+      return { phoneSecret: f.phoneSecret, scalar: scalarSecret(4), assertion: {} }
+    })
+    const unlocker = vi.spyOn(spendModule, 'createVtxoSpendUnlocker').mockReturnValue({ unlock, dispose } as never)
+    vi.spyOn(spendModule, 'createVtxoOperationId').mockReturnValue(f.plan.operationId)
+    vi.spyOn(apiModule, 'vaultGet').mockResolvedValue({
+      version: 1,
+      maxInputs: 1,
+      descriptorHash: f.plan.descriptorHash,
+    })
+    vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockImplementation(async () => {
+      if (phase === 'discovery') abort.abort()
+      return {
+        vtxos: [
+          {
+            ...f.coin,
+            txid: f.plan.txid,
+            value: f.plan.valueSats,
+            script: hex.encode(f.spending.pkScript),
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 86400000),
+            isSpent: false,
+            virtualStatus: { state: 'settled' },
+            commitmentTxIds: ['cc'.repeat(32)],
+          },
+        ],
+      } as never
+    })
+    const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare').mockImplementation(async () => {
+      if (phase === 'prepared') abort.abort()
+      return f.prepared
+    })
+    const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state: 'uncertain' })
+    vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'uncertain' })
+    let scopedProvider: RestArkProvider | undefined
+    const sdkDispose = vi.fn(async () => undefined)
+    if (phase === 'sdk-session') {
+      vi.spyOn(Wallet, 'create').mockImplementation(async (options) => {
+        scopedProvider = options.arkProvider as RestArkProvider
+        abort.abort()
+        return { dispose: sdkDispose } as never
+      })
+    }
+    const register = vi.spyOn(bitcoinPaymentClient, 'register')
+    const approve = vi.fn(async () => {
+      if (phase === 'approved') abort.abort()
+      return true
+    })
+    await sendSpendingToBitcoin(
+      { vaultId: f.status.vaultId } as never,
+      f.status,
+      f.plan.outputs!,
+      approve,
+      () => {},
+      abort.signal,
+    ).catch(() => undefined)
+    expect(unlocker.mock.calls[0][4]).toBe(abort.signal)
+    expect(register).not.toHaveBeenCalled()
+    expect(dispose).toHaveBeenCalledOnce()
+    if (phase === 'sdk-session') {
+      expect(sdkDispose).toHaveBeenCalledOnce()
+      const nonceDispatch = vi.spyOn(RestArkProvider.prototype, 'submitTreeNonces')
+      const signatureDispatch = vi.spyOn(RestArkProvider.prototype, 'submitTreeSignatures')
+      await expect(scopedProvider!.submitTreeNonces('batch', 'pub', {} as never)).rejects.toThrow()
+      await expect(scopedProvider!.submitTreeSignatures('batch', 'pub', {} as never)).rejects.toThrow()
+      await expect(scopedProvider!.submitSignedForfeitTxs([])).rejects.toThrow()
+      await expect(scopedProvider!.registerIntent({} as never)).rejects.toThrow()
+      expect(nonceDispatch).not.toHaveBeenCalled()
+      expect(signatureDispatch).not.toHaveBeenCalled()
+    }
+
+    if (phase === 'discovery' || phase === 'passkey') {
+      expect(prepare).not.toHaveBeenCalled()
+      expect(readSpendingBitcoin(f.status)).toBeNull()
+    } else {
+      expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
+      expect(release).toHaveBeenCalledTimes(phase === 'prepared' ? 1 : 0)
+    }
+    if (phase === 'prepared') expect(approve).not.toHaveBeenCalled()
+  },
+)

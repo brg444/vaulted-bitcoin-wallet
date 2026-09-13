@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   closeLedger: vi.fn(async () => undefined),
   authorizeRenewals: vi.fn(async () => null),
   bitcoinSend: vi.fn(),
+  bitcoinRead: vi.fn(),
   availableSats: 20000,
   refreshBalance: vi.fn(),
   loadLightningFunding: vi.fn(),
@@ -73,6 +74,19 @@ vi.mock('../lib/vault/ledgerClient', async (original) => ({
   readLedgerSavingsAccount: mocks.readLedgerAccount,
 }))
 
+vi.mock('../lib/vault/spendingBitcoinStore', async (original) => ({
+  ...(await original<typeof import('../lib/vault/spendingBitcoinStore')>()),
+  readSpendingBitcoin: mocks.bitcoinRead,
+}))
+async function approveBitcoin(approve: (plan: unknown) => Promise<boolean>) {
+  const plan = {
+    operationId: 'bitcoin-operation',
+    feeSats: 400,
+    outputs: [{ script: '0014' + '43'.repeat(20), amountSats: 1500 }],
+  }
+  mocks.bitcoinRead.mockReturnValue({ operationId: plan.operationId, stage: 'prepared', plan: { plan } })
+  return approve(plan)
+}
 vi.mock('../lib/vault/spendingBitcoinFunding', async (original) => ({
   ...(await original<typeof import('../lib/vault/spendingBitcoinFunding')>()),
   sendSpendingToBitcoin: mocks.bitcoinSend,
@@ -307,6 +321,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       },
     })
     mocks.bitcoinSend.mockReset()
+    mocks.bitcoinRead.mockReturnValue(null)
     mocks.refreshBalance.mockReset().mockResolvedValue(undefined)
     mocks.availableSats = 20000
     mocks.loadLightningFunding.mockResolvedValue(undefined)
@@ -475,7 +490,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
       expect(enrollment).toEqual(record.enrollment)
       expect(status.vaultId).toBe(record.descriptor.vaultId)
       expect(status.protectionTier).toBe('light')
-      return (await approve({ feeSats: 400 }))
+      return (await approveBitcoin(approve))
         ? { state: 'submitted', commitmentTxid: 'ab'.repeat(32) }
         : { state: 'cancelled' }
     })
@@ -577,7 +592,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await renderLight()
     let approved: boolean | undefined
     mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, _outputs, approve) => {
-      approved = await approve({ feeSats: 400 })
+      approved = await approveBitcoin(approve)
       return { state: 'cancelled' }
     })
     fireEvent.click(screen.getByText('Set Bitcoin draft'))
@@ -592,15 +607,10 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   it('reviews and completes a Bitcoin payment through the canonical send route with one confirmation', async () => {
     mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, outputs, approve) => {
       expect(outputs).toEqual([{ script: '0014' + '43'.repeat(20), amountSats: 1500 }])
-      const approved = await approve({ feeSats: 400 })
+      const approved = await approveBitcoin(approve)
       return approved ? { state: 'submitted', commitmentTxid: 'ab'.repeat(32) } : { state: 'cancelled' }
     })
-    render(
-      <VaultProvider>
-        <Probe />
-      </VaultProvider>,
-    )
-    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    await renderLight()
     fireEvent.click(screen.getByText('Set Bitcoin draft'))
     fireEvent.click(screen.getByText('Review'))
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
@@ -614,16 +624,11 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     'leaves Review after approval when Bitcoin payment has %s',
     async (outcome) => {
       mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, _outputs, approve) => {
-        expect(await approve({ feeSats: 400 })).toBe(true)
+        expect(await approveBitcoin(approve)).toBe(true)
         if (outcome === 'lost response') throw new Error('Payment response unavailable')
         return { state: 'uncertain' }
       })
-      render(
-        <VaultProvider>
-          <Probe />
-        </VaultProvider>,
-      )
-      await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+      await renderLight()
       fireEvent.click(screen.getByText('Set Bitcoin draft'))
       fireEvent.click(screen.getByText('Review'))
       await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
@@ -638,15 +643,10 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   it('cancels Bitcoin approval when leaving Review without submitting another payment', async () => {
     let approved: boolean | undefined
     mocks.bitcoinSend.mockImplementation(async (_enrollment, _status, _outputs, approve) => {
-      approved = await approve({ feeSats: 400 })
+      approved = await approveBitcoin(approve)
       return { state: 'cancelled' }
     })
-    render(
-      <VaultProvider>
-        <Probe />
-      </VaultProvider>,
-    )
-    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    await renderLight()
     fireEvent.click(screen.getByText('Set Bitcoin draft'))
     fireEvent.click(screen.getByText('Review'))
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))

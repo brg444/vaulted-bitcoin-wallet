@@ -76,7 +76,7 @@ it.each([
 
 it.each([
   'useSpendingRenewals',
-  'useSpendingBitcoin',
+  'useBitcoinPayments',
   'useLedgerPayments',
   'useRecoveryArchive',
   'useRecoveryKit',
@@ -228,4 +228,19 @@ it('balance observations and primary Receive use account maintenance without loc
   const receive = readFileSync(resolve(root, 'src/screens/Vault/Receive.tsx'), 'utf8')
   expect(receive).toContain('requestCadence')
   expect(receive).not.toContain('refreshBalance')
+})
+
+it('Bitcoin review, reconciliation and recovery acknowledgment have one controller outside React', () => {
+  const provider = readFileSync(resolve(root, 'src/providers/vault.tsx'), 'utf8')
+  const screen = readFileSync(resolve(root, 'src/screens/Vault/BitcoinPaymentStatus.tsx'), 'utf8')
+  const binding = readFileSync(resolve(root, 'src/vault/useBitcoinPayments.ts'), 'utf8')
+  const owner = readFileSync(resolve(root, 'src/lib/vault/bitcoinPayments.ts'), 'utf8')
+  expect(provider).not.toMatch(/sendSpendingToBitcoin|bitcoinApproval|scriptHexFromAddress/)
+  expect(screen).not.toMatch(/spendingBitcoinFunding|checkSpendingBitcoin|cancelSpendingBitcoin/)
+  expect(binding).toContain('useSyncExternalStore')
+  expect(binding).not.toMatch(/readSpendingBitcoin|acknowledgeSpendingBitcoinRecovery|addEventListener/)
+  expect(owner).toContain("'bitcoin-payment'")
+  expect(owner).not.toMatch(/from ['"]react|setInterval|setTimeout|screens\//)
+  const context = readFileSync(resolve(root, 'src/vault/context.ts'), 'utf8')
+  expect(context).not.toMatch(/spendingBitcoin|bitcoinOutputs|paymentError/)
 })

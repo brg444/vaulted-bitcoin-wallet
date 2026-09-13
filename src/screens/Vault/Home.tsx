@@ -1,3 +1,4 @@
+import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
 import { useSession } from '../../vault/sessionContext'
 import WatchedSavings from './WatchedSavings'
 import PaymentNotice from './qg/PaymentNotice'
@@ -11,9 +12,9 @@ import PendingPayment from './qg/PendingPayment'
 
 export default function VaultHome({ children }: { children?: ReactNode }) {
   const { status } = useSession()
+  const spendingBitcoin = useBitcoinPayment()
   const {
     account,
-    spendingBitcoin,
     boardingAddress,
     canSend,
     busy,
@@ -60,7 +61,7 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
       primaryAction={{
         label: spending ? 'Send' : 'Transfer',
         disabled: spending
-          ? !canSend || !!spendingBitcoin?.operation || !!spendingBitcoin?.error
+          ? !canSend || !!spendingBitcoin?.operation || !!spendingBitcoin.journalError
           : positions.savings.availableSats <= 330,
         onClick: () => {
           clearSpendDraft()
@@ -92,7 +93,7 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
       {children}
       {!read.loaded && read.error ? <PaymentNotice message={read.error} /> : null}
       {spending && boardingError ? <PaymentNotice message={boardingError} /> : null}
-      {spending && spendingBitcoin?.error ? <PaymentNotice message={spendingBitcoin.error} /> : null}
+      {spending && spendingBitcoin.journalError ? <PaymentNotice message={spendingBitcoin.journalError} /> : null}
       {spending
         ? pendingPayments.map((payment) => (
             <PendingPayment
