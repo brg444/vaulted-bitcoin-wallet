@@ -40,6 +40,26 @@ describe('current enrollment boundary', () => {
     },
   )
 
+  it.each([
+    { hardwarePub: 'unexpected-hardware-key' },
+    { recoveryPub: 'unexpected-recovery-key' },
+    { ledger: { hardware: {} } },
+  ])('rejects protected-key metadata on an absent-Savings command: %o', async (extra) => {
+    const publicStatus = vi.spyOn(vaultCosignerClient.enrollment, 'publicStatus')
+    const start = vi.spyOn(vaultCosignerClient.enrollment, 'start')
+    await expect(
+      beginTenantEnrollment('token', {
+        savings: 'absent',
+        protectionTier: 'light',
+        spendingPolicy: defaultSpendingPolicy(),
+        ...extra,
+      } as unknown as EnrollmentRoles),
+    ).rejects.toThrow(/Light setup must not contain protected Savings keys/)
+    expect(publicStatus).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+    expect(loadStagedEnrollment()).toBeNull()
+  })
+
   it('rejects historical staged setup before finish or reconciliation can activate it', async () => {
     const spendingPolicy = defaultSpendingPolicy()
     saveStagedEnrollment({

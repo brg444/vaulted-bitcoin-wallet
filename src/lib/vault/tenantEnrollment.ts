@@ -132,6 +132,13 @@ export async function beginTenantEnrollment(
   const spendingOnly = roles.savings === 'absent'
   const ledger = roles.savings === 'ledger' ? roles.ledger : undefined
   if (!spendingOnly && !ledger) throw new Error('Connect a Ledger before creating protected Savings')
+  // Light setup carries no protected Savings keys. Reject malformed supplied
+  // metadata before any credential or network side effect.
+  if (spendingOnly) {
+    const supplied = roles as unknown as Record<string, unknown>
+    if (supplied.hardwarePub || supplied.recoveryPub || supplied.ledger)
+      throw new Error('Light setup must not contain protected Savings keys')
+  }
   const recoveryPub = roles.savings === 'ledger' ? roles.recoveryPub || '' : ''
   const hardwarePub = roles.savings === 'ledger' ? roles.hardwarePub : ''
   if (typeof location !== 'undefined' && location.hostname === '127.0.0.1') {
