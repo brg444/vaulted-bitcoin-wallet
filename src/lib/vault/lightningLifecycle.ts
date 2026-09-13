@@ -1,4 +1,4 @@
-import { ArkAddress, type IWallet, type NetworkName, type RestIndexerProvider } from '@arkade-os/sdk'
+import { ArkAddress, P2A, RestIndexerProvider, Transaction, matchServerCheckpoints, type IWallet, type NetworkName } from '@arkade-os/sdk'
 import {
   RefundNotLocallyPossibleError,
   RfqSwapManager,
@@ -8,6 +8,8 @@ import {
   rebuildRfqSwap,
   rfqSwapActivityInputs,
   rfqSecretsProfile,
+  shouldRetainRfqSwap,
+  type ArkadeRefundResult,
   type AssetSwapRepository,
   type InvoiceFacts,
   type LightningSendSwap,
@@ -15,12 +17,27 @@ import {
   type RfqQuote,
   type RfqRestoreResult,
   type RfqRestoreFailure,
+  type RfqSwap,
   type RfqSwapManagerConfig,
   type RfqSwapRecord,
+  type RefundArkProvider,
   type SwapContractRegistry,
 } from '@arkade-os/swap'
-import { hex } from '@scure/base'
+import { base64, hex } from '@scure/base'
 import { consoleError } from '../logs'
+import {
+  readLightningRecoveryAcknowledgment,
+  readLightningRefundAttempt,
+  recordRefundAttemptProgress,
+  refundInputsFromSignedPsbt,
+  refundPaymentTotal,
+  readRetiredLightningFunding,
+  type VaultLightningRefundAttempt,
+  type VaultLightningRefundFacts,
+  type VaultLightningRefundInput,
+  validateLightningRefundFinals,
+  validateLightningRefundGraph,
+} from './lightningEvidence'
 import { receiveProfile } from './lightningReceive'
 import { decodeVaultLightningInvoice } from './lightningInvoice'
 import type { VaultLightningActivityRecord } from './history'
@@ -125,7 +142,7 @@ export class VaultLightningFundingNotStartedError extends Error {
 
 type VaultLightningFundingState = 'quoted' | 'funding' | 'cancel_requested'
 
-interface StoredVaultLightningProfile {
+export interface StoredVaultLightningProfile {
   version: 2
   network: NetworkName
   invoice: string
@@ -134,7 +151,7 @@ interface StoredVaultLightningProfile {
   fundingProof?: VaultLightningFundingProof
 }
 
-function validFundingProof(value: unknown): value is VaultLightningFundingProof {
+export function validFundingProof(value: unknown): value is VaultLightningFundingProof {
   const proof = value as Partial<VaultLightningFundingProof> | undefined
   return Boolean(
     proof &&
@@ -193,6 +210,7 @@ type VaultLightningObserverDeps = {
   indexer: LockupSpendIndexer
   repository: AssetSwapRepository
   managerConfig?: RfqSwapManagerConfig
+  vault?: { vaultId: string; network: string }
 }
 
 /** Construct the page-local package manager without reading or writing shared state. */
@@ -201,15 +219,22 @@ export function createVaultLightningObserver({
   indexer,
   repository,
   managerConfig,
+  vault,
 }: VaultLightningObserverDeps): RfqSwapManager {
   // Incoming claims use verified payout receipts and retain their recovery
   // records. The package's send observer must not resolve or prune them.
+  // Funded send terminals past package retention stay hidden until the
+  // payment owner acknowledges them; the owner still sees the full store.
+  const nowSeconds = managerConfig?.now ?? (() => Math.floor(Date.now() / 1000))
   const manager = new RfqSwapManager(
     {
       indexer,
       contracts,
       repository: {
-        getAllRfqSwaps: async () => (await repository.getAllRfqSwaps()).filter((r) => r.kind !== 'lightning_receive'),
+        getAllRfqSwaps: async () =>
+          (await repository.getAllRfqSwaps()).filter(
+            (r) => r.kind !== 'lightning_receive' && !isWithheldFundedLightningRecord(r, nowSeconds(), vault),
+          ),
         getRfqSwap: (id) => repository.getRfqSwap(id),
         saveRfqSwap: (record) => repository.saveRfqSwap(record),
         removeRfqSwap: (id) => repository.removeRfqSwap(id),
@@ -819,4 +844,359 @@ export function assertVaultLightningQuoteCurrent(
 ): void {
   if (nowSeconds >= quote.invoiceExpiresAt) throw new Error('This Lightning invoice has expired.')
   if (nowSeconds >= quote.validUntil) throw new Error('This Lightning quote has expired. Return to Send and try again.')
+}
+
+export type { VaultLightningRetiredFunding } from './lightningEvidence'
+export { readLightningRecoveryAcknowledgment, readRetiredLightningFunding }
+
+/** A funded record carries Vaulted money movement that package age-based
+ * pruning must never delete without owner acknowledgment. */
+export function isFundedLightningRecord(record: RfqSwapRecord): boolean {
+  if (typeof record.fundingArkTxid === 'string' && record.fundingArkTxid) return true
+  try {
+    return storedLightningProfile(record).fundingState === 'funding'
+  } catch {
+    return false
+  }
+}
+
+/** Funded terminals past package retention stay enumerated to the manager
+ * only while a matching retirement receipt exists. Unfunded quotes, active
+ * swaps and recent terminals keep their existing visibility exactly. */
+export function isWithheldFundedLightningRecord(
+  record: RfqSwapRecord,
+  nowSeconds: number,
+  vault?: { vaultId: string; network: string },
+): boolean {
+  if (record.kind !== 'lightning_send' || shouldRetainRfqSwap(record, nowSeconds)) return false
+  if (!isFundedLightningRecord(record)) return false
+  const receipt = readRetiredLightningFunding(record.rfqId)
+  if (!receipt) return true
+  return !(
+    receipt.lockupAddress === record.lockupAddress &&
+    receipt.amountSats === record.amount &&
+    receipt.fundingArkTxid === record.fundingArkTxid &&
+    receipt.state === record.state &&
+    (!vault || (receipt.vaultId === vault.vaultId && receipt.network === vault.network))
+  )
+}
+
+/** Funded terminal records awaiting owner retirement. Cheap enumeration for
+ * settle scheduling; the full predicate runs per record on acknowledgment. */
+export async function listFundedTerminalLightningRecords(
+  repository: Pick<AssetSwapRepository, 'getAllRfqSwaps'>,
+): Promise<string[]> {
+  const out: string[] = []
+  for (const record of await repository.getAllRfqSwaps()) {
+    if (record.kind !== 'lightning_send' || !isRfqSwapTerminal(record.state)) continue
+    if (!isFundedLightningRecord(record)) continue
+    out.push(record.rfqId)
+  }
+  return out
+}
+
+/** Best-effort retirement sweeps live in the operation owner; this module
+ * keeps observation, funded-record gating and refund dispatch durability. */
+
+function validRefundPsbtList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.length > 0)
+}
+
+export function recordingVaultLightningRefundArk(
+  base: Pick<RefundArkProvider, 'getInfo' | 'submitTx' | 'finalizeTx'>,
+  facts: VaultLightningRefundFacts,
+  signal?: AbortSignal,
+): Pick<RefundArkProvider, 'getInfo' | 'submitTx' | 'finalizeTx'> {
+  return new Proxy(base, {
+    get(target, property, receiver) {
+      if (property === 'submitTx') {
+        return async (signedRefundPsbt: string, checkpoints: string[]) => {
+          signal?.throwIfAborted()
+          if (typeof signedRefundPsbt !== 'string' || !signedRefundPsbt || !validRefundPsbtList(checkpoints)) {
+            throw new Error('Lightning refund submission is malformed.')
+          }
+          // Validate the complete package graph before dispatch: the unsigned
+          // checkpoints spend the original lockup outpoints, and the signed
+          // refund spends exactly those checkpoint outputs at index 0, plus
+          // the SDK-added zero-value P2A anchor. The payment output carries
+          // the full funded sum.
+          const unsignedCheckpoints = checkpoints.map((raw) => Transaction.fromPSBT(base64.decode(raw)))
+          const fundedInputs: VaultLightningRefundInput[] = []
+          for (const checkpoint of unsignedCheckpoints) {
+            for (let index = 0; index < checkpoint.inputsLength; index++) {
+              const input = checkpoint.getInput(index)
+              const txid = input.txid?.length ? hex.encode(input.txid) : ''
+              if (!/^[0-9a-f]{64}$/.test(txid) || !Number.isSafeInteger(input.index)) {
+                throw new Error('Lightning refund checkpoint input is incomplete.')
+              }
+              const amount = input.witnessUtxo?.amount
+              fundedInputs.push({
+                txid,
+                vout: input.index as number,
+                value: typeof amount === 'bigint' ? Number(amount) : null,
+              })
+            }
+          }
+          if (!fundedInputs.length) throw new Error('Lightning refund has no funded inputs.')
+          const derived = refundInputsFromSignedPsbt(signedRefundPsbt)
+          const checkpointIds = new Set(unsignedCheckpoints.map((checkpoint) => checkpoint.id))
+          if (derived.inputs.length !== unsignedCheckpoints.length) {
+            throw new Error('Lightning refund does not spend every checkpoint.')
+          }
+          for (const input of derived.inputs) {
+            if (input.vout !== 0 || !checkpointIds.has(input.txid)) {
+              throw new Error('Lightning refund input is not a checkpoint output.')
+            }
+          }
+          const paymentOutputs = Transaction.fromPSBT(base64.decode(signedRefundPsbt))
+          const anchorScriptHex = hex.encode(P2A.script)
+          let paymentTotal = 0n
+          let anchors = 0
+          for (let index = 0; index < paymentOutputs.outputsLength; index++) {
+            const output = paymentOutputs.getOutput(index)
+            if (!output || !output.script) throw new Error('Lightning refund output is incomplete.')
+            if (hex.encode(output.script) === anchorScriptHex) {
+              if (output.amount !== P2A.amount) throw new Error('Lightning refund anchor is not zero-value.')
+              anchors++
+              continue
+            }
+            paymentTotal += output.amount ?? 0n
+          }
+          if (anchors !== 1) throw new Error('Lightning refund must carry exactly one P2A anchor.')
+          const fundedTotal = fundedInputs.every((input) => typeof input.value === 'number')
+            ? fundedInputs.reduce((total, input) => total + BigInt(input.value ?? 0), 0n)
+            : null
+          if (fundedTotal !== null && paymentTotal !== fundedTotal) {
+            throw new Error('Lightning refund output does not match its funded inputs.')
+          }
+          // The complete pre-submit graph, including the sender's exact
+          // tapscript signatures over the enrolled key, validates before
+          // anything persists or dispatches.
+          const progress = {
+            ...facts,
+            fundedInputs,
+            signedRefundPsbt,
+            submittedRefundTxid: derived.txid,
+            submittedCheckpointPsbts: [...checkpoints],
+            refundOutputSats: Number(paymentTotal),
+          }
+          validateLightningRefundGraph({ ...progress, stage: 'submitted', updatedAt: Math.floor(Date.now() / 1000) })
+          recordRefundAttemptProgress(progress, 'submitted')
+          const submitted = await target.submitTx(signedRefundPsbt, checkpoints)
+          if (submitted.arkTxid !== derived.txid) {
+            throw new Error('Lightning refund submission transaction changed.')
+          }
+          const serverRefundPsbt =
+            typeof submitted.finalArkTx === 'string' && submitted.finalArkTx ? submitted.finalArkTx : undefined
+          if (serverRefundPsbt) {
+            const serverRefund = Transaction.fromPSBT(base64.decode(serverRefundPsbt))
+            if (serverRefund.id !== derived.txid) {
+              throw new Error('Lightning refund Operator response changed the transaction.')
+            }
+          }
+          recordRefundAttemptProgress(
+            {
+              ...facts,
+              fundedInputs,
+              signedRefundPsbt,
+              submittedRefundTxid: derived.txid,
+              submittedCheckpointPsbts: [...checkpoints],
+              refundOutputSats: Number(paymentTotal),
+              serverCheckpointPsbts: [...submitted.signedCheckpointTxs],
+              ...(serverRefundPsbt ? { serverRefundPsbt } : {}),
+            },
+            'submitted',
+          )
+          return submitted
+        }
+      }
+      if (property === 'finalizeTx') {
+        return async (arkTxid: string, checkpoints: string[]) => {
+          signal?.throwIfAborted()
+          if (!/^[0-9a-f]{64}$/.test(arkTxid) || !validRefundPsbtList(checkpoints)) {
+            throw new Error('Lightning refund finalization is malformed.')
+          }
+          // A final checkpoint is a signature over the recorded unsigned
+          // twin by the enrolled sender and Operator, never a replacement
+          // graph: validate before persisting or releasing.
+          const previous = readLightningRefundAttempt(facts.rfqId)
+          validateLightningRefundFinals(
+            previous?.submittedCheckpointPsbts,
+            checkpoints,
+            facts.senderPub,
+            facts.serverPub,
+          )
+          recordRefundAttemptProgress({ ...facts, finalCheckpointPsbts: [...checkpoints] }, 'finalized')
+          return await target.finalizeTx(arkTxid, checkpoints)
+        }
+      }
+      const value = Reflect.get(target, property, receiver)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+/** Durable boundary around the package refund dispatch.
+ *
+ * Persists the exact attempt before dispatch so a lost response resumes the
+ * same attempt instead of allocating a new one, and replays an observed
+ * result without re-dispatching. Dispatch never starts after cancellation.
+ * A retry first re-reads the current funded inputs and refuses to proceed
+ * when they differ from the retained set, and any observed transaction that
+ * is not the retained one is rejected rather than stored. Signed submission
+ * and checkpoint bytes are captured by the recording Operator surface; this
+ * wrapper owns identity, result caching and the attempt lifecycle around it. */
+/** The Operator surface a durable refund replay drives. `submitRefund`
+ * reports the Operator-signed successor alongside the signed checkpoints;
+ * resume persists both before signing so a lost response never resubmits. */
+export interface VaultLightningRefundRecorder {
+  submitRefund: (
+    signedPsbt: string,
+    checkpoints: string[],
+  ) => Promise<{ arkTxid: string; signedCheckpointTxs: string[]; finalArkTx?: string }>
+  signCheckpoint: (checkpointPsbt: string) => Promise<string>
+  finalizeRefund: (arkTxid: string, checkpoints: string[]) => Promise<void>
+}
+
+export function durableVaultLightningRefund(
+  facts: VaultLightningRefundFacts,
+  inner: (swap: RfqSwap) => Promise<ArkadeRefundResult>,
+  options: {
+    signal?: AbortSignal
+    record: VaultLightningRefundRecorder
+  },
+): (swap: RfqSwap) => Promise<ArkadeRefundResult> {
+  return async (swap) => {
+    options.signal?.throwIfAborted()
+    if (swap.rfqId !== facts.rfqId) throw new Error('Lightning refund attempt changed operation.')
+    if (hex.encode(swap.lockupPkScript) !== facts.lockupPkScriptHex) {
+      throw new Error('Lightning refund lockup changed.')
+    }
+    const previous = readLightningRefundAttempt(facts.rfqId)
+    if (previous) {
+      if (
+        previous.lockupAddress !== facts.lockupAddress ||
+        previous.lockupPkScriptHex !== facts.lockupPkScriptHex ||
+        previous.amountSats !== facts.amountSats ||
+        previous.destination !== facts.destination ||
+        previous.senderPub !== facts.senderPub ||
+        previous.serverPub !== facts.serverPub ||
+        (previous.vaultId !== undefined && previous.vaultId !== facts.vaultId) ||
+        (previous.network !== undefined && previous.network !== facts.network)
+      ) {
+        throw new Error('Lightning refund inputs changed.')
+      }
+      if (previous.stage === 'result' && previous.refundArkTxid) {
+        return { arkTxid: previous.refundArkTxid, amount: previous.resultAmount ?? previous.amountSats }
+      }
+      if (previous.signedRefundPsbt && previous.submittedCheckpointPsbts?.length) {
+        return resumeRecordedRefund(facts, swap, previous, options)
+      }
+    } else {
+      recordRefundAttemptProgress(facts, 'dispatched')
+    }
+    options.signal?.throwIfAborted()
+    const result = await inner(swap)
+    if (!result) return result
+    if (!/^[0-9a-f]{64}$/.test(result.arkTxid)) throw new Error('Lightning refund transaction id is invalid.')
+    if (!Number.isSafeInteger(result.amount) || result.amount < 0) {
+      throw new Error('Lightning refund result amount is invalid.')
+    }
+    if (previous?.submittedRefundTxid && result.arkTxid !== previous.submittedRefundTxid) {
+      throw new Error('Lightning refund transaction changed.')
+    }
+    recordRefundAttemptProgress({ ...facts, refundArkTxid: result.arkTxid, resultAmount: result.amount }, 'result')
+    return result
+  }
+}
+
+/** Resume recorded bytes without rebuilding: replay the latest durable
+ * phase instead of restarting. An observed Operator response is never
+ * resubmitted; recorded final checkpoints are never re-signed. Each phase
+ * persists before dispatch so a response lost after landing still resumes
+ * forward. Works with empty live inputs because nothing is re-derived; a
+ * changed transaction can never replace the retained bytes. */
+async function resumeRecordedRefund(
+  facts: VaultLightningRefundFacts,
+  swap: RfqSwap,
+  previous: VaultLightningRefundAttempt,
+  options: {
+    signal?: AbortSignal
+    record: VaultLightningRefundRecorder
+  },
+): Promise<ArkadeRefundResult> {
+  const signedRefundPsbt = previous.signedRefundPsbt!
+  const submittedCheckpointPsbts = previous.submittedCheckpointPsbts!
+  options.signal?.throwIfAborted()
+  // Replay nothing corrupt: the recorded graph, with exact enrolled
+  // signatures, validates before any resubmit, signature or finalization.
+  // A live swap carrying its enrolled contract cross-checks the recorded
+  // keys; a changed contract refuses the replay.
+  validateLightningRefundGraph(previous)
+  const enrolled = swap.lockup?.script?.options as { sender?: Uint8Array; server?: Uint8Array } | undefined
+  if (enrolled?.sender && enrolled?.server) {
+    if (hex.encode(enrolled.sender) !== previous.senderPub || hex.encode(enrolled.server) !== previous.serverPub) {
+      throw new Error('Lightning refund contract changed.')
+    }
+  }
+  const retained = refundPaymentTotal(signedRefundPsbt)
+  const submittedRefundTxid = previous.submittedRefundTxid ?? retained.txid
+  if (submittedRefundTxid !== retained.txid) {
+    throw new Error('Lightning refund transaction changed.')
+  }
+  const refundOutputSats = previous.refundOutputSats ?? retained.paymentTotal
+  let serverCheckpointPsbts = previous.serverCheckpointPsbts
+  let serverRefundPsbt = previous.serverRefundPsbt
+  if (!serverCheckpointPsbts?.length || !serverRefundPsbt) {
+    // No Operator response was ever observed, so this is the only phase
+    // that resubmits. Both halves of the response persist together; a later
+    // retry finds them and skips this dispatch.
+    const submitted = await options.record.submitRefund(signedRefundPsbt, submittedCheckpointPsbts)
+    if (submitted.arkTxid !== submittedRefundTxid) {
+      throw new Error('Lightning refund transaction changed.')
+    }
+    if (!submitted.signedCheckpointTxs.length || !submitted.finalArkTx) {
+      throw new Error('Lightning refund Operator response is incomplete.')
+    }
+    serverCheckpointPsbts = submitted.signedCheckpointTxs
+    serverRefundPsbt = submitted.finalArkTx
+    recordRefundAttemptProgress(
+      {
+        ...facts,
+        fundedInputs: previous.fundedInputs,
+        signedRefundPsbt,
+        submittedRefundTxid,
+        submittedCheckpointPsbts: [...submittedCheckpointPsbts],
+        refundOutputSats,
+        serverCheckpointPsbts: [...serverCheckpointPsbts],
+        serverRefundPsbt,
+      },
+      'submitted',
+    )
+  }
+  // The retained Operator-signed successor must be the same transaction
+  // before any final checkpoint is released for signing.
+  if (Transaction.fromPSBT(base64.decode(serverRefundPsbt)).id !== submittedRefundTxid) {
+    throw new Error('Lightning refund Operator response changed the transaction.')
+  }
+  let finalCheckpointPsbts = previous.finalCheckpointPsbts
+  if (!finalCheckpointPsbts?.length) {
+    // Sign each Operator checkpoint exactly once. A lost finalize response
+    // replays the persisted finals below instead of signing again.
+    const expected = submittedCheckpointPsbts.map((raw) => Transaction.fromPSBT(base64.decode(raw)))
+    const pairs = matchServerCheckpoints(serverCheckpointPsbts, expected, 'Lightning refund resume')
+    finalCheckpointPsbts = []
+    for (const { server } of pairs) {
+      options.signal?.throwIfAborted()
+      finalCheckpointPsbts.push(await options.record.signCheckpoint(base64.encode(server.toPSBT())))
+    }
+    recordRefundAttemptProgress({ ...facts, finalCheckpointPsbts: [...finalCheckpointPsbts] }, 'finalized')
+  }
+  options.signal?.throwIfAborted()
+  await options.record.finalizeRefund(submittedRefundTxid, finalCheckpointPsbts)
+  recordRefundAttemptProgress(
+    { ...facts, refundArkTxid: submittedRefundTxid, resultAmount: refundOutputSats },
+    'result',
+  )
+  return { arkTxid: submittedRefundTxid, amount: refundOutputSats }
 }

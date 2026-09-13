@@ -17,6 +17,13 @@ import {
   type RfqSwapRecord,
 } from '@arkade-os/swap'
 import { storedLightningProfile } from '../lightningLifecycle'
+import {
+  readLightningRefundAttempt,
+  seedRestoredRefundAttempt,
+  validateLightningRefundAttempt,
+  validateLightningRefundGraph,
+  type VaultLightningRefundAttempt,
+} from '../lightningEvidence'
 import { decodeVaultLightningInvoice } from '../lightningInvoice'
 import { withVaultLightningLifecycleLock } from '../lightningLock'
 import { networkPins } from '../networkPins'
@@ -39,6 +46,7 @@ export interface LightningRecoveryEntry {
   record: RfqSwapRecord
   contract: Contract
   exit: ExitArchive
+  refundAttempt?: VaultLightningRefundAttempt
 }
 /** Plain payload for the caller's authenticated encryption, never a public kit. */
 export interface LightningRecoveryJournal {
@@ -217,6 +225,30 @@ export function validateLightningRecoveryJournal(journal: LightningRecoveryJourn
     ids.add(entry.record.rfqId)
     scripts.add(entry.contract.script)
     validateExitArchive(entry.exit, exitBinding)
+    if (entry.refundAttempt !== undefined) {
+      const attempt = validateLightningRefundAttempt(entry.refundAttempt)
+      if (attempt.rfqId !== entry.record.rfqId) throw new Error('Lightning refund attempt changed operation')
+      // The recorded signer keys must be the enrolled contract's own keys,
+      // never keys carried by the attempt bytes themselves.
+      let enrolled: { sender?: Uint8Array; server?: Uint8Array }
+      try {
+        enrolled = VHTLCV2ContractHandler.createScript(entry.contract.params).options as {
+          sender?: Uint8Array
+          server?: Uint8Array
+        }
+      } catch {
+        throw new Error('Lightning refund contract is invalid')
+      }
+      if (
+        !enrolled.sender ||
+        !enrolled.server ||
+        hex.encode(enrolled.sender) !== attempt.senderPub ||
+        hex.encode(enrolled.server) !== attempt.serverPub
+      ) {
+        throw new Error('Lightning refund signer belongs to another contract')
+      }
+      validateLightningRefundGraph(attempt)
+    }
   }
   return journal
 }
@@ -300,7 +332,24 @@ export async function captureLightningRecoveryJournal(input: {
         input.virtualTxRepository,
         old?.exit ?? null,
       )
-      entries.set(record.rfqId, { ...partial, exit })
+      const previousAttempt = old?.refundAttempt
+      let refundAttempt: VaultLightningRefundAttempt | undefined
+      try {
+        const local = readLightningRefundAttempt(record.rfqId)
+        if (local) {
+          if (previousAttempt && previousAttempt.updatedAt > local.updatedAt) {
+            refundAttempt = previousAttempt
+          } else {
+            validateLightningRefundAttempt(local)
+            refundAttempt = local.rfqId === record.rfqId ? local : undefined
+          }
+        } else {
+          refundAttempt = previousAttempt
+        }
+      } catch {
+        refundAttempt = previousAttempt
+      }
+      entries.set(record.rfqId, { ...partial, exit, ...(refundAttempt ? { refundAttempt } : {}) })
       if (entries.size > MAX_ENTRIES) throw new Error('Lightning recovery journal limit exceeded')
     }
     return validateLightningRecoveryJournal(
@@ -355,6 +404,9 @@ export async function restoreLightningRecoveryJournal(
       if (write.record) {
         await stores.swaps.saveRfqSwap(copy(write.record))
         restored++
+      }
+      if (write.entry.refundAttempt) {
+        seedRestoredRefundAttempt(copy(write.entry.refundAttempt))
       }
     }
     return { restored, retained: valid.entries.length - restored }

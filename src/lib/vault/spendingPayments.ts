@@ -1,4 +1,5 @@
-import type { NetworkName } from '@arkade-os/sdk'
+import { ArkAddress, RestIndexerProvider, Transaction, type NetworkName } from '@arkade-os/sdk'
+import { base64 } from '@scure/base'
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import type { VaultSession } from './session'
 import { isVaultArkAddress } from './bitcoin'
@@ -7,7 +8,7 @@ import { zeroBytes } from './ceremony/directauth'
 import { unlockPhoneBip340 } from './savingsSpend'
 import { humanizeVaultError } from './humanize'
 import { consoleError } from '../logs'
-import { requireSdkNetworkName, vaultOperatorOrigin } from './networkPins'
+import { requireSdkNetworkName, sdkNetworkName, vaultOperatorOrigin } from './networkPins'
 import {
   discoverVaultLightningSolver,
   isVaultLightningInput,
@@ -15,8 +16,28 @@ import {
   vaultLightningSolverProfile,
 } from './lightningConfig'
 import { decodeVaultLightningInvoice } from './lightningInvoice'
-import type { VaultLightningQuote } from './lightningLifecycle'
-import { ensureVaultWalletWorker } from './vtxo/walletWorker'
+import {
+  isFundedLightningRecord,
+  listFundedTerminalLightningRecords,
+  listVaultLightningActivityRecords,
+  storedLightningProfile,
+  validFundingProof,
+  type StoredVaultLightningProfile,
+  type VaultLightningQuote,
+} from './lightningLifecycle'
+import {
+  isRfqSwapTerminal,
+  readLockupFate,
+  type AssetSwapRepository,
+  type LockupFate,
+  type RfqSwapRecord,
+} from '@arkade-os/swap'
+import {
+  readLightningRefundAttempt,
+  writeRetiredLightningFunding,
+} from './lightningEvidence'
+import { withVaultLightningLifecycleLock } from './lightningLock'
+import { ensureVaultWalletWorker, fetchVaultWalletVtxoSnapshot } from './vtxo/walletWorker'
 import {
   SPENDING_PAYMENT_EVENT,
   listPersistedVtxoSpends,
@@ -46,7 +67,14 @@ import {
   isVtxoSameSendInProgressError,
   isVtxoSpendInFlightError,
 } from './vtxo/spendingErrors'
-import type { CommittedRecoveryCoverage } from './recovery/committedCoverage'
+import {
+  readCommittedRecoveryCoverage,
+  readCommittedRecoveryEvidence,
+  type CommittedRecoveryCoverage,
+} from './recovery/committedCoverage'
+import type { VaultHistoryItem } from './history'
+import type { LightningRecoveryJournal } from './recovery/lightningArchive'
+import type { VaultStatus } from './types'
 
 export interface SpendingPaymentDraft {
   address: string
@@ -309,6 +337,36 @@ function createSpendingPayments(session: SessionSource) {
           } catch (error) {
             if (signal.aborted) signal.throwIfAborted()
             consoleError(error, 'Spending settled acknowledgment')
+          }
+          // Retire funded Lightning terminals on the same terms. Runs
+          // outside the lifecycle lock; evidence lag keeps the record for
+          // later. The Lightning journal comes from the one committed file
+          // snapshot, never a second file load.
+          try {
+            const api = await import('./lightning')
+            check()
+            const funded = await api.withVaultLightningRepository(status.vaultId, (repository) =>
+              listFundedTerminalLightningRecords(repository),
+            )
+            if (funded.length) {
+              const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+              check()
+              const evidence = await readCommittedRecoveryEvidence(status)
+              check()
+              await api.withVaultLightningRepository(status.vaultId, (repository) =>
+                acknowledgeSettledVaultLightning(
+                  status,
+                  repository,
+                  snapshot.history,
+                  evidence?.lightningJournal ?? null,
+                  evidence?.coverage,
+                  signal,
+                ),
+              )
+            }
+          } catch (error) {
+            if (signal.aborted) signal.throwIfAborted()
+            consoleError(error, 'Lightning settled acknowledgment')
           }
         }
         let funding: VaultVtxoSpendQuote
@@ -640,6 +698,33 @@ function createSpendingPayments(session: SessionSource) {
         await acknowledgeSettledVtxoSpends(covered, coverage, signal)
       }).catch(() => undefined)
     },
+    acknowledgeLightningRecovery(rfqId: string, coverage?: CommittedRecoveryCoverage): Promise<boolean> {
+      return run(
+        'acknowledge',
+        `acknowledge-lightning:${rfqId}:${coverage?.fileDigest || 'latest'}`,
+        async (check, signal) => {
+          const { status } = access()
+          check()
+          const api = await import('./lightning')
+          check()
+          const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+          check()
+          const evidence = await readCommittedRecoveryEvidence(status)
+          check()
+          return api.withVaultLightningRepository(status.vaultId, (repository) =>
+            acknowledgeVaultLightningRecovery(
+              status,
+              repository,
+              rfqId,
+              snapshot.history,
+              evidence?.lightningJournal ?? null,
+              coverage ?? evidence?.coverage,
+              signal,
+            ),
+          )
+        },
+      )
+    },
     retryRefund(rfqId: string): Promise<void> {
       return run('refund', 'refund:' + rfqId, async (check, signal) => {
         const { status, enrollment } = access()
@@ -674,4 +759,222 @@ function createSpendingPayments(session: SessionSource) {
   }
   return owner
 }
+/** Whether an indexer fate observation proves consumption of the exact
+ * expected checkpoints. A null expectation list (no durable checkpoint
+ * identities) accepts any non-empty spend set; callers document that bound.
+ * Every reported ark transaction for our own refund must equal the retained
+ * refund id, and spends never reference unknown checkpoints. */
+function lockupSpendsCoverCheckpoints(
+  spends: readonly { checkpointTxid: string; arkTxid?: string }[],
+  expectedCheckpointTxids: readonly string[] | null,
+  refundArkTxid: string | null,
+): boolean {
+  if (!spends.length) return false
+  for (const spend of spends) {
+    if (!/^[0-9a-f]{64}$/.test(spend.checkpointTxid)) return false
+    if (spend.arkTxid !== undefined && !/^[0-9a-f]{64}$/.test(spend.arkTxid)) return false
+  }
+  if (expectedCheckpointTxids !== null) {
+    if (expectedCheckpointTxids.some((id) => !/^[0-9a-f]{64}$/.test(id))) return false
+    const seen = new Set(spends.map((spend) => spend.checkpointTxid))
+    if (seen.size !== spends.length) return false
+    if (expectedCheckpointTxids.length !== spends.length) return false
+    if (!expectedCheckpointTxids.every((id) => seen.has(id))) return false
+  }
+  if (refundArkTxid !== null) {
+    for (const spend of spends) {
+      if (spend.arkTxid !== undefined && spend.arkTxid !== refundArkTxid) return false
+    }
+  }
+  return true
+}
+
+/** Resolve the lockup fate for retirement. Unresolvable, open, exited and
+ * unknown outcomes all retain the journal; only positively consumed spends
+ * proceed to checkpoint matching. */
+async function readRetirementLockupFate(
+  status: VaultStatus,
+  record: RfqSwapRecord,
+): Promise<Extract<LockupFate, { fate: 'claimed' | 'returned' }> | null> {
+  try {
+    const profile = record.profile as Record<string, unknown>
+    const hashlock = profile?.hashlock as unknown
+    const paymentHash =
+      typeof hashlock === 'string' ? hashlock : (hashlock as { paymentHash?: unknown } | null)?.paymentHash
+    if (typeof paymentHash !== 'string' || !/^[0-9a-f]{64}$/.test(paymentHash)) return null
+    const indexer = new RestIndexerProvider(vaultOperatorOrigin(status.network))
+    const fate = await readLockupFate(indexer, {
+      swapPkScript: ArkAddress.decode(record.lockupAddress).pkScript,
+      paymentHash,
+    })
+    if (fate.fate !== 'claimed' && fate.fate !== 'returned') return null
+    return fate
+  } catch {
+    return null
+  }
+}
+
+/** Owner-side retirement predicate for a funded Lightning record.
+ *
+ * Retires only when the terminal package record, the activity receipt, the
+ * wallet history, the committed operation journal and positive lockup
+ * consumption agree on the exact immutable swap. Anything short of that
+ * keeps the record for resume, reload and independent recovery. */
+export async function acknowledgeVaultLightningRecovery(
+  status: VaultStatus,
+  repository: Pick<AssetSwapRepository, 'getRfqSwap' | 'getAllRfqSwaps' | 'removeRfqSwap'>,
+  rfqId: string,
+  history: readonly VaultHistoryItem[],
+  journal: LightningRecoveryJournal | null,
+  evidence?: CommittedRecoveryCoverage,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return withVaultLightningLifecycleLock(status.vaultId, () =>
+    acknowledgeVaultLightningRecoveryLocked(status, repository, rfqId, history, journal, evidence, signal),
+  )
+}
+
+async function acknowledgeVaultLightningRecoveryLocked(
+  status: VaultStatus,
+  repository: Pick<AssetSwapRepository, 'getRfqSwap' | 'getAllRfqSwaps' | 'removeRfqSwap'>,
+  rfqId: string,
+  history: readonly VaultHistoryItem[],
+  journal: LightningRecoveryJournal | null,
+  evidence?: CommittedRecoveryCoverage,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  signal?.throwIfAborted()
+  const record = await repository.getRfqSwap(rfqId)
+  if (!record || record.kind !== 'lightning_send' || !isRfqSwapTerminal(record.state)) return false
+  if (!isFundedLightningRecord(record) || !record.fundingArkTxid) return false
+  // A failed funding without a refund successor stays for recovery: its
+  // locked outputs may still be refundable, and no successor proves them out.
+  if (record.state === 'failed' && !record.refundArkTxid) return false
+  let stored: StoredVaultLightningProfile
+  try {
+    stored = storedLightningProfile(record)
+  } catch {
+    return false
+  }
+  // Stored profiles use the SDK network name (bitcoin), while Vault status
+  // uses mainnet; compare through the existing mapping so mainnet retires.
+  if (stored.network !== sdkNetworkName(status.network)) return false
+  const proof = stored.fundingProof
+  if (
+    proof &&
+    (proof.rfqId !== rfqId || proof.address !== record.lockupAddress || proof.amountSats !== record.amount)
+  ) {
+    return false
+  }
+  if (proof && !validFundingProof({ ...proof, rfqId })) return false
+  signal?.throwIfAborted()
+  const activities = await listVaultLightningActivityRecords(repository)
+  const receipt = activities.find(
+    (activity) => activity.rfqId === rfqId && activity.terminal && activity.fundingTxid === record.fundingArkTxid,
+  )
+  if (!receipt) return false
+  // SDK activity amounts net fees differently per path, so history binds the
+  // funding transaction presence, not a recomputed amount.
+  if (
+    !history.some((row) => row.account === 'spend' && row.type === 'sent' && row.txid === record.fundingArkTxid)
+  ) {
+    return false
+  }
+  // The committed file must retain this exact swap; outputs alone cannot
+  // prove that.
+  const filed = journal?.entries.find(
+    (entry) => entry.record.rfqId === rfqId && entry.record.fundingArkTxid === record.fundingArkTxid,
+  )
+  if (!filed) return false
+  // Positive consumption with exact checkpoint linkage. Expected checkpoint
+  // identities come from the retained refund attempt when one exists.
+  const fate = await readRetirementLockupFate(status, record)
+  if (!fate) return false
+  let expectedCheckpoints: string[] | null = null
+  try {
+    const attempt = readLightningRefundAttempt(rfqId)
+    if (attempt?.submittedCheckpointPsbts?.length) {
+      expectedCheckpoints = attempt.submittedCheckpointPsbts.map(
+        (raw) => Transaction.fromPSBT(base64.decode(raw)).id,
+      )
+    }
+  } catch {
+    return false
+  }
+  const refundId = record.refundArkTxid ?? null
+  if (!lockupSpendsCoverCheckpoints(fate.spends, expectedCheckpoints, refundId)) return false
+  signal?.throwIfAborted()
+  const coverage = await readCommittedRecoveryCoverage(status)
+  if (
+    !coverage ||
+    (evidence &&
+      (evidence.vaultId !== coverage.vaultId ||
+        evidence.network !== coverage.network ||
+        evidence.descriptorHash !== coverage.descriptorHash ||
+        evidence.fileDigest !== coverage.fileDigest))
+  ) {
+    return false
+  }
+  if (record.refundArkTxid) {
+    if (
+      !coverage.outputs.some(
+        (coin) => coin.txid === record.refundArkTxid && coin.script === status.spendingArkScript,
+      )
+    ) {
+      return false
+    }
+  }
+  // A stale observation cannot retire a replacement or rewritten record.
+  const current = await repository.getRfqSwap(rfqId)
+  if (JSON.stringify(current) !== JSON.stringify(record)) return false
+  signal?.throwIfAborted()
+  writeRetiredLightningFunding({
+    rfqId,
+    lockupAddress: record.lockupAddress,
+    amountSats: record.amount!,
+    fundingArkTxid: record.fundingArkTxid,
+    ...(record.refundArkTxid ? { refundArkTxid: record.refundArkTxid } : {}),
+    state: record.state,
+    fileDigest: coverage.fileDigest,
+    network: status.network,
+    vaultId: status.vaultId,
+    retiredAt: Math.floor(Date.now() / 1000),
+  })
+  await repository.removeRfqSwap(rfqId)
+  if (await repository.getRfqSwap(rfqId)) {
+    throw new Error(`Funded Lightning record ${rfqId} was not durably retired.`)
+  }
+  return true
+}
+
+/** Best-effort retirement of every funded terminal record. A cancelled caller
+ * aborts the sweep; missing evidence keeps the remaining records. */
+export async function acknowledgeSettledVaultLightning(
+  status: VaultStatus,
+  repository: Pick<AssetSwapRepository, 'getRfqSwap' | 'getAllRfqSwaps' | 'removeRfqSwap'>,
+  history: readonly VaultHistoryItem[],
+  journal: LightningRecoveryJournal | null,
+  evidence?: CommittedRecoveryCoverage,
+  signal?: AbortSignal,
+): Promise<number> {
+  const funded = (await repository.getAllRfqSwaps())
+    .filter(
+      (record) =>
+        record.kind === 'lightning_send' && isRfqSwapTerminal(record.state) && isFundedLightningRecord(record),
+    )
+    .map((record) => record.rfqId)
+  let retired = 0
+  for (const rfqId of funded) {
+    signal?.throwIfAborted()
+    try {
+      if (await acknowledgeVaultLightningRecovery(status, repository, rfqId, history, journal, evidence, signal)) retired++
+    } catch (error) {
+      signal?.throwIfAborted()
+      if (signal?.aborted) throw error
+      consoleError(error, `Lightning settled acknowledgment ${rfqId}`)
+    }
+  }
+  return retired
+}
+
 export type SpendingPayments = ReturnType<typeof createSpendingPayments>

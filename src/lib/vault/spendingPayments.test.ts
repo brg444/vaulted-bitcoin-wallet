@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { base64, hex } from '@scure/base'
+import { Transaction } from '@arkade-os/sdk'
 import { spendingPaymentsForSession, type SpendingPayments } from './spendingPayments'
 import { activeVaultAccountRuntime, disposeVaultAccountRuntime } from './accountRuntime'
 import type { VaultSessionSnapshot } from './session'
 import type { AdmittedAccount } from './admittedAccount'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
-import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP } from './lightningTestUtils'
+import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP, refundAddress } from './lightningTestUtils'
+import { decodeVaultLightningInvoice } from './lightningInvoice'
 import { MUTINYNET_LIGHTNING_SOLVER } from './lightningConfig'
 import { SPENDING_PAYMENT_EVENT } from './vtxo/spendingJournal'
 import { VtxoReceiptPendingError, VtxoReservedReplaceError } from './vtxo/spendingErrors'
@@ -31,7 +34,34 @@ const api = vi.hoisted(() => ({
   ensure: vi.fn(),
   settle: vi.fn(),
   acknowledge: vi.fn(),
+  snapshot: vi.fn(),
+  lightningRepo: vi.fn(),
+  lightningJournal: vi.fn(),
+  coverage: vi.fn(),
 }))
+const fate = vi.hoisted(() => ({ checkpointTxid: '', checkpointPsbt: '', arkTxId: undefined as string | undefined }))
+vi.mock('@arkade-os/sdk', async (original) => {
+  const actual = await original<typeof import('@arkade-os/sdk')>()
+  return {
+    ...actual,
+    RestIndexerProvider: class {
+      constructor(...args: unknown[]) {
+        void args
+      }
+      getVtxos = async () => ({
+        vtxos: [
+          {
+            txid: 'ee'.repeat(32),
+            vout: 0,
+            spentBy: fate.checkpointTxid,
+            ...(fate.arkTxId ? { arkTxId: fate.arkTxId } : {}),
+          },
+        ],
+      })
+      getVirtualTxs = async () => ({ txs: [fate.checkpointPsbt] })
+    },
+  }
+})
 vi.mock('./vtxo/spendingJournal', async (original) => ({
   ...(await original<typeof import('./vtxo/spendingJournal')>()),
   listPersistedVtxoSpends: api.list,
@@ -61,7 +91,19 @@ vi.mock('./vtxo/spend', async (original) => ({
     dispose: api.dispose,
   }),
 }))
-vi.mock('./vtxo/walletWorker', () => ({ ensureVaultWalletWorker: api.ensure }))
+vi.mock('./vtxo/walletWorker', () => ({
+  ensureVaultWalletWorker: api.ensure,
+  fetchVaultWalletVtxoSnapshot: api.snapshot,
+}))
+vi.mock('./recovery/committedCoverage', () => ({
+  readCommittedRecoveryEvidence: async (...args: unknown[]) => {
+    const lightningJournal = await api.lightningJournal(...args)
+    const coverage = await api.coverage(...args)
+    if (!lightningJournal && !coverage) return null
+    return { coverage, matureBoardingJournal: null, lightningJournal }
+  },
+  readCommittedRecoveryCoverage: (...args: unknown[]) => api.coverage(...args),
+}))
 vi.mock('./savingsSpend', () => ({ unlockPhoneBip340: api.unlockPhone }))
 vi.mock('./lightningConfig', async (original) => ({
   ...(await original<typeof import('./lightningConfig')>()),
@@ -72,7 +114,8 @@ vi.mock('./lightning', () => ({
   requestVaultLightningQuote: api.request,
   withVaultLightningSdkWallet: api.sdk,
   withVaultLightningTransport: async (_p: unknown, run: (transport: unknown) => Promise<unknown>) => run({}),
-  withVaultLightningRepository: async (_id: string, run: (repository: unknown) => Promise<unknown>) => run({}),
+  withVaultLightningRepository: async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+    api.lightningRepo(_id, run),
   withVaultLightningLifecycleLock: async (_id: string, run: () => Promise<unknown>) => run(),
   loadVaultLightningFundingQuote: api.loadFunding,
   resumeVaultLightningFunding: api.resumeFunding,
@@ -179,6 +222,16 @@ beforeEach(() => {
   api.refundStatus.mockResolvedValue({ state: 'refunded' })
   api.settle.mockResolvedValue(0)
   api.acknowledge.mockResolvedValue(false)
+  api.snapshot.mockResolvedValue({ history: [] })
+  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) => run({}))
+  api.lightningJournal.mockResolvedValue(null)
+  api.coverage.mockResolvedValue(null)
+  const checkpoint = new Transaction({ version: 2 })
+  checkpoint.addInput({ txid: 'dd'.repeat(32), index: 0 })
+  checkpoint.addOutput({ amount: 2125n, script: hex.decode('ab'.repeat(34)) })
+  fate.checkpointTxid = checkpoint.id
+  fate.checkpointPsbt = base64.encode(checkpoint.toPSBT())
+  fate.arkTxId = undefined
 })
 afterEach(async () => {
   for (const release of releases.splice(0)) release()
@@ -485,4 +538,162 @@ it('ignores committed evidence for another network', async () => {
     outputs: [],
   })
   expect(api.settle).not.toHaveBeenCalled()
+})
+function installImmediateLock() {
+  const original = (navigator as Navigator & { locks?: unknown }).locks
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<unknown>) =>
+        callback({}),
+    },
+  })
+  return () => {
+    if (original) Object.defineProperty(navigator, 'locks', { configurable: true, value: original })
+    else Reflect.deleteProperty(navigator, 'locks')
+  }
+}
+
+function memoryLightningRepo(initial: { rfqId: string }[]) {
+  const records = new Map(initial.map((record) => [record.rfqId, record]))
+  return {
+    getRfqSwap: async (id: string) => records.get(id),
+    getAllRfqSwaps: async () => [...records.values()],
+    saveRfqSwap: async (record: { rfqId: string }) => {
+      records.set(record.rfqId, record)
+    },
+    removeRfqSwap: async (id: string) => {
+      records.delete(id)
+    },
+  }
+}
+
+async function fundedLightningRecord(state: 'settled' | 'refunded') {
+  const rfqId = 'ab'.repeat(32)
+  const fundingArkTxid = 'bb'.repeat(32)
+  const invoice = decodeVaultLightningInvoice(MUTINYNET_INVOICE, 'mutinynet', 0)
+  const lockupAddress = await refundAddress('mutinynet')
+  const record = {
+    rfqId,
+    kind: 'lightning_send',
+    state,
+    createdAt: 1,
+    updatedAt: 2,
+    amount: invoice.amountSats,
+    lockupAddress,
+    fundingArkTxid,
+    ...(state === 'refunded' ? { refundArkTxid: 'cc'.repeat(32) } : {}),
+    profile: {
+      hashlock: { paymentHash: 'cc'.repeat(32) },
+      vaultLightning: {
+        version: 2,
+        network: 'mutinynet',
+        invoice: MUTINYNET_INVOICE,
+        fundingState: 'funding',
+        fundingProof: {
+          rfqId,
+          operationId: '11'.repeat(16),
+          bundleDigest: 'aa'.repeat(32),
+          address: lockupAddress,
+          amountSats: invoice.amountSats,
+          fundingFeeSats: 25,
+        },
+        quote: {
+          v: 1,
+          type: 'rfq_quote',
+          rfq_id: rfqId,
+          pair: 'arkade:BTC->lightning:BTC',
+          amount_side: 'to',
+          from_amount: invoice.amountSats,
+          to_amount: invoice.amountSats,
+          solver_pubkey: '03'.repeat(33),
+          valid_until: MUTINYNET_INVOICE_TIMESTAMP + 600,
+          refund_locktime: 1000,
+          profile: { receiver_pk_script: 'ab'.repeat(34), lockup_address: lockupAddress },
+        },
+      },
+    },
+  }
+  return { record: record as never, fundingArkTxid }
+}
+
+function lightningCoverage() {
+  return {
+    vaultId: status.vaultId,
+    network: 'mutinynet',
+    descriptorHash: 'descriptor',
+    fileDigest: 'digest',
+    outputs: [],
+  } as never
+}
+
+it('settles funded Lightning terminals before review without failing on evidence lag', async () => {
+  const restoreLock = installImmediateLock()
+  try {
+    const { payments } = open()
+    const { record, fundingArkTxid } = await fundedLightningRecord('settled')
+    const repository = memoryLightningRepo([record])
+    api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+      run(repository),
+    )
+    api.snapshot.mockResolvedValue({
+      history: [{ account: 'spend', type: 'sent', txid: fundingArkTxid, amount: 1500 }],
+    })
+    api.coverage.mockResolvedValue(lightningCoverage())
+    api.lightningJournal.mockResolvedValue({ entries: [{ record }] })
+    await payments.review(draft)
+    expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
+    expect(api.snapshot).toHaveBeenCalled()
+    api.coverage.mockResolvedValueOnce(null)
+    const lagging = await fundedLightningRecord('settled')
+    const pending = memoryLightningRepo([lagging.record])
+    api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+      run(pending),
+    )
+    api.lightningJournal.mockResolvedValue({ entries: [{ record: lagging.record }] })
+    await payments.review(draft)
+    expect(await pending.getRfqSwap((lagging.record as { rfqId: string }).rfqId)).not.toBeUndefined()
+  } finally {
+    restoreLock()
+  }
+})
+it('delegates Lightning recovery acknowledgment, coalesces identical commands and drains before teardown', async () => {
+  const restoreLock = installImmediateLock()
+  try {
+    const { payments } = open()
+    const { record, fundingArkTxid } = await fundedLightningRecord('settled')
+    const repository = memoryLightningRepo([record])
+    api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+      run(repository),
+    )
+    api.snapshot.mockResolvedValue({
+      history: [{ account: 'spend', type: 'sent', txid: fundingArkTxid, amount: 1500 }],
+    })
+    const coverage = lightningCoverage()
+    api.coverage.mockResolvedValue(coverage)
+    const watching = deferred<{ entries: { record: unknown }[] }>()
+    api.lightningJournal.mockReturnValueOnce(watching.promise)
+    const first = payments.acknowledgeLightningRecovery((record as { rfqId: string }).rfqId, coverage)
+    expect(payments.acknowledgeLightningRecovery((record as { rfqId: string }).rfqId, coverage)).toBe(first)
+    watching.resolve({ entries: [{ record }] })
+    await expect(first).resolves.toBe(true)
+    expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
+    const lagging = await fundedLightningRecord('settled')
+    const pending = memoryLightningRepo([lagging.record])
+    api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+      run(pending),
+    )
+    const holding = deferred<{ entries: { record: unknown }[] }>()
+    api.lightningJournal.mockReturnValueOnce(holding.promise)
+    api.coverage.mockResolvedValueOnce(null)
+    const gated = payments.acknowledgeLightningRecovery((lagging.record as { rfqId: string }).rfqId, coverage)
+    const suspended = payments.suspend()
+    holding.resolve({ entries: [{ record: lagging.record }] })
+    await expect(gated).rejects.toThrow()
+    await suspended
+    expect(payments.getSnapshot().pending).toBe(null)
+    expect(await pending.getRfqSwap((lagging.record as { rfqId: string }).rfqId)).not.toBeUndefined()
+  } finally {
+    restoreLock()
+  }
 })

@@ -3,6 +3,8 @@ import {
   RestArkProvider,
   RestIndexerProvider,
   SingleKey,
+  Transaction,
+  VHTLCV2ContractHandler,
   type Identity,
   type IContractManager,
   type IWallet,
@@ -12,13 +14,16 @@ import {
   IndexedDbAssetSwapRepository,
   RfqSwapManager,
   arkadeRefunder,
+  lockupContractParams,
   newRfqId,
+  rfqSignerOf,
+  senderIdentityForSwapRecord,
   type AssetSwapRepository,
   type RfqTransport,
   type SwapContractRegistry,
 } from '@arkade-os/swap'
 import { nostrRfqTransport } from '@arkade-os/swap/nostr'
-import { hex } from '@scure/base'
+import { base64, hex } from '@scure/base'
 import { requestVaultLightningSend } from './lightningCovenant'
 import {
   lightningSdkNetwork,
@@ -31,7 +36,9 @@ import { withVaultLightningLifecycleLock } from './lightningLock'
 import { readRegisteredLightningContractParams, registeredContractScript } from './lightningValidation'
 import {
   discardUnexposedVaultLightningQuote,
+  durableVaultLightningRefund,
   persistVaultLightningQuote,
+  recordingVaultLightningRefundArk,
   maintainVaultLightningObserver,
   restoreMatchingVaultLightningQuote,
   restoreMatchingVaultLightningFundingQuote,
@@ -184,10 +191,62 @@ async function withUnlockedVaultLightningSdkWallet<T>(
     // The persistent observer never holds a signer. Only this explicitly
     // reauthenticated operation installs the package refunder, drives one
     // pass, and then returns the manager to a fail-closed callback.
+    const refundRecord = await swapRepository.getRfqSwap(options.refundRfqId)
+    if (!refundRecord || refundRecord.kind !== 'lightning_send') {
+      throw new Error('Lightning refund record is missing.')
+    }
+    if (!Number.isSafeInteger(refundRecord.amount)) throw new Error('Lightning refund record has no amount.')
+    // The enrolled refund signers come from the lockup contract behind the
+    // funded address, never from later refund bytes. Every recorded byte is
+    // verified against these keys.
+    const refundScript = VHTLCV2ContractHandler.createScript(
+      await lockupContractParams(contracts, refundRecord.lockupAddress),
+    )
+    const refundScriptHex = hex.encode(refundScript.pkScript)
+    const lockupPkScriptHex = hex.encode(ArkAddress.decode(refundRecord.lockupAddress).pkScript)
+    if (refundScriptHex !== lockupPkScriptHex) throw new Error('Lightning refund contract does not match its lockup.')
+    const refundFacts = {
+      rfqId: refundRecord.rfqId,
+      lockupAddress: refundRecord.lockupAddress,
+      lockupPkScriptHex,
+      amountSats: refundRecord.amount!,
+      destination: String(status.spendingArkAddress || ''),
+      vaultId: status.vaultId,
+      network: status.network,
+      senderPub: hex.encode(refundScript.options.sender),
+      serverPub: hex.encode(refundScript.options.server),
+    }
+    const recordingArk = recordingVaultLightningRefundArk(operator, refundFacts, options.signal)
+    // The sender session is resolved on first checkpoint signing, never at
+    // setup: no signing capability is acquired before dispatch needs it.
+    let refundSender: { sign: (tx: Transaction, indexes?: number[]) => Promise<Transaction> } | undefined
+    const signRefundCheckpoint = async (checkpointPsbt: string): Promise<string> => {
+      refundSender ??= (await senderIdentityForSwapRecord(requestWallet, rfqSignerOf(refundRecord) ?? {})) as {
+        sign: (tx: Transaction, indexes?: number[]) => Promise<Transaction>
+      }
+      const signed = await refundSender.sign(Transaction.fromPSBT(base64.decode(checkpointPsbt)), [0])
+      return base64.encode(signed.toPSBT())
+    }
     return withAuthenticatedVaultLightningRefund(
       swapManager,
       options.refundRfqId,
-      arkadeRefunder({ ark: operator, indexer, wallet: requestWallet, repository: swapRepository }),
+      durableVaultLightningRefund(
+        refundFacts,
+        arkadeRefunder({
+          ark: recordingArk,
+          indexer,
+          wallet: requestWallet,
+          repository: swapRepository,
+        }),
+        {
+          signal: options.signal,
+          record: {
+            submitRefund: (signedPsbt, checkpoints) => recordingArk.submitTx(signedPsbt, checkpoints),
+            signCheckpoint: signRefundCheckpoint,
+            finalizeRefund: (arkTxid, checkpoints) => recordingArk.finalizeTx(arkTxid, checkpoints),
+          },
+        },
+      ),
       () => {
         options.signal?.throwIfAborted()
         return run(session)

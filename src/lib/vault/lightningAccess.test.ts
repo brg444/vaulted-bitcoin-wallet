@@ -1,5 +1,7 @@
-import { ArkAddress, RestArkProvider, SingleKey, type Identity } from '@arkade-os/sdk'
-import { type arkadeRefunder, type RfqSwapManager } from '@arkade-os/swap'
+import { ArkAddress, RestArkProvider, SingleKey, VHTLCV2ContractHandler, getNetwork, resolveEmulatorPubkey, type Identity } from '@arkade-os/sdk'
+import { lightningSendVtxoScript, type arkadeRefunder, type RfqSwapManager } from '@arkade-os/swap'
+import { p2tr } from '@scure/btc-signer'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { hex } from '@scure/base'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { withVaultLightningSdkWallet } from './lightning'
@@ -23,6 +25,27 @@ const info = {
   signerPubkey: hex.encode(ArkAddress.decode(status.spendingArkAddress!).serverPubKey),
 } as Awaited<ReturnType<RestArkProvider['getInfo']>>
 const rfqId = 'ab'.repeat(32)
+const xonly = (seed: string) => secp256k1.getPublicKey(hex.decode(seed.padStart(64, '0')), true).slice(1)
+const serverPubkey = xonly('04')
+
+/** The enrolled lockup behind the refund: the refund setup binds its
+ * identity facts and signer keys to this contract. */
+function refundLockup() {
+  const tree = lightningSendVtxoScript({
+    senderPubkey: xonly('01'),
+    serverPubkey,
+    solverPubkey: xonly('05'),
+    refundLocktime: 10000,
+    paymentHash: 'cc'.repeat(32),
+    claimDelay: 2048,
+    receiverPkScript: p2tr(xonly('06')).script,
+    emulatorPubkey: hex.decode(resolveEmulatorPubkey(getNetwork('mutinynet'))).slice(1),
+    refundPkScript: p2tr(xonly('07')).script,
+  })
+  const params = VHTLCV2ContractHandler.serializeParams(tree.options)
+  const lockupAddress = tree.address('tark', serverPubkey).encode()
+  return { params, lockupAddress, lockupPkScript: tree.pkScript }
+}
 const manager = {
   getPendingSwaps: vi.fn(async () => []),
   removeSwap: vi.fn(),
@@ -40,8 +63,20 @@ function deferred() {
 beforeEach(() => {
   vi.clearAllMocks()
   manager.poll.mockImplementation(async () => {})
+  const lockup = refundLockup()
   boundary.state.mockImplementation(async (_status, run) =>
-    run({ contracts: {}, swapRepository: {}, swapManager: manager }),
+    run({
+      contracts: { getContracts: async () => [{ params: lockup.params }] },
+      swapRepository: {
+        getRfqSwap: async () => ({
+          kind: 'lightning_send',
+          rfqId,
+          lockupAddress: lockup.lockupAddress,
+          amount: 1500,
+        }),
+      },
+      swapManager: manager,
+    }),
   )
   boundary.maintain.mockResolvedValue(undefined)
   boundary.refunder.mockReturnValue(boundary.refund)
@@ -125,7 +160,8 @@ it.each(['before signing', 'before Operator submission'] as const)(
     })
     manager.poll.mockImplementation(async () => {
       const callbacks = manager.setCallbacks.mock.calls.at(-1)?.[0]
-      if (callbacks) await callbacks.refundArkade({ rfqId, refundLocktime: 0 } as never)
+      if (callbacks)
+        await callbacks.refundArkade({ rfqId, refundLocktime: 0, lockupPkScript: refundLockup().lockupPkScript } as never)
     })
     const run = vi.fn()
     const result = withVaultLightningSdkWallet(phone, status, run, { refundRfqId: rfqId, signal: abort.signal })
