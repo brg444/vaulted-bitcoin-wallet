@@ -25,6 +25,7 @@ export function lightningRecoveryFixture(
     funded?: boolean
     advanced?: boolean
     light?: boolean
+    lockupOutputs?: 1 | 2
   } = {},
 ) {
   const network = options.network ?? 'mainnet'
@@ -118,17 +119,19 @@ export function lightningRecoveryFixture(
     witnessUtxo: { script: parent.script, amount: 2125n },
     tapInternalKey: parent.tapInternalKey,
   })
-  tx.addOutput({ amount: 2125n, script: script.pkScript })
+  const lockupAmounts = options.lockupOutputs === 2 ? [1000n, 1125n] : [2125n]
+  for (const amount of lockupAmounts) tx.addOutput({ amount, script: script.pkScript })
   tx.addOutput({ amount: 0n, script: hex.decode('51024e73') })
   tx.sign(scalarSecret(21))
-  const coin = {
+  const coins = lockupAmounts.map((amount, vout) => ({
     txid: tx.id,
-    vout: 0,
-    value: 2125,
+    vout,
+    value: Number(amount),
     script: contract.script,
     isSpent: false,
     createdAt: '2026-09-06T00:00:00Z',
-  }
+  }))
+  const coin = coins[0]
   const funded = options.funded !== false
   if (funded) {
     const profile = record.profile.vaultLightning as Record<string, unknown>
@@ -158,19 +161,22 @@ export function lightningRecoveryFixture(
           descriptorHash: exitBinding.descriptorHash,
           capturedAt: '2026-09-06T00:00:00Z',
           info: base.archive.spending.info,
-          coins: packExitArchive(funded ? [coin] : []),
+          coins: packExitArchive(funded ? coins : []),
           branches: funded
-            ? {
-                [tx.id + ':0']: [
-                  { txid: '01'.repeat(32), type: ChainTxType.COMMITMENT, spends: [], expiresAt: '0' },
-                  { txid: tx.id, type: ChainTxType.TREE, spends: ['01'.repeat(32)], expiresAt: '1789000000' },
-                ],
-              }
+            ? Object.fromEntries(
+                coins.map((lockup) => [
+                  `${tx.id}:${lockup.vout}`,
+                  [
+                    { txid: '01'.repeat(32), type: ChainTxType.COMMITMENT, spends: [], expiresAt: '0' },
+                    { txid: tx.id, type: ChainTxType.TREE, spends: ['01'.repeat(32)], expiresAt: '1789000000' },
+                  ],
+                ]),
+              )
             : {},
           transactions: funded ? { [tx.id]: base64.encode(tx.toPSBT()) } : {},
         },
       },
     ],
   }
-  return { journal, binding, entry: journal.entries[0], record, contract, script, tx, coin }
+  return { journal, binding, entry: journal.entries[0], record, contract, script, tx, coin, coins }
 }

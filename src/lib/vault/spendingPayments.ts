@@ -1,4 +1,4 @@
-import { ArkAddress, RestIndexerProvider, Transaction, type NetworkName } from '@arkade-os/sdk'
+import { ArkAddress, RestIndexerProvider, Transaction, hasTerminalSpend, type NetworkName } from '@arkade-os/sdk'
 import { base64 } from '@scure/base'
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import type { VaultSession } from './session'
@@ -760,6 +760,100 @@ function createSpendingPayments(session: SessionSource) {
   }
   return owner
 }
+function fundingOutpointKey(out: { txid: string; vout: number }) {
+  return `${out.txid}:${out.vout}`
+}
+
+function parsePackedFundingOutpoints(exit: unknown): { txid: string; vout: number }[] {
+  if (!exit || typeof exit !== 'object') return []
+  const packed = (exit as { coins?: unknown }).coins
+  if (typeof packed !== 'string') return []
+  try {
+    const raw = JSON.parse(packed) as unknown
+    if (!Array.isArray(raw) || !raw.length) return []
+    const out: { txid: string; vout: number }[] = []
+    const seen = new Set<string>()
+    for (const coin of raw) {
+      if (!coin || typeof coin !== 'object') return []
+      const txid = (coin as { txid?: unknown }).txid
+      const vout = (coin as { vout?: unknown }).vout
+      if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/.test(txid)) return []
+      if (!Number.isSafeInteger(vout) || (vout as number) < 0 || (vout as number) > 0xffffffff) return []
+      const key = fundingOutpointKey({ txid, vout: vout as number })
+      if (seen.has(key)) return []
+      seen.add(key)
+      out.push({ txid, vout: vout as number })
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+function parseAttemptFundingOutpoints(
+  inputs: { txid?: unknown; vout?: unknown }[] | undefined,
+): { txid: string; vout: number }[] | null {
+  if (!inputs) return []
+  if (!inputs.length) return []
+  const out: { txid: string; vout: number }[] = []
+  const seen = new Set<string>()
+  for (const input of inputs) {
+    if (!input || typeof input.txid !== 'string' || !/^[0-9a-f]{64}$/.test(input.txid)) return null
+    if (!Number.isSafeInteger(input.vout) || (input.vout as number) < 0 || (input.vout as number) > 0xffffffff)
+      return null
+    const key = fundingOutpointKey({ txid: input.txid, vout: input.vout as number })
+    if (seen.has(key)) return null
+    seen.add(key)
+    out.push({ txid: input.txid, vout: input.vout as number })
+  }
+  return out
+}
+
+/** Original lockup outpoints frozen in the committed archive or refund facts.
+ * Missing, conflicting, or empty sets cannot prove every-input consumption. */
+function retainedLightningFundingOutpoints(
+  record: RfqSwapRecord,
+  journal: LightningRecoveryJournal | null,
+): { txid: string; vout: number }[] | null {
+  const filed = journal?.entries.find(
+    (entry) => entry.record.rfqId === record.rfqId && entry.record.fundingArkTxid === record.fundingArkTxid,
+  )
+  const fromArchive = parsePackedFundingOutpoints(filed?.exit)
+  let fromAttempt: { txid: string; vout: number }[] | null
+  try {
+    fromAttempt = parseAttemptFundingOutpoints(
+      filed?.refundAttempt?.fundedInputs ?? readLightningRefundAttempt(record.rfqId)?.fundedInputs,
+    )
+  } catch {
+    return null
+  }
+  if (fromAttempt === null) return null
+  if (fromArchive.length && fromAttempt.length) {
+    if (fromArchive.length !== fromAttempt.length) return null
+    const attemptKeys = new Set(fromAttempt.map(fundingOutpointKey))
+    if (fromArchive.some((out) => !attemptKeys.has(fundingOutpointKey(out)))) return null
+  }
+  const merged = fromArchive.length ? fromArchive : fromAttempt
+  return merged.length ? merged : null
+}
+
+async function lockupOutpointsAreConsumed(
+  status: VaultStatus,
+  expected: readonly { txid: string; vout: number }[],
+): Promise<boolean> {
+  if (!expected.length) return false
+  try {
+    const indexer = new RestIndexerProvider(vaultOperatorOrigin(status.network))
+    const { vtxos } = await indexer.getVtxos({ outpoints: [...expected] })
+    const observed = vtxos ?? []
+    return expected.every((out) =>
+      observed.some((vtxo) => vtxo.txid === out.txid && vtxo.vout === out.vout && hasTerminalSpend(vtxo)),
+    )
+  } catch {
+    return false
+  }
+}
+
 /** Whether an indexer fate observation proves consumption of the exact
  * expected checkpoints. A null expectation list (no durable checkpoint
  * identities) accepts any non-empty spend set; callers document that bound.
@@ -885,6 +979,11 @@ async function acknowledgeVaultLightningRecoveryLocked(
     (entry) => entry.record.rfqId === rfqId && entry.record.fundingArkTxid === record.fundingArkTxid,
   )
   if (!filed) return false
+  // Every original funding output retained in the archive or refund facts must
+  // be positively consumed. A script-only indexer subset is not enough.
+  const expectedFunding = retainedLightningFundingOutpoints(record, journal)
+  if (!expectedFunding) return false
+  if (!(await lockupOutpointsAreConsumed(status, expectedFunding))) return false
   // Positive consumption with exact checkpoint linkage. Expected checkpoint
   // identities come from the retained refund attempt when one exists.
   const fate = await readRetirementLockupFate(status, record)

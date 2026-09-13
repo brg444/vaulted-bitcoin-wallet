@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { base64, hex } from '@scure/base'
-import type { RfqSwap, RfqSwapRecord } from '@arkade-os/swap'
-import { Transaction } from '@arkade-os/sdk'
+import { InMemoryAssetSwapRepository, type RfqSwap, type RfqSwapRecord } from '@arkade-os/swap'
+import { InMemoryContractRepository, Transaction } from '@arkade-os/sdk'
 import type { VaultStatus } from './types'
 import { acknowledgeSettledVaultLightning, acknowledgeVaultLightningRecovery } from './spendingPayments'
 import {
@@ -26,6 +26,9 @@ import {
   type VaultLightningRefundFacts,
 } from './lightningEvidence'
 import { readCommittedRecoveryCoverage } from './recovery/committedCoverage'
+import { packExitArchive } from './recovery/exitArchive'
+import { restoreLightningRecoveryJournal } from './recovery/lightningArchive'
+import { lightningRecoveryFixture } from './recovery/testdata/lightningFixtures'
 import { INVOICE_TIMESTAMP, emptyIndexer, lightningQuoteHarness } from './lightningTestUtils'
 import { lightningRefundPackageFixture } from './testdata/lightningRefundFixture'
 
@@ -37,7 +40,17 @@ const fateState = vi.hoisted(() => ({
   checkpointTxid: '',
   checkpointPsbt: '',
   arkTxid: undefined as string | undefined,
+  vtxos: undefined as { txid: string; vout: number }[] | undefined,
 }))
+function fateVtxos() {
+  const coins = fateState.vtxos ?? [{ txid: 'ee'.repeat(32), vout: 0 }]
+  return coins.map((coin) => ({
+    txid: coin.txid,
+    vout: coin.vout,
+    spentBy: fateState.checkpointTxid,
+    ...(fateState.arkTxid ? { arkTxId: fateState.arkTxid } : {}),
+  }))
+}
 vi.mock('@arkade-os/sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@arkade-os/sdk')>()
   return {
@@ -46,16 +59,17 @@ vi.mock('@arkade-os/sdk', async (importOriginal) => {
       constructor(...args: unknown[]) {
         void args
       }
-      getVtxos = async () => ({
-        vtxos: [
-          {
-            txid: 'ee'.repeat(32),
-            vout: 0,
-            spentBy: fateState.checkpointTxid,
-            ...(fateState.arkTxid ? { arkTxId: fateState.arkTxid } : {}),
-          },
-        ],
-      })
+      getVtxos = async (options?: { scripts?: string[]; outpoints?: { txid: string; vout: number }[] }) => {
+        const vtxos = fateVtxos()
+        if (options?.outpoints?.length) {
+          return {
+            vtxos: vtxos.filter((vtxo) =>
+              options.outpoints!.some((out) => out.txid === vtxo.txid && out.vout === vtxo.vout),
+            ),
+          }
+        }
+        return { vtxos }
+      }
       getVirtualTxs = async () => ({ txs: [fateState.checkpointPsbt] })
     },
   }
@@ -123,7 +137,23 @@ function coverageFor(outputs: { txid: string; vout: number; value: number; scrip
   } as never
 }
 
-function journalFor(record: RfqSwapRecord) {
+function packedLockupCoins(coins: readonly { txid: string; vout: number; value?: number }[]) {
+  return packExitArchive(
+    coins.map((coin) => ({
+      txid: coin.txid,
+      vout: coin.vout,
+      value: coin.value ?? 2125,
+      script: SCRIPT,
+      isSpent: false,
+      createdAt: '2026-09-06T00:00:00Z',
+    })),
+  )
+}
+
+function journalFor(
+  record: RfqSwapRecord,
+  coins: readonly { txid: string; vout: number; value?: number }[] = [{ txid: 'ee'.repeat(32), vout: 0 }],
+) {
   return {
     name: 'vaulted-lightning-recovery',
     version: 1,
@@ -134,7 +164,21 @@ function journalFor(record: RfqSwapRecord) {
       descriptorHash: 'vault-lightning',
       spendingScript: SCRIPT,
     },
-    entries: [{ record, contract: {} as never, exit: {} as never }],
+    entries: [
+      {
+        record,
+        contract: {} as never,
+        exit: {
+          version: 1,
+          descriptorHash: 'vault-lightning',
+          capturedAt: '2026-09-06T00:00:00Z',
+          info: '{}',
+          coins: packedLockupCoins(coins),
+          branches: {},
+          transactions: {},
+        },
+      },
+    ],
   } as never
 }
 
@@ -188,6 +232,7 @@ beforeEach(() => {
   fateState.checkpointTxid = fateCheckpoint.txid
   fateState.checkpointPsbt = fateCheckpoint.psbt
   fateState.arkTxid = undefined
+  fateState.vtxos = undefined
 })
 
 afterEach(() => {
@@ -478,6 +523,97 @@ describe('Lightning funded-record retirement', () => {
       ).resolves.toBe(1)
       expect(await harness.repository.getRfqSwap(quote.rfqId)).toBeUndefined()
       expect(await listFundedTerminalLightningRecords(harness.repository)).toEqual([])
+    } finally {
+      restoreLock()
+    }
+  })
+
+  function twoOutputRecovery() {
+    const fixture = lightningRecoveryFixture({ lockupOutputs: 2 })
+    const journal = structuredClone(fixture.journal)
+    const entry = journal.entries[0]
+    entry.record.state = 'settled'
+    entry.record.fundingArkTxid = FUNDING_TXID
+    entry.record.updatedAt += 1
+    const network = fixture.binding.network === 'mainnet' ? 'bitcoin' : 'mutinynet'
+    return {
+      fixture,
+      journal,
+      coins: fixture.coins,
+      status: {
+        vaultId: fixture.binding.vaultId,
+        network,
+        spendingArkScript: fixture.binding.spendingScript,
+      } as unknown as VaultStatus,
+      coverage: {
+        vaultId: fixture.binding.vaultId,
+        network,
+        descriptorHash: fixture.binding.descriptorHash,
+        fileDigest: 'digest-lightning',
+        outputs: [],
+      } as never,
+    }
+  }
+
+  it('retains a two-output funded swap when the indexer omits one original output, then retires on complete consumption', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      const prepared = twoOutputRecovery()
+      const repository = new InMemoryAssetSwapRepository()
+      await repository.saveRfqSwap(structuredClone(prepared.journal.entries[0].record))
+      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(prepared.coverage)
+      fateState.vtxos = [prepared.coins[0]]
+      await expect(
+        acknowledgeVaultLightningRecovery(
+          prepared.status,
+          repository,
+          prepared.journal.entries[0].record.rfqId,
+          historyFor(FUNDING_TXID),
+          prepared.journal,
+          prepared.coverage,
+        ),
+      ).resolves.toBe(false)
+      expect(await repository.getRfqSwap(prepared.journal.entries[0].record.rfqId)).not.toBeNull()
+      expect(readLightningRefundAttempt(prepared.journal.entries[0].record.rfqId)).toBeNull()
+      fateState.vtxos = prepared.coins
+      await expect(
+        acknowledgeVaultLightningRecovery(
+          prepared.status,
+          repository,
+          prepared.journal.entries[0].record.rfqId,
+          historyFor(FUNDING_TXID),
+          prepared.journal,
+          prepared.coverage,
+        ),
+      ).resolves.toBe(true)
+      expect(await repository.getRfqSwap(prepared.journal.entries[0].record.rfqId)).toBeUndefined()
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('retains a partial indexer response after restoring the two-output archive', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      const prepared = twoOutputRecovery()
+      const swaps = new InMemoryAssetSwapRepository()
+      const contracts = new InMemoryContractRepository()
+      expect(
+        await restoreLightningRecoveryJournal(prepared.journal, prepared.fixture.binding, { swaps, contracts }),
+      ).toEqual({ restored: 1, retained: 0 })
+      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(prepared.coverage)
+      fateState.vtxos = [prepared.coins[0]]
+      await expect(
+        acknowledgeVaultLightningRecovery(
+          prepared.status,
+          swaps,
+          prepared.journal.entries[0].record.rfqId,
+          historyFor(FUNDING_TXID),
+          prepared.journal,
+          prepared.coverage,
+        ),
+      ).resolves.toBe(false)
+      expect(await swaps.getRfqSwap(prepared.journal.entries[0].record.rfqId)).not.toBeNull()
     } finally {
       restoreLock()
     }

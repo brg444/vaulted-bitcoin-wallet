@@ -13,6 +13,7 @@ import { SPENDING_PAYMENT_EVENT } from './vtxo/spendingJournal'
 import { VtxoReceiptPendingError, VtxoReservedReplaceError } from './vtxo/spendingErrors'
 import { type PersistedVtxoSpend } from './vtxo/spendingTransaction'
 import { type VaultVtxoSpendQuote } from './vtxo/spend'
+import { packExitArchive } from './recovery/exitArchive'
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
@@ -39,7 +40,21 @@ const api = vi.hoisted(() => ({
   lightningJournal: vi.fn(),
   coverage: vi.fn(),
 }))
-const fate = vi.hoisted(() => ({ checkpointTxid: '', checkpointPsbt: '', arkTxId: undefined as string | undefined }))
+const fate = vi.hoisted(() => ({
+  checkpointTxid: '',
+  checkpointPsbt: '',
+  arkTxId: undefined as string | undefined,
+  vtxos: undefined as { txid: string; vout: number }[] | undefined,
+}))
+function fateVtxos() {
+  const coins = fate.vtxos ?? [{ txid: 'ee'.repeat(32), vout: 0 }]
+  return coins.map((coin) => ({
+    txid: coin.txid,
+    vout: coin.vout,
+    spentBy: fate.checkpointTxid,
+    ...(fate.arkTxId ? { arkTxId: fate.arkTxId } : {}),
+  }))
+}
 vi.mock('@arkade-os/sdk', async (original) => {
   const actual = await original<typeof import('@arkade-os/sdk')>()
   return {
@@ -48,16 +63,17 @@ vi.mock('@arkade-os/sdk', async (original) => {
       constructor(...args: unknown[]) {
         void args
       }
-      getVtxos = async () => ({
-        vtxos: [
-          {
-            txid: 'ee'.repeat(32),
-            vout: 0,
-            spentBy: fate.checkpointTxid,
-            ...(fate.arkTxId ? { arkTxId: fate.arkTxId } : {}),
-          },
-        ],
-      })
+      getVtxos = async (options?: { scripts?: string[]; outpoints?: { txid: string; vout: number }[] }) => {
+        const vtxos = fateVtxos()
+        if (options?.outpoints?.length) {
+          return {
+            vtxos: vtxos.filter((vtxo) =>
+              options.outpoints!.some((out) => out.txid === vtxo.txid && out.vout === vtxo.vout),
+            ),
+          }
+        }
+        return { vtxos }
+      }
       getVirtualTxs = async () => ({ txs: [fate.checkpointPsbt] })
     },
   }
@@ -232,6 +248,7 @@ beforeEach(() => {
   fate.checkpointTxid = checkpoint.id
   fate.checkpointPsbt = base64.encode(checkpoint.toPSBT())
   fate.arkTxId = undefined
+  fate.vtxos = undefined
 })
 afterEach(async () => {
   for (const release of releases.splice(0)) release()
@@ -673,6 +690,28 @@ function lightningCoverage() {
   } as never
 }
 
+function lightningJournalFor(record: { rfqId: string; fundingArkTxid?: string }) {
+  return {
+    entries: [
+      {
+        record,
+        exit: {
+          coins: packExitArchive([
+            {
+              txid: 'ee'.repeat(32),
+              vout: 0,
+              value: 1500,
+              script: '5120' + 'ab'.repeat(32),
+              isSpent: false,
+              createdAt: '2026-09-06T00:00:00Z',
+            },
+          ]),
+        },
+      },
+    ],
+  }
+}
+
 it('settles funded Lightning terminals before review without failing on evidence lag', async () => {
   const restoreLock = installImmediateLock()
   try {
@@ -686,7 +725,7 @@ it('settles funded Lightning terminals before review without failing on evidence
       history: [{ account: 'spend', type: 'sent', txid: fundingArkTxid, amount: 1500 }],
     })
     api.coverage.mockResolvedValue(lightningCoverage())
-    api.lightningJournal.mockResolvedValue({ entries: [{ record }] })
+    api.lightningJournal.mockResolvedValue(lightningJournalFor(record))
     await payments.review(draft)
     expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
     expect(api.snapshot).toHaveBeenCalled()
@@ -696,7 +735,7 @@ it('settles funded Lightning terminals before review without failing on evidence
     api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
       run(pending),
     )
-    api.lightningJournal.mockResolvedValue({ entries: [{ record: lagging.record }] })
+    api.lightningJournal.mockResolvedValue(lightningJournalFor(lagging.record))
     await payments.review(draft)
     expect(await pending.getRfqSwap((lagging.record as { rfqId: string }).rfqId)).not.toBeUndefined()
   } finally {
@@ -717,11 +756,11 @@ it('delegates Lightning recovery acknowledgment, coalesces identical commands an
     })
     const coverage = lightningCoverage()
     api.coverage.mockResolvedValue(coverage)
-    const watching = deferred<{ entries: { record: unknown }[] }>()
+    const watching = deferred<ReturnType<typeof lightningJournalFor>>()
     api.lightningJournal.mockReturnValueOnce(watching.promise)
     const first = payments.acknowledgeLightningRecovery((record as { rfqId: string }).rfqId, coverage)
     expect(payments.acknowledgeLightningRecovery((record as { rfqId: string }).rfqId, coverage)).toBe(first)
-    watching.resolve({ entries: [{ record }] })
+    watching.resolve(lightningJournalFor(record))
     await expect(first).resolves.toBe(true)
     expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
     const lagging = await fundedLightningRecord('settled')
@@ -729,16 +768,91 @@ it('delegates Lightning recovery acknowledgment, coalesces identical commands an
     api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
       run(pending),
     )
-    const holding = deferred<{ entries: { record: unknown }[] }>()
+    const holding = deferred<ReturnType<typeof lightningJournalFor>>()
     api.lightningJournal.mockReturnValueOnce(holding.promise)
     api.coverage.mockResolvedValueOnce(null)
     const gated = payments.acknowledgeLightningRecovery((lagging.record as { rfqId: string }).rfqId, coverage)
     const suspended = payments.suspend()
-    holding.resolve({ entries: [{ record: lagging.record }] })
+    holding.resolve(lightningJournalFor(lagging.record))
     await expect(gated).rejects.toThrow()
     await suspended
     expect(payments.getSnapshot().pending).toBe(null)
     expect(await pending.getRfqSwap((lagging.record as { rfqId: string }).rfqId)).not.toBeUndefined()
+  } finally {
+    restoreLock()
+  }
+})
+
+it('retires funded Lightning terminals from committed recovery without a later send review', async () => {
+  const restoreLock = installImmediateLock()
+  try {
+    const { payments } = open()
+    const { record, fundingArkTxid } = await fundedLightningRecord('settled')
+    const repository = memoryLightningRepo([record])
+    api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+      run(repository),
+    )
+    api.snapshot.mockResolvedValue({
+      history: [{ account: 'spend', type: 'sent', txid: fundingArkTxid, amount: 1500 }],
+    })
+    const coverage = lightningCoverage()
+    api.coverage.mockResolvedValue(coverage)
+    api.lightningJournal.mockResolvedValue(lightningJournalFor(record))
+    await payments.acknowledgeSettledRecovery(coverage)
+    expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
+    expect(api.discover).not.toHaveBeenCalled()
+    expect(api.request).not.toHaveBeenCalled()
+  } finally {
+    restoreLock()
+  }
+})
+
+it('keeps a funded Lightning terminal when committed coverage is incomplete', async () => {
+  const restoreLock = installImmediateLock()
+  try {
+    const { payments } = open()
+    const { record, fundingArkTxid } = await fundedLightningRecord('settled')
+    const repository = memoryLightningRepo([record])
+    api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+      run(repository),
+    )
+    api.snapshot.mockResolvedValue({
+      history: [{ account: 'spend', type: 'sent', txid: fundingArkTxid, amount: 1500 }],
+    })
+    api.lightningJournal.mockResolvedValue(lightningJournalFor(record))
+    api.coverage.mockResolvedValue(null)
+    await payments.acknowledgeSettledRecovery(lightningCoverage())
+    expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).not.toBeUndefined()
+  } finally {
+    restoreLock()
+  }
+})
+
+it('does not retire Lightning from a replaced session after committed recovery', async () => {
+  const restoreLock = installImmediateLock()
+  try {
+    const { payments, update } = open()
+    const { record, fundingArkTxid } = await fundedLightningRecord('settled')
+    const repository = memoryLightningRepo([record])
+    api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+      run(repository),
+    )
+    api.snapshot.mockResolvedValue({
+      history: [{ account: 'spend', type: 'sent', txid: fundingArkTxid, amount: 1500 }],
+    })
+    const coverage = lightningCoverage()
+    api.coverage.mockResolvedValue(coverage)
+    api.lightningJournal.mockResolvedValue(lightningJournalFor(record))
+    update({
+      account: {
+        savings: 'absent',
+        status: { ...status, vaultId: 'other-vault' },
+        enrollment,
+      } as unknown as AdmittedAccount,
+    })
+    await payments.acknowledgeSettledRecovery(coverage)
+    expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).not.toBeUndefined()
+    expect(api.settle).not.toHaveBeenCalled()
   } finally {
     restoreLock()
   }
