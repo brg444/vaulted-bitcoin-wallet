@@ -640,7 +640,7 @@ describe('acknowledgment session fences', () => {
   }
 
   function snapshot(attempt: MatureBoardingAttempt, coverage: Awaited<ReturnType<typeof prepared>>['coverage']) {
-    return { coverage, matureBoardingJournal: attempt }
+    return { coverage, lightningJournal: null, matureBoardingJournal: attempt }
   }
 
   it.each(['current', 'signal', 'owner'] as const)('fences delayed history: %s', async (mode) => {

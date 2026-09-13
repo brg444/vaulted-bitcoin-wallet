@@ -294,7 +294,7 @@ describe('producer through the real mature boarding journal', () => {
         coverage,
         onchainProvider: confirmedProvider,
         locks: exclusiveVaultLocks(),
-        readEvidence: async () => ({ coverage, matureBoardingJournal: live }),
+        readEvidence: async () => ({ coverage, lightningJournal: null, matureBoardingJournal: live }),
       }),
     ).resolves.toBe(true)
     expect(await loadMatureBoardingAttempt(f.status)).toBeNull()
@@ -341,7 +341,7 @@ describe('producer through the real mature boarding journal', () => {
         onchainProvider: confirmed,
         locks: exclusiveVaultLocks(),
         persistAttempt: persistMatureBoardingAttempt,
-        readEvidence: async () => ({ coverage, matureBoardingJournal: null }),
+        readEvidence: async () => ({ coverage, lightningJournal: null, matureBoardingJournal: null }),
       }),
     ).resolves.toBe(false)
     expect((await loadMatureBoardingAttempt(status))?.phase).toBe('confirmed')
@@ -355,7 +355,11 @@ describe('producer through the real mature boarding journal', () => {
           },
         }),
         locks: exclusiveVaultLocks(),
-        readEvidence: async () => ({ coverage, matureBoardingJournal: { ...record, phase: 'confirmed' } }),
+        readEvidence: async () => ({
+          coverage,
+          lightningJournal: null,
+          matureBoardingJournal: { ...record, phase: 'confirmed' },
+        }),
       }),
     ).resolves.toBe(false)
 
@@ -367,7 +371,11 @@ describe('producer through the real mature boarding journal', () => {
           transactions: async () => [],
         }),
         locks: exclusiveVaultLocks(),
-        readEvidence: async () => ({ coverage, matureBoardingJournal: { ...record, phase: 'confirmed' } }),
+        readEvidence: async () => ({
+          coverage,
+          lightningJournal: null,
+          matureBoardingJournal: { ...record, phase: 'confirmed' },
+        }),
       }),
     ).resolves.toBe(false)
 
@@ -378,6 +386,7 @@ describe('producer through the real mature boarding journal', () => {
         locks: exclusiveVaultLocks(),
         readEvidence: async () => ({
           coverage,
+          lightningJournal: null,
           matureBoardingJournal: { ...record, phase: 'confirmed', txid: 'ff'.repeat(32), hex: '00' },
         }),
       }),
@@ -388,7 +397,11 @@ describe('producer through the real mature boarding journal', () => {
         coverage,
         onchainProvider: confirmed,
         locks: exclusiveVaultLocks(),
-        readEvidence: async () => ({ coverage, matureBoardingJournal: { ...record, phase: 'confirmed' } }),
+        readEvidence: async () => ({
+          coverage,
+          lightningJournal: null,
+          matureBoardingJournal: { ...record, phase: 'confirmed' },
+        }),
         retireAttempt: async () => {
           throw new Error('Storage is full')
         },

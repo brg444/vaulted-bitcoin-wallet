@@ -8,6 +8,7 @@ import { validateExitArchive } from './exitArchive'
 import { recoveryFileStore } from './fileStore'
 import type { RecoveryOutput } from './coverage'
 import { validateMatureBoardingAttempt, type MatureBoardingAttempt } from '../vtxo/matureBoardingJournal'
+import type { LightningRecoveryJournal } from './lightningArchive'
 
 export interface CommittedRecoveryCoverage {
   vaultId: string
@@ -20,9 +21,10 @@ export interface CommittedRecoveryCoverage {
 export interface CommittedRecoveryEvidence {
   coverage: CommittedRecoveryCoverage
   matureBoardingJournal: MatureBoardingAttempt | null
+  lightningJournal: LightningRecoveryJournal | null
 }
 
-/** One committed file snapshot: account identity, archive, coverage digest and optional boarding journal. */
+/** One validated file snapshot binds the coverage digest and operation journals to the same account and generation. */
 export async function readCommittedRecoveryEvidence(status: VaultStatus): Promise<CommittedRecoveryEvidence | null> {
   const kit = kitFromFacts({ status })
   if (!kit) throw new Error('Committed recovery descriptor is unavailable')
@@ -47,6 +49,7 @@ export async function readCommittedRecoveryEvidence(status: VaultStatus): Promis
     matureBoardingJournal: file.matureBoardingJournal
       ? validateMatureBoardingAttempt(status, file.matureBoardingJournal)
       : null,
+    lightningJournal: file.lightningJournal ?? null,
   }
 }
 
