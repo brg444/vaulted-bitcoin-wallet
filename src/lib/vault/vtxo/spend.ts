@@ -1,11 +1,4 @@
-import {
-  ArkAddress,
-  ChainedTxType,
-  RestArkProvider,
-  SingleKey,
-  Transaction,
-  type ArkProvider,
-} from '@arkade-os/sdk'
+import { ArkAddress, ChainedTxType, RestArkProvider, SingleKey, Transaction, type ArkProvider } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { VaultRequestError } from '../api'
 import { deriveDirectP256, signDirectP256, zeroBytes } from '../ceremony/directauth'

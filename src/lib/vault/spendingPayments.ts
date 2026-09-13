@@ -605,11 +605,15 @@ function createSpendingPayments(session: SessionSource) {
       })
     },
     acknowledgeRecovery(operationId: string, coverage?: CommittedRecoveryCoverage): Promise<boolean> {
-      return run('acknowledge', `acknowledge:${operationId}:${coverage?.fileDigest || 'latest'}`, async (check, signal) => {
-        const { status } = access()
-        check()
-        return acknowledgeSpendingVtxoRecovery(status, operationId, coverage, signal)
-      })
+      return run(
+        'acknowledge',
+        `acknowledge:${operationId}:${coverage?.fileDigest || 'latest'}`,
+        async (check, signal) => {
+          const { status } = access()
+          check()
+          return acknowledgeSpendingVtxoRecovery(status, operationId, coverage, signal)
+        },
+      )
     },
     retryRefund(rfqId: string): Promise<void> {
       return run('refund', 'refund:' + rfqId, async (check, signal) => {

@@ -1988,13 +1988,12 @@ describe('regular VTXO spend coordinator', () => {
     })
     expect(finalized?.stage).toBe('operator-finalized')
 
-    expect(
-      () =>
-        applyVtxoOperationView(finalized!, {
-          operationId: OP_1,
-          bundleDigest: '11'.repeat(32),
-          state: 'aborted',
-        }),
+    expect(() =>
+      applyVtxoOperationView(finalized!, {
+        operationId: OP_1,
+        bundleDigest: '11'.repeat(32),
+        state: 'aborted',
+      }),
     ).toThrow(VtxoSpendUnresolvedError)
     expect(loadPersistedVtxoSpend('vault-a')?.stage).toBe('operator-finalized')
   })
