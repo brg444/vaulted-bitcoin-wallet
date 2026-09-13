@@ -32,10 +32,7 @@ import {
   type LockupFate,
   type RfqSwapRecord,
 } from '@arkade-os/swap'
-import {
-  readLightningRefundAttempt,
-  writeRetiredLightningFunding,
-} from './lightningEvidence'
+import { readLightningRefundAttempt, writeRetiredLightningFunding } from './lightningEvidence'
 import { withVaultLightningLifecycleLock } from './lightningLock'
 import { ensureVaultWalletWorker, fetchVaultWalletVtxoSnapshot } from './vtxo/walletWorker'
 import {
@@ -875,9 +872,7 @@ async function acknowledgeVaultLightningRecoveryLocked(
   if (!receipt) return false
   // SDK activity amounts net fees differently per path, so history binds the
   // funding transaction presence, not a recomputed amount.
-  if (
-    !history.some((row) => row.account === 'spend' && row.type === 'sent' && row.txid === record.fundingArkTxid)
-  ) {
+  if (!history.some((row) => row.account === 'spend' && row.type === 'sent' && row.txid === record.fundingArkTxid)) {
     return false
   }
   // The committed file must retain this exact swap; outputs alone cannot
@@ -894,9 +889,7 @@ async function acknowledgeVaultLightningRecoveryLocked(
   try {
     const attempt = readLightningRefundAttempt(rfqId)
     if (attempt?.submittedCheckpointPsbts?.length) {
-      expectedCheckpoints = attempt.submittedCheckpointPsbts.map(
-        (raw) => Transaction.fromPSBT(base64.decode(raw)).id,
-      )
+      expectedCheckpoints = attempt.submittedCheckpointPsbts.map((raw) => Transaction.fromPSBT(base64.decode(raw)).id)
     }
   } catch {
     return false
@@ -917,9 +910,7 @@ async function acknowledgeVaultLightningRecoveryLocked(
   }
   if (record.refundArkTxid) {
     if (
-      !coverage.outputs.some(
-        (coin) => coin.txid === record.refundArkTxid && coin.script === status.spendingArkScript,
-      )
+      !coverage.outputs.some((coin) => coin.txid === record.refundArkTxid && coin.script === status.spendingArkScript)
     ) {
       return false
     }
@@ -967,7 +958,8 @@ export async function acknowledgeSettledVaultLightning(
   for (const rfqId of funded) {
     signal?.throwIfAborted()
     try {
-      if (await acknowledgeVaultLightningRecovery(status, repository, rfqId, history, journal, evidence, signal)) retired++
+      if (await acknowledgeVaultLightningRecovery(status, repository, rfqId, history, journal, evidence, signal))
+        retired++
     } catch (error) {
       signal?.throwIfAborted()
       if (signal?.aborted) throw error

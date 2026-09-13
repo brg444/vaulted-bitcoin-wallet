@@ -544,8 +544,7 @@ function installImmediateLock() {
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
     value: {
-      request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<unknown>) =>
-        callback({}),
+      request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<unknown>) => callback({}),
     },
   })
   return () => {

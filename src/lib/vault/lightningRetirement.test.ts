@@ -3,10 +3,7 @@ import { base64, hex } from '@scure/base'
 import type { RfqSwap, RfqSwapRecord } from '@arkade-os/swap'
 import { Transaction } from '@arkade-os/sdk'
 import type { VaultStatus } from './types'
-import {
-  acknowledgeSettledVaultLightning,
-  acknowledgeVaultLightningRecovery,
-} from './spendingPayments'
+import { acknowledgeSettledVaultLightning, acknowledgeVaultLightningRecovery } from './spendingPayments'
 import {
   beginVaultLightningFunding,
   createVaultLightningObserver,
@@ -27,11 +24,7 @@ import {
   type VaultLightningRefundFacts,
 } from './lightningEvidence'
 import { readCommittedRecoveryCoverage } from './recovery/committedCoverage'
-import {
-  INVOICE_TIMESTAMP,
-  emptyIndexer,
-  lightningQuoteHarness,
-} from './lightningTestUtils'
+import { INVOICE_TIMESTAMP, emptyIndexer, lightningQuoteHarness } from './lightningTestUtils'
 import { lightningRefundPackageFixture } from './testdata/lightningRefundFixture'
 
 vi.mock('./recovery/committedCoverage', () => ({ readCommittedRecoveryCoverage: vi.fn() }))
@@ -80,8 +73,7 @@ function installImmediateLock() {
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
     value: {
-      request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<unknown>) =>
-        callback({}),
+      request: async (_name: string, _options: unknown, callback: (lock: unknown) => Promise<unknown>) => callback({}),
     },
   })
   return () => {
@@ -294,12 +286,21 @@ describe('Lightning funded-record retirement', () => {
         fundingArkTxid: undefined,
         profile: {
           ...saved.profile,
-          vaultLightning: { ...(saved.profile as Record<string, { fundingState: string }>).vaultLightning, fundingState: 'quoted' },
+          vaultLightning: {
+            ...(saved.profile as Record<string, { fundingState: string }>).vaultLightning,
+            fundingState: 'quoted',
+          },
         },
       })
       expect(isFundedLightningRecord((await harness.repository.getRfqSwap(quote.rfqId))!)).toBe(false)
       await expect(
-        acknowledgeVaultLightningRecovery(lightningStatus(), harness.repository, quote.rfqId, historyFor(FUNDING_TXID), null),
+        acknowledgeVaultLightningRecovery(
+          lightningStatus(),
+          harness.repository,
+          quote.rfqId,
+          historyFor(FUNDING_TXID),
+          null,
+        ),
       ).resolves.toBe(false)
       expect(await harness.repository.getRfqSwap(quote.rfqId)).not.toBeNull()
     } finally {
@@ -315,17 +316,37 @@ describe('Lightning funded-record retirement', () => {
       const journal = journalFor(saved)
       vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(null)
       await expect(
-        acknowledgeVaultLightningRecovery(lightningStatus(), harness.repository, quote.rfqId, historyFor(FUNDING_TXID), journal),
+        acknowledgeVaultLightningRecovery(
+          lightningStatus(),
+          harness.repository,
+          quote.rfqId,
+          historyFor(FUNDING_TXID),
+          journal,
+        ),
       ).resolves.toBe(false)
       vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(coverageFor([]))
       await expect(
-        acknowledgeVaultLightningRecovery(lightningStatus(), harness.repository, quote.rfqId, [] as never, journal, coverageFor([])),
+        acknowledgeVaultLightningRecovery(
+          lightningStatus(),
+          harness.repository,
+          quote.rfqId,
+          [] as never,
+          journal,
+          coverageFor([]),
+        ),
       ).resolves.toBe(false)
       await expect(
-        acknowledgeVaultLightningRecovery(lightningStatus(), harness.repository, quote.rfqId, historyFor(FUNDING_TXID), journal, {
-          ...(coverageFor([]) as object),
-          fileDigest: 'other-digest',
-        } as never),
+        acknowledgeVaultLightningRecovery(
+          lightningStatus(),
+          harness.repository,
+          quote.rfqId,
+          historyFor(FUNDING_TXID),
+          journal,
+          {
+            ...(coverageFor([]) as object),
+            fileDigest: 'other-digest',
+          } as never,
+        ),
       ).resolves.toBe(false)
       await expect(
         acknowledgeVaultLightningRecovery(
@@ -417,7 +438,13 @@ describe('Lightning funded-record retirement', () => {
       vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(coverageFor([]))
       const history = historyFor(FUNDING_TXID)
       await expect(
-        acknowledgeSettledVaultLightning(lightningStatus(), harness.repository, history, journalFor(saved), coverageFor([])),
+        acknowledgeSettledVaultLightning(
+          lightningStatus(),
+          harness.repository,
+          history,
+          journalFor(saved),
+          coverageFor([]),
+        ),
       ).resolves.toBe(1)
       expect(await harness.repository.getRfqSwap(quote.rfqId)).toBeUndefined()
       expect(await listFundedTerminalLightningRecords(harness.repository)).toEqual([])
@@ -535,7 +562,9 @@ describe('Lightning refund attempt durability', () => {
   it('rejects corrupt journal data and unavailable storage instead of dispatching', async () => {
     const inner = vi.fn(async () => ({ arkTxid: 'cc'.repeat(32), amount: 2125 }))
     localStorage.setItem(`vaulted-lightning-refund-attempt:${attempt.rfqId}`, 'not-json')
-    await expect(durableVaultLightningRefund(attempt, inner, { record: neverRecord() })(swap)).rejects.toThrow('corrupt')
+    await expect(durableVaultLightningRefund(attempt, inner, { record: neverRecord() })(swap)).rejects.toThrow(
+      'corrupt',
+    )
     expect(inner).not.toHaveBeenCalled()
   })
 })
@@ -575,9 +604,12 @@ describe('Lightning refund merge hardening', () => {
 
   it('rejects conflicting signed evidence and replays identical bytes', () => {
     recordRefundAttemptProgress(submitted, 'submitted')
-    expect(() => recordRefundAttemptProgress({ ...submitted, signedRefundPsbt: refundPsbtBytes('ff'.repeat(32)).psbt }, 'submitted')).toThrow(
-      'evidence changed',
-    )
+    expect(() =>
+      recordRefundAttemptProgress(
+        { ...submitted, signedRefundPsbt: refundPsbtBytes('ff'.repeat(32)).psbt },
+        'submitted',
+      ),
+    ).toThrow('evidence changed')
     expect(() =>
       recordRefundAttemptProgress({ ...submitted, submittedRefundTxid: 'dd'.repeat(32) }, 'submitted'),
     ).toThrow('evidence changed')
@@ -706,9 +738,7 @@ describe('Lightning refund graph validation', () => {
         resultAmount: 2400,
       }),
     ).toThrow('transaction changed')
-    expect(() => validateLightningRefundGraph({ ...attempt, destination: record.lockupAddress })).toThrow(
-      'destination',
-    )
+    expect(() => validateLightningRefundGraph({ ...attempt, destination: record.lockupAddress })).toThrow('destination')
   })
 
   it('rejects signed bytes in the unsigned checkpoint set and half an Operator response', async () => {
@@ -722,9 +752,9 @@ describe('Lightning refund graph validation', () => {
         serverCheckpointPsbts: [...fixture.serverCheckpointPsbts],
       }),
     ).toThrow('incomplete')
-    expect(() =>
-      validateLightningRefundGraph({ ...attempt, serverRefundPsbt: fixture.serverRefundPsbt }),
-    ).toThrow('incomplete')
+    expect(() => validateLightningRefundGraph({ ...attempt, serverRefundPsbt: fixture.serverRefundPsbt })).toThrow(
+      'incomplete',
+    )
   })
 
   function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
@@ -779,7 +809,11 @@ describe('Lightning refund graph validation', () => {
       serverCheckpointPsbts: [...fixture.serverCheckpointPsbts],
       serverRefundPsbt: fixture.serverRefundPsbt,
     }
-    validateLightningRefundGraph({ ...responded, stage: 'finalized', finalCheckpointPsbts: [...fixture.finalCheckpointPsbts] })
+    validateLightningRefundGraph({
+      ...responded,
+      stage: 'finalized',
+      finalCheckpointPsbts: [...fixture.finalCheckpointPsbts],
+    })
     // Unsigned bytes where signed evidence is required fail closed.
     expect(() =>
       validateLightningRefundGraph({
@@ -801,7 +835,10 @@ describe('Lightning refund graph validation', () => {
       }),
     ).toThrow('invalid signer')
     expect(() =>
-      validateLightningRefundGraph({ ...responded, serverRefundPsbt: corruptFirstInputSignature(fixture.serverRefundPsbt) }),
+      validateLightningRefundGraph({
+        ...responded,
+        serverRefundPsbt: corruptFirstInputSignature(fixture.serverRefundPsbt),
+      }),
     ).toThrow('invalid signer')
   })
 })
@@ -1016,7 +1053,14 @@ describe('Lightning retirement receipt gate', () => {
       outputs: [],
     } as never
     await expect(
-      acknowledgeVaultLightningRecovery(lightningStatus(), failingRemove, quote.rfqId, history, journalFor(saved), evidence),
+      acknowledgeVaultLightningRecovery(
+        lightningStatus(),
+        failingRemove,
+        quote.rfqId,
+        history,
+        journalFor(saved),
+        evidence,
+      ),
     ).rejects.toThrow('partial retirement failure')
     expect(await harness.repository.getRfqSwap(quote.rfqId)).not.toBeNull()
     expect(readLightningRecoveryAcknowledgment(quote.rfqId)).toMatchObject({

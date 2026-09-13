@@ -481,8 +481,7 @@ export function validateLightningRefundGraph(attempt: VaultLightningRefundAttemp
   // The Operator successor is the same transaction, never a replacement,
   // and every Operator and final checkpoint is a signature over its
   // recorded unsigned twin, never a re-cut transaction.
-  const hasServerResponse =
-    (attempt.serverCheckpointPsbts?.length ?? 0) > 0 || attempt.serverRefundPsbt !== undefined
+  const hasServerResponse = (attempt.serverCheckpointPsbts?.length ?? 0) > 0 || attempt.serverRefundPsbt !== undefined
   const completeResponse = attempt.stage === 'finalized' || attempt.stage === 'result'
   if (completeResponse && !hasServerResponse) {
     throw new Error('Lightning refund Operator response is incomplete.')
@@ -568,9 +567,9 @@ function retiredFundingKey(rfqId: string): string {
 export function readRetiredLightningFunding(rfqId: string): VaultLightningRetiredFunding | null {
   if (typeof localStorage === 'undefined') return null
   try {
-    const parsed = JSON.parse(localStorage.getItem(retiredFundingKey(rfqId)) || 'null') as Partial<
-      VaultLightningRetiredFunding
-    > | null
+    const parsed = JSON.parse(
+      localStorage.getItem(retiredFundingKey(rfqId)) || 'null',
+    ) as Partial<VaultLightningRetiredFunding> | null
     if (
       !parsed ||
       parsed.rfqId !== rfqId ||

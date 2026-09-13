@@ -1,4 +1,12 @@
-import { ArkAddress, RestArkProvider, SingleKey, VHTLCV2ContractHandler, getNetwork, resolveEmulatorPubkey, type Identity } from '@arkade-os/sdk'
+import {
+  ArkAddress,
+  RestArkProvider,
+  SingleKey,
+  VHTLCV2ContractHandler,
+  getNetwork,
+  resolveEmulatorPubkey,
+  type Identity,
+} from '@arkade-os/sdk'
 import { lightningSendVtxoScript, type arkadeRefunder, type RfqSwapManager } from '@arkade-os/swap'
 import { p2tr } from '@scure/btc-signer'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
@@ -161,7 +169,11 @@ it.each(['before signing', 'before Operator submission'] as const)(
     manager.poll.mockImplementation(async () => {
       const callbacks = manager.setCallbacks.mock.calls.at(-1)?.[0]
       if (callbacks)
-        await callbacks.refundArkade({ rfqId, refundLocktime: 0, lockupPkScript: refundLockup().lockupPkScript } as never)
+        await callbacks.refundArkade({
+          rfqId,
+          refundLocktime: 0,
+          lockupPkScript: refundLockup().lockupPkScript,
+        } as never)
     })
     const run = vi.fn()
     const result = withVaultLightningSdkWallet(phone, status, run, { refundRfqId: rfqId, signal: abort.signal })
