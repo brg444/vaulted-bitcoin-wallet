@@ -273,3 +273,33 @@ it('Spending payment ownership keeps signing and journal mutation out of present
     ),
   ).toBe(false)
 })
+
+it('presentation neither constructs or signs payments nor mutates payment storage', () => {
+  const forbidden =
+    /lib\/vault\/vtxo\/spend\.ts$|lib\/vault\/ledgerSavingsWallet\.ts$|lib\/vault\/spendingBitcoinFunding\.ts$|lib\/vault\/vtxo\/spendingTransaction\.ts$|lib\/vault\/vtxo\/spendingJournal\.ts$/
+  const presentation = files('src/screens')
+    .filter((path) => !path.includes('.test.'))
+    .concat(['src/providers/vault.tsx'])
+  for (const path of presentation) {
+    for (const target of imports(path)) {
+      expect(target, `${path} imports ${target}`).not.toMatch(forbidden)
+    }
+  }
+})
+
+it('presentation consumes narrow application contexts instead of one broad facade', () => {
+  const context = readFileSync(resolve(root, 'src/vault/context.ts'), 'utf8')
+  expect(context).not.toMatch(/createContext|VaultContext\b/)
+  const appContexts = readFileSync(resolve(root, 'src/vault/appContexts.ts'), 'utf8')
+  for (const name of [
+    'VaultNavigationContext',
+    'VaultAccountContext',
+    'VaultSendContext',
+    'VaultActivityContext',
+    'VaultRecoveryContext',
+    'VaultInteractionContext',
+    'VaultDisplayContext',
+    'VaultRenewalContext',
+  ])
+    expect(appContexts).toContain(name)
+})
