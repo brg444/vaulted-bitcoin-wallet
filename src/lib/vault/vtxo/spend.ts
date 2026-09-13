@@ -1,4 +1,11 @@
-import { ArkAddress, ChainTxType, ChainedTxType, RestArkProvider, SingleKey, Transaction, type ArkProvider } from '@arkade-os/sdk'
+import {
+  ArkAddress,
+  ChainedTxType,
+  RestArkProvider,
+  SingleKey,
+  Transaction,
+  type ArkProvider,
+} from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { VaultRequestError } from '../api'
 import { deriveDirectP256, signDirectP256, zeroBytes } from '../ceremony/directauth'
@@ -17,7 +24,7 @@ import {
 import { networkPins, vaultOperatorOrigin } from '../networkPins'
 import { PRF_SALT, unwrapPhoneSecret } from '../prfEnvelope'
 import { readCommittedRecoveryCoverage, type CommittedRecoveryCoverage } from '../recovery/committedCoverage'
-import { validateExitArchive, type ExitArchive } from '../recovery/exitArchive'
+import { packExitArchive, validateExitArchive, type ExitArchive } from '../recovery/exitArchive'
 import { recoveryFileStore } from '../recovery/fileStore'
 import { retainFinalizationRecovery } from '../recovery/finalization'
 import { unlockPhoneBip340 } from '../savingsSpend'
@@ -938,10 +945,7 @@ function receiptBindsImmutableOperation(pending: PersistedVtxoSpend, view: VtxoO
  * finalized without a local operator result, the exit repository must hold
  * the exact validated successor and its required ancestors instead. Anything
  * short of that retains the journal for recovery. */
-async function spendingSuccessorArchiveCovers(
-  status: VaultStatus,
-  pending: PersistedVtxoSpend,
-): Promise<boolean> {
+async function spendingSuccessorArchiveCovers(status: VaultStatus, pending: PersistedVtxoSpend): Promise<boolean> {
   if (!pending.operatorArkPsbt) return exitRepositorySuccessorCovers(status, pending)
   const archive = await recoveryFileStore<ExitArchive>(
     `finalization:${status.network}:${status.vaultId}:${pending.arkTxid}`,
@@ -953,11 +957,7 @@ async function spendingSuccessorArchiveCovers(
       scriptPubKey: String(status.spendingArkScript),
       descriptorHash: status.vaultId,
     })
-    if (
-      !pending.unsignedArkPsbt ||
-      !pending.unsignedCheckpointPsbts?.length ||
-      !pending.checkpointPsbts?.length
-    )
+    if (!pending.unsignedArkPsbt || !pending.unsignedCheckpointPsbts?.length || !pending.checkpointPsbts?.length)
       return false
     const operatorPub = await spendingOperatorPub(status, pending.checkpointTapscript)
     const unsignedArk = Transaction.fromPSBT(base64.decode(pending.unsignedArkPsbt))
@@ -974,14 +974,10 @@ async function spendingSuccessorArchiveCovers(
       if (!stored) return false
       archivedCheckpoints.push(stored)
     }
-    const pairs = checkpointPairsInCanonicalOrder(
-      pending.unsignedCheckpointPsbts,
-      archivedCheckpoints,
-      'Recovery',
-    )
+    const pairs = checkpointPairsInCanonicalOrder(pending.unsignedCheckpointPsbts, archivedCheckpoints, 'Recovery')
     for (const { original, candidate } of pairs)
       validation.assertCheckpointTransaction(candidate, original, 'vault-authorized')
-    if (!archiveConsumedInputAncestryCovers(archive, pending)) return false
+    if (!archiveConsumedInputAncestryCovers(status, archive, pending)) return false
     if (!successorCarriesChange(status, pending, archivedArk)) return false
   } catch {
     return false
@@ -989,59 +985,40 @@ async function spendingSuccessorArchiveCovers(
   return true
 }
 
-/** Prove the exact consumed-input ancestry stored in the archive. Every
- * reserved input must open a commitment-anchored branch whose nodes carry
- * id-matching transactions, so a coin-less result cannot hide a missing
- * ancestor. The producer persists these branches; readers require them. */
-function archiveConsumedInputAncestryCovers(archive: ExitArchive, pending: PersistedVtxoSpend): boolean {
-  const inputs = pending.reservedInputs ?? []
-  if (!inputs.length) return false
-  const branches = archive.branches ?? {}
-  const indexed = new Set<string>()
-  for (const chain of Object.values(branches)) {
-    if (!Array.isArray(chain) || !chain.length) return false
-    let anchored = false
-    for (const node of chain) {
-      if (!/^[0-9a-f]{64}$/.test(node.txid) || !Array.isArray(node.spends)) return false
-      if (node.type === ChainTxType.COMMITMENT) {
-        anchored = true
-        continue
-      }
-      const raw = archive.transactions[node.txid]
-      if (!raw) return false
-      if (Transaction.fromPSBT(base64.decode(raw)).id !== node.txid) return false
-      indexed.add(node.txid)
-    }
-    if (!anchored) return false
-  }
-  const known = new Set<string>([...indexed, ...Object.keys(archive.transactions)])
-  const commitments = new Set<string>()
-  for (const chain of Object.values(branches)) {
-    for (const node of chain) {
-      if (node.type === ChainTxType.COMMITMENT) commitments.add(node.txid)
-    }
-  }
-  for (const chain of Object.values(branches)) {
-    for (const node of chain) {
-      if (node.type === ChainTxType.COMMITMENT) continue
-      for (const parent of node.spends) {
-        if (!/^[0-9a-f]{64}$/.test(parent) || (!known.has(parent) && !commitments.has(parent))) return false
-      }
-    }
-  }
-  for (const input of inputs) {
-    const chain = branches[`${input.txid}:${input.vout}`]
-    if (!Array.isArray(chain) || !chain.length) return false
-  }
+/** Apply the capture validator to the consumed inputs as well as successor
+ * outputs, including payments with no self-owned change. */
+function archiveConsumedInputAncestryCovers(
+  status: VaultStatus,
+  archive: ExitArchive,
+  pending: PersistedVtxoSpend,
+): boolean {
+  if (!pending.reservedInputs?.length) return false
+  validateExitArchive(
+    {
+      ...archive,
+      coins: packExitArchive(
+        pending.reservedInputs.map((input) => ({
+          txid: input.txid,
+          vout: input.vout,
+          value: input.valueSats,
+          script: input.scriptHex,
+          isSpent: false,
+          createdAt: new Date(archive.capturedAt),
+        })),
+      ),
+    },
+    {
+      network: status.network,
+      scriptPubKey: String(status.spendingArkScript),
+      descriptorHash: status.vaultId,
+    },
+  )
   return true
 }
 
 /** Resolve the pinned Operator identity exactly like every other sensitive
  * step, so archived signatures verify against the enrolled release. */
-async function spendingOperatorPub(
-  status: VaultStatus,
-  checkpointTapscript: string | undefined,
-): Promise<Uint8Array> {
+async function spendingOperatorPub(status: VaultStatus, checkpointTapscript: string | undefined): Promise<Uint8Array> {
   const info = await requirePinnedOperator(
     new RestArkProvider(vaultOperatorOrigin(status.network)),
     status,
@@ -1054,10 +1031,7 @@ async function spendingOperatorPub(
  * the exit repository must hold the exact successor, its required ancestors
  * and the change output. Absence from a saved output list alone proves
  * nothing, and a stale file never satisfies this tier. */
-async function exitRepositorySuccessorCovers(
-  status: VaultStatus,
-  pending: PersistedVtxoSpend,
-): Promise<boolean> {
+async function exitRepositorySuccessorCovers(status: VaultStatus, pending: PersistedVtxoSpend): Promise<boolean> {
   if (!pending.unsignedArkPsbt) return false
   const repository = vaultExitRepository(status.vaultId, status.network)
   try {
@@ -1136,9 +1110,7 @@ function successorCarriesChange(status: VaultStatus, pending: PersistedVtxoSpend
   if (changeSats <= 0) return true
   if (pending.changeVout === undefined) return false
   const output = successor.getOutput(pending.changeVout)
-  return (
-    !!output && output.amount === BigInt(changeSats) && hex.encode(output.script!) === status.spendingArkScript
-  )
+  return !!output && output.amount === BigInt(changeSats) && hex.encode(output.script!) === status.spendingArkScript
 }
 
 /** Owner-side retirement predicate for a finalized Spending successor.
@@ -1170,11 +1142,7 @@ async function retireFinalizedVtxoSpendLocked(
   const outflow = pending.amountSats + (pending.feeSats ?? 0)
   if (
     !snapshot.history.some(
-      (row) =>
-        row.account === 'spend' &&
-        row.type === 'sent' &&
-        row.txid === pending.arkTxid &&
-        row.amount === outflow,
+      (row) => row.account === 'spend' && row.type === 'sent' && row.txid === pending.arkTxid && row.amount === outflow,
     )
   )
     return false
@@ -1205,9 +1173,7 @@ export async function acknowledgeSpendingVtxoRecovery(
   evidence?: CommittedRecoveryCoverage,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  return withVtxoSendLock(status.vaultId, () =>
-    retireFinalizedVtxoSpendLocked(status, operationId, evidence, signal),
-  )
+  return withVtxoSendLock(status.vaultId, () => retireFinalizedVtxoSpendLocked(status, operationId, evidence, signal))
 }
 
 /** Best-effort retirement of every service-finalized operation. A cancelled
