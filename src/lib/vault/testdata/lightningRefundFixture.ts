@@ -1,0 +1,176 @@
+import { CSVMultisigTapscript, SingleKey, Transaction, type Identity, type IWallet } from '@arkade-os/sdk'
+import {
+  arkadeRefunder,
+  lockupContractParams,
+  rebuildRfqSwap,
+  type InMemoryAssetSwapRepository,
+  type RfqSwap,
+} from '@arkade-os/swap'
+import { base64, hex } from '@scure/base'
+import { lightningQuoteHarness } from '../lightningTestUtils'
+
+/** Quote `from_amount` from `lightningQuoteHarness` / `completeRequestResult`. */
+export const LIGHTNING_REFUND_QUOTE_SATS = 2125
+
+/** Two original lockup coins whose sum is above the RFQ quote. */
+export const LIGHTNING_REFUND_INPUT_VALUES = [1_500, 900] as const
+
+export interface LightningRefundLockupInput {
+  txid: string
+  vout: number
+  value: number
+}
+
+export interface LightningRefundSubmission {
+  signedRefundPsbt: string
+  checkpointPsbts: string[]
+  serverCheckpointPsbts: string[]
+}
+
+export interface LightningRefundFinalization {
+  arkTxid: string
+  checkpointPsbts: string[]
+}
+
+export interface LightningRefundPackageFixture {
+  originalLockupInputs: LightningRefundLockupInput[]
+  swap: RfqSwap
+  signedRefundPsbt: string
+  submittedCheckpointPsbts: string[]
+  serverCheckpointPsbts: string[]
+  finalCheckpointPsbts: string[]
+  refundId: string
+  resultAmount: number
+  quotedAmountSats: number
+  destinationAddress: string
+  destinationPkScriptHex: string
+  senderPub: string
+  serverPub: string
+  submissions: LightningRefundSubmission[]
+  finalizations: LightningRefundFinalization[]
+  wallet: IWallet
+  repository: InMemoryAssetSwapRepository
+}
+
+function operatorIdentity(): Identity {
+  return SingleKey.fromPrivateKey(hex.decode('04'.padStart(64, '0')))
+}
+
+function checkpointTapscriptHex(serverPub: Uint8Array): string {
+  return hex.encode(
+    CSVMultisigTapscript.encode({
+      timelock: { type: 'seconds', value: 4096n },
+      pubkeys: [serverPub],
+    }).script,
+  )
+}
+
+function originalLockupInputs(): LightningRefundLockupInput[] {
+  return LIGHTNING_REFUND_INPUT_VALUES.map((value, index) => ({
+    txid: (index === 0 ? 'a1' : 'a2').repeat(32),
+    vout: index,
+    value,
+  }))
+}
+
+function lockupIndexer(scriptHex: string, inputs: readonly LightningRefundLockupInput[]) {
+  const vtxos = inputs.map((input) => ({
+    txid: input.txid,
+    vout: input.vout,
+    value: input.value,
+    script: scriptHex,
+    isUnrolled: false,
+  }))
+  return {
+    getVtxos: async (options?: { recoverableOnly?: boolean }) => {
+      if (options?.recoverableOnly) return { vtxos: [] }
+      return { vtxos }
+    },
+    getVirtualTxs: async () => ({ txs: [] }),
+  }
+}
+
+async function recordingRefundOperator(server: Identity, serverPub: Uint8Array) {
+  const submissions: LightningRefundSubmission[] = []
+  const finalizations: LightningRefundFinalization[] = []
+  const tapscript = checkpointTapscriptHex(serverPub)
+  return {
+    submissions,
+    finalizations,
+    ark: {
+      getInfo: async () => ({ checkpointTapscript: tapscript }),
+      submitTx: async (signedRefundPsbt: string, checkpointPsbts: string[]) => {
+        const serverCheckpointPsbts = await Promise.all(
+          checkpointPsbts.map(async (psbt) => {
+            const signed = await server.sign(Transaction.fromPSBT(base64.decode(psbt)), [0])
+            return base64.encode(signed.toPSBT())
+          }),
+        )
+        submissions.push({
+          signedRefundPsbt,
+          checkpointPsbts: [...checkpointPsbts],
+          serverCheckpointPsbts: [...serverCheckpointPsbts],
+        })
+        return {
+          arkTxid: Transaction.fromPSBT(base64.decode(signedRefundPsbt)).id,
+          finalArkTx: signedRefundPsbt,
+          signedCheckpointTxs: serverCheckpointPsbts,
+        }
+      },
+      finalizeTx: async (arkTxid: string, checkpointPsbts: string[]) => {
+        finalizations.push({ arkTxid, checkpointPsbts: [...checkpointPsbts] })
+      },
+    },
+  }
+}
+
+/** Build a real two-input `arkadeRefunder` refund against in-memory transports. */
+export async function lightningRefundPackageFixture(): Promise<LightningRefundPackageFixture> {
+  const harness = await lightningQuoteHarness({ rfqId: 'ab'.repeat(32) })
+  const quote = await harness.request()
+  const record = await harness.repository.getRfqSwap(quote.rfqId)
+  if (!record) throw new Error('Lightning refund fixture has no RFQ record.')
+  const params = await lockupContractParams(harness.contracts, record.lockupAddress)
+  const swap = rebuildRfqSwap(record, params)
+  if (!swap.lockup?.script) throw new Error('Rebuilt Lightning refund swap is missing its lockup script.')
+
+  const inputs = originalLockupInputs()
+  const scriptHex = hex.encode(swap.lockup.script.pkScript)
+  const server = operatorIdentity()
+  const serverPub = (await server.xOnlyPublicKey())!
+  const { ark, submissions, finalizations } = await recordingRefundOperator(server, serverPub)
+  const result = await arkadeRefunder({
+    ark: ark as never,
+    indexer: lockupIndexer(scriptHex, inputs) as never,
+    wallet: harness.wallet,
+    repository: harness.repository,
+  })(swap)
+  if (!result) throw new Error('Lightning refund fixture produced no package result.')
+  await harness.manager.stop()
+
+  const submitted = submissions[0]
+  if (!submitted) throw new Error('Lightning refund fixture captured no submit.')
+  const finalized = finalizations[0]
+  if (!finalized) throw new Error('Lightning refund fixture captured no finalize.')
+
+  const destinationAddress = await harness.wallet.getAddress()
+  return {
+    originalLockupInputs: inputs,
+    swap,
+    signedRefundPsbt: submitted.signedRefundPsbt,
+    submittedCheckpointPsbts: submitted.checkpointPsbts,
+    serverCheckpointPsbts: submitted.serverCheckpointPsbts,
+    finalCheckpointPsbts: finalized.checkpointPsbts,
+    refundId: result.arkTxid,
+    resultAmount: result.amount,
+    quotedAmountSats: quote.fundAmountSats,
+    destinationAddress,
+    destinationPkScriptHex: hex.encode(swap.lockup.script.options.nonInteractiveRefund!.senderPkScript),
+    senderPub: hex.encode(swap.lockup.script.options.sender),
+    serverPub: hex.encode(serverPub),
+    submissions,
+    finalizations,
+    wallet: harness.wallet,
+    repository: harness.repository,
+  }
+}
