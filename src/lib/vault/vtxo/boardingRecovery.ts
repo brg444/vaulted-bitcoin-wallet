@@ -346,7 +346,9 @@ export async function acknowledgeMatureBoardingRecovery(
 ): Promise<boolean> {
   const locks = requireVaultLockManager(options.locks === undefined ? browserVaultLockManager() : options.locks)
   const load = options.loadAttempt || loadMatureBoardingAttempt
-  const persist = options.persistAttempt || persistMatureBoardingAttempt
+  const persist =
+    options.persistAttempt ||
+    ((status: VaultStatus, record: MatureBoardingAttempt) => persistMatureBoardingAttempt(status, record, locks))
   const retire = options.retireAttempt || retireMatureBoardingAttempt
   const readEvidence = options.readEvidence || readCommittedRecoveryEvidence
   return locks.request(`arkade-vault-boarding-recovery:${status.vaultId}`, { mode: 'exclusive' }, async (lock) => {
@@ -425,7 +427,9 @@ export async function recoverMatureBoardingInputs(
     dependencies.locks === undefined ? browserVaultLockManager() : dependencies.locks,
   )
   const load = dependencies.loadAttempt || loadMatureBoardingAttempt
-  const persist = dependencies.persistAttempt || persistMatureBoardingAttempt
+  const persist =
+    dependencies.persistAttempt ||
+    ((status: VaultStatus, record: MatureBoardingAttempt) => persistMatureBoardingAttempt(status, record, locks))
   return locks.request(
     `arkade-vault-boarding-recovery:${status.vaultId}`,
     { mode: 'exclusive', ifAvailable: true },

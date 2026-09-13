@@ -151,11 +151,15 @@ export async function loadMatureBoardingAttempt(status: VaultStatus): Promise<Ma
   return record && record.phase !== 'retired' ? record : null
 }
 
-export async function persistMatureBoardingAttempt(status: VaultStatus, next: MatureBoardingAttempt) {
+export async function persistMatureBoardingAttempt(
+  status: VaultStatus,
+  next: MatureBoardingAttempt,
+  locks?: VaultLockManager | null,
+) {
   const exact = validateMatureBoardingAttempt(status, next)
-  if (!navigator.locks) throw new Error('Web Locks required to preserve mature boarding recovery')
+  const manager = requireVaultLockManager(locks === undefined ? browserVaultLockManager() : locks)
   const key = storageKey(status)
-  return navigator.locks.request(key, async () => {
+  return manager.request(key, { mode: 'exclusive' }, async () => {
     const previous = await recoveryFileStore<MatureBoardingRecord>(key)
     if (previous) {
       const saved = validateMatureBoardingRecord(status, previous)
@@ -237,11 +241,15 @@ export async function retireMatureBoardingAttempt(
   })
 }
 
-export async function restoreMatureBoardingAttempt(status: VaultStatus, incoming: MatureBoardingAttempt) {
+export async function restoreMatureBoardingAttempt(
+  status: VaultStatus,
+  incoming: MatureBoardingAttempt,
+  locks?: VaultLockManager | null,
+) {
   const exact = validateMatureBoardingAttempt(status, incoming)
-  if (!navigator.locks) throw new Error('Web Locks required to restore mature boarding recovery')
+  const manager = requireVaultLockManager(locks === undefined ? browserVaultLockManager() : locks)
   const key = storageKey(status)
-  return navigator.locks.request(key, async () => {
+  return manager.request(key, { mode: 'exclusive' }, async () => {
     const previous = await recoveryFileStore<MatureBoardingRecord>(key)
     if (!previous) {
       await recoveryFileStore(key, exact)

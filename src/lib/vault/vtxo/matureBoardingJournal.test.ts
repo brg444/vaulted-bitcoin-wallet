@@ -227,6 +227,31 @@ describe('mature boarding attempt journal', () => {
     expect(await loadMatureBoardingAttempt(status)).toBeNull()
   })
 
+  it('persists through the injected lock manager without touching navigator.locks', async () => {
+    const { status, record } = await signedAttempt()
+    const inner = exclusiveVaultLocks()
+    const requests: { name: string; options: unknown }[] = []
+    const recording = {
+      request: async <T>(
+        name: string,
+        options: { mode: 'exclusive' },
+        run: (lock: unknown) => Promise<T>,
+      ): Promise<T> => {
+        requests.push({ name, options })
+        return inner.request(name, options, run)
+      },
+    }
+    vi.stubGlobal('navigator', {})
+    expect((await persistMatureBoardingAttempt(status, record, recording)).phase).toBe('signed')
+    expect(requests).toEqual([
+      {
+        name: matureBoardingAttemptKey(status.vaultId, record.evidence.network, record.evidence.descriptor.script),
+        options: { mode: 'exclusive' },
+      },
+    ])
+    expect(await loadMatureBoardingAttempt(status)).toMatchObject({ phase: 'signed' })
+  })
+
   it('restores matching evidence and rejects a conflicting live record', async () => {
     const { status, record } = await signedAttempt()
     await persistMatureBoardingAttempt(status, record)
@@ -248,6 +273,33 @@ describe('mature boarding attempt journal', () => {
       }),
     ).rejects.toThrow(/Conflicting/)
     expect((await loadMatureBoardingAttempt(status))?.txid).toBe(record.txid)
+  })
+
+  it('restores through the injected lock manager without touching navigator.locks', async () => {
+    const { status, record } = await signedAttempt()
+    await persistMatureBoardingAttempt(status, record)
+    const inner = exclusiveVaultLocks()
+    const requests: { name: string; options: unknown }[] = []
+    const recording = {
+      request: async <T>(
+        name: string,
+        options: { mode: 'exclusive' },
+        run: (lock: unknown) => Promise<T>,
+      ): Promise<T> => {
+        requests.push({ name, options })
+        return inner.request(name, options, run)
+      },
+    }
+    vi.stubGlobal('navigator', {})
+    await expect(
+      restoreMatureBoardingAttempt(status, { ...record, phase: 'dispatched' }, recording),
+    ).resolves.toMatchObject({ phase: 'dispatched' })
+    expect(requests).toEqual([
+      {
+        name: matureBoardingAttemptKey(status.vaultId, record.evidence.network, record.evidence.descriptor.script),
+        options: { mode: 'exclusive' },
+      },
+    ])
   })
 })
 
