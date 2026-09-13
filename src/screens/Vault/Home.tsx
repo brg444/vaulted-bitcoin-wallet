@@ -1,6 +1,6 @@
 import { useSpendingPayment } from '../../vault/spendingPaymentContext'
 import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
-import { useSession } from '../../vault/sessionContext'
+import { useVaultStatus } from '../../vault/sessionContext'
 import WatchedSavings from './WatchedSavings'
 import PaymentNotice from './qg/PaymentNotice'
 import { useEffect, type ReactNode } from 'react'
@@ -19,7 +19,7 @@ import PendingPayment from './qg/PendingPayment'
 
 export default function VaultHome({ children }: { children?: ReactNode }) {
   const { pendingPayments, openPendingPayment } = useSpendingPayment()
-  const { status } = useSession()
+  const status = useVaultStatus()
   const spendingBitcoin = useBitcoinPayment()
   const { account, boardingAddress, accountReads, boardingError, positions } = useVaultAccount()
   const { canSend, openSendScan, clearSpendDraft, setSpendDraft } = useVaultSend()

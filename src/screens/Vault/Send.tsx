@@ -1,5 +1,5 @@
 import { useSpendingPayment } from '../../vault/spendingPaymentContext'
-import { useSession } from '../../vault/sessionContext'
+import { useSession, useVaultStatus } from '../../vault/sessionContext'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
 import { useEffect, useRef, useState } from 'react'
@@ -60,7 +60,8 @@ function payloadFromScan(raw: string, allowLightning = true): { address: string;
 
 export default function VaultSend({ denomination }: { denomination?: BalanceDenomination }) {
   const { pendingPayments, openPendingPayment, canReplaceInFlightSend, replaceInFlightSend } = useSpendingPayment()
-  const { setup, status } = useSession()
+  const { setup } = useSession()
+  const status = useVaultStatus()
   const { account, boardingAddress, dailyRemaining, positions } = useVaultAccount()
   const { busy, error } = useVaultInteraction()
   const { clearSendScan, reviewSpend, scanOnSend, setSpendDraft, spend } = useVaultSend()

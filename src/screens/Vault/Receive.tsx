@@ -1,4 +1,4 @@
-import { useSession } from '../../vault/sessionContext'
+import { useVaultStatus } from '../../vault/sessionContext'
 import SpendingReceive from './SpendingReceive'
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from '../../lib/vault/accountRuntime'
 import { lightningAddressEnabled } from '../../lib/vault/lnurl'
@@ -43,7 +43,7 @@ function AddressRow({
 const RECEIVE_POLL_MS = 5000
 
 export default function VaultReceive() {
-  const { status } = useSession()
+  const status = useVaultStatus()
   const { account, boardingAddress, savingsAddress, spendingArkAddress } = useVaultAccount()
   const { navigate } = useVaultNavigation()
   const { toast } = useToast()

@@ -303,3 +303,39 @@ it('presentation consumes narrow application contexts instead of one broad facad
   ])
     expect(appContexts).toContain(name)
 })
+
+it('presentation reads the paired status instead of the raw session mirror', () => {
+  const sessionContext = readFileSync(resolve(root, 'src/vault/sessionContext.ts'), 'utf8')
+  expect(sessionContext).toContain('export function useVaultStatus()')
+  expect(sessionContext).toMatch(/admitted\?\.status \?\? status/)
+  const presentation = files('src/screens')
+    .filter((path) => !path.includes('.test.'))
+    .concat(['src/providers/vault.tsx'])
+  for (const path of presentation) {
+    const source = readFileSync(resolve(root, path), 'utf8')
+    expect(source, `${path} destructures a raw status from useSession`).not.toMatch(
+      /\{[^}]*\bstatus\b[^}]*\}\s*=\s*useSession\(\)/,
+    )
+    expect(source, `${path} reads session.status directly`).not.toMatch(/\bsession\.status\b/)
+  }
+  expect(readFileSync(resolve(root, 'src/screens/Vault/Home.tsx'), 'utf8')).toContain('useVaultStatus()')
+})
+
+it('the vault test provider partitions overrides per context instead of spreading a broad value', () => {
+  const fixture = readFileSync(resolve(root, 'src/test/fixtures/VaultTestProvider.tsx'), 'utf8')
+  expect(fixture).not.toMatch(/\.\.\.value\b/)
+  expect(fixture).toContain('partitionVaultTestOverrides')
+  expect(fixture).toContain('belongs to no narrow application context')
+  for (const slice of [
+    'slices.session',
+    'slices.navigation',
+    'slices.account',
+    'slices.send',
+    'slices.activity',
+    'slices.recovery',
+    'slices.interaction',
+    'slices.display',
+    'slices.renewal',
+  ])
+    expect(fixture).toContain(slice)
+})

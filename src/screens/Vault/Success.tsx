@@ -1,4 +1,4 @@
-import { useSession } from '../../vault/sessionContext'
+import { useVaultStatus } from '../../vault/sessionContext'
 import QgAmount from './qg/QgAmount'
 import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
@@ -11,7 +11,7 @@ import { QgPrimary } from './qg/QgScreen'
 import PaymentResult from './qg/PaymentResult'
 
 export default function VaultSuccess({ denomination }: { denomination?: BalanceDenomination }) {
-  const { status } = useSession()
+  const status = useVaultStatus()
   const { account, boardingAddress } = useVaultAccount()
   const { lastSend, lastTxid, lastTxKind } = useVaultSend()
   const { navigate } = useVaultNavigation()

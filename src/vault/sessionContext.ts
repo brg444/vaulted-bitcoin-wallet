@@ -7,6 +7,7 @@ export function sessionView(snapshot: VaultSessionSnapshot, session: VaultSessio
   const { setup, status, account: admitted, stagedEnrollment, deployment, locked, privacyLock } = snapshot
   return {
     setup,
+    // Working status before admission. Admitted screens read the paired account.
     status,
     admitted,
     locked,
@@ -48,4 +49,9 @@ export function useSession() {
   const session = useContext(VaultSessionContext)
   if (!session) throw new Error('Vault session provider required')
   return session
+}
+/** One status read for presentation: the paired account once admitted, the working status before it. */
+export function useVaultStatus() {
+  const { admitted, status } = useSession()
+  return admitted?.status ?? status
 }

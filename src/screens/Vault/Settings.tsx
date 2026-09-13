@@ -1,4 +1,4 @@
-import { useSession } from '../../vault/sessionContext'
+import { useSession, useVaultStatus } from '../../vault/sessionContext'
 import { useEffect, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { gitCommit } from '../../_gitCommit'
@@ -140,7 +140,7 @@ export default function VaultSettings() {
   const { reset, setup, privacyLock, setPrivacyLock } = session
   const denom = useBalanceDenomination()
   const money = { unit: denom.unit, rate: denom.rate }
-  const status = session.status
+  const status = useVaultStatus()
   const balanceError = [accountReads.spend.error, accountReads.savings.error].filter(Boolean).join(' ')
   const refreshingBalance = accountReads.spend.refreshing || accountReads.savings.refreshing
   const close = () => navigate('home')

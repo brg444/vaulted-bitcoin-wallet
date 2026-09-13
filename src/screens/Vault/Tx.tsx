@@ -1,6 +1,6 @@
 import { useSpendingPayment } from '../../vault/spendingPaymentContext'
 import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
-import { useSession } from '../../vault/sessionContext'
+import { useVaultStatus } from '../../vault/sessionContext'
 import BitcoinPaymentStatus from './BitcoinPaymentStatus'
 import { CircleAlert, CircleCheck, CircleHelp, Clock3 } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
@@ -17,7 +17,7 @@ import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
 export default function VaultTx({ denomination }: { denomination?: BalanceDenomination }) {
   const { retryLightningRefund } = useSpendingPayment()
-  const { status: vaultStatus } = useSession()
+  const vaultStatus = useVaultStatus()
   const spendingBitcoin = useBitcoinPayment()
   const { busy, error } = useVaultInteraction()
   const { navigate } = useVaultNavigation()

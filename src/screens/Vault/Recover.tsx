@@ -1,4 +1,4 @@
-import { useSession } from '../../vault/sessionContext'
+import { useVaultStatus } from '../../vault/sessionContext'
 import { inspectRecoveryKit, parseRecoveryKit, isLedgerRecoveryKit } from '../../lib/vault/program/kit'
 import QgGuidance from './qg/QgGuidance'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -39,7 +39,7 @@ function RecoverAlert({ text }: { text: string }) {
 export default function VaultRecover() {
   const denomination = useBalanceDenomination()
   const money = (value: number) => formatMoney(value, denomination)
-  const { status } = useSession()
+  const status = useVaultStatus()
   const {
     backupRecoveryKit,
     backupRecoveryArchive,
