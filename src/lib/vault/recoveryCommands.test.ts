@@ -58,8 +58,14 @@ vi.mock('./vtxo/boardingRecovery', () => ({ recoverMatureBoardingInputs: mocks.b
 vi.mock('./ceremony/directauth', () => ({ zeroBytes: (bytes: Uint8Array) => bytes.fill(0) }))
 
 import { recoveryCommandsForSession } from './recoveryCommands'
+import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 
-const status = { vaultId: 'test', network: 'mainnet', enrolled: true, templateVersion: 5 } as unknown as VaultStatus
+const status = {
+  vaultId: 'test',
+  network: 'mainnet',
+  enrolled: true,
+  templateVersion: SPENDING_ONLY_TEMPLATE,
+} as unknown as VaultStatus
 const enrollment = { vaultId: 'test' } as EnrollmentSecrets
 const file = { header: { binding: { vaultId: 'test' } }, archive: { spending: {} } }
 const coverage = { vaultId: 'test', network: 'mainnet', descriptorHash: 'aa', fileDigest: 'bb', outputs: [] }

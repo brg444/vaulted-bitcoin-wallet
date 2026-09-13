@@ -1,6 +1,7 @@
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import type { VaultMaintenanceTask } from './accountMaintenance'
 import type { VaultSession } from './session'
+import { admitVaultAccount } from './admittedAccount'
 import type { CommittedRecoveryCoverage } from './recovery/committedCoverage'
 import { bitcoinDustSats, isVaultBitcoinAddress, scriptHexFromAddress } from './bitcoin'
 import { BitcoinPaymentError } from './bitcoinPaymentError'
@@ -97,7 +98,12 @@ function createBitcoinPayments(session: SessionSource) {
     const { status, enrollment } = session.getSnapshot()
     if (!consumers || !task || !identity || identity !== sessionIdentity() || !status?.enrolled || !enrollment)
       throw new Error('Unlock this vault before sending from Spending.')
-    return structuredClone({ status, enrollment })
+    try {
+      const account = admitVaultAccount(status, enrollment)
+      return structuredClone({ account, status: account.status, enrollment: account.enrollment })
+    } catch {
+      throw new Error('Unlock this vault before sending from Spending.')
+    }
   }
   const requireCurrent = (epoch: number, signal: AbortSignal) => {
     signal.throwIfAborted()

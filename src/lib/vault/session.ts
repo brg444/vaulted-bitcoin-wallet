@@ -46,6 +46,7 @@ import { kitFromFacts, pullMapBackup, pushMapBackup } from './program/kitBackup'
 import { saveLocalKit } from './program/kitStore'
 import { loadVaultPrivacyLock, saveVaultPrivacyLock } from './prefs'
 import { requireProtectionTier, type ProtectionTier } from './protectionTier'
+import { admitVaultAccount, type AdmittedAccount } from './admittedAccount'
 import { validateSpendingPolicy, type SpendingPolicy } from './spendingPolicy'
 import type { VaultStatus } from './types'
 
@@ -439,6 +440,16 @@ export function createVaultSession() {
 
   return {
     getSnapshot: () => immutable(snapshot),
+    /** The single validated account pairing the enrolled status with its enrollment. */
+    admittedAccount(): AdmittedAccount | null {
+      const { status, enrollment } = snapshot
+      if (!status?.enrolled || !enrollment) return null
+      try {
+        return admitVaultAccount(status, enrollment)
+      } catch {
+        return null
+      }
+    },
     subscribe(listener: () => void) {
       listeners.add(listener)
       return () => {

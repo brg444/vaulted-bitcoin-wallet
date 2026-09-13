@@ -1,6 +1,7 @@
 import type { NetworkName } from '@arkade-os/sdk'
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import type { VaultSession } from './session'
+import { admitVaultAccount } from './admittedAccount'
 import { isVaultArkAddress } from './bitcoin'
 import { DUST_SATS } from './constants'
 import { zeroBytes } from './ceremony/directauth'
@@ -147,11 +148,21 @@ function createSpendingPayments(session: SessionSource) {
     const { status, enrollment, setup } = session.getSnapshot()
     if (!consumers || !identity || identity !== sessionIdentity() || !status?.enrolled || !enrollment)
       throw new ReviewError('Sign in with the passkey that created this vault.')
-    return structuredClone({ status, enrollment, setup })
+    try {
+      const account = admitVaultAccount(status, enrollment)
+      return structuredClone({ account, status: account.status, enrollment: account.enrollment, setup })
+    } catch {
+      throw new ReviewError('Sign in with the passkey that created this vault.')
+    }
   }
   const load = () => {
     if (!consumers || !identity || identity !== sessionIdentity()) return
-    const { status } = access()
+    let status: { vaultId: string }
+    try {
+      status = access().status
+    } catch {
+      return
+    }
     const pendingPayments = listPersistedVtxoSpends(status.vaultId).map((operation) => ({
       operationId: operation.operationId,
       amountSats: operation.amountSats,

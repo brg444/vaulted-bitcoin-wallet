@@ -1,6 +1,7 @@
 import type { VaultStatus } from './types'
 import type { RecoveryKit } from './program/kit'
 import type { VaultSession } from './session'
+import { admitVaultAccount } from './admittedAccount'
 import type { VaultMaintenanceTask } from './accountMaintenance'
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import { unlockPhoneBip340 } from './savingsSpend'
@@ -87,7 +88,12 @@ function createRecoveryCommands(session: SessionSource) {
     const { status, enrollment, setup, locked: isLocked } = session.getSnapshot()
     if (!consumers || !identity || identity !== sessionIdentity() || !status?.enrolled || !enrollment)
       throw new RecoveryError('Sign in with the passkey that created this vault.')
-    return { status, enrollment, setup, locked: isLocked }
+    try {
+      const account = admitVaultAccount(status, enrollment)
+      return { account, status: account.status, enrollment: account.enrollment, setup, locked: isLocked }
+    } catch {
+      throw new RecoveryError('Sign in with the passkey that created this vault.')
+    }
   }
   const unlocked = () => {
     const current = access()

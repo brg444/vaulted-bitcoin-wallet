@@ -4,6 +4,7 @@ import { bitcoinPaymentsForSession, type BitcoinPayments } from './bitcoinPaymen
 import { activeVaultAccountRuntime, disposeVaultAccountRuntime } from './accountRuntime'
 import type { VaultSessionSnapshot } from './session'
 import type { BitcoinPaymentJournal, SpendingBitcoinPlan } from './spendingBitcoinStore'
+import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 
 const api = vi.hoisted(() => ({ read: vi.fn(), send: vi.fn(), check: vi.fn(), cancel: vi.fn(), acknowledge: vi.fn() }))
 vi.mock('./spendingBitcoinStore', () => ({ readSpendingBitcoin: api.read, BITCOIN_PAYMENT_EVENT: 'bitcoin-journal' }))
@@ -13,7 +14,12 @@ vi.mock('./spendingBitcoinFunding', () => ({
   cancelSpendingBitcoin: api.cancel,
   acknowledgeSpendingBitcoinRecovery: api.acknowledge,
 }))
-const status = { vaultId: 'bitcoin-vault', network: 'mutinynet', enrolled: true }
+const status = {
+  vaultId: 'bitcoin-vault',
+  network: 'mutinynet',
+  enrolled: true,
+  templateVersion: SPENDING_ONLY_TEMPLATE,
+}
 const enrollment = { vaultId: status.vaultId, credId: 'aa' }
 const address = Address(TEST_NETWORK).encode({ type: 'wpkh', hash: new Uint8Array(20).fill(0x43) })
 const draft = { address, amount: 1500, fee: 0 }
