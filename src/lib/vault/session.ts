@@ -160,14 +160,17 @@ export function createVaultSession() {
     const id = selectedId()
     if (id && live.vaultId !== id) throw new Error('Session status does not match the selected account')
     if (snapshot.addressPin) requireStatusMatchesPin(live, snapshot.addressPin)
+    const enrollment = boundEnrollment
+    let account: AdmittedAccount | undefined
+    if (live.enrolled && enrollment) {
+      account = admitVaultAccount(live, enrollment)
+      if (snapshot.account && accountIdentity(snapshot.account) !== accountIdentity(account))
+        throw new Error('Live status changed the admitted account identity')
+    }
     const setup = projectSetup(live)
     if (JSON.stringify(setup) !== JSON.stringify(snapshot.setup)) browserWrite(() => saveSetupPlan(setup))
     remember(live.vaultId)
-    const enrollment = boundEnrollment
-    if (live.enrolled && enrollment) {
-      const account = admitVaultAccount(live, enrollment)
-      if (snapshot.account && accountIdentity(snapshot.account) !== accountIdentity(account))
-        throw new Error('Live status changed the admitted account identity')
+    if (account) {
       publish({ account, status: account.status, setup })
       return
     }

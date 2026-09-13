@@ -54,6 +54,15 @@ describe('admitted account pairing', () => {
     },
   )
 
+  it.each([false, true])(
+    'rejects a same-vault Ledger enrollment whose direct key differs, advanced=%s',
+    async (advanced) => {
+      const fixture = await ledgerRecoveryFixture(advanced)
+      const mismatched = { ...fixture.enrollment, phoneDirectP256: `03${'22'.repeat(32)}` } as EnrollmentSecrets
+      expect(() => admitVaultAccount(fixture.status, mismatched)).toThrow(/direct key does not match/)
+    },
+  )
+
   it('rejects a same-vault Ledger enrollment with an altered registration', async () => {
     const fixture = await ledgerRecoveryFixture(false)
     const altered = {

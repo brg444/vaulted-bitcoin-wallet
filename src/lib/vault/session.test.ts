@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createVaultSession, type VaultSession } from './session'
-import { emptySetupPlan, saveSetupPlan, type VaultSetupPlan } from './setupPlan'
+import { emptySetupPlan, loadSetupPlan, saveSetupPlan, type VaultSetupPlan } from './setupPlan'
 import { saveAddressPin, pinFromEnrolledStatus } from './pin'
 import {
   loadStagedEnrollment,
@@ -279,6 +279,15 @@ describe('session admission and teardown', () => {
     expect(admitted).not.toBeNull()
     expect(() => session.acceptStatus({ ...status, phoneDirectP256: `02${'11'.repeat(32)}` })).toThrow()
     expect(session.getSnapshot().account).toBe(admitted)
+  })
+  it('does not persist setup settings from a rejected identity refresh', async () => {
+    const { session } = await create(ready, enrollment, true)
+    await session.signIn()
+    const persisted = loadSetupPlan()
+    expect(() =>
+      session.acceptStatus({ ...status, txCap: status.txCap + 1, phoneDirectP256: `02${'11'.repeat(32)}` }),
+    ).toThrow()
+    expect(loadSetupPlan()).toEqual(persisted)
   })
   it('ignores a boot status response that arrives after sign-out', async () => {
     saveEnrollment(enrollment)

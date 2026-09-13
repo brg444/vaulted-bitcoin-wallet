@@ -39,6 +39,11 @@ export function admitVaultAccount(status: VaultStatus, enrollment: EnrollmentSec
   })
   if (enrollment.phoneBip340Pub !== status.phoneBip340Pub)
     throw new Error('Ledger enrollment phone key does not match the admitted status')
+  if (
+    enrollment.phoneDirectP256 !== status.phoneDirectP256 ||
+    enrollment.phoneDirectP256 !== savings.context.phoneDirectP256
+  )
+    throw new Error('Ledger enrollment direct key does not match the admitted status')
   return { savings: 'ledger', status, enrollment }
 }
 
