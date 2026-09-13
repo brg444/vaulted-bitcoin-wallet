@@ -1,8 +1,10 @@
 # Ledger native Savings with Guardian recovery
 
-Status: implementation and qualification in progress, September 9, 2026. The new
-contract is `phone-ledger-guardian-savings-v1`. New enrollment and RC activation
-remain disabled until the integration and release gates below pass.
+The retained Savings contract is `phone-ledger-guardian-savings-v1`, with shared
+Spending for every account. New Ledger enrollment and RC activation require the
+[integration and release gates](ledger-integration-status.md). Qualification
+results below identify their original test scope and require rechecking when
+their candidate inputs change.
 
 ## User flow
 
@@ -14,8 +16,8 @@ receive address on the device before funding it.
 Normal withdrawals require phone and Ledger signatures on the Savings input.
 The device displays the recipient, amount and Bitcoin fee; both signatures commit
 to every output. A partial withdrawal returns change to the registered Savings
-change script. This transaction has no connector input, reserve, recovery proof
-packet, anchor, Guardian signature or public Emulator signature.
+change script. Normal payment authorization is confined to those two signatures
+and the enrolled Savings transaction.
 
 Recovery can require additional policy registrations and timed stages. The same
 Ledger seed supplies its recovery keys through separate account branches. The
@@ -161,8 +163,8 @@ Enrollment now stages the proposed contract, verifies and saves the Ledger
 registration before activation, and preserves it across interrupted completion.
 A new Savings HD seed stays separate from the existing Spending scalar. The
 version-six passkey binding and version-four Recovery Kit retain both identities,
-the encrypted Savings seed and the registration. Legacy backup fields retain
-their current meaning. These integrated paths are undergoing release tests.
+the encrypted Savings seed and the registration. The current recovery schemas preserve both identities and reject historical
+program metadata. Candidate qualification includes export and restoration.
 
 ### Spending recovery compatibility
 
@@ -174,13 +176,13 @@ The tested Ledger policy compiler requires derived xpub expressions, including
 for its internal key, and cannot reproduce that exact exit prefix. Signing checks
 the complete reconstructed output, so supplying just the exit leaf is insufficient.
 
-This is a source-level incompatibility with the tested stock policy path. Savings
-and connector simulator evidence concerns other outputs. New enrollment uses the offline emergency path described below while the Spending keys and protection model
-remain unchanged. On September 9, the user accepted offline seed recovery for
+This is a source-level incompatibility with the tested stock policy path. Savings simulator evidence concerns a different output contract. Retained
+enrollment uses the offline emergency path described below with the existing
+Spending keys and protection model. On September 9, the user accepted offline seed recovery for
 emergencies: Standard retains phone plus hardware; Advanced retains hardware plus
-recovery. Only new Ledger enrollments derive Spending H and R at account `/12/0`,
-with their x-only points canonically encoded as `02` plus the point. Existing
-funded enrollments retain their original authorities.
+recovery. Ledger enrollment derives Spending H and R at account `/12/0`, with their
+x-only points canonically encoded as `02` plus the point. Retained account
+restoration must recover those exact enrolled authorities.
 
 The separate offline tool accepts a reviewed recovery request and a BIP39 seed
 backup, checks the full account origin and the exact transaction, and exports a
@@ -195,8 +197,10 @@ Sources: [wallet Spending tree](../src/lib/vault/vtxo/script.ts),
 Ledger [key derivation](https://github.com/LedgerHQ/app-bitcoin/blob/2c7956fe566bd7f6f690288130033441fabc5f10/src/handler/lib/policy.c#L507),
 [policy compiler](https://github.com/LedgerHQ/app-bitcoin/blob/2c7956fe566bd7f6f690288130033441fabc5f10/src/handler/lib/policy.c#L181)
 and [input recognition](https://github.com/LedgerHQ/app-bitcoin/blob/2c7956fe566bd7f6f690288130033441fabc5f10/src/handler/sign_psbt.c#L189).
-The inspected vendored SDK is 0.4.66 with tar SHA256
+The original policy compatibility review used SDK 0.4.66 with tar SHA256
 `baf08f891e4a3e9dbad57d8fa731c47c0b57b69662688bb4a163765810c21b9d`.
+Current SDK provenance and recovery-input qualification are recorded in
+[upstream alignment](upstream-alignment.md) and the companion producer manifest.
 
 ### Activation requirements
 
@@ -207,20 +211,14 @@ Ledger review with the production Bitcoin app remains required before enabling
 new enrollments. See the integration checkpoint for exact release evidence.
 The public Emulator upgrade is no longer a dependency of this Savings design.
 
-Funded legacy and connector wallets retain their original scripts, signers,
-backup schemas and unresolved journals. Migration is an explicit authorized
-transaction into a verified new contract; upgrading software cannot rewrite
-existing outputs. The matched recovery companion and runtime manifest must be verified with the
-new native lifecycle before activation.
+The candidate excludes historical Light, direct-hardware Savings and both
+connector generations. Its runtime uses schema 12 and retains the separate
+MAC-authenticated Ledger record alongside shared Spending identity. Enrollment
+creates the records atomically and binds the Savings account origins, separate
+Guardian base, policy and registration. Proposal, finish, duplicate finish,
+status and restore must reconstruct the same retained contract.
 
-The additive schema-nine enrollment model uses a separate MAC-authenticated Ledger record,
-created atomically with the existing identity rows. Preserve the original
-Spending scalar envelope and raw Spending authorities; put Savings account
-origins, the separate Guardian base and policy/registration binding in the new
-record. Proposal, finish, duplicate-finish, status and restore must all reconstruct
-the same contract. Existing endpoint paths can use explicit template dispatch.
-
-Recovery files need an explicit new kit and binding version. Retain both phone
+Recovery files use the current kit and binding versions. Retain both phone
 identities, the Ledger policy authorization, receive/change coordinates and
 transaction parents; verify them before persisting a restored wallet. Check the
 complete binding against the existing 16 KiB limit. The candidate's detached
