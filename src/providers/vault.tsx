@@ -14,6 +14,24 @@ import { useBitcoinPayments } from '../vault/useBitcoinPayments'
 import { bitcoinPaymentView, BitcoinPaymentContext } from '../vault/bitcoinPaymentContext'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
 import { useRecoveryCommands } from '../vault/useRecoveryCommands'
+import {
+  VaultAccountContext,
+  VaultActivityContext,
+  VaultDisplayContext,
+  VaultInteractionContext,
+  VaultNavigationContext,
+  VaultRecoveryContext,
+  VaultRenewalContext,
+  VaultSendContext,
+  type VaultAccountContextProps,
+  type VaultActivityContextProps,
+  type VaultDisplayContextProps,
+  type VaultInteractionContextProps,
+  type VaultNavigationContextProps,
+  type VaultRecoveryContextProps,
+  type VaultRenewalContextProps,
+  type VaultSendContextProps,
+} from '../vault/appContexts'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
 import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress, isVaultBitcoinAddress } from '../lib/vault/bitcoin'
@@ -575,6 +593,67 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const spendingRenewals = useSpendingRenewals(admitted?.status ?? status, admitted?.enrollment ?? null, locked)
 
+  const navigate = useCallback(
+    (next: VaultScreen) => {
+      setError('')
+      if (next === 'home') {
+        setScanOnSend(false)
+        clearSpendDraft()
+      }
+      setScreen(next)
+    },
+    [setError, clearSpendDraft],
+  )
+  const openRecover = useCallback(
+    (view: 'kit' | 'lost' = 'kit', exit: VaultScreen = 'keys') => {
+      setError('')
+      setRecoverEntry(view)
+      setRecoverExit(exit)
+      setScreen('recover')
+    },
+    [setError],
+  )
+  const openTx = useCallback(
+    (tx: VaultHistoryItem) => {
+      const ledger = ledgerSavings.view
+      if (
+        tx.activity === 'savings-ledger' &&
+        ledger &&
+        tx.txid === ledger.record.candidateId &&
+        !['broadcast', 'confirmed', 'conflicted'].includes(ledger.outcome)
+      ) {
+        void ledgerSavings.payments
+          .reopen(ledger.record.candidateId)
+          .then((opened) => {
+            if (ledgerSavings.payments.getSnapshot().view !== opened) return
+            const payment = opened.record.payment
+            setAccount('savings')
+            setSpend({ address: payment.destAddress, amount: payment.amountSats, fee: payment.feeSats })
+            setError('')
+            if (['broadcast', 'confirmed', 'conflicted'].includes(opened.outcome)) {
+              setSelectedTx(tx)
+              setTxReturn(screen)
+              setScreen('tx')
+            } else setScreen(opened.record.phonePsbt && !opened.record.txHex ? 'ledger-sign' : 'review')
+          })
+          .catch(() => undefined)
+        return
+      }
+      setSelectedTx(tx)
+      setTxReturn(screen)
+      setError('')
+      setScreen('tx')
+    },
+    [ledgerSavings.view, ledgerSavings.payments, screen, setError],
+  )
+  const openSendScan = useCallback(() => {
+    clearSpendDraft(account)
+    setScanOnSend(true)
+    setError('')
+    setScreen('send')
+  }, [clearSpendDraft, account, setError])
+  const clearSendScan = useCallback(() => setScanOnSend(false), [])
+
   const value = useMemo<VaultContextProps>(
     () => ({
       watchedSavings,
@@ -617,51 +696,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       allHistory: visibleHistory,
       loadOlderActivity,
       olderActivity,
-      openTx: (tx) => {
-        const ledger = ledgerSavings.view
-        if (
-          tx.activity === 'savings-ledger' &&
-          ledger &&
-          tx.txid === ledger.record.candidateId &&
-          !['broadcast', 'confirmed', 'conflicted'].includes(ledger.outcome)
-        ) {
-          void ledgerSavings.payments
-            .reopen(ledger.record.candidateId)
-            .then((opened) => {
-              if (ledgerSavings.payments.getSnapshot().view !== opened) return
-              const payment = opened.record.payment
-              setAccount('savings')
-              setSpend({ address: payment.destAddress, amount: payment.amountSats, fee: payment.feeSats })
-              setError('')
-              if (['broadcast', 'confirmed', 'conflicted'].includes(opened.outcome)) {
-                setSelectedTx(tx)
-                setTxReturn(screen)
-                setScreen('tx')
-              } else setScreen(opened.record.phonePsbt && !opened.record.txHex ? 'ledger-sign' : 'review')
-            })
-            .catch(() => undefined)
-          return
-        }
-        setSelectedTx(tx)
-        setTxReturn(screen)
-        setError('')
-        setScreen('tx')
-      },
+      openTx,
       liveNetwork,
-      navigate: (next) => {
-        setError('')
-        if (next === 'home') {
-          setScanOnSend(false)
-          clearSpendDraft()
-        }
-        setScreen(next)
-      },
-      openRecover: (view = 'kit', exit = 'keys') => {
-        setError('')
-        setRecoverEntry(view)
-        setRecoverExit(exit)
-        setScreen('recover')
-      },
+      navigate,
+      openRecover,
       recoverEntry,
       recoverExit,
       recoverMatureBoarding,
@@ -669,14 +707,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       spendingArkAddress,
       refreshBalance,
       reviewSpend,
-      openSendScan: () => {
-        clearSpendDraft(account)
-        setScanOnSend(true)
-        setError('')
-        setScreen('send')
-      },
+      openSendScan,
       scanOnSend,
-      clearSendScan: () => setScanOnSend(false),
+      clearSendScan,
       savingsAddress,
       positions,
       screen: loaded || screen === 'unlock' ? screen : 'welcome',
@@ -747,8 +780,157 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       spendingAvailableSats,
       status?.enrolled,
       status?.periodSpent,
+      openTx,
+      navigate,
+      openRecover,
+      openSendScan,
+      clearSendScan,
     ],
   )
+
+  const navigationValue = useMemo<VaultNavigationContextProps>(
+    () => ({
+      screen: loaded || screen === 'unlock' ? screen : 'welcome',
+      navigate,
+      confirmConditions,
+      openRecover,
+      recoverEntry,
+      recoverExit,
+    }),
+    [loaded, screen, navigate, confirmConditions, openRecover, recoverEntry, recoverExit],
+  )
+  const accountValue = useMemo<VaultAccountContextProps>(
+    () => ({
+      account,
+      setAccount: selectAccount,
+      positions,
+      accountReads,
+      watchedSavings,
+      updateWatchedSavings,
+      watchedSavingsTotalSats: status?.protectionTier === 'light' ? positions.savings.totalSats : undefined,
+      savingsAddress,
+      spendingArkAddress,
+      refreshBalance,
+      boardingAddress,
+      boardingError,
+      dailyLimit,
+      dailyRemaining,
+      dailySpent: status?.enrolled ? (status.periodSpent ?? 0) : Math.max(0, dailyLimit - dailyRemaining),
+    }),
+    [
+      account,
+      selectAccount,
+      positions,
+      accountReads,
+      watchedSavings,
+      updateWatchedSavings,
+      status?.protectionTier,
+      status?.enrolled,
+      status?.periodSpent,
+      savingsAddress,
+      spendingArkAddress,
+      refreshBalance,
+      boardingAddress,
+      boardingError,
+      dailyLimit,
+      dailyRemaining,
+    ],
+  )
+  const sendValue = useMemo<VaultSendContextProps>(
+    () => ({
+      spend,
+      setSpendDraft,
+      clearSpendDraft,
+      lastSend,
+      canSend: spendingAvailableSats >= DUST_SATS,
+      reviewSpend,
+      approveSend,
+      lastTxid,
+      lastTxKind,
+      openSendScan,
+      scanOnSend,
+      clearSendScan,
+    }),
+    [
+      spend,
+      setSpendDraft,
+      clearSpendDraft,
+      lastSend,
+      spendingAvailableSats,
+      reviewSpend,
+      approveSend,
+      lastTxid,
+      lastTxKind,
+      openSendScan,
+      scanOnSend,
+      clearSendScan,
+    ],
+  )
+  const activityValue = useMemo<VaultActivityContextProps>(
+    () => ({
+      history: recentAccountHistory(visibleHistory, account),
+      allHistory: visibleHistory,
+      selectedTx,
+      openTx,
+      txReturn,
+      loadOlderActivity,
+      olderActivity,
+    }),
+    [visibleHistory, account, selectedTx, openTx, txReturn, loadOlderActivity, olderActivity],
+  )
+  const recoveryValue = useMemo<VaultRecoveryContextProps>(
+    () => ({
+      downloadRecoveryKit,
+      backupRecoveryKit,
+      restoreRecoveryKit,
+      hasRecoveryKit,
+      backupRecoveryArchive,
+      downloadRecoveryArchive,
+      recoveryArchiveStatus,
+      recoveryArchiveError,
+      initiateAlert,
+      recoverMatureBoarding,
+    }),
+    [
+      downloadRecoveryKit,
+      backupRecoveryKit,
+      restoreRecoveryKit,
+      hasRecoveryKit,
+      backupRecoveryArchive,
+      downloadRecoveryArchive,
+      recoveryArchiveStatus,
+      recoveryArchiveError,
+      initiateAlert,
+      recoverMatureBoarding,
+    ],
+  )
+  const interactionValue = useMemo<VaultInteractionContextProps>(
+    () => ({ busy, error, dismissError: clearError }),
+    [busy, error, clearError],
+  )
+  const displayValue = useMemo<VaultDisplayContextProps>(
+    () => ({
+      balanceUnit,
+      balanceRateStatus,
+      setBalanceUnit,
+      fiatDisplayRate,
+      fiatDisplayEnabled,
+      setFiatDisplay,
+      networkLabel,
+      liveNetwork,
+    }),
+    [
+      balanceUnit,
+      balanceRateStatus,
+      setBalanceUnit,
+      fiatDisplayRate,
+      fiatDisplayEnabled,
+      setFiatDisplay,
+      networkLabel,
+      liveNetwork,
+    ],
+  )
+  const renewalValue = useMemo<VaultRenewalContextProps>(() => ({ spendingRenewals }), [spendingRenewals])
 
   const sessionValue = useMemo(() => sessionView(sessionState, sessionState.session), [sessionState])
   return (
@@ -762,7 +944,23 @@ export function VaultProvider({ children }: { children: ReactNode }) {
               retryLightningRefund,
             })}
           >
-            <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+            <VaultContext.Provider value={value}>
+              <VaultNavigationContext.Provider value={navigationValue}>
+                <VaultAccountContext.Provider value={accountValue}>
+                  <VaultSendContext.Provider value={sendValue}>
+                    <VaultActivityContext.Provider value={activityValue}>
+                      <VaultRecoveryContext.Provider value={recoveryValue}>
+                        <VaultInteractionContext.Provider value={interactionValue}>
+                          <VaultDisplayContext.Provider value={displayValue}>
+                            <VaultRenewalContext.Provider value={renewalValue}>{children}</VaultRenewalContext.Provider>
+                          </VaultDisplayContext.Provider>
+                        </VaultInteractionContext.Provider>
+                      </VaultRecoveryContext.Provider>
+                    </VaultActivityContext.Provider>
+                  </VaultSendContext.Provider>
+                </VaultAccountContext.Provider>
+              </VaultNavigationContext.Provider>
+            </VaultContext.Provider>
           </SpendingPaymentContext.Provider>
         </BitcoinPaymentContext.Provider>
       </LedgerPaymentContext.Provider>
