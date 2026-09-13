@@ -12,10 +12,11 @@ import {
   VaultReadinessResponseError,
   vaultStatusPath,
 } from './status'
-import type { VaultStatusWire } from './types'
+import type { VaultStatus, VaultStatusWire } from './types'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from './spendingPolicy'
 import { ledgerRecoveryFixture } from './recovery/testdata/ledger'
 import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
+import { requireBoardingStatus } from './vtxo/board'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 
 let standard: CompatibleStatusWire
@@ -135,6 +136,28 @@ describe('status identity binding', () => {
     )
     await expect(fetchVaultStatus(undefined, VAULT_ID)).rejects.toThrow(/not enrolled/)
   })
+})
+
+describe('Ledger boarding capability at admission', () => {
+  for (const label of ['Standard', 'Advanced'] as const) {
+    const current = () => (label === 'Standard' ? standard : advanced)
+    it(`preserves an active ${label} boarding capability`, () => {
+      const fixture = current()
+      const admitted = requireStatusIdentity(structuredClone(fixture), fixture.vaultId)
+      expect(admitted.vtxoBoardingActive).toBe(true)
+      expect(() => requireBoardingStatus(admitted, admitted.vtxoBoardingDescriptor.boardingPub)).not.toThrow()
+    })
+    it(`does not activate an inactive ${label} boarding capability`, () => {
+      const fixture = current()
+      const wire = { ...structuredClone(fixture), vtxoBoardingActive: false }
+      expect(() =>
+        requireBoardingStatus(wire as unknown as VaultStatus, wire.vtxoBoardingDescriptor!.boardingPub),
+      ).toThrow(/not enrolled/)
+      const admitted = requireStatusIdentity(wire, wire.vaultId)
+      expect(admitted.vtxoBoardingActive).toBe(false)
+      expect(() => requireBoardingStatus(admitted, admitted.vtxoBoardingDescriptor.boardingPub)).toThrow(/not enrolled/)
+    })
+  }
 })
 
 describe('pingVaultService', () => {
