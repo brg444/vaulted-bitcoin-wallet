@@ -63,7 +63,7 @@ function createRecoveryCommands(session: SessionSource) {
   let locked = true
   let generation = 0
   let activityEpoch = 0
-  let cloud: RecoveryBackupSession | null = null
+  let cloud: { session: RecoveryBackupSession; identity: string } | null = null
   let observation: VaultMaintenanceTask<void> | undefined
   let flight: { key: string; abort: AbortController; promise: Promise<unknown> } | undefined
   let captureTail: Promise<unknown> = Promise.resolve()
@@ -177,10 +177,13 @@ function createRecoveryCommands(session: SessionSource) {
     return next
   }
   const captureArchive = async (requireCloudBackup: boolean, signal: AbortSignal | undefined, fence: CaptureFence) => {
+    // Admit the immutable cloud session before awaiting capture. A session
+    // opened for another account identity is never adopted, and an already
+    // admitted write still drains after lock while new authority is refused.
+    const admitted = cloud && cloud.identity === fence.identity ? cloud.session : null
     const { status, file, context, current } = await captureFor(fence, signal)
-    const active = cloud
-    if (active && active.header.binding.vaultId === status.vaultId) {
-      await withCloud(() => syncRecoveryCloudBackup(active, file))
+    if (admitted && admitted.header.binding.vaultId === status.vaultId) {
+      await withCloud(() => syncRecoveryCloudBackup(admitted, file))
       if (requireCloudBackup && context !== generation)
         throw new RecoveryError('Wallet session changed during recovery backup')
       await recordRecoveryFileCopy('service', file)
@@ -306,12 +309,12 @@ function createRecoveryCommands(session: SessionSource) {
         const kit = kitFromFacts({ status, enrollment })
         if (!kit) throw new RecoveryError('Recovery descriptor is unavailable')
         const header = buildRecoveryHeader(kit, status, enrollment)
-        if (!cloud || Date.parse(cloud.expiresAt) <= Date.now()) {
+        if (!cloud || cloud.identity !== fence.identity || Date.parse(cloud.session.expiresAt) <= Date.now()) {
           const epoch = generation
           const opened = await openRecoveryCloudBackup(header)
           check()
           if (epoch !== generation) throw new RecoveryError('Unlock this vault again to enable backup')
-          cloud = opened
+          cloud = { session: opened, identity: fence.identity }
         }
         await captureArchive(true, signal, fence)
       })
@@ -330,8 +333,8 @@ function createRecoveryCommands(session: SessionSource) {
             null,
             2,
           )
-        const active = cloud
-        if (active?.header.binding.vaultId === status.vaultId) return encode(active.key)
+        const admitted = cloud && cloud.identity === fence.identity ? cloud.session : null
+        if (admitted?.header.binding.vaultId === status.vaultId) return encode(admitted.key)
         const phone = await unlockPhoneBip340(enrollment, status, signal)
         try {
           return await encode(await recoveryBackupKey(phone, file.header))

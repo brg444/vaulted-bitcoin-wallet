@@ -438,3 +438,34 @@ describe('single capture owner', () => {
     release()
   })
 })
+
+describe('cloud session admission', () => {
+  it('drains an admitted cloud write after lock while rejecting the caller', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finishSync!: (value: unknown) => void
+    mocks.sync.mockImplementationOnce(() => new Promise((resolve) => (finishSync = resolve)))
+    const operation = commands.backupRecoveryArchive()
+    await vi.waitFor(() => expect(mocks.sync).toHaveBeenCalledTimes(1))
+    const rejected = expect(operation).rejects.toThrow()
+    session.set({ locked: true })
+    finishSync(file)
+    await rejected
+    expect(mocks.sync).toHaveBeenCalledTimes(1)
+    expect(mocks.record).not.toHaveBeenCalledWith('service', file)
+    release()
+  })
+
+  it('does not adopt a previous account cloud session after identity replacement', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    await commands.backupRecoveryArchive()
+    expect(mocks.sync).toHaveBeenCalledTimes(1)
+    session.set({ enrollment: { vaultId: 'test', credId: 'replacement' } as EnrollmentSecrets })
+    await observed!.run(new AbortController().signal)
+    expect(mocks.sync).toHaveBeenCalledTimes(1)
+    release()
+  })
+})
