@@ -138,6 +138,35 @@ export function spendingPaymentsForSession(session: SessionSource) {
   }
   return owner
 }
+/** Best-effort retirement of funded Lightning terminals from the one committed
+ * file snapshot. A cancelled caller aborts; missing evidence keeps the record. */
+async function sweepSettledVaultLightning(status: VaultStatus, check: () => void, signal?: AbortSignal) {
+  try {
+    const api = await import('./lightning')
+    check()
+    const funded = await api.withVaultLightningRepository(status.vaultId, (repository) =>
+      listFundedTerminalLightningRecords(repository),
+    )
+    if (!funded.length) return
+    const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+    check()
+    const evidence = await readCommittedRecoveryEvidence(status)
+    check()
+    await api.withVaultLightningRepository(status.vaultId, (repository) =>
+      acknowledgeSettledVaultLightning(
+        status,
+        repository,
+        snapshot.history,
+        evidence?.lightningJournal ?? null,
+        evidence?.coverage,
+        signal,
+      ),
+    )
+  } catch (error) {
+    if (signal?.aborted) signal.throwIfAborted()
+    consoleError(error, 'Lightning settled acknowledgment')
+  }
+}
 function createSpendingPayments(session: SessionSource) {
   let snapshot: SpendingPaymentsSnapshot = freeze({
     review: null,
@@ -335,36 +364,9 @@ function createSpendingPayments(session: SessionSource) {
             if (signal.aborted) signal.throwIfAborted()
             consoleError(error, 'Spending settled acknowledgment')
           }
-          // Retire funded Lightning terminals on the same terms. Runs
-          // outside the lifecycle lock; evidence lag keeps the record for
-          // later. The Lightning journal comes from the one committed file
-          // snapshot, never a second file load.
-          try {
-            const api = await import('./lightning')
-            check()
-            const funded = await api.withVaultLightningRepository(status.vaultId, (repository) =>
-              listFundedTerminalLightningRecords(repository),
-            )
-            if (funded.length) {
-              const snapshot = await fetchVaultWalletVtxoSnapshot(status)
-              check()
-              const evidence = await readCommittedRecoveryEvidence(status)
-              check()
-              await api.withVaultLightningRepository(status.vaultId, (repository) =>
-                acknowledgeSettledVaultLightning(
-                  status,
-                  repository,
-                  snapshot.history,
-                  evidence?.lightningJournal ?? null,
-                  evidence?.coverage,
-                  signal,
-                ),
-              )
-            }
-          } catch (error) {
-            if (signal.aborted) signal.throwIfAborted()
-            consoleError(error, 'Lightning settled acknowledgment')
-          }
+          // Retire funded Lightning terminals on the same terms, from the one
+          // committed file snapshot. Evidence lag keeps the record for later.
+          await sweepSettledVaultLightning(status, check, signal)
         }
         let funding: VaultVtxoSpendQuote
         let lightning: VaultLightningQuote | null = null
@@ -693,6 +695,8 @@ function createSpendingPayments(session: SessionSource) {
       await run('acknowledge', `acknowledge-settled:${coverage.fileDigest}`, async (check, signal) => {
         check()
         await acknowledgeSettledVtxoSpends(covered, coverage, signal)
+        check()
+        await sweepSettledVaultLightning(covered, check, signal)
       }).catch(() => undefined)
     },
     acknowledgeLightningRecovery(rfqId: string, coverage?: CommittedRecoveryCoverage): Promise<boolean> {

@@ -509,6 +509,53 @@ it('retires settled operations with committed recovery evidence', async () => {
   expect(api.settle.mock.calls[0][1]).toMatchObject({ fileDigest: coverage.fileDigest })
 })
 
+it('sweeps funded Lightning terminals through the one committed file snapshot', async () => {
+  const { payments } = open()
+  const coverage = {
+    vaultId: status.vaultId,
+    network: status.network,
+    descriptorHash: 'aa'.repeat(32),
+    fileDigest: 'bb'.repeat(32),
+    outputs: [],
+  }
+  const rfqId = '44'.repeat(32)
+  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+    run({
+      getAllRfqSwaps: async () => [
+        { kind: 'lightning_send', state: 'settled', rfqId, fundingArkTxid: 'ab'.repeat(32) },
+      ],
+      getRfqSwap: async () => null,
+    }),
+  )
+  api.coverage.mockResolvedValue(coverage)
+  const restoreLock = installImmediateLock()
+  try {
+    await payments.acknowledgeSettledRecovery(coverage)
+  } finally {
+    restoreLock()
+  }
+  expect(api.settle).toHaveBeenCalledTimes(1)
+  expect(api.snapshot).toHaveBeenCalledTimes(1)
+  expect(api.lightningJournal).toHaveBeenCalledTimes(1)
+})
+
+it('skips the committed evidence read when no funded Lightning terminal awaits retirement', async () => {
+  const { payments } = open()
+  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+    run({ getAllRfqSwaps: async () => [] }),
+  )
+  await payments.acknowledgeSettledRecovery({
+    vaultId: status.vaultId,
+    network: status.network,
+    descriptorHash: 'aa'.repeat(32),
+    fileDigest: 'bb'.repeat(32),
+    outputs: [],
+  })
+  expect(api.settle).toHaveBeenCalledTimes(1)
+  expect(api.snapshot).not.toHaveBeenCalled()
+  expect(api.lightningJournal).not.toHaveBeenCalled()
+})
+
 it('does not acknowledge settled operations from a replaced session', async () => {
   const { payments, update } = open()
   update({
