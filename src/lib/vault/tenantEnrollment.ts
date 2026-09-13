@@ -48,8 +48,7 @@ const PRF_SALT = new TextEncoder().encode('arkade-2fa-vault/prf/v1')
 const HKDF_INFO = new TextEncoder().encode('arkade-2fa-vault/kek/v1')
 const DIRECT_INFO = new TextEncoder().encode('arkade-2fa-vault/direct-p256/v1')
 
-export interface EnrollmentSecrets {
-  ledgerSavings?: LedgerSavingsEnrollmentSecrets
+interface EnrollmentSecretsBase {
   vaultId: string
   credId: string
   webauthnP256: string
@@ -58,6 +57,16 @@ export interface EnrollmentSecrets {
   nonce: string
   ciphertext: string
 }
+
+export interface SpendingEnrollmentSecrets extends EnrollmentSecretsBase {
+  ledgerSavings?: undefined
+}
+
+export interface LedgerEnrollmentSecrets extends EnrollmentSecretsBase {
+  ledgerSavings: LedgerSavingsEnrollmentSecrets
+}
+
+export type EnrollmentSecrets = SpendingEnrollmentSecrets | LedgerEnrollmentSecrets
 
 function requireRPID(status: { rpId?: string; clientOrigin?: string }): string {
   const rpId = String(status.rpId || '').toLowerCase()
