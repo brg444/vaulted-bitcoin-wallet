@@ -1,4 +1,4 @@
-import { ArkAddress, RestArkProvider, SingleKey, Transaction, type ArkProvider } from '@arkade-os/sdk'
+import { ArkAddress, ChainedTxType, RestArkProvider, SingleKey, Transaction, type ArkProvider } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { VaultRequestError } from '../api'
 import { deriveDirectP256, signDirectP256, zeroBytes } from '../ceremony/directauth'
@@ -54,6 +54,7 @@ import {
 import {
   buildPersistedVtxoSdkBundle,
   buildReservedVtxoSpend,
+  checkpointPairsInCanonicalOrder,
   createPhoneSignedPendingProof,
   createVaultSdkOperationValidation,
   matchPendingOperatorSubmission,
@@ -79,6 +80,7 @@ import {
   type PersistedVtxoSpendStage,
 } from './spendingTransaction'
 import { fetchVaultWalletVtxoSnapshot } from './walletWorker'
+import { vaultExitRepository } from './exitRepository'
 export type { VtxoOperationState, VtxoOperationView, VtxoReserveResponse } from '../cosignerClient'
 
 export interface VaultVtxoSpendResult {
@@ -930,36 +932,154 @@ function receiptBindsImmutableOperation(pending: PersistedVtxoSpend, view: VtxoO
 /** Prove the signed successor is independently durable.
  *
  * When this device holds the operator-signed successor, the stored
- * finalization archive must validate against the enrolled account and carry
- * those exact signed bytes. When the operation finalized without a local
- * operator result, the committed coverage must already reflect the consumed
- * inputs and carry the change successor instead. */
+ * finalization archive must validate against the enrolled account and its
+ * archived bytes must pass the retained phone/vault/operator signature
+ * validation anchored on the pinned Operator identity. When the operation
+ * finalized without a local operator result, the exit repository must hold
+ * the exact validated successor and its required ancestors instead. Anything
+ * short of that retains the journal for recovery. */
 async function spendingSuccessorArchiveCovers(
   status: VaultStatus,
   pending: PersistedVtxoSpend,
-  coverage: CommittedRecoveryCoverage,
 ): Promise<boolean> {
-  if (pending.operatorArkPsbt) {
-    const archive = await recoveryFileStore<ExitArchive>(
-      `finalization:${status.network}:${status.vaultId}:${pending.arkTxid}`,
+  if (!pending.operatorArkPsbt) return exitRepositorySuccessorCovers(status, pending)
+  const archive = await recoveryFileStore<ExitArchive>(
+    `finalization:${status.network}:${status.vaultId}:${pending.arkTxid}`,
+  )
+  if (!archive) return false
+  try {
+    validateExitArchive(archive, {
+      network: status.network,
+      scriptPubKey: String(status.spendingArkScript),
+      descriptorHash: status.vaultId,
+    })
+    if (
+      !pending.unsignedArkPsbt ||
+      !pending.unsignedCheckpointPsbts?.length ||
+      !pending.checkpointPsbts?.length
     )
-    if (!archive) return false
+      return false
+    const operatorPub = await spendingOperatorPub(status, pending.checkpointTapscript)
+    const unsignedArk = Transaction.fromPSBT(base64.decode(pending.unsignedArkPsbt))
+    const validation = createVaultSdkOperationValidation(status, unsignedArk, operatorPub)
+    const storedArk = archive.transactions[pending.arkTxid]
+    if (!storedArk) return false
+    const archivedArk = Transaction.fromPSBT(base64.decode(storedArk))
+    if (archivedArk.id !== pending.arkTxid) return false
+    validation.assertArkTransaction(archivedArk, 'operator-signed')
+    const archivedCheckpoints: string[] = []
+    for (const raw of pending.checkpointPsbts) {
+      const id = Transaction.fromPSBT(base64.decode(raw)).id
+      const stored = archive.transactions[id]
+      if (!stored) return false
+      archivedCheckpoints.push(stored)
+    }
+    const pairs = checkpointPairsInCanonicalOrder(
+      pending.unsignedCheckpointPsbts,
+      archivedCheckpoints,
+      'Recovery',
+    )
+    for (const { original, candidate } of pairs)
+      validation.assertCheckpointTransaction(candidate, original, 'vault-authorized')
+    if (!successorCarriesChange(status, pending, archivedArk)) return false
+  } catch {
+    return false
+  }
+  return true
+}
+
+/** Resolve the pinned Operator identity exactly like every other sensitive
+ * step, so archived signatures verify against the enrolled release. */
+async function spendingOperatorPub(
+  status: VaultStatus,
+  checkpointTapscript: string | undefined,
+): Promise<Uint8Array> {
+  const info = await requirePinnedOperator(
+    new RestArkProvider(vaultOperatorOrigin(status.network)),
+    status,
+    checkpointTapscript,
+  )
+  return xOnly(info.signerPubkey, 'Operator signer pubkey')
+}
+
+/** Fallback for operations that finalized without a local operator result:
+ * the exit repository must hold the exact successor, its required ancestors
+ * and the change output. Absence from a saved output list alone proves
+ * nothing, and a stale file never satisfies this tier. */
+async function exitRepositorySuccessorCovers(
+  status: VaultStatus,
+  pending: PersistedVtxoSpend,
+): Promise<boolean> {
+  if (!pending.unsignedArkPsbt) return false
+  const repository = vaultExitRepository(status.vaultId, status.network)
+  try {
+    const operatorPub = await spendingOperatorPub(status, pending.checkpointTapscript)
+    const stored = await repository.getVirtualTx(pending.arkTxid)
+    if (!stored?.psbt) return false
+    const successor = Transaction.fromPSBT(base64.decode(stored.psbt))
+    if (successor.id !== pending.arkTxid) return false
+    const unsignedArk = Transaction.fromPSBT(base64.decode(pending.unsignedArkPsbt))
+    const validation = createVaultSdkOperationValidation(status, unsignedArk, operatorPub)
     try {
-      validateExitArchive(archive, {
-        network: status.network,
-        scriptPubKey: String(status.spendingArkScript),
-        descriptorHash: status.vaultId,
-      })
+      validation.assertArkTransaction(successor, 'operator-signed')
     } catch {
       return false
     }
-    return archive.transactions[pending.arkTxid] === pending.operatorArkPsbt
+    if (pending.checkpointPsbts?.length) {
+      for (const raw of pending.checkpointPsbts) {
+        const node = await repository.getVirtualTx(Transaction.fromPSBT(base64.decode(raw)).id)
+        if (!node) return false
+      }
+    }
+    const seen = new Set<string>([successor.id])
+    const queue: string[] = []
+    const enqueueInputs = (tx: Transaction): boolean => {
+      for (let index = 0; index < tx.inputsLength; index++) {
+        const prev = tx.getInput(index).txid
+        if (!prev?.length) return false
+        queue.push(hex.encode(prev))
+      }
+      return true
+    }
+    if (!enqueueInputs(successor)) return false
+    while (queue.length) {
+      if (seen.size > 512) return false
+      const txid = queue.shift()!
+      if (seen.has(txid)) continue
+      const node = await repository.getVirtualTx(txid)
+      if (!node) return false
+      if (node.type === ChainedTxType.Commitment) {
+        seen.add(txid)
+        continue
+      }
+      if (!node.psbt) return false
+      let ancestor: Transaction
+      try {
+        ancestor = Transaction.fromPSBT(base64.decode(node.psbt))
+      } catch {
+        return false
+      }
+      if (ancestor.id !== txid) return false
+      seen.add(txid)
+      if (!enqueueInputs(ancestor)) return false
+    }
+    if (!successorCarriesChange(status, pending, successor)) return false
+  } catch {
+    return false
+  } finally {
+    await repository[Symbol.asyncDispose]()
   }
-  const spentInputs = pending.reservedInputs ?? []
-  if (!spentInputs.length) return false
-  const spent = new Set(spentInputs.map((input) => `${input.txid}:${input.vout}`))
-  if (coverage.outputs.some((coin) => spent.has(`${coin.txid}:${coin.vout}`))) return false
-  return spendingSuccessorChangeCovered(status, pending, coverage)
+  return true
+}
+
+function successorCarriesChange(status: VaultStatus, pending: PersistedVtxoSpend, successor: Transaction): boolean {
+  const changeSats = pending.changeSats ?? 0
+  if (changeSats <= 0) return true
+  if (pending.changeVout === undefined) return false
+  const output = successor.getOutput(pending.changeVout)
+  return (
+    !!output && output.amount === BigInt(changeSats) && hex.encode(output.script!) === status.spendingArkScript
+  )
 }
 
 /** Owner-side retirement predicate for a finalized Spending successor.
@@ -1009,7 +1129,7 @@ async function retireFinalizedVtxoSpendLocked(
         evidence.descriptorHash !== coverage.descriptorHash ||
         evidence.fileDigest !== coverage.fileDigest)) ||
     !spendingSuccessorChangeCovered(status, pending, coverage) ||
-    !(await spendingSuccessorArchiveCovers(status, pending, coverage))
+    !(await spendingSuccessorArchiveCovers(status, pending))
   )
     return false
   // A stale observation cannot retire a replacement or rewritten operation.

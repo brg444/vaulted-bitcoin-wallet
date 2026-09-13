@@ -1,15 +1,26 @@
-import { ChainTxType, Transaction } from '@arkade-os/sdk'
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
+import { ArkAddress, ChainTxType, ChainedTxType, RestArkProvider, SingleKey, Transaction } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VaultRequestError } from '../api'
+import { POLICY_VERSION } from '../constants'
 import { networkPins } from '../networkPins'
-import golden from './testdata/vault-policy-v1-tree.json'
+import { LEDGER_NATIVE_TEMPLATE } from '../program/ledgerNativeKeys'
 import type { VaultStatus } from '../types'
 import { vaultCosignerClient } from '../cosignerClient'
 import { readCommittedRecoveryCoverage, type CommittedRecoveryCoverage } from '../recovery/committedCoverage'
 import { packExitArchive } from '../recovery/exitArchive'
 import { recoveryFileStore } from '../recovery/fileStore'
 import { fetchVaultWalletVtxoSnapshot } from './walletWorker'
+import { vaultExitRepository } from './exitRepository'
+import { VaultPolicyV1Script } from './script'
+import {
+  buildReservedVtxoSpend,
+  createPhoneSignedPendingProof,
+  type PersistedVtxoSpend,
+} from './spendingTransaction'
+import golden from './testdata/vault-policy-v1-tree.json'
 import {
   acknowledgeSettledVtxoSpends,
   acknowledgeSpendingVtxoRecovery,
@@ -18,37 +29,163 @@ import {
   type VtxoOperationView,
 } from './spend'
 import {
-  clearPersistedVtxoSpend,
-  listPersistedVtxoSpends,
   loadPersistedVtxoSpendById,
   persistVtxoSpend,
 } from './spendingJournal'
-import type { PersistedVtxoSpend } from './spendingTransaction'
 
-vi.mock('../recovery/fileStore', () => ({ recoveryFileStore: vi.fn() }))
 vi.mock('../recovery/committedCoverage', () => ({ readCommittedRecoveryCoverage: vi.fn() }))
 vi.mock('./walletWorker', () => ({ fetchVaultWalletVtxoSnapshot: vi.fn() }))
 
-const VAULT = 'vault-retire'
 const OP = '33'.repeat(16)
-const SCRIPT = `5120${golden.fixtures.userPub}`
-const RECIPIENT_SCRIPT = `5120${golden.fixtures.exitHardwarePub}`
 const FEE_POLICY = 'aa'.repeat(32)
+const PHONE = SingleKey.fromPrivateKey(hex.decode('01'.padStart(64, '0')))
+const VAULT_KEY = SingleKey.fromPrivateKey(hex.decode('02'.padStart(64, '0')))
+const OPERATOR = SingleKey.fromPrivateKey(hex.decode('04'.padStart(64, '0')))
+const ROGUE = SingleKey.fromPrivateKey(hex.decode('09'.padStart(64, '0')))
 
-/** Real retained signed graph: parent funds the exact change successor. */
-function signedGraph() {
-  const pins = networkPins('mutinynet')
+function retirementStatus(vaultId: string): VaultStatus {
+  const script = new VaultPolicyV1Script({
+    userPub: hex.decode(golden.fixtures.userPub),
+    vtxoVaultCosignerPub: hex.decode(golden.fixtures.vtxoVaultCosignerPub),
+    arkdServerPub: hex.decode(golden.fixtures.arkdServerPub),
+    delegatePub: hex.decode(golden.fixtures.delegatePub),
+    exitDelay: 4608n,
+    exitDelayUnit: 'seconds',
+    exitDevicePub: hex.decode(golden.fixtures.userPub),
+    exitHardwarePub: hex.decode(golden.fixtures.exitHardwarePub),
+  })
+  const address = new ArkAddress(hex.decode(golden.fixtures.arkdServerPub), script.tweakedPublicKey, 'tark')
+  return {
+    enrolled: true,
+    network: 'mutinynet',
+    clientOrigin: 'https://vault.test',
+    rpId: 'vault.test',
+    vaultId,
+    templateVersion: LEDGER_NATIVE_TEMPLATE,
+    policyVersion: POLICY_VERSION,
+    protectionTier: 'standard',
+    savingsAddress: '',
+    savingsScript: '',
+    periodAllowance: 100_000,
+    periodSpent: 0,
+    periodRemaining: 100_000,
+    txCap: 50_000,
+    absoluteFeeCap: 5_000,
+    feerateCapSatVb: 10,
+    phoneBip340Pub: `02${golden.fixtures.userPub}`,
+    phoneDirectP256: `02${golden.fixtures.exitDevicePub}`,
+    externalOwnerWalletPub: `02${golden.fixtures.exitHardwarePub}`,
+    vtxoVaultCosignerPub: `02${golden.fixtures.vtxoVaultCosignerPub}`,
+    vtxoDelegatePub: `02${golden.fixtures.delegatePub}`,
+    vtxoExitDelay: 4608,
+    vtxoExitDelayUnit: 'seconds',
+    spendingArkAddress: address.encode(),
+    spendingArkScript: hex.encode(script.pkScript),
+  } as unknown as VaultStatus
+}
+
+function destination(): string {
+  return new ArkAddress(
+    hex.decode(golden.fixtures.arkdServerPub),
+    hex.decode(golden.fixtures.exitHardwarePub),
+    'tark',
+  ).encode()
+}
+
+/** Fully signed Spending successor built with the retained covenant keys:
+ * phone scalar 1, vault scalar 2 and operator scalar 4 match the golden
+ * enrollment pubs, so existing signature validators verify for real. */
+async function signedFinalizedOp(vaultId: string, changeSats = 7_500) {
+  const status = retirementStatus(vaultId)
+  const scriptHex = String(status.spendingArkScript)
+  const inputSats = 12_000 + 500 + changeSats
   const parent = new Transaction({ version: 2 })
   parent.addInput({ txid: 'cc'.repeat(32), index: 0 })
-  parent.addOutput({ amount: 20000n, script: hex.decode(SCRIPT) })
-  const ark = new Transaction({ version: 2 })
-  ark.addInput({ txid: parent.id, index: 0 })
-  ark.addOutput({ amount: 12000n, script: hex.decode(RECIPIENT_SCRIPT) })
-  ark.addOutput({ amount: 7500n, script: hex.decode(SCRIPT) })
-  const arkPsbt = base64.encode(ark.toPSBT())
+  parent.addOutput({ amount: BigInt(inputSats), script: hex.decode(scriptHex) })
+  const zeroChange = changeSats === 0
+  const reservation = {
+    operationId: OP,
+    bundleDigest: '44'.repeat(32),
+    reservationExpires: '2099-08-20T00:02:00Z',
+    inputs: [{ txid: parent.id, vout: 0, valueSats: inputSats, scriptHex }],
+    changeAddress: zeroChange ? '' : status.spendingArkAddress!,
+    changeScript: zeroChange ? '' : scriptHex,
+    changeSats,
+    ...(zeroChange ? {} : { changeVout: 1 }),
+    destScript: `5120${golden.fixtures.exitHardwarePub}`,
+    feeSats: 500,
+    feePolicyDigest: FEE_POLICY,
+    checkpointTapscript: networkPins('mutinynet').checkpointTapscript,
+  }
+  const built = buildReservedVtxoSpend(status, reservation, 12_000, destination(), FEE_POLICY)
+  const authorizedArk = await VAULT_KEY.sign(await PHONE.sign(built.arkTx))
+  const operatorArk = await OPERATOR.sign(authorizedArk)
+  const operatorCheckpointPsbts: string[] = []
+  const checkpointPsbts: string[] = []
+  for (const checkpoint of built.checkpoints) {
+    const operatorSigned = await OPERATOR.sign(checkpoint)
+    operatorCheckpointPsbts.push(base64.encode(operatorSigned.toPSBT()))
+    checkpointPsbts.push(base64.encode((await VAULT_KEY.sign(await PHONE.sign(operatorSigned))).toPSBT()))
+  }
+  const pending: PersistedVtxoSpend = {
+    vaultId,
+    operationId: OP,
+    bundleDigest: '44'.repeat(32),
+    destAddress: destination(),
+    amountSats: 12_000,
+    arkTxid: built.arkTx.id,
+    reservationExpires: reservation.reservationExpires,
+    checkpointTapscript: reservation.checkpointTapscript,
+    feePolicyDigest: FEE_POLICY,
+    feeSats: 500,
+    changeSats,
+    ...(zeroChange ? {} : { changeVout: 1 }),
+    unsignedArkPsbt: base64.encode(built.arkTx.toPSBT()),
+    unsignedCheckpointPsbts: built.checkpoints.map((checkpoint) => base64.encode(checkpoint.toPSBT())),
+    authorizedPsbt: base64.encode(authorizedArk.toPSBT()),
+    authorizedPendingProof: await createPhoneSignedPendingProof(
+      built.checkpoints.map((checkpoint) => base64.encode(checkpoint.toPSBT())),
+      PHONE,
+      hex.decode(golden.fixtures.userPub),
+    ),
+    operatorArkPsbt: base64.encode(operatorArk.toPSBT()),
+    operatorCheckpointPsbts,
+    checkpointPsbts,
+    sdkBundleVersion: 1,
+    reservedInputs: reservation.inputs.map((input) => ({ ...input })),
+    reservedOutputs: [
+      { scriptHex: reservation.destScript.toLowerCase(), amountSats: 12_000 },
+      ...(zeroChange ? [] : [{ scriptHex, amountSats: changeSats }]),
+    ],
+    stage: 'operator-finalized',
+  }
+  const checkpointId = Transaction.fromPSBT(base64.decode(checkpointPsbts[0])).id
+  return { status, parent, built, pending, checkpointId }
+}
+
+function finalizationArchive(
+  vaultId: string,
+  pending: PersistedVtxoSpend,
+  parent: Transaction,
+  checkpointId: string,
+  checkpointPsbt: string,
+  mutate?: (archive: {
+    version: 1
+    descriptorHash: string
+    capturedAt: string
+    info: string
+    coins: string
+    branches: Record<string, { txid: string; type: ChainTxType; expiresAt: string; spends: string[] }[]>
+    transactions: Record<string, string>
+  }) => void,
+) {
+  const pins = networkPins('mutinynet')
+  const status = retirementStatus(vaultId)
+  const scriptHex = String(status.spendingArkScript)
+  const hasChange = (pending.changeSats ?? 0) > 0 && pending.changeVout !== undefined
   const archive = {
     version: 1 as const,
-    descriptorHash: VAULT,
+    descriptorHash: vaultId,
     capturedAt: new Date().toISOString(),
     info: packExitArchive({
       network: 'mutinynet',
@@ -56,85 +193,66 @@ function signedGraph() {
       checkpointTapscript: pins.checkpointTapscript,
       forfeitPubkey: pins.checkpointForfeitPub,
     }),
-    coins: packExitArchive([
-      { txid: ark.id, vout: 1, value: 7500, script: SCRIPT, isSpent: false, createdAt: new Date() },
-    ]),
-    branches: {
-      [`${ark.id}:1`]: [
-        { txid: 'cc'.repeat(32), type: ChainTxType.COMMITMENT, expiresAt: '0', spends: [] },
-        { txid: parent.id, type: ChainTxType.TREE, expiresAt: '0', spends: ['cc'.repeat(32)] },
-        { txid: ark.id, type: ChainTxType.ARK, expiresAt: '0', spends: [parent.id] },
-      ],
-    },
-    transactions: { [parent.id]: base64.encode(parent.toPSBT()), [ark.id]: arkPsbt },
+    coins: packExitArchive(
+      hasChange
+        ? [
+            {
+              txid: pending.arkTxid,
+              vout: pending.changeVout,
+              value: pending.changeSats,
+              script: scriptHex,
+              isSpent: false,
+              createdAt: new Date(),
+            },
+          ]
+        : [],
+    ),
+    branches: hasChange
+      ? {
+          [`${pending.arkTxid}:${pending.changeVout}`]: [
+            { txid: 'cc'.repeat(32), type: ChainTxType.COMMITMENT, expiresAt: '0', spends: [] as string[] },
+            { txid: parent.id, type: ChainTxType.TREE, expiresAt: '0', spends: ['cc'.repeat(32)] },
+            { txid: checkpointId, type: ChainTxType.CHECKPOINT, expiresAt: '0', spends: [parent.id] },
+            { txid: pending.arkTxid, type: ChainTxType.ARK, expiresAt: '0', spends: [checkpointId] },
+          ],
+        }
+      : {},
+    transactions: {
+      [parent.id]: base64.encode(parent.toPSBT()),
+      [checkpointId]: checkpointPsbt,
+      [pending.arkTxid]: pending.operatorArkPsbt!,
+    } as Record<string, string>,
   }
-  return { parent, ark, arkPsbt, archive }
+  mutate?.(archive)
+  return archive
 }
 
-const GRAPH = signedGraph()
-const ARK = GRAPH.ark.id
-
-function retirementStatus(): VaultStatus {
+function finalizedView(pending: PersistedVtxoSpend, overrides: Partial<VtxoOperationView> = {}): VtxoOperationView {
   return {
-    vaultId: VAULT,
-    network: 'mutinynet',
-    spendingArkScript: SCRIPT,
-    enrolled: true,
-    vtxoExitDelay: 4608,
-    vtxoExitDelayUnit: 'seconds',
-  } as unknown as VaultStatus
-}
-
-function finalizedOp(overrides: Partial<PersistedVtxoSpend> = {}): PersistedVtxoSpend {
-  return {
-    vaultId: VAULT,
-    operationId: OP,
-    bundleDigest: '44'.repeat(32),
-    destAddress: 'tb1qdestination',
-    amountSats: 12_000,
-    arkTxid: ARK,
-    feeSats: 500,
-    feePolicyDigest: FEE_POLICY,
-    changeSats: 7_500,
-    changeVout: 1,
-    operatorArkPsbt: GRAPH.arkPsbt,
-    reservedInputs: [{ txid: GRAPH.parent.id, vout: 0, valueSats: 20_000, scriptHex: SCRIPT }],
-    stage: 'operator-finalized',
-    ...overrides,
-  }
-}
-
-function finalizedView(overrides: Partial<VtxoOperationView> = {}): VtxoOperationView {
-  return {
-    operationId: OP,
-    bundleDigest: '44'.repeat(32),
+    operationId: pending.operationId,
+    bundleDigest: pending.bundleDigest,
     state: 'finalized',
-    arkTxid: ARK,
-    feeSats: 500,
-    feePolicyDigest: FEE_POLICY,
-    changeSats: 7_500,
-    changeVout: 1,
+    arkTxid: pending.arkTxid,
+    feeSats: pending.feeSats,
+    feePolicyDigest: pending.feePolicyDigest,
+    changeSats: pending.changeSats,
+    changeVout: pending.changeVout,
     ...overrides,
   }
 }
 
-function coverage(): CommittedRecoveryCoverage {
+function coverageFor(vaultId: string, pending: PersistedVtxoSpend) {
+  const status = retirementStatus(vaultId)
+  const hasChange = (pending.changeSats ?? 0) > 0 && pending.changeVout !== undefined
   return {
-    vaultId: VAULT,
+    vaultId,
     network: 'mutinynet',
-    descriptorHash: VAULT,
-    fileDigest: 'digest-1',
-    outputs: [{ txid: ARK, vout: 1, value: 7_500, script: SCRIPT }],
+    descriptorHash: vaultId,
+    fileDigest: `digest-${vaultId}`,
+    outputs: hasChange
+      ? [{ txid: pending.arkTxid, vout: pending.changeVout as number, value: pending.changeSats as number, script: status.spendingArkScript as string }]
+      : [],
   }
-}
-
-function agreeEvidence() {
-  vi.mocked(recoveryFileStore).mockResolvedValue(structuredClone(GRAPH.archive) as never)
-  vi.mocked(fetchVaultWalletVtxoSnapshot).mockResolvedValue({
-    history: [{ account: 'spend', type: 'sent', txid: ARK, amount: 12_500 }],
-  } as never)
-  vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(coverage() as never)
-  vi.spyOn(vaultCosignerClient.spending, 'operation').mockResolvedValue(finalizedView() as never)
 }
 
 function installImmediateLock() {
@@ -152,19 +270,94 @@ function installImmediateLock() {
   }
 }
 
+let vaultCounter = 0
+
 beforeEach(() => {
   vi.restoreAllMocks()
-  for (const record of listPersistedVtxoSpends(VAULT)) clearPersistedVtxoSpend(VAULT, record.operationId)
+  vi.stubGlobal('indexedDB', new IDBFactory())
+  localStorage.clear()
 })
 
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  localStorage.clear()
+})
+
+/** Seed the finalized view, history and coverage around a signed fixture. */
+function agreeEvidence(status: VaultStatus, pending: PersistedVtxoSpend, viewOverrides: Partial<VtxoOperationView> = {}) {
+  vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue({
+    network: 'mutinynet',
+    signerPubkey: golden.fixtures.arkdServerPub,
+    checkpointTapscript: networkPins('mutinynet').checkpointTapscript,
+    fees: { intentFee: {} },
+  } as never)
+  vi.spyOn(vaultCosignerClient.spending, 'operation').mockResolvedValue(finalizedView(pending, viewOverrides) as never)
+  vi.mocked(fetchVaultWalletVtxoSnapshot).mockResolvedValue({
+    history: [
+      { account: 'spend', type: 'sent', txid: pending.arkTxid, amount: pending.amountSats + (pending.feeSats ?? 0) },
+    ],
+  } as never)
+  vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(coverageFor(status.vaultId, pending) as never)
+}
+
+async function acknowledgeCase(
+  changeSats = 7_500,
+  seed: (f: Awaited<ReturnType<typeof signedFinalizedOp>>) => Promise<void> | void = async (f) => {
+    await recoveryFileStore(
+      `finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`,
+      finalizationArchive(f.status.vaultId, f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0]),
+    )
+  },
+) {
+  const vaultId = `vault-retire-${++vaultCounter}`
+  const f = await signedFinalizedOp(vaultId, changeSats)
+  persistVtxoSpend(f.pending)
+  agreeEvidence(f.status, f.pending)
+  await seed(f)
+  return f
+}
+
 describe('shared Spending retirement predicate', () => {
+  it('validates the signed fixture through the retained validators', async () => {
+    const vaultId = `vault-retire-${++vaultCounter}`
+    const f = await signedFinalizedOp(vaultId)
+    const { validateExitArchive } = await import('../recovery/exitArchive')
+    const { createVaultSdkOperationValidation, checkpointPairsInCanonicalOrder, xOnly } = await import(
+      './spendingTransaction'
+    )
+    expect(() =>
+      validateExitArchive(finalizationArchive(vaultId, f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0]), {
+        network: 'mutinynet',
+        scriptPubKey: String(f.status.spendingArkScript),
+        descriptorHash: vaultId,
+      }),
+    ).not.toThrow()
+    const operatorPub = xOnly(golden.fixtures.arkdServerPub, 'Operator signer pubkey')
+    const validation = createVaultSdkOperationValidation(
+      f.status,
+      Transaction.fromPSBT(base64.decode(f.pending.unsignedArkPsbt!)),
+      operatorPub,
+    )
+    expect(() =>
+      validation.assertArkTransaction(Transaction.fromPSBT(base64.decode(f.pending.operatorArkPsbt!)), 'operator-signed'),
+    ).not.toThrow()
+    const pairs = checkpointPairsInCanonicalOrder(f.pending.unsignedCheckpointPsbts!, f.pending.checkpointPsbts!, 'Recovery')
+    for (const { original, candidate } of pairs)
+      expect(() => validation.assertCheckpointTransaction(candidate, original, 'vault-authorized')).not.toThrow()
+  })
+
   it('retires only when receipt, archive, history and coverage agree', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
-      agreeEvidence()
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP, coverage())).resolves.toBe(true)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)).toBeUndefined()
+      const f = await acknowledgeCase()
+      await expect(
+        acknowledgeSpendingVtxoRecovery(f.status, OP, {
+          ...(coverageFor(f.status.vaultId, f.pending) as CommittedRecoveryCoverage),
+          fileDigest: `digest-${f.status.vaultId}`,
+        }),
+      ).resolves.toBe(true)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)).toBeUndefined()
     } finally {
       restoreLock()
     }
@@ -179,44 +372,86 @@ describe('shared Spending retirement predicate', () => {
   ])('retains the journal for a receipt with %s', async (_label, changes) => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
-      agreeEvidence()
+      const f = await acknowledgeCase()
       vi.mocked(vaultCosignerClient.spending.operation).mockResolvedValue({
-        ...finalizedView(),
+        ...finalizedView(f.pending),
         ...changes,
       } as never)
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('operator-finalized')
+      await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('operator-finalized')
     } finally {
       restoreLock()
     }
   })
 
-  it.each([
-    ['missing archive', null],
-    ['malformed archive', { transactions: { [ARK]: 'cHNidP9ark' } }],
-    ['stripped ancestry', { ...structuredClone(GRAPH.archive), branches: {} }],
-    ['foreign binding', { ...structuredClone(GRAPH.archive), descriptorHash: 'other-vault' }],
-  ])('retains the journal when the stored finalization archive is %s', async (_label, archive) => {
+  it('retains the journal when the stored finalization archive is missing or malformed', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
-      agreeEvidence()
-      vi.mocked(recoveryFileStore).mockResolvedValue(archive as never)
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('operator-finalized')
+      const missing = await acknowledgeCase(7_500, async () => {})
+      await expect(acknowledgeSpendingVtxoRecovery(missing.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(missing.status.vaultId, OP)?.stage).toBe('operator-finalized')
+      const malformed = await acknowledgeCase(7_500, async (f) => {
+        await recoveryFileStore(`finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`, {
+          transactions: { [f.pending.arkTxid]: 'cHNidP9ark' },
+        })
+      })
+      await expect(acknowledgeSpendingVtxoRecovery(malformed.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(malformed.status.vaultId, OP)?.stage).toBe('operator-finalized')
     } finally {
       restoreLock()
     }
   })
 
-  it('retains the journal when the archived bytes differ from the signed successor', async () => {
+  it('retains the journal when ancestry is stripped or the binding is foreign', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp({ operatorArkPsbt: `${GRAPH.arkPsbt.slice(0, -4)}AAAA` }))
-      agreeEvidence()
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('operator-finalized')
+      const stripped = await acknowledgeCase(7_500, async (f) => {
+        const archive = finalizationArchive(f.status.vaultId, f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0], (draft) => {
+          draft.branches = {}
+        })
+        await recoveryFileStore(`finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`, archive)
+      })
+      await expect(acknowledgeSpendingVtxoRecovery(stripped.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(stripped.status.vaultId, OP)?.stage).toBe('operator-finalized')
+      const foreign = await acknowledgeCase(7_500, async (f) => {
+        const archive = finalizationArchive('other-vault', f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0])
+        await recoveryFileStore(`finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`, archive)
+      })
+      await expect(acknowledgeSpendingVtxoRecovery(foreign.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(foreign.status.vaultId, OP)?.stage).toBe('operator-finalized')
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('retains the journal when required signatures are missing or substituted', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      const unsigned = await acknowledgeCase(7_500, async (f) => {
+        const bare = Transaction.fromPSBT(base64.decode(f.pending.unsignedArkPsbt!))
+        const archive = finalizationArchive(f.status.vaultId, { ...f.pending, operatorArkPsbt: undefined }, f.parent, f.checkpointId, f.pending.checkpointPsbts![0])
+        archive.transactions[f.pending.arkTxid] = base64.encode(bare.toPSBT())
+        await recoveryFileStore(
+          `finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`,
+          archive,
+        )
+      })
+      await expect(acknowledgeSpendingVtxoRecovery(unsigned.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(unsigned.status.vaultId, OP)?.stage).toBe('operator-finalized')
+      const substituted = await acknowledgeCase(7_500, async (f) => {
+        const unsigned = Transaction.fromPSBT(base64.decode(f.pending.unsignedArkPsbt!))
+        const rogueArk = await ROGUE.sign(await VAULT_KEY.sign(await PHONE.sign(unsigned)))
+        const journalBytes = base64.encode(rogueArk.toPSBT())
+        persistVtxoSpend({ ...f.pending, operatorArkPsbt: journalBytes })
+        const archive = finalizationArchive(f.status.vaultId, f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0])
+        archive.transactions[f.pending.arkTxid] = journalBytes
+        await recoveryFileStore(
+          `finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`,
+          archive,
+        )
+      })
+      await expect(acknowledgeSpendingVtxoRecovery(substituted.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(substituted.status.vaultId, OP)?.stage).toBe('operator-finalized')
     } finally {
       restoreLock()
     }
@@ -225,18 +460,19 @@ describe('shared Spending retirement predicate', () => {
   it('retains the journal on missing history, coverage or change successor', async () => {
     const restoreLock = installImmediateLock()
     try {
-      for (const mutate of [
+      const cases: ((f: Awaited<ReturnType<typeof signedFinalizedOp>>) => void)[] = [
         () => vi.mocked(fetchVaultWalletVtxoSnapshot).mockResolvedValue({ history: [] } as never),
         () => vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(null),
-        () => vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue({ ...coverage(), outputs: [] } as never),
-      ]) {
-        persistVtxoSpend(finalizedOp())
-        agreeEvidence()
-        mutate()
-        await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
-        expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('operator-finalized')
-        clearPersistedVtxoSpend(VAULT, OP)
-        vi.restoreAllMocks()
+        (f) =>
+          vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(
+            { ...coverageFor(f.status.vaultId, f.pending), outputs: [] } as never,
+          ),
+      ]
+      for (const mutate of cases) {
+        const f = await acknowledgeCase()
+        mutate(f)
+        await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
+        expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('operator-finalized')
       }
     } finally {
       restoreLock()
@@ -246,17 +482,17 @@ describe('shared Spending retirement predicate', () => {
   it('rejects a mismatched evidence digest and a journal rewritten mid-flight', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
-      agreeEvidence()
+      const f = await acknowledgeCase()
+      const coverage = coverageFor(f.status.vaultId, f.pending)
       await expect(
-        acknowledgeSpendingVtxoRecovery(retirementStatus(), OP, { ...coverage(), fileDigest: 'other-digest' }),
+        acknowledgeSpendingVtxoRecovery(f.status, OP, { ...coverage, fileDigest: 'other-digest' }),
       ).resolves.toBe(false)
       vi.mocked(readCommittedRecoveryCoverage).mockImplementation(async () => {
-        persistVtxoSpend({ ...finalizedOp(), reservationExpires: '2030-01-01T00:00:00Z' })
-        return coverage() as never
+        persistVtxoSpend({ ...f.pending, reservationExpires: '2030-01-01T00:00:00Z' })
+        return coverageFor(f.status.vaultId, f.pending) as never
       })
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.reservationExpires).toBe('2030-01-01T00:00:00Z')
+      await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.reservationExpires).toBe('2030-01-01T00:00:00Z')
     } finally {
       restoreLock()
     }
@@ -265,47 +501,65 @@ describe('shared Spending retirement predicate', () => {
   it('retires a zero-change successor without requiring a change output', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp({ changeSats: 0, changeVout: undefined }))
-      agreeEvidence()
-      vi.mocked(vaultCosignerClient.spending.operation).mockResolvedValue({
-        ...finalizedView(),
-        changeSats: 0,
-        changeVout: undefined,
-      } as never)
-      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue({ ...coverage(), outputs: [] } as never)
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(true)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)).toBeUndefined()
+      const f = await acknowledgeCase(0)
+      await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(true)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)).toBeUndefined()
     } finally {
       restoreLock()
     }
   })
 
-  it('retires through coverage when the operation finalized without a local operator result', async () => {
+  it('retires through the exit repository when the operation finalized without a local operator result', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp({ operatorArkPsbt: undefined, stage: 'authorized' }))
-      agreeEvidence()
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(true)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)).toBeUndefined()
+      const f = await acknowledgeCase()
+      persistVtxoSpend({ ...f.pending, operatorArkPsbt: undefined, checkpointPsbts: undefined, stage: 'authorized' })
+      const repository = vaultExitRepository(f.status.vaultId, f.status.network)
+      try {
+        await repository.upsertVirtualTxs([
+          { txid: f.pending.arkTxid, psbt: f.pending.operatorArkPsbt ?? null, expiresAt: null, type: ChainedTxType.Ark },
+          { txid: f.parent.id, psbt: base64.encode(f.parent.toPSBT()), expiresAt: null, type: ChainedTxType.Tree },
+          {
+            txid: f.checkpointId,
+            psbt: f.pending.checkpointPsbts![0],
+            expiresAt: null,
+            type: ChainedTxType.Checkpoint,
+          },
+          { txid: 'cc'.repeat(32), psbt: null, expiresAt: null, type: ChainedTxType.Commitment },
+        ])
+      } finally {
+        await repository[Symbol.asyncDispose]()
+      }
+      await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(true)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)).toBeUndefined()
     } finally {
       restoreLock()
     }
   })
 
-  it('retains when coverage still shows the supposedly spent inputs', async () => {
+  it('retains when the repository successor is missing, unsigned or orphaned', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp({ operatorArkPsbt: undefined, stage: 'authorized' }))
-      agreeEvidence()
-      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue({
-        ...coverage(),
-        outputs: [
-          ...coverage().outputs,
-          { txid: GRAPH.parent.id, vout: 0, value: 20_000, script: SCRIPT },
-        ],
-      } as never)
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('authorized')
+      for (const seed of ['missing', 'unsigned', 'orphaned'] as const) {
+        const f = await acknowledgeCase()
+        persistVtxoSpend({ ...f.pending, operatorArkPsbt: undefined, checkpointPsbts: undefined, stage: 'authorized' })
+        const repository = vaultExitRepository(f.status.vaultId, f.status.network)
+        try {
+          if (seed === 'unsigned') {
+            await repository.upsertVirtualTxs([
+              { txid: f.pending.arkTxid, psbt: f.pending.unsignedArkPsbt ?? null, expiresAt: null, type: ChainedTxType.Ark },
+            ])
+          } else if (seed === 'orphaned') {
+            await repository.upsertVirtualTxs([
+              { txid: f.pending.arkTxid, psbt: f.pending.operatorArkPsbt ?? null, expiresAt: null, type: ChainedTxType.Ark },
+            ])
+          }
+        } finally {
+          await repository[Symbol.asyncDispose]()
+        }
+        await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
+        expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('authorized')
+      }
     } finally {
       restoreLock()
     }
@@ -314,15 +568,14 @@ describe('shared Spending retirement predicate', () => {
   it('retires on a later capture after missing evidence', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
-      agreeEvidence()
+      const f = await acknowledgeCase()
       vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(null)
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('operator-finalized')
-      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(coverage() as never)
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(true)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)).toBeUndefined()
-      await expect(acknowledgeSpendingVtxoRecovery(retirementStatus(), OP)).resolves.toBe(false)
+      await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('operator-finalized')
+      vi.mocked(readCommittedRecoveryCoverage).mockResolvedValue(coverageFor(f.status.vaultId, f.pending) as never)
+      await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(true)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)).toBeUndefined()
+      await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
     } finally {
       restoreLock()
     }
@@ -331,14 +584,13 @@ describe('shared Spending retirement predicate', () => {
   it('aborts acknowledgment on a cancelled caller without retiring', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
-      agreeEvidence()
+      const f = await acknowledgeCase()
       const controller = new AbortController()
       controller.abort()
       await expect(
-        acknowledgeSpendingVtxoRecovery(retirementStatus(), OP, undefined, controller.signal),
+        acknowledgeSpendingVtxoRecovery(f.status, OP, undefined, controller.signal),
       ).rejects.toThrow()
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('operator-finalized')
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('operator-finalized')
     } finally {
       restoreLock()
     }
@@ -347,9 +599,9 @@ describe('shared Spending retirement predicate', () => {
   it('settles only finalized operations and skips pre-reserve records', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
+      const f = await acknowledgeCase()
       persistVtxoSpend({
-        vaultId: VAULT,
+        vaultId: f.status.vaultId,
         operationId: '55'.repeat(16),
         bundleDigest: '',
         destAddress: 'tb1qdestination',
@@ -357,10 +609,10 @@ describe('shared Spending retirement predicate', () => {
         arkTxid: '',
         stage: 'pre-reserve',
       })
-      agreeEvidence()
-      await expect(acknowledgeSettledVtxoSpends(retirementStatus())).resolves.toBe(1)
-      expect(loadPersistedVtxoSpendById(VAULT, OP)).toBeUndefined()
-      expect(loadPersistedVtxoSpendById(VAULT, '55'.repeat(16))?.stage).toBe('pre-reserve')
+      agreeEvidence(f.status, f.pending)
+      await expect(acknowledgeSettledVtxoSpends(f.status)).resolves.toBe(1)
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)).toBeUndefined()
+      expect(loadPersistedVtxoSpendById(f.status.vaultId, '55'.repeat(16))?.stage).toBe('pre-reserve')
     } finally {
       restoreLock()
     }
@@ -369,14 +621,22 @@ describe('shared Spending retirement predicate', () => {
   it('reconcile reports the service receipt while retaining the journal without evidence', async () => {
     const restoreLock = installImmediateLock()
     try {
-      persistVtxoSpend(finalizedOp())
-      vi.spyOn(vaultCosignerClient.spending, 'operation').mockResolvedValue(finalizedView() as never)
-      await expect(reconcilePersistedVtxoSpend(retirementStatus())).resolves.toEqual({
+      const vaultId = `vault-retire-${++vaultCounter}`
+      const f = await signedFinalizedOp(vaultId)
+      persistVtxoSpend(f.pending)
+      vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue({
+        network: 'mutinynet',
+        signerPubkey: golden.fixtures.arkdServerPub,
+        checkpointTapscript: networkPins('mutinynet').checkpointTapscript,
+        fees: { intentFee: {} },
+      } as never)
+      vi.spyOn(vaultCosignerClient.spending, 'operation').mockResolvedValue(finalizedView(f.pending) as never)
+      await expect(reconcilePersistedVtxoSpend(f.status)).resolves.toEqual({
         kind: 'receipt-finalized',
-        txid: ARK,
+        txid: f.pending.arkTxid,
         operationId: OP,
       })
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('operator-finalized')
+      expect(loadPersistedVtxoSpendById(vaultId, OP)?.stage).toBe('operator-finalized')
     } finally {
       restoreLock()
     }
@@ -385,31 +645,31 @@ describe('shared Spending retirement predicate', () => {
   it('keeps a live operation on a lost reservation response instead of clearing it', async () => {
     const restoreLock = installImmediateLock()
     try {
+      const vaultId = `vault-retire-${++vaultCounter}`
+      const f = await signedFinalizedOp(vaultId)
       const reservationExpires = new Date(Date.now() + 3600_000).toISOString()
-      persistVtxoSpend(
-        finalizedOp({
-          stage: 'authorized',
-          authorizedPsbt: 'cHNidP9a',
-          authorizedPendingProof: 'cHNidP9p',
-          feePolicyDigest: FEE_POLICY,
-          reservationExpires,
-        }),
-      )
+      persistVtxoSpend({
+        ...f.pending,
+        stage: 'authorized',
+        reservationExpires,
+        authorizedPsbt: f.pending.authorizedPsbt,
+        authorizedPendingProof: f.pending.authorizedPendingProof,
+      })
       vi.spyOn(vaultCosignerClient.spending, 'operation').mockRejectedValue(new VaultRequestError('gone', 404))
       const quote = {
         operationId: OP,
-        bundleDigest: '44'.repeat(32),
-        destAddress: 'tb1qdestination',
-        amountSats: 12_000,
-        feeSats: 500,
-        feePolicyDigest: FEE_POLICY,
+        bundleDigest: f.pending.bundleDigest,
+        destAddress: f.pending.destAddress,
+        amountSats: f.pending.amountSats,
+        feeSats: f.pending.feeSats!,
+        feePolicyDigest: f.pending.feePolicyDigest!,
         reservationExpires,
-        changeSats: 7_500,
+        changeSats: f.pending.changeSats!,
         changeVout: 1,
       }
       const unlocker = () => ({ unlock: async () => ({}), dispose: () => {} })
-      await expect(sendVaultVtxo({} as never, retirementStatus(), quote, unlocker as never)).rejects.toThrow()
-      expect(loadPersistedVtxoSpendById(VAULT, OP)?.stage).toBe('authorized')
+      await expect(sendVaultVtxo({} as never, f.status, quote, unlocker as never)).rejects.toThrow()
+      expect(loadPersistedVtxoSpendById(vaultId, OP)?.stage).toBe('authorized')
     } finally {
       restoreLock()
     }
