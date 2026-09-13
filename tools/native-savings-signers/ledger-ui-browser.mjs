@@ -42,8 +42,11 @@ try {
         throw new Error('Accepted recovery tradeoff missing from setup review')
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
       if (overflow) throw new Error(`Horizontal overflow at ${width}px: ${flow}`)
+      const frame = await page.getByTestId('vault-app').boundingBox()
+      if (!frame || frame.x < 0 || frame.y < 0 || frame.x + frame.width > width + 1 || frame.y + frame.height > 901)
+        throw new Error(`Wallet frame clipped at ${width}px: ${flow}`)
       await page.screenshot({ path: `${output}/${flow}-${width}.png`, fullPage: true })
-      results.push({ width, flow, horizontalOverflow: false })
+      results.push({ width, flow, horizontalOverflow: false, frameWithinViewport: true })
     }
     if (errors.length) throw new Error(errors.join('\n'))
     await page.close()

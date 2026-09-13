@@ -1,4 +1,7 @@
 export async function setupLedgerUi(width) {
+  await import('/src/tokens.css')
+  await import('/src/app.css')
+  await import('/src/index.css')
   const React = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { VaultTestProvider } = await import('/src/test/fixtures/VaultTestProvider.tsx')
@@ -19,11 +22,9 @@ export async function setupLedgerUi(width) {
   const { payment, family } = ledgerPaymentFixture(
     vectors.find((vector) => vector.input.network === 'mainnet' && !vector.input.recovery),
   )
-  await import('/src/tokens.css')
-  await import('/src/app.css')
-  await import('/src/index.css')
-  document.body.innerHTML = '<main id="root" class="page" data-testid="vault-app"></main>'
-  const app = createRoot(document.querySelector('#root'))
+  document.body.innerHTML =
+    '<div id="root"><main id="ledger-fixture" class="page" data-testid="vault-app"></main></div>'
+  const app = createRoot(document.querySelector('#ledger-fixture'))
   if (width < 600) {
     Reflect.deleteProperty(navigator, 'hid')
     Reflect.deleteProperty(Object.getPrototypeOf(navigator), 'hid')

@@ -14,14 +14,14 @@ import { useLedgerPayments } from '../../../vault/useLedgerPayments'
 import { ledgerPaymentView } from '../../../vault/ledgerPaymentContext'
 import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
 import LedgerPayment from '../../../screens/Vault/LedgerPayment'
+import '../../../tokens.css'
+import '../../../app.css'
+import '../../../index.css'
 import '../../../screens/Vault/vault.css'
 import '../../../screens/Vault/vault-system.css'
 import '../../../screens/Vault/quiet-guardian-flows.css'
 import '../../../screens/Vault/qg/layout.css'
 import '../../../screens/Vault/quiet-guardian-screens.css'
-import '../../../tokens.css'
-import '../../../app.css'
-import '../../../index.css'
 
 let fixture: Awaited<ReturnType<typeof ledgerRecoveryFixture>>
 let payment: LedgerSavingsPayment
@@ -146,6 +146,7 @@ export async function mountLedgerPayment(hold = false) {
       </VaultTestProvider>
     )
   }
-  document.body.innerHTML = '<main id="root" class="page" data-testid="vault-app"></main>'
-  createRoot(document.getElementById('root')!).render(<App />)
+  document.body.innerHTML =
+    '<div id="root"><main id="ledger-fixture" class="page" data-testid="vault-app"></main></div>'
+  createRoot(document.getElementById('ledger-fixture')!).render(<App />)
 }
