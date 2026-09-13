@@ -2,14 +2,14 @@ import { useSession } from '../vault/sessionContext'
 import { accountBalanceReads } from '../test/accountBalances'
 import { IDBFactory } from 'fake-indexeddb'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../components/Toast'
 import { pinFromEnrolledStatus, saveAddressPin } from '../lib/vault/pin'
 import { ENROLL_STORE, SELECTED_VAULT_STORE } from '../lib/vault/enrollmentStore'
-import { defaultSpendingPolicy, spendingPolicyDigest } from '../lib/vault/spendingPolicy'
-import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 import type { VaultHistoryItem } from '../lib/vault/history'
 import type { VaultStatus } from '../lib/vault/types'
+import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
+import { ledgerRecoveryFixture } from '../lib/vault/recovery/testdata/ledger'
 import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
 import { VaultProvider, VaultContext } from './vault'
 import VaultHome from '../screens/Vault/Home'
@@ -100,39 +100,8 @@ vi.mock('../lib/vault/status', () => ({
   fetchPublicStatus: () => Promise.reject(new Error('offline')),
 }))
 
-const spendingPolicy = defaultSpendingPolicy()
-const STATUS = {
-  enrolled: true,
-  network: 'mutinynet',
-  clientOrigin: 'https://vault.test',
-  rpId: 'vault.test',
-  vaultId: 'vault-a',
-  templateVersion: LEDGER_NATIVE_TEMPLATE,
-  policyVersion: 'policy-v1',
-  protectionTier: 'standard',
-  savingsAddress: 'tb1psavings',
-  savingsScript: '51',
-  periodAllowance: 100_000,
-  periodSpent: 0,
-  periodRemaining: 100_000,
-  txCap: 50_000,
-  absoluteFeeCap: 5_000,
-  feerateCapSatVb: 10,
-  spendingPolicy,
-  spendingPolicyDigest: spendingPolicyDigest(spendingPolicy),
-  vtxoVaultCosignerPub: `02${'11'.repeat(32)}`,
-  vtxoExitDelay: 4608,
-  vtxoExitDelayUnit: 'seconds',
-  spendingArkAddress: 'tark1spending',
-  spendingArkScript: `5120${'22'.repeat(32)}`,
-  vtxoDelegatePub: `02${'33'.repeat(32)}`,
-  vtxoBoardingActive: true,
-  vtxoBoardingProgram: 'vault-board-v1',
-  vtxoBoardingAddress: 'tb1pboarding',
-  vtxoBoardingScript: `5120${'44'.repeat(32)}`,
-  vtxoBoardingExitDelay: 604672,
-  vtxoBoardingExitDelayUnit: 'seconds',
-} as unknown as VaultStatus
+let STATUS: VaultStatus
+let ENROLLMENT: EnrollmentSecrets
 
 void golden
 
@@ -159,6 +128,11 @@ function renderHomeTree() {
 }
 
 describe('provider arrival delivery', () => {
+  beforeAll(async () => {
+    const fixture = await ledgerRecoveryFixture(false)
+    STATUS = fixture.status
+    ENROLLMENT = fixture.enrollment
+  })
   beforeEach(() => {
     window.localStorage.clear()
     vi.stubGlobal('indexedDB', new IDBFactory())
@@ -167,19 +141,8 @@ describe('provider arrival delivery', () => {
     balances.balancesLoaded = false
     balances.savingsFresh = false
     balances.fetchStatus.mockReset().mockResolvedValue(STATUS)
-    localStorage.setItem(SELECTED_VAULT_STORE, 'vault-a')
-    localStorage.setItem(
-      `${ENROLL_STORE}:vault-a`,
-      JSON.stringify({
-        vaultId: 'vault-a',
-        credId: '00',
-        webauthnP256: '02',
-        phoneDirectP256: '02',
-        phoneBip340Pub: '02',
-        nonce: '00',
-        ciphertext: '00',
-      }),
-    )
+    localStorage.setItem(SELECTED_VAULT_STORE, STATUS.vaultId)
+    localStorage.setItem(`${ENROLL_STORE}:${STATUS.vaultId}`, JSON.stringify(ENROLLMENT))
     saveAddressPin(pinFromEnrolledStatus(STATUS))
   })
 
@@ -202,11 +165,11 @@ describe('provider arrival delivery', () => {
         value: { getRegistration: vi.fn().mockResolvedValue({ showNotification }) },
       })
       localStorage.setItem(
-        'vaulted:push:v1:mutinynet:vault-a',
+        `vaulted:push:v1:mutinynet:${STATUS.vaultId}`,
         JSON.stringify({ subHandle: 'ab'.repeat(32), expiresAt: Date.now() + 100000 }),
       )
       const { rerender } = renderHome()
-      await waitFor(() => expect(screen.getByTestId('dbg-vault')).toHaveTextContent('vault-a'))
+      await waitFor(() => expect(screen.getByTestId('dbg-vault')).toHaveTextContent(STATUS.vaultId))
       act(() => {
         balances.balancesLoaded = true
         balances.snapshotFresh = spendFresh

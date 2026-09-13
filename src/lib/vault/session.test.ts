@@ -185,7 +185,7 @@ describe('session admission and teardown', () => {
     expect(mocks.unlock).not.toHaveBeenCalled()
     expect(session.getSnapshot()).toMatchObject({
       locked: false,
-      enrollment,
+      account: { status, enrollment },
       status,
       addressPin: pinFromEnrolledStatus(status),
     })
@@ -212,7 +212,7 @@ describe('session admission and teardown', () => {
     })
     await session.signIn()
     expect(mocks.recover).toHaveBeenCalledWith(status.vaultId, expect.any(Function), expect.any(AbortSignal))
-    expect(session.getSnapshot()).toMatchObject({ locked: false, enrollment, status, error: '' })
+    expect(session.getSnapshot()).toMatchObject({ locked: false, account: { status, enrollment }, status, error: '' })
     expect(outcome(session)).toBe('authenticated')
   })
   it('does not wait for the optional map and prevents its late publication after sign-out', async () => {
@@ -272,6 +272,14 @@ describe('session admission and teardown', () => {
     expect(() => session.acceptStatus({ ...status, vaultId: 'other' })).toThrow('selected account')
     expect(session.getSnapshot().status?.vaultId).toBe(status.vaultId)
   })
+  it('does not publish a live refresh that changes the admitted account identity', async () => {
+    const { session } = await create(ready, enrollment, true)
+    await session.signIn()
+    const admitted = session.getSnapshot().account
+    expect(admitted).not.toBeNull()
+    expect(() => session.acceptStatus({ ...status, phoneDirectP256: `02${'11'.repeat(32)}` })).toThrow()
+    expect(session.getSnapshot().account).toBe(admitted)
+  })
   it('ignores a boot status response that arrives after sign-out', async () => {
     saveEnrollment(enrollment)
     saveSelectedVaultId(enrollment.vaultId)
@@ -315,7 +323,7 @@ describe('session admission and teardown', () => {
       snapshot.setup.txCapSats = 1
     }).toThrow(TypeError)
     expect(() => {
-      snapshot.enrollment!.vaultId = 'other'
+      snapshot.account!.enrollment.vaultId = 'other'
     }).toThrow(TypeError)
     expect(() => {
       snapshot.status!.vaultId = 'other'
@@ -586,13 +594,13 @@ describe('recovery import', () => {
     mocks.liveStatus.mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValueOnce(status)
     await expect(session.restoreRecoveryArchive({ name: 'encrypted-fixture' })).rejects.toThrow('Failed to fetch')
     expect(localStorage.getItem('imported-fixture')).toBe(JSON.stringify(file))
-    expect(session.getSnapshot()).toMatchObject({ enrollment: null, status: null, pending: null })
+    expect(session.getSnapshot()).toMatchObject({ account: null, status: null, pending: null })
     expect(outcome(session)).not.toBe('authenticated')
     expect(session.getSnapshot().error).toBe(
       'Recovery data is saved on this device. Live balances could not be loaded.',
     )
     await session.restoreRecoveryArchive({ name: 'encrypted-fixture' })
-    expect(session.getSnapshot()).toMatchObject({ enrollment, status, locked: false })
+    expect(session.getSnapshot()).toMatchObject({ account: { status, enrollment }, status, locked: false })
     expect(outcome(session)).toBe('authenticated')
   })
 })

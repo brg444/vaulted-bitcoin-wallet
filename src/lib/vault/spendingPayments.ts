@@ -1,7 +1,6 @@
 import type { NetworkName } from '@arkade-os/sdk'
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import type { VaultSession } from './session'
-import { admitVaultAccount } from './admittedAccount'
 import { isVaultArkAddress } from './bitcoin'
 import { DUST_SATS } from './constants'
 import { zeroBytes } from './ceremony/directauth'
@@ -139,21 +138,14 @@ function createSpendingPayments(session: SessionSource) {
     for (const listener of listeners) listener()
   }
   const sessionIdentity = () => {
-    const { status, enrollment, locked } = session.getSnapshot()
-    return !locked && status?.enrolled && enrollment?.vaultId === status.vaultId
-      ? JSON.stringify([vaultWalletRuntimeKey(status), enrollment])
-      : ''
+    const { account, locked } = session.getSnapshot()
+    return !locked && account ? JSON.stringify([vaultWalletRuntimeKey(account.status), account.enrollment]) : ''
   }
   const access = () => {
-    const { status, enrollment, setup } = session.getSnapshot()
-    if (!consumers || !identity || identity !== sessionIdentity() || !status?.enrolled || !enrollment)
+    const { account, setup } = session.getSnapshot()
+    if (!consumers || !identity || identity !== sessionIdentity() || !account)
       throw new ReviewError('Sign in with the passkey that created this vault.')
-    try {
-      const account = admitVaultAccount(status, enrollment)
-      return structuredClone({ account, status: account.status, enrollment: account.enrollment, setup })
-    } catch {
-      throw new ReviewError('Sign in with the passkey that created this vault.')
-    }
+    return structuredClone({ account, status: account.status, enrollment: account.enrollment, setup })
   }
   const load = () => {
     if (!consumers || !identity || identity !== sessionIdentity()) return
@@ -187,7 +179,7 @@ function createSpendingPayments(session: SessionSource) {
       publish({ pendingPayments: [], error: '', event: null })
     }
     if (consumers && identity) {
-      vaultAccountRuntime(session.getSnapshot().status!).spendingPayments = owner
+      vaultAccountRuntime(session.getSnapshot().account!.status).spendingPayments = owner
       load()
     }
   }

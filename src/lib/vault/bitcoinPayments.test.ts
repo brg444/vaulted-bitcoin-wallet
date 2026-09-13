@@ -3,6 +3,7 @@ import { Address, TEST_NETWORK } from '@scure/btc-signer'
 import { bitcoinPaymentsForSession, type BitcoinPayments } from './bitcoinPayments'
 import { activeVaultAccountRuntime, disposeVaultAccountRuntime } from './accountRuntime'
 import type { VaultSessionSnapshot } from './session'
+import type { AdmittedAccount } from './admittedAccount'
 import type { BitcoinPaymentJournal, SpendingBitcoinPlan } from './spendingBitcoinStore'
 import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 
@@ -36,7 +37,10 @@ let accepted: boolean | undefined
 const owners: BitcoinPayments[] = []
 const releases: (() => void)[] = []
 function open(locked = false) {
-  let snapshot = { status, enrollment, locked } as VaultSessionSnapshot
+  let snapshot = {
+    account: { savings: 'absent', status, enrollment } as AdmittedAccount,
+    locked,
+  } as unknown as VaultSessionSnapshot
   const listeners = new Set<() => void>()
   const session = {
     getSnapshot: () => snapshot,
@@ -114,7 +118,14 @@ it.each(['cancel', 'lock', 'replace', 'dispose'])(
     await payments.review(draft)
     if (change === 'cancel') payments.cancelReview()
     if (change === 'lock') update({ locked: true })
-    if (change === 'replace') update({ enrollment: { ...enrollment, credId: 'bb' } as never })
+    if (change === 'replace')
+      update({
+        account: {
+          savings: 'absent',
+          status,
+          enrollment: { ...enrollment, credId: 'bb' },
+        } as unknown as AdmittedAccount,
+      })
     if (change === 'dispose') await disposeVaultAccountRuntime(activeVaultAccountRuntime(status.vaultId)!)
     await settled(payments)
     expect(accepted).toBe(false)

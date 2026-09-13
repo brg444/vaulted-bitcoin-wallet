@@ -21,6 +21,7 @@ import {
   type SpendingBitcoinPlan,
 } from '../../../lib/vault/spendingBitcoinStore'
 import type { VaultSessionSnapshot } from '../../../lib/vault/session'
+import { admitVaultAccount } from '../../../lib/vault/admittedAccount'
 import { useBitcoinPayments } from '../../../vault/useBitcoinPayments'
 import { bitcoinPaymentView } from '../../../vault/bitcoinPaymentContext'
 import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
@@ -105,7 +106,13 @@ export async function mountBitcoinPayment() {
       },
     },
   })
-  let state = { status: fixture.status, enrollment: fixture.enrollment, locked: false } as VaultSessionSnapshot
+  const account = admitVaultAccount(fixture.status, fixture.enrollment)
+  let state = {
+    account,
+    status: account.status,
+    enrollment: account.enrollment,
+    locked: false,
+  } as unknown as VaultSessionSnapshot
   const listeners = new Set<() => void>()
   const session = {
     getSnapshot: () => state,

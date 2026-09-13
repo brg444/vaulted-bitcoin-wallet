@@ -55,7 +55,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setup,
     status,
     deployment,
-    enrollment,
+    account: admitted,
     loaded,
     initialStatusChecked,
     locked,
@@ -215,11 +215,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   } = useVaultBalances({
     watchedSavingsAddress: watchedSavings?.address,
     addressPin,
-    enrollment,
+    enrollment: admitted?.enrollment ?? null,
     initialStatusChecked,
     locked,
     setStatus: session.acceptStatus,
-    status,
+    status: admitted?.status ?? status,
   })
   const spendingAvailableSats = positions.spending.availableSats
   const dailyLimit = status?.enrolled ? (status.periodAllowance ?? setup.dailyLimitSats) : setup.dailyLimitSats
@@ -573,7 +573,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [spendingPayments.payments, refreshBalance],
   )
 
-  const spendingRenewals = useSpendingRenewals(status, enrollment, locked)
+  const spendingRenewals = useSpendingRenewals(admitted?.status ?? status, admitted?.enrollment ?? null, locked)
 
   const value = useMemo<VaultContextProps>(
     () => ({
@@ -709,7 +709,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       ledgerSavings.view,
       dailyLimit,
       dailyRemaining,
-      enrollment,
       error,
       clearError,
       fiatDisplayRate,

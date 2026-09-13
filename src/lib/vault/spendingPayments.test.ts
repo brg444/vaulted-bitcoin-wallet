@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { spendingPaymentsForSession, type SpendingPayments } from './spendingPayments'
 import { activeVaultAccountRuntime, disposeVaultAccountRuntime } from './accountRuntime'
 import type { VaultSessionSnapshot } from './session'
+import type { AdmittedAccount } from './admittedAccount'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 import { MUTINYNET_INVOICE, MUTINYNET_INVOICE_TIMESTAMP } from './lightningTestUtils'
 import { MUTINYNET_LIGHTNING_SOLVER } from './lightningConfig'
@@ -108,7 +109,11 @@ function pending(stage: PersistedVtxoSpend['stage'] = 'authorized'): PersistedVt
   return { ...quote, vaultId: status.vaultId, arkTxid: 'ab'.repeat(32), stage } as PersistedVtxoSpend
 }
 function open() {
-  let state = { status, enrollment, locked: false, setup: { txCapSats: 100_000 } } as VaultSessionSnapshot
+  let state = {
+    account: { savings: 'absent', status, enrollment } as AdmittedAccount,
+    locked: false,
+    setup: { txCapSats: 100_000 },
+  } as unknown as VaultSessionSnapshot
   const listeners = new Set<() => void>()
   const session = {
     getSnapshot: () => state,
@@ -229,7 +234,10 @@ it.each(['cancel', 'lock', 'replace', 'dispose'])('discards a late preview after
   let drain: Promise<void> | undefined
   if (action === 'cancel') payments.cancelReview()
   if (action === 'lock') update({ locked: true })
-  if (action === 'replace') update({ enrollment: { ...enrollment, credId: 'bb' } as never })
+  if (action === 'replace')
+    update({
+      account: { savings: 'absent', status, enrollment: { ...enrollment, credId: 'bb' } } as unknown as AdmittedAccount,
+    })
   if (action === 'dispose') drain = disposeVaultAccountRuntime(activeVaultAccountRuntime(status.vaultId)!)
   later.resolve(quote)
   await rejected

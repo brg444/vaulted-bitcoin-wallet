@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import type { VaultStatus } from './types'
 import type { VaultSessionSnapshot } from './session'
+import type { AdmittedAccount } from './admittedAccount'
 import type { LedgerSavingsPaymentRecord } from './ledgerSavingsWallet'
 import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import { ledgerPaymentsForSession, type LedgerPayments } from './ledgerPayments'
@@ -112,7 +113,10 @@ beforeEach(() => {
 const opened: LedgerPayments[] = []
 const releases: (() => void)[] = []
 function open(locked = false, selected = status) {
-  let state = { status: selected, enrollment, locked } as VaultSessionSnapshot
+  let state = {
+    account: { savings: 'ledger', status: selected, enrollment } as unknown as AdmittedAccount,
+    locked,
+  } as unknown as VaultSessionSnapshot
   const listeners = new Set<() => void>()
   const session = {
     getSnapshot: () => state,

@@ -1,7 +1,6 @@
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import type { VaultMaintenanceTask } from './accountMaintenance'
 import type { VaultSession } from './session'
-import { admitVaultAccount } from './admittedAccount'
 import type { CommittedRecoveryCoverage } from './recovery/committedCoverage'
 import { bitcoinDustSats, isVaultBitcoinAddress, scriptHexFromAddress } from './bitcoin'
 import { BitcoinPaymentError } from './bitcoinPaymentError'
@@ -89,21 +88,14 @@ function createBitcoinPayments(session: SessionSource) {
     for (const listener of listeners) listener()
   }
   const sessionIdentity = () => {
-    const { status, enrollment, locked } = session.getSnapshot()
-    return !locked && status?.enrolled && enrollment?.vaultId === status.vaultId
-      ? JSON.stringify([vaultWalletRuntimeKey(status), enrollment])
-      : ''
+    const { account, locked } = session.getSnapshot()
+    return !locked && account ? JSON.stringify([vaultWalletRuntimeKey(account.status), account.enrollment]) : ''
   }
   const access = () => {
-    const { status, enrollment } = session.getSnapshot()
-    if (!consumers || !task || !identity || identity !== sessionIdentity() || !status?.enrolled || !enrollment)
+    const { account } = session.getSnapshot()
+    if (!consumers || !task || !identity || identity !== sessionIdentity() || !account)
       throw new Error('Unlock this vault before sending from Spending.')
-    try {
-      const account = admitVaultAccount(status, enrollment)
-      return structuredClone({ account, status: account.status, enrollment: account.enrollment })
-    } catch {
-      throw new Error('Unlock this vault before sending from Spending.')
-    }
+    return structuredClone({ account, status: account.status, enrollment: account.enrollment })
   }
   const requireCurrent = (epoch: number, signal: AbortSignal) => {
     signal.throwIfAborted()
@@ -166,7 +158,7 @@ function createBitcoinPayments(session: SessionSource) {
       })
     }
     if (consumers && identity && !task) {
-      const account = vaultAccountRuntime(session.getSnapshot().status!)
+      const account = vaultAccountRuntime(session.getSnapshot().account!.status)
       account.bitcoinPayments = owner
       task = account.maintenance.observe('bitcoin-payment', observe, { intervalMs: 15_000 })
       load()

@@ -10,6 +10,7 @@ import { retainLedgerSavingsPayment } from '../../../lib/vault/ledgerSavingsWall
 import type { LedgerSavingsPayment } from '../../../lib/vault/ledgerSavings'
 import type { registerLedgerSavings } from '../../../lib/vault/ledgerClient'
 import type { VaultSessionSnapshot } from '../../../lib/vault/session'
+import { admitVaultAccount } from '../../../lib/vault/admittedAccount'
 import { useLedgerPayments } from '../../../vault/useLedgerPayments'
 import { ledgerPaymentView } from '../../../vault/ledgerPaymentContext'
 import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
@@ -113,7 +114,13 @@ export async function mountLedgerPayment(hold = false) {
       },
     },
   })
-  const state = { status: fixture.status, enrollment: fixture.enrollment, locked: false } as VaultSessionSnapshot
+  const account = admitVaultAccount(fixture.status, fixture.enrollment)
+  const state = {
+    account,
+    status: account.status,
+    enrollment: account.enrollment,
+    locked: false,
+  } as unknown as VaultSessionSnapshot
   const session = { getSnapshot: () => state, subscribe: () => () => undefined }
   function App() {
     const binding = useLedgerPayments(session)

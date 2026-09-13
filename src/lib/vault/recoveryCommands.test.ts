@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VaultStatus } from './types'
+import type { AdmittedAccount } from './admittedAccount'
 import type { EnrollmentSecrets } from './tenantEnrollment'
 import type { VaultSessionSnapshot } from './session'
 
@@ -79,7 +80,7 @@ let observed:
 function sessionFor(overrides: Partial<VaultSessionSnapshot> = {}) {
   let snapshot: VaultSessionSnapshot = {
     setup: { hardwarePub: '', recoveryPub: '' },
-    enrollment,
+    account: { savings: 'absent', status, enrollment } as AdmittedAccount,
     stagedEnrollment: null,
     privacyLock: false,
     ledgerApprovalPhase: 'idle',
@@ -302,7 +303,7 @@ describe('session-owned recovery commands', () => {
     )
     const operation = commands.recoverMatureBoarding()
     const rejected = expect(operation).rejects.toThrow()
-    session.set({ enrollment: { vaultId: 'other' } as EnrollmentSecrets })
+    session.set({ account: { savings: 'absent', status, enrollment: { vaultId: 'other' } } as AdmittedAccount })
     finish('66'.repeat(32))
     await rejected
     release()
@@ -469,7 +470,9 @@ describe('cloud session admission', () => {
     const release = commands.retain()
     await commands.backupRecoveryArchive()
     expect(mocks.sync).toHaveBeenCalledTimes(1)
-    session.set({ enrollment: { vaultId: 'test', credId: 'replacement' } as EnrollmentSecrets })
+    session.set({
+      account: { savings: 'absent', status, enrollment: { vaultId: 'test', credId: 'replacement' } } as AdmittedAccount,
+    })
     await observed!.run(new AbortController().signal)
     expect(mocks.sync).toHaveBeenCalledTimes(1)
     release()

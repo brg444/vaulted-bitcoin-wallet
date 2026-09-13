@@ -11,6 +11,7 @@ export type VaultTestContextProps = VaultContextProps & VaultSessionContextProps
 const emptySession: VaultSessionContextProps = {
   setup: emptySetupPlan(),
   status: null,
+  admitted: null,
   locked: false,
   privacyLock: false,
   setPrivacyLock: () => {},

@@ -1,7 +1,6 @@
 import type { VaultStatus } from './types'
 import type { RecoveryKit } from './program/kit'
 import type { VaultSession } from './session'
-import { admitVaultAccount } from './admittedAccount'
 import type { VaultMaintenanceTask } from './accountMaintenance'
 import { vaultAccountRuntime, vaultWalletRuntimeKey } from './accountRuntime'
 import { unlockPhoneBip340 } from './savingsSpend'
@@ -79,21 +78,14 @@ function createRecoveryCommands(session: SessionSource) {
     for (const listener of listeners) listener()
   }
   const sessionIdentity = () => {
-    const { status, enrollment } = session.getSnapshot()
-    return status?.enrolled && enrollment?.vaultId === status.vaultId
-      ? JSON.stringify([vaultWalletRuntimeKey(status), enrollment])
-      : ''
+    const { account } = session.getSnapshot()
+    return account ? JSON.stringify([vaultWalletRuntimeKey(account.status), account.enrollment]) : ''
   }
   const access = () => {
-    const { status, enrollment, setup, locked: isLocked } = session.getSnapshot()
-    if (!consumers || !identity || identity !== sessionIdentity() || !status?.enrolled || !enrollment)
+    const { account, setup, locked: isLocked } = session.getSnapshot()
+    if (!consumers || !identity || identity !== sessionIdentity() || !account)
       throw new RecoveryError('Sign in with the passkey that created this vault.')
-    try {
-      const account = admitVaultAccount(status, enrollment)
-      return { account, status: account.status, enrollment: account.enrollment, setup, locked: isLocked }
-    } catch {
-      throw new RecoveryError('Sign in with the passkey that created this vault.')
-    }
+    return { account, status: account.status, enrollment: account.enrollment, setup, locked: isLocked }
   }
   const unlocked = () => {
     const current = access()

@@ -1,7 +1,6 @@
 import { vaultAccountRuntime } from './accountRuntime'
 import type { VaultMaintenanceTask } from './accountMaintenance'
 import type { VaultSession } from './session'
-import { admitVaultAccount } from './admittedAccount'
 import type { LedgerSavingsRegistration } from './ledgerClient'
 import { approveLedgerPayment, type LedgerApprovalPhase } from './ledgerApproval'
 import {
@@ -21,7 +20,6 @@ import {
 import { fetchFeeEstimates } from './esplora'
 import { satPerVFromFeeEstimates } from './onchainFee'
 import { validateLedgerSavingsEnrollmentSecrets } from './program/ledgerEnrollment'
-import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import { unlockLedgerSavingsSeed } from './savingsSpend'
 import { humanizeVaultError } from './humanize'
 
@@ -94,29 +92,29 @@ function createLedgerPayments(session: SessionSource) {
     for (const listener of listeners) listener()
   }
   const sessionIdentity = () => {
-    const { status, enrollment, locked } = session.getSnapshot()
-    return !locked &&
-      status?.enrolled &&
-      status.templateVersion === LEDGER_NATIVE_TEMPLATE &&
-      enrollment?.vaultId === status.vaultId
-      ? JSON.stringify([status.vaultId, status.network, status.ledgerSavings?.descriptorHash, enrollment.ledgerSavings])
-      : ''
+    const { account, locked } = session.getSnapshot()
+    if (locked || account?.savings !== 'ledger' || !account.status.ledgerSavings) return ''
+    return JSON.stringify([
+      account.status.vaultId,
+      account.status.network,
+      account.status.ledgerSavings.descriptorHash,
+      account.enrollment.ledgerSavings,
+    ])
   }
   const access = () => {
-    const { status, enrollment } = session.getSnapshot()
-    if (!consumers || !task || !identity || identity !== sessionIdentity() || !status?.enrolled || !enrollment)
+    const { account } = session.getSnapshot()
+    if (!consumers || !task || !identity || identity !== sessionIdentity() || account?.savings !== 'ledger')
       throw new Error('Unlock this Ledger vault before sending from Savings.')
+    let saved: ReturnType<typeof validateLedgerSavingsEnrollmentSecrets>
     try {
-      const account = admitVaultAccount(status, enrollment)
-      if (account.savings !== 'ledger') throw new Error('not a Ledger account')
-      const saved = validateLedgerSavingsEnrollmentSecrets(account.enrollment.ledgerSavings, {
+      saved = validateLedgerSavingsEnrollmentSecrets(account.enrollment.ledgerSavings, {
         context: account.status.ledgerSavings.context,
         spendingPolicy: account.status.ledgerSavings.spendingPolicy,
       })
-      return structuredClone({ ...saved, enrollment: account.enrollment, status: account.status })
     } catch {
       throw new Error('Unlock this Ledger vault before sending from Savings.')
     }
+    return structuredClone({ ...saved, enrollment: account.enrollment, status: account.status })
   }
   const requireCurrent = (epoch: number, signal: AbortSignal) => {
     if (epoch !== generation || identity !== sessionIdentity())
@@ -174,7 +172,7 @@ function createLedgerPayments(session: SessionSource) {
       publish({ view: null, hardwarePhase: 'idle', error: '', completion: null })
     }
     if (consumers && identity && !task) {
-      const account = vaultAccountRuntime(session.getSnapshot().status!)
+      const account = vaultAccountRuntime(session.getSnapshot().account!.status)
       account.ledgerPayments = owner
       task = account.maintenance.observe('ledger-payment', read, { intervalMs: 20_000 })
       task.request()

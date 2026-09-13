@@ -46,7 +46,7 @@ import { kitFromFacts, pullMapBackup, pushMapBackup } from './program/kitBackup'
 import { saveLocalKit } from './program/kitStore'
 import { loadVaultPrivacyLock, saveVaultPrivacyLock } from './prefs'
 import { requireProtectionTier, type ProtectionTier } from './protectionTier'
-import { admitVaultAccount, type AdmittedAccount } from './admittedAccount'
+import { admitVaultAccount, accountIdentity, type AdmittedAccount } from './admittedAccount'
 import { validateSpendingPolicy, type SpendingPolicy } from './spendingPolicy'
 import type { VaultStatus } from './types'
 
@@ -67,7 +67,7 @@ export type SessionOutcome =
 
 export interface VaultSessionSnapshot {
   readonly setup: VaultSetupPlan
-  readonly enrollment: EnrollmentSecrets | null
+  readonly account: AdmittedAccount | null
   readonly stagedEnrollment: ReturnType<typeof loadStagedEnrollment>
   readonly privacyLock: boolean
   readonly ledgerApprovalPhase: LedgerApprovalPhase
@@ -102,7 +102,7 @@ function immutable<T>(value: T): T {
 export function createVaultSession() {
   let snapshot: VaultSessionSnapshot = {
     setup: emptySetupPlan(),
-    enrollment: null,
+    account: null,
     stagedEnrollment: null,
     privacyLock: false,
     ledgerApprovalPhase: 'idle',
@@ -123,6 +123,7 @@ export function createVaultSession() {
   let generation = 0
   let transitionId = 0
   let admissionGeneration = 0
+  let boundEnrollment: EnrollmentSecrets | null = null
   let booted = false
   let flight: { kind: SessionCommand; key: string; abort: AbortController; promise: Promise<void> } | undefined
   let draining: Promise<void> = Promise.resolve()
@@ -140,7 +141,7 @@ export function createVaultSession() {
   const remember = (id: string) => {
     if (id) targets.add(id)
   }
-  const selectedId = () => snapshot.enrollment?.vaultId || snapshot.addressPin?.vaultId || loadSelectedVaultId()
+  const selectedId = () => snapshot.account?.enrollment.vaultId || snapshot.addressPin?.vaultId || loadSelectedVaultId()
   const persistPlan = (plan: VaultSetupPlan) => {
     const setup = structuredClone(plan)
     saveSetupPlan(setup)
@@ -162,11 +163,20 @@ export function createVaultSession() {
     const setup = projectSetup(live)
     if (JSON.stringify(setup) !== JSON.stringify(snapshot.setup)) browserWrite(() => saveSetupPlan(setup))
     remember(live.vaultId)
+    const enrollment = boundEnrollment
+    if (live.enrolled && enrollment) {
+      const account = admitVaultAccount(live, enrollment)
+      if (snapshot.account && accountIdentity(snapshot.account) !== accountIdentity(account))
+        throw new Error('Live status changed the admitted account identity')
+      publish({ account, status: account.status, setup })
+      return
+    }
     publish({ status: structuredClone(live), setup })
   }
   const accept = (result: { enrollment: EnrollmentSecrets; status: VaultStatus }, outcome: SessionOutcome) => {
     const { enrollment, status } = structuredClone(result)
-    if (enrollment.vaultId !== status.vaultId) throw new Error('Session enrollment identity changed')
+    const account = admitVaultAccount(status, enrollment)
+    boundEnrollment = account.enrollment
     const addressPin = pinFromEnrolledStatus(status)
     const existingPin =
       snapshot.addressPin?.vaultId === status.vaultId
@@ -183,8 +193,8 @@ export function createVaultSession() {
     browserWrite(() => saveSetupPlan(setup))
     browserWrite(() => setSessionLocked(false))
     publish({
-      enrollment,
-      status,
+      account,
+      status: account.status,
       setup,
       addressPin,
       locked: false,
@@ -364,7 +374,8 @@ export function createVaultSession() {
         const locked = requiresUnlock || Boolean(existing && !addressPin)
         if (selected) remember(selected)
         if (existing && addressPin && !locked) admitted.add(existing.vaultId)
-        publish({ setup, enrollment: existing, stagedEnrollment, privacyLock, addressPin, locked, loaded: true })
+        boundEnrollment = existing
+        publish({ setup, stagedEnrollment, privacyLock, addressPin, locked, loaded: true })
         if (existing)
           transition(locked ? (requiresUnlock || addressPin ? 'unlock-required' : 'signin-required') : 'authenticated')
         else if (setup.complete) transition('passkey-required')
@@ -394,7 +405,7 @@ export function createVaultSession() {
       }
     })
   const persistPrivacyLock = () => {
-    if (loadVaultPrivacyLock() && snapshot.enrollment) browserWrite(() => setSessionLocked(true))
+    if (loadVaultPrivacyLock() && snapshot.account) browserWrite(() => setSessionLocked(true))
   }
   const visibility = () => {
     if (document.visibilityState === 'hidden') persistPrivacyLock()
@@ -440,16 +451,6 @@ export function createVaultSession() {
 
   return {
     getSnapshot: () => immutable(snapshot),
-    /** The single validated account pairing the enrolled status with its enrollment. */
-    admittedAccount(): AdmittedAccount | null {
-      const { status, enrollment } = snapshot
-      if (!status?.enrolled || !enrollment) return null
-      try {
-        return admitVaultAccount(status, enrollment)
-      } catch {
-        return null
-      }
-    },
     subscribe(listener: () => void) {
       listeners.add(listener)
       return () => {
@@ -504,7 +505,7 @@ export function createVaultSession() {
     },
     acceptDesign(tier?: ProtectionTier) {
       if (import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true' && tier !== 'light') return
-      if (snapshot.enrollment && !snapshot.locked)
+      if (snapshot.account && !snapshot.locked)
         void teardown(true).catch((error) => publish({ error: humanizeVaultError(error) }))
       const draft = snapshot.setup.complete ? emptySetupPlan() : snapshot.setup
       const protectionTier = tier || draft.protectionTier
@@ -740,7 +741,7 @@ export function createVaultSession() {
       )
     },
     enableOtherDevices() {
-      const enrollment = snapshot.enrollment
+      const enrollment = snapshot.account?.enrollment
       if (!enrollment) {
         publish({ error: 'Finish setup first.' })
         return Promise.resolve()
@@ -755,7 +756,7 @@ export function createVaultSession() {
     signIn() {
       return run('sign-in', async (signal) => {
         const setup = snapshot.setup
-        const local = snapshot.enrollment || findStoredEnrollment()
+        const local = boundEnrollment || findStoredEnrollment()
         const localPin = local ? loadAddressPin(localStorage, local.vaultId) : null
         const renew: Parameters<typeof unlockLocalEnrollment>[1] = async (live, auth, canAuthorizeNew, record) => {
           signal.throwIfAborted()
@@ -785,7 +786,7 @@ export function createVaultSession() {
     },
     restoreRecoveryArchive(raw?: unknown) {
       raw = raw === undefined ? undefined : structuredClone(raw)
-      if (snapshot.enrollment && !snapshot.locked)
+      if (snapshot.account && !snapshot.locked)
         void teardown(false, true).catch((error) => publish({ error: humanizeVaultError(error) }))
       return run(
         'restore',

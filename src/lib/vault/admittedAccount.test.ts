@@ -38,4 +38,31 @@ describe('admitted account pairing', () => {
     const other = { ...fixture.enrollment, vaultId: 'another-vault' } as EnrollmentSecrets
     expect(() => admitVaultAccount(fixture.status, other)).toThrow(/vault do not match/)
   })
+
+  it('rejects a same-vault Spending enrollment whose phone key differs', () => {
+    const enrollment = sharedSpendingEnrollment()
+    const mismatched = { ...enrollment, phoneBip340Pub: `02${'11'.repeat(32)}` } as EnrollmentSecrets
+    expect(() => admitVaultAccount(sharedSpendingStatus(), mismatched)).toThrow(/Spending enrollment keys/)
+  })
+
+  it.each([false, true])(
+    'rejects a same-vault Ledger enrollment whose phone key differs, advanced=%s',
+    async (advanced) => {
+      const fixture = await ledgerRecoveryFixture(advanced)
+      const mismatched = { ...fixture.enrollment, phoneBip340Pub: `02${'11'.repeat(32)}` } as EnrollmentSecrets
+      expect(() => admitVaultAccount(fixture.status, mismatched)).toThrow(/phone key does not match/)
+    },
+  )
+
+  it('rejects a same-vault Ledger enrollment with an altered registration', async () => {
+    const fixture = await ledgerRecoveryFixture(false)
+    const altered = {
+      ...fixture.enrollment,
+      ledgerSavings: {
+        ...fixture.enrollment.ledgerSavings,
+        registration: { ...fixture.enrollment.ledgerSavings.registration, changeAddress: 'tb1paltered' },
+      },
+    } as EnrollmentSecrets
+    expect(() => admitVaultAccount(fixture.status, altered)).toThrow()
+  })
 })

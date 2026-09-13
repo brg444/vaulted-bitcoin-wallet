@@ -4,10 +4,11 @@ import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../lib/vault/spendingPolic
 import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 
 export function sessionView(snapshot: VaultSessionSnapshot, session: VaultSession) {
-  const { setup, status, enrollment, stagedEnrollment, deployment, locked, privacyLock } = snapshot
+  const { setup, status, account: admitted, stagedEnrollment, deployment, locked, privacyLock } = snapshot
   return {
     setup,
     status,
+    admitted,
     locked,
     privacyLock,
     setPrivacyLock: session.setPrivacyLock,
@@ -18,7 +19,7 @@ export function sessionView(snapshot: VaultSessionSnapshot, session: VaultSessio
     approveLedgerEnrollment: session.approveLedgerEnrollment,
     cancelLedgerRegistration: session.cancelLedgerRegistration,
     enrolled: Boolean(status?.enrolled),
-    hasLocalEnrollment: Boolean(enrollment),
+    hasLocalEnrollment: Boolean(admitted),
     ledgerAvailable:
       deployment?.ledgerSavingsCapability?.version === 1 &&
       deployment.ledgerSavingsCapability.templateVersion === LEDGER_NATIVE_TEMPLATE,

@@ -9,6 +9,7 @@ import { type VtxoReserveResponse } from '../../../lib/vault/vtxo/spend'
 import { arkadeIntentFeePolicyDigest } from '../../../lib/vault/vtxo/feePolicy'
 import { networkPins } from '../../../lib/vault/networkPins'
 import type { VaultSessionSnapshot } from '../../../lib/vault/session'
+import { admitVaultAccount } from '../../../lib/vault/admittedAccount'
 import { useSpendingPayments } from '../../../vault/useSpendingPayments'
 import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
 import VaultReview from '../../../screens/Vault/Review'
@@ -63,12 +64,14 @@ export async function mountSpendingPayment() {
       },
     },
   })
+  const account = admitVaultAccount(fixture.status, fixture.enrollment)
   let state = {
-    status: fixture.status,
-    enrollment: fixture.enrollment,
+    account,
+    status: account.status,
+    enrollment: account.enrollment,
     locked: false,
     setup: { txCapSats: fixture.status.txCap },
-  } as VaultSessionSnapshot
+  } as unknown as VaultSessionSnapshot
   const listeners = new Set<() => void>()
   const session = {
     getSnapshot: () => state,
