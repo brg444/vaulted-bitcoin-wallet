@@ -399,8 +399,8 @@ describe('producer through the real mature boarding journal', () => {
 })
 
 describe('production acknowledgment with a committed recovery file', () => {
-  async function signedCompleteFile() {
-    const f = await ledgerRecoveryFixture()
+  async function signedCompleteFile(network: 'mainnet' | 'mutinynet' = 'mutinynet') {
+    const f = await ledgerRecoveryFixture(false, network)
     const descriptor = f.status.vtxoBoardingDescriptor!
     const program = createBoardingProgramScript(
       {
@@ -426,7 +426,7 @@ describe('production acknowledgment with a committed recovery file', () => {
       intentTapLeafScript: [] as never,
     }
     await recoverMatureBoardingInputs(f.enrollment, f.status, {
-      getBoardingUtxos: async () => [mature],
+      getBoardingUtxos: async () => [mature, { ...mature, txid: '22'.repeat(32) }],
       unlockPhone: async () => scalarSecret(3),
       onchainProvider: chainProvider(),
       locks: exclusiveVaultLocks(),
@@ -454,21 +454,26 @@ describe('production acknowledgment with a committed recovery file', () => {
     })
   }
 
-  it('saves, reads back and retires the exact signed journal from the committed file', async () => {
-    const { f, live, evidence } = await signedCompleteFile()
-    expect(evidence.matureBoardingJournal?.txid).toBe(live.txid)
-    expect(evidence.matureBoardingJournal?.hex).toBe(live.hex)
-    expect(evidence.coverage.fileDigest).toMatch(/^[0-9a-f]{64}$/)
-    await expect(
-      acknowledgeMatureBoardingRecovery(f.status, {
-        coverage: evidence.coverage,
-        onchainProvider: confirmedProvider(live),
-        locks: exclusiveVaultLocks(),
-      }),
-    ).resolves.toBe(true)
-    expect(await loadMatureBoardingAttempt(f.status)).toBeNull()
-    expect(await loadMatureBoardingRecord(f.status)).toMatchObject({ phase: 'retired', txid: live.txid })
-  })
+  it.each(['mainnet', 'mutinynet'] as const)(
+    'saves, reads back and retires a signed multi-input journal on %s',
+    async (network) => {
+      const { f, live, evidence } = await signedCompleteFile(network)
+      expect(live.evidence.inputs).toHaveLength(2)
+      expect(evidence.matureBoardingJournal?.network).toBe(network)
+      expect(evidence.matureBoardingJournal?.txid).toBe(live.txid)
+      expect(evidence.matureBoardingJournal?.hex).toBe(live.hex)
+      expect(evidence.coverage.fileDigest).toMatch(/^[0-9a-f]{64}$/)
+      await expect(
+        acknowledgeMatureBoardingRecovery(f.status, {
+          coverage: evidence.coverage,
+          onchainProvider: confirmedProvider(live),
+          locks: exclusiveVaultLocks(),
+        }),
+      ).resolves.toBe(true)
+      expect(await loadMatureBoardingAttempt(f.status)).toBeNull()
+      expect(await loadMatureBoardingRecord(f.status)).toMatchObject({ phase: 'retired', txid: live.txid })
+    },
+  )
 
   it('retains the journal when the committed file has no boarding journal', async () => {
     const { f, live, key } = await signedCompleteFile()
