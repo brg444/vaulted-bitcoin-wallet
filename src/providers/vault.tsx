@@ -13,13 +13,12 @@ import { spendingPaymentView, SpendingPaymentContext } from '../vault/spendingPa
 import { useBitcoinPayments } from '../vault/useBitcoinPayments'
 import { bitcoinPaymentView, BitcoinPaymentContext } from '../vault/bitcoinPaymentContext'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
-import { useRecoveryArchive } from '../vault/useRecoveryArchive'
+import { useRecoveryCommands } from '../vault/useRecoveryCommands'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
 import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress, isVaultBitcoinAddress } from '../lib/vault/bitcoin'
 import { isVaultLightningInput } from '../lib/vault/lightningConfig'
 
-import { recoverMatureBoardingInputs } from '../lib/vault/vtxo/boardingRecovery'
 import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
 import { useDisplayUnit } from '../lib/vault/useDisplayUnit'
 import { getPriceFeed } from '../lib/fiat'
@@ -33,7 +32,6 @@ import {
   type VaultScreen,
   type VaultSpend,
 } from '../vault/context'
-import { useRecoveryKit } from '../vault/useRecoveryKit'
 import { useRecoveryAlerts } from '../vault/useRecoveryAlerts'
 import { useVaultBalances } from '../vault/useVaultBalances'
 import { useVaultSession, sessionScreen } from '../vault/useVaultSession'
@@ -229,7 +227,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const networkLabel = activeNetwork === 'mainnet' ? 'Bitcoin' : liveNetwork ? 'Mutinynet' : 'Unavailable'
   const clearError = useCallback(() => reportError(''), [reportError])
 
-  const acknowledgeBitcoinRecovery = bitcoinPayments.payments.acknowledgeRecovery
   const historyWithBitcoin = useMemo(
     () => withBitcoinPaymentHistory(history, bitcoinPayments.operation),
     [history, bitcoinPayments.operation],
@@ -340,16 +337,22 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [locked, activityReady])
 
   const initiateAlert = useRecoveryAlerts(status, locked)
-  const { backupRecoveryKit, downloadRecoveryKit, hasRecoveryKit, restoreRecoveryKit } = useRecoveryKit({
-    enrollment,
-    status,
-    hardwarePub: setup.hardwarePub,
-    recoveryPub: setup.recoveryPub,
-    clearError,
-  })
-
-  const { backupRecoveryArchive, downloadRecoveryArchive, recoveryArchiveStatus, recoveryArchiveError } =
-    useRecoveryArchive(enrollment, status, locked, acknowledgeBitcoinRecovery)
+  const {
+    commands: recoveryCommands,
+    archiveStatus: recoveryArchiveStatus,
+    archiveError: recoveryArchiveError,
+    hasKit: hasRecoveryKit,
+  } = useRecoveryCommands(session)
+  const backupRecoveryKit = useCallback(() => {
+    clearError()
+    return recoveryCommands.backupRecoveryKit()
+  }, [clearError, recoveryCommands])
+  const restoreRecoveryKit = useCallback(() => {
+    clearError()
+    return recoveryCommands.restoreRecoveryKit()
+  }, [clearError, recoveryCommands])
+  const { backupRecoveryArchive, downloadRecoveryArchive, downloadRecoveryKit, recoverMatureBoarding } =
+    recoveryCommands
 
   const confirmConditions = useCallback(() => {
     setError('')
@@ -569,13 +572,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     },
     [spendingPayments.payments, refreshBalance],
   )
-
-  const recoverMatureBoarding = useCallback(async () => {
-    if (!status?.enrolled || !enrollment) throw new Error('Sign in before recovering received Bitcoin.')
-    const txid = await recoverMatureBoardingInputs(enrollment, status)
-    await refreshBalance(status.vaultId)
-    return txid
-  }, [enrollment, refreshBalance, status])
 
   const spendingRenewals = useSpendingRenewals(status, enrollment, locked)
 

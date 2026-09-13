@@ -58,20 +58,19 @@ vi.mock('../vault/useVaultBalances', () => ({
 }))
 
 vi.mock('../vault/useRecoveryAlerts', () => ({ useRecoveryAlerts: () => '' }))
-vi.mock('../vault/useRecoveryKit', () => ({
-  useRecoveryKit: () => ({
-    backupRecoveryKit: vi.fn().mockResolvedValue(false),
-    downloadRecoveryKit: vi.fn().mockReturnValue(''),
-    hasRecoveryKit: false,
-    restoreRecoveryKit: vi.fn().mockResolvedValue(undefined),
-  }),
-}))
-vi.mock('../vault/useRecoveryArchive', () => ({
-  useRecoveryArchive: () => ({
-    backupRecoveryArchive: vi.fn(),
-    downloadRecoveryArchive: vi.fn(),
-    recoveryArchiveStatus: '',
-    recoveryArchiveError: '',
+vi.mock('../vault/useRecoveryCommands', () => ({
+  useRecoveryCommands: () => ({
+    commands: {
+      backupRecoveryArchive: vi.fn(),
+      downloadRecoveryArchive: vi.fn(),
+      downloadRecoveryKit: vi.fn().mockReturnValue(''),
+      backupRecoveryKit: vi.fn().mockResolvedValue(false),
+      restoreRecoveryKit: vi.fn().mockResolvedValue(undefined),
+      recoverMatureBoarding: vi.fn().mockResolvedValue(''),
+    },
+    archiveStatus: '',
+    archiveError: '',
+    hasKit: false,
   }),
 }))
 vi.mock('../vault/useSpendingBitcoin', () => ({

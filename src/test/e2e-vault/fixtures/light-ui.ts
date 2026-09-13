@@ -73,8 +73,20 @@ export async function openLight(
     fetchVaultStatusUnpinned: `async () => (${JSON.stringify(status)})`,
     fetchVaultStatus: `async () => (${JSON.stringify(status)})`,
   })
-  await override(page, 'vault/useRecoveryArchive.ts', {
-    useRecoveryArchive: `() => ({backupRecoveryArchive:async()=>{},downloadRecoveryArchive:async()=>'',recoveryArchiveStatus:'',recoveryArchiveError:''})`,
+  await override(page, 'vault/useRecoveryCommands.ts', {
+    useRecoveryCommands: `() => ({
+      commands: {
+        backupRecoveryArchive: async () => {},
+        downloadRecoveryArchive: async () => '',
+        downloadRecoveryKit: () => '',
+        backupRecoveryKit: async () => false,
+        restoreRecoveryKit: async () => {},
+        recoverMatureBoarding: async () => '',
+      },
+      archiveStatus: '',
+      archiveError: '',
+      hasKit: false,
+    })`,
   })
   const savingsHistory = watch
     ? Array.from({ length: 12 }, (_, index) => ({

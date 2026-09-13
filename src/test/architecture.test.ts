@@ -90,36 +90,33 @@ it.each([
   visit(entry)
 })
 
-it.each([
-  'useSpendingRenewals',
-  'useBitcoinPayments',
-  'useLedgerPayments',
-  'useRecoveryArchive',
-  'useRecoveryKit',
-  'useRecoveryAlerts',
-])('%s uses the account maintenance clock', (name) => {
-  const source = readFileSync(resolve(root, `src/vault/${name}.ts`), 'utf8')
-  const ast = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true)
-  const walk = (node: ts.Node) => {
-    if (ts.isCallExpression(node)) {
-      const call = node.expression
-      const identifier = ts.isPropertyAccessExpression(call) ? call.name.text : ts.isIdentifier(call) ? call.text : ''
-      expect(identifier).not.toMatch(/^set(Interval|Timeout)$/)
+it.each(['useSpendingRenewals', 'useBitcoinPayments', 'useLedgerPayments', 'useRecoveryCommands', 'useRecoveryAlerts'])(
+  '%s uses the account maintenance clock',
+  (name) => {
+    const source = readFileSync(resolve(root, `src/vault/${name}.ts`), 'utf8')
+    const ast = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true)
+    const walk = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const call = node.expression
+        const identifier = ts.isPropertyAccessExpression(call) ? call.name.text : ts.isIdentifier(call) ? call.text : ''
+        expect(identifier).not.toMatch(/^set(Interval|Timeout)$/)
+      }
+      ts.forEachChild(node, walk)
     }
-    ts.forEachChild(node, walk)
-  }
-  walk(ast)
-})
+    walk(ast)
+  },
+)
 
 it('recovery alert presentation consumes account-owned observation without a separate poll', () => {
   const owner = readFileSync(resolve(root, 'src/lib/vault/accountRecoveryWatch.ts'), 'utf8')
   const binding = readFileSync(resolve(root, 'src/vault/useRecoveryAlerts.ts'), 'utf8')
-  const kit = readFileSync(resolve(root, 'src/vault/useRecoveryKit.ts'), 'utf8')
+  const commands = readFileSync(resolve(root, 'src/lib/vault/recoveryCommands.ts'), 'utf8')
   expect(owner).toContain("'recovery-watch'")
   expect(owner).not.toMatch(/setInterval|setTimeout|addEventListener/)
   expect(binding).toContain('useSyncExternalStore')
   expect(binding).not.toMatch(/fetchAddressUtxos|pollPendingInitiates/)
-  expect(kit).not.toMatch(/initiateAlert|pollPendingInitiates|fetchAddressUtxos/)
+  expect(commands).not.toMatch(/initiateAlert|pollPendingInitiates|fetchAddressUtxos/)
+  expect(commands).not.toMatch(/from ['"]react['"]|\/screens\/|\/providers\//)
 })
 
 it('Lightning invoice observation delegates reconciliation and cadence to the account owner', () => {
