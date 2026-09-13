@@ -6,14 +6,37 @@ export async function expectWalletLayout(page: Page, contained = false) {
   const app = page.getByTestId('vault-app')
   await expect(app).toBeVisible()
   expect(await app.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
-  for (const header of await page.locator('.qg-header:visible').all()) {
+  const headers = page.locator('.qg-header:visible')
+  const headerCount = await headers.count()
+  for (let index = 0; index < headerCount; index++) {
+    const header = headers.nth(index)
     const title = header.locator(':scope > h2')
     if (!(await title.count())) continue
-    const frame = await header.boundingBox()
-    const heading = await title.boundingBox()
-    expect(Math.abs(heading!.x + heading!.width / 2 - (frame!.x + frame!.width / 2))).toBeLessThan(1)
+    // A screen can replace its header while it settles. Re-resolve the boxes on
+    // each attempt and bound the wait so a stale subtree fails quickly with the
+    // measured offset instead of consuming the whole test timeout.
+    await expect(title).toBeVisible()
+    let frame: Awaited<ReturnType<typeof header.boundingBox>> = null
+    let heading: Awaited<ReturnType<typeof title.boundingBox>> = null
+    let delta = Number.POSITIVE_INFINITY
+    const deadline = Date.now() + 5_000
+    for (;;) {
+      frame = await header.boundingBox()
+      heading = await title.boundingBox()
+      delta =
+        frame && heading
+          ? Math.abs(heading.x + heading.width / 2 - (frame.x + frame.width / 2))
+          : Number.POSITIVE_INFINITY
+      if (delta < 1) break
+      if (Date.now() >= deadline) break
+      await page.waitForTimeout(50)
+    }
+    expect(frame, `header ${index} frame did not render within 5s`).not.toBeNull()
+    expect(heading, `header ${index} title did not render within 5s`).not.toBeNull()
+    expect(delta, `header ${index} title must center within 1px of its frame`).toBeLessThan(1)
     for (const control of await header.locator(':scope > button:visible').all()) {
       const bounds = await control.boundingBox()
+      expect(bounds, 'header control did not render').not.toBeNull()
       expect(bounds!.height).toBeGreaterThanOrEqual(44)
       expect(bounds!.x + bounds!.width <= heading!.x + 1 || bounds!.x >= heading!.x + heading!.width - 1).toBe(true)
     }
@@ -28,6 +51,7 @@ export async function expectWalletLayout(page: Page, contained = false) {
     for (const button of await footer.locator('button:visible').all()) {
       await expect(button).toBeInViewport({ ratio: 1 })
       const rect = await button.boundingBox()
+      expect(rect, 'footer button did not render').not.toBeNull()
       expect(rect!.height).toBeGreaterThanOrEqual(44)
     }
   }

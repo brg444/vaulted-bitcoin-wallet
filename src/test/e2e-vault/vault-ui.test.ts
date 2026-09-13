@@ -28,6 +28,10 @@ const ESPLORA_CONTROL = `${OPERATOR_ORIGIN}/__vault_e2e_esplora`
 const BOARDING_TXID = '11'.repeat(32)
 const SAVINGS_TXID = '22'.repeat(32)
 const VTXO_TXID = 'aa'.repeat(32)
+// With Lightning receive and LNURL enabled the Spending Receive screen uses
+// method tabs and per-method payloads instead of one unified BIP21 request.
+const LIGHTNING_RECEIVE_UI =
+  process.env.VITE_VAULT_LIGHTNING_RECEIVE === 'true' && process.env.VITE_VAULT_LNURL === 'true'
 const COMMITMENT_TXID = 'cc'.repeat(32)
 
 // Navigation tests must not depend on the host camera or permission prompts.
@@ -399,21 +403,26 @@ test('renders the Spending BIP21 request and copies each underlying address', as
 
   await page.getByTestId('account-receive').click()
   await expect(page.getByRole('heading', { name: 'Receive' })).toBeVisible()
-  await expect(page.locator('.vault-receive-qr-large svg')).toBeVisible()
+  await expect(page.locator('.vault-receive-qr svg')).toBeVisible()
   await expect(page.getByTestId('receive-address')).toHaveCount(0)
 
   await page.getByTestId('receive-arkade-address').click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(status.spendingArkAddress)
 
+  if (LIGHTNING_RECEIVE_UI) await page.getByTestId('receive-method-bitcoin').click()
   await page.getByTestId('receive-bitcoin-address').click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(status.vtxoBoardingAddress)
 
   await page.getByRole('button', { name: 'Share' }).click()
   const request = await page.evaluate(() => navigator.clipboard.readText())
-  expect(decodeVaultBip21(request)).toEqual({
-    bitcoinAddress: status.vtxoBoardingAddress,
-    arkadeAddress: status.spendingArkAddress,
-  })
+  if (LIGHTNING_RECEIVE_UI) {
+    expect(request).toBe(status.vtxoBoardingAddress)
+  } else {
+    expect(decodeVaultBip21(request)).toEqual({
+      bitcoinAddress: status.vtxoBoardingAddress,
+      arkadeAddress: status.spendingArkAddress,
+    })
+  }
 })
 
 test('ignores another vault worker update and refreshes on the matching update', async ({ page }) => {
@@ -1004,7 +1013,13 @@ test('@polish covers accessible account, send, Security, and Settings states', a
   await expect(page.getByRole('heading', { name: 'Receive' })).toBeVisible()
   await expectNoBlockingAxeViolations(page)
   await expectWalletLayout(page)
-  await expect(page).toHaveScreenshot('receive-spending.png', { animations: 'disabled', fullPage: true })
+  await expect(page).toHaveScreenshot(
+    LIGHTNING_RECEIVE_UI ? 'receive-spending-lightning.png' : 'receive-spending.png',
+    {
+      animations: 'disabled',
+      fullPage: true,
+    },
+  )
   await page.getByRole('button', { name: 'Go back' }).click()
 
   await page.getByRole('button', { name: 'Open navigation' }).click()
@@ -1443,7 +1458,7 @@ for (const theme of ['light', 'dark'] as const) {
     await capture('security')
     await page.getByRole('button', { name: 'Go back' }).click()
     await page.getByTestId('account-receive').click()
-    await expect(page.locator('.vault-receive-qr-large svg')).toBeVisible()
+    await expect(page.locator('.vault-receive-qr svg')).toBeVisible()
     await capture('receive')
   })
 

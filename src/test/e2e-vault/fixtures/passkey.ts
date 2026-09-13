@@ -282,7 +282,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       webauthnP256: this.proposed.webauthnP256,
       phoneDirectP256: status.phoneDirectP256,
       phoneBip340Pub: status.phoneBip340Pub,
-      externalOwnerWalletPub: status.externalOwnerWalletPub,
+      externalOwnerWalletPub: status.externalOwnerWalletPub ?? null,
       vaultCosignerBasePub: status.vaultCosignerBasePub,
       arkadeCosignerBasePub: status.arkadeCosignerBasePub,
       arkadeCosignerOrigin: status.arkadeCosignerOrigin,
