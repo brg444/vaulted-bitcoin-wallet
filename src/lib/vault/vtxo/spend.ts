@@ -1,4 +1,4 @@
-import { ArkAddress, ChainedTxType, RestArkProvider, SingleKey, Transaction, type ArkProvider } from '@arkade-os/sdk'
+import { ArkAddress, ChainTxType, ChainedTxType, RestArkProvider, SingleKey, Transaction, type ArkProvider } from '@arkade-os/sdk'
 import { base64, hex } from '@scure/base'
 import { VaultRequestError } from '../api'
 import { deriveDirectP256, signDirectP256, zeroBytes } from '../ceremony/directauth'
@@ -981,9 +981,57 @@ async function spendingSuccessorArchiveCovers(
     )
     for (const { original, candidate } of pairs)
       validation.assertCheckpointTransaction(candidate, original, 'vault-authorized')
+    if (!archiveConsumedInputAncestryCovers(archive, pending)) return false
     if (!successorCarriesChange(status, pending, archivedArk)) return false
   } catch {
     return false
+  }
+  return true
+}
+
+/** Prove the exact consumed-input ancestry stored in the archive. Every
+ * reserved input must open a commitment-anchored branch whose nodes carry
+ * id-matching transactions, so a coin-less result cannot hide a missing
+ * ancestor. The producer persists these branches; readers require them. */
+function archiveConsumedInputAncestryCovers(archive: ExitArchive, pending: PersistedVtxoSpend): boolean {
+  const inputs = pending.reservedInputs ?? []
+  if (!inputs.length) return false
+  const branches = archive.branches ?? {}
+  const indexed = new Set<string>()
+  for (const chain of Object.values(branches)) {
+    if (!Array.isArray(chain) || !chain.length) return false
+    let anchored = false
+    for (const node of chain) {
+      if (!/^[0-9a-f]{64}$/.test(node.txid) || !Array.isArray(node.spends)) return false
+      if (node.type === ChainTxType.COMMITMENT) {
+        anchored = true
+        continue
+      }
+      const raw = archive.transactions[node.txid]
+      if (!raw) return false
+      if (Transaction.fromPSBT(base64.decode(raw)).id !== node.txid) return false
+      indexed.add(node.txid)
+    }
+    if (!anchored) return false
+  }
+  const known = new Set<string>([...indexed, ...Object.keys(archive.transactions)])
+  const commitments = new Set<string>()
+  for (const chain of Object.values(branches)) {
+    for (const node of chain) {
+      if (node.type === ChainTxType.COMMITMENT) commitments.add(node.txid)
+    }
+  }
+  for (const chain of Object.values(branches)) {
+    for (const node of chain) {
+      if (node.type === ChainTxType.COMMITMENT) continue
+      for (const parent of node.spends) {
+        if (!/^[0-9a-f]{64}$/.test(parent) || (!known.has(parent) && !commitments.has(parent))) return false
+      }
+    }
+  }
+  for (const input of inputs) {
+    const chain = branches[`${input.txid}:${input.vout}`]
+    if (!Array.isArray(chain) || !chain.length) return false
   }
   return true
 }
@@ -1025,11 +1073,22 @@ async function exitRepositorySuccessorCovers(
     } catch {
       return false
     }
-    if (pending.checkpointPsbts?.length) {
-      for (const raw of pending.checkpointPsbts) {
-        const node = await repository.getVirtualTx(Transaction.fromPSBT(base64.decode(raw)).id)
-        if (!node) return false
-      }
+    // The expected checkpoint set comes from the persisted unsigned bundle
+    // even when the journal carries no checkpoint result: reading a node with
+    // the expected id cannot establish its authorization.
+    if (!pending.unsignedCheckpointPsbts?.length) return false
+    const checkpointCandidates: string[] = []
+    for (const raw of pending.unsignedCheckpointPsbts) {
+      const node = await repository.getVirtualTx(Transaction.fromPSBT(base64.decode(raw)).id)
+      if (!node?.psbt) return false
+      checkpointCandidates.push(node.psbt)
+    }
+    try {
+      const pairs = checkpointPairsInCanonicalOrder(pending.unsignedCheckpointPsbts, checkpointCandidates, 'Recovery')
+      for (const { original, candidate } of pairs)
+        validation.assertCheckpointTransaction(candidate, original, 'vault-authorized')
+    } catch {
+      return false
     }
     const seen = new Set<string>([successor.id])
     const queue: string[] = []

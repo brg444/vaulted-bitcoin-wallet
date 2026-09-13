@@ -183,6 +183,15 @@ function finalizationArchive(
   const status = retirementStatus(vaultId)
   const scriptHex = String(status.spendingArkScript)
   const hasChange = (pending.changeSats ?? 0) > 0 && pending.changeVout !== undefined
+  const inputBranches = Object.fromEntries(
+    (pending.reservedInputs ?? []).map((input) => [
+      `${input.txid}:${input.vout}`,
+      [
+        { txid: 'cc'.repeat(32), type: ChainTxType.COMMITMENT, expiresAt: '0', spends: [] as string[] },
+        { txid: parent.id, type: ChainTxType.TREE, expiresAt: '0', spends: ['cc'.repeat(32)] },
+      ],
+    ]),
+  )
   const archive = {
     version: 1 as const,
     descriptorHash: vaultId,
@@ -207,16 +216,19 @@ function finalizationArchive(
           ]
         : [],
     ),
-    branches: hasChange
-      ? {
-          [`${pending.arkTxid}:${pending.changeVout}`]: [
-            { txid: 'cc'.repeat(32), type: ChainTxType.COMMITMENT, expiresAt: '0', spends: [] as string[] },
-            { txid: parent.id, type: ChainTxType.TREE, expiresAt: '0', spends: ['cc'.repeat(32)] },
-            { txid: checkpointId, type: ChainTxType.CHECKPOINT, expiresAt: '0', spends: [parent.id] },
-            { txid: pending.arkTxid, type: ChainTxType.ARK, expiresAt: '0', spends: [checkpointId] },
-          ],
-        }
-      : {},
+    branches: {
+      ...inputBranches,
+      ...(hasChange
+        ? {
+            [`${pending.arkTxid}:${pending.changeVout}`]: [
+              { txid: 'cc'.repeat(32), type: ChainTxType.COMMITMENT, expiresAt: '0', spends: [] as string[] },
+              { txid: parent.id, type: ChainTxType.TREE, expiresAt: '0', spends: ['cc'.repeat(32)] },
+              { txid: checkpointId, type: ChainTxType.CHECKPOINT, expiresAt: '0', spends: [parent.id] },
+              { txid: pending.arkTxid, type: ChainTxType.ARK, expiresAt: '0', spends: [checkpointId] },
+            ],
+          }
+        : {}),
+    },
     transactions: {
       [parent.id]: base64.encode(parent.toPSBT()),
       [checkpointId]: checkpointPsbt,
@@ -452,6 +464,90 @@ describe('shared Spending retirement predicate', () => {
       })
       await expect(acknowledgeSpendingVtxoRecovery(substituted.status, OP)).resolves.toBe(false)
       expect(loadPersistedVtxoSpendById(substituted.status.vaultId, OP)?.stage).toBe('operator-finalized')
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('retains the journal when archived checkpoints lack valid operator signatures', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      for (const sign of ['unsigned', 'wrong-operator'] as const) {
+        const f = await acknowledgeCase()
+        const unsigned = Transaction.fromPSBT(base64.decode(f.pending.unsignedCheckpointPsbts![0]))
+        const rogueBytes =
+          sign === 'unsigned'
+            ? base64.encode(unsigned.toPSBT())
+            : base64.encode((await ROGUE.sign(await VAULT_KEY.sign(await PHONE.sign(unsigned)))).toPSBT())
+        const archive = finalizationArchive(f.status.vaultId, f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0])
+        archive.transactions[f.checkpointId] = rogueBytes
+        await recoveryFileStore(
+          `finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`,
+          archive,
+        )
+        await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
+        expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('operator-finalized')
+      }
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('retains the journal when repository checkpoints lack valid operator signatures', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      for (const sign of ['unsigned', 'wrong-operator'] as const) {
+        const f = await acknowledgeCase()
+        persistVtxoSpend({ ...f.pending, operatorArkPsbt: undefined, checkpointPsbts: undefined, stage: 'authorized' })
+        const unsigned = Transaction.fromPSBT(base64.decode(f.pending.unsignedCheckpointPsbts![0]))
+        const checkpointBytes =
+          sign === 'unsigned'
+            ? base64.encode(unsigned.toPSBT())
+            : base64.encode((await ROGUE.sign(await VAULT_KEY.sign(await PHONE.sign(unsigned)))).toPSBT())
+        const repository = vaultExitRepository(f.status.vaultId, f.status.network)
+        try {
+          await repository.upsertVirtualTxs([
+            { txid: f.pending.arkTxid, psbt: f.pending.operatorArkPsbt ?? null, expiresAt: null, type: ChainedTxType.Ark },
+            { txid: f.parent.id, psbt: base64.encode(f.parent.toPSBT()), expiresAt: null, type: ChainedTxType.Tree },
+            { txid: f.checkpointId, psbt: checkpointBytes, expiresAt: null, type: ChainedTxType.Checkpoint },
+            { txid: 'cc'.repeat(32), psbt: null, expiresAt: null, type: ChainedTxType.Commitment },
+          ])
+        } finally {
+          await repository[Symbol.asyncDispose]()
+        }
+        await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
+        expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('authorized')
+      }
+    } finally {
+      restoreLock()
+    }
+  })
+
+  it('retains the journal when input ancestry is missing, including zero-change archives', async () => {
+    const restoreLock = installImmediateLock()
+    try {
+      const zeroChange = await acknowledgeCase(0, async (f) => {
+        const archive = finalizationArchive(f.status.vaultId, f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0])
+        delete archive.transactions[f.parent.id]
+        await recoveryFileStore(
+          `finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`,
+          archive,
+        )
+      })
+      await expect(acknowledgeSpendingVtxoRecovery(zeroChange.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(zeroChange.status.vaultId, OP)?.stage).toBe('operator-finalized')
+      const noInputBranches = await acknowledgeCase(7_500, async (f) => {
+        const archive = finalizationArchive(f.status.vaultId, f.pending, f.parent, f.checkpointId, f.pending.checkpointPsbts![0])
+        for (const key of Object.keys(archive.branches)) {
+          if (key !== `${f.pending.arkTxid}:${f.pending.changeVout}`) delete archive.branches[key]
+        }
+        await recoveryFileStore(
+          `finalization:${f.status.network}:${f.status.vaultId}:${f.pending.arkTxid}`,
+          archive,
+        )
+      })
+      await expect(acknowledgeSpendingVtxoRecovery(noInputBranches.status, OP)).resolves.toBe(false)
+      expect(loadPersistedVtxoSpendById(noInputBranches.status.vaultId, OP)?.stage).toBe('operator-finalized')
     } finally {
       restoreLock()
     }

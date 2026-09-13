@@ -102,13 +102,18 @@ export async function retainFinalizationRecovery(status: VaultStatus, pending: F
       }))
     // No self-owned successor means the existing operation journal carries the
     // payment result. Still retain the signed graph for any funded contract.
+    // Input branches are stored under their own outpoints so a coin-less
+    // result can still prove its exact consumed-input ancestry on read.
     const archive: ExitArchive = {
       version: 1,
       descriptorHash: binding.descriptorHash,
       capturedAt: new Date().toISOString(),
       info: packExitArchive(info),
       coins: packExitArchive(coins),
-      branches: Object.fromEntries(coins.map((coin) => [`${coin.txid}:${coin.vout}`, [...nodes.values()]])),
+      branches: {
+        ...inputBranches,
+        ...Object.fromEntries(coins.map((coin) => [`${coin.txid}:${coin.vout}`, [...nodes.values()]])),
+      },
       transactions,
     }
     validateExitArchive(archive, binding)
