@@ -9,6 +9,7 @@ import {
   validateSpendingEnrollment,
 } from './spendingEnrollment'
 import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
+import type { VaultStatus } from './types'
 import { vaultPolicyV1ScriptFromStatus } from './vtxo/spendingTransaction'
 import { pinFromEnrolledStatus, requireStatusMatchesPin } from './pin'
 import { buildRecoveryKit, inspectRecoveryKit, parseRecoveryKit } from './program/kit'
@@ -103,7 +104,9 @@ describe('fresh Light shared Spending contract', () => {
           status,
         ),
       ).toThrow()
-    expect(() => validateLightningAddress(address, { ...status, spendingDescriptor: undefined })).toThrow()
+    expect(() =>
+      validateLightningAddress(address, { ...status, spendingDescriptor: undefined } as unknown as VaultStatus),
+    ).toThrow()
   })
   it('does not admit Savings or a substituted status binding', () => {
     const status = sharedSpendingStatus()
@@ -112,6 +115,6 @@ describe('fresh Light shared Spending contract', () => {
       { ...status, externalOwnerWalletPub: status.phoneBip340Pub },
       { ...status, vtxoBoardingDescriptorHash: '00'.repeat(32) },
     ])
-      expect(() => requireSpendingEnrollmentStatus(changed)).toThrow()
+      expect(() => requireSpendingEnrollmentStatus(changed as unknown as VaultStatus)).toThrow()
   })
 })

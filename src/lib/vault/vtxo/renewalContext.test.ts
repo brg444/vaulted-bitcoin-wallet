@@ -118,7 +118,7 @@ describe('shared Spending renewal identity', () => {
 
   it('rejects tier, policy, and unnamed program substitutions', () => {
     const status = fixtures[1]
-    expect(() => guardianRenewalContext({ ...status, protectionTier: 'advanced' })).toThrow()
+    expect(() => guardianRenewalContext({ ...status, protectionTier: 'advanced' } as unknown as VaultStatus)).toThrow()
     expect(() => guardianRenewalContext({ ...status, spendingPolicyDigest: '00'.repeat(32) })).toThrow()
     expect(() =>
       guardianRenewalContext({ ...status, templateVersion: 'future-program' } as unknown as VaultStatus),

@@ -153,8 +153,7 @@ export function addressPinHash(input: AddressPinFields): string {
 
 export function pinFieldsFromStatus(status: VaultStatus): AddressPinFields {
   if (!status?.enrolled) throw new Error('authorizer is not enrolled')
-  if (status.templateVersion === SPENDING_ONLY_TEMPLATE || status.protectionTier === 'light')
-    requireSpendingEnrollmentStatus(status)
+  if (status.templateVersion === SPENDING_ONLY_TEMPLATE) requireSpendingEnrollmentStatus(status)
   const network = requireSupportedVaultNetwork(status.network)
   const selected = validateSpendingPolicy(status.spendingPolicy, network)
   const digest = spendingPolicyDigest(selected, network)

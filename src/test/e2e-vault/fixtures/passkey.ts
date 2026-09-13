@@ -237,8 +237,7 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       templateVersion: SPENDING_ONLY_TEMPLATE,
       policyVersion: POLICY_VERSION,
       protectionTier: 'light',
-      externalOwnerWalletPub: '',
-      spendingDescriptor: descriptor,
+      spendingDescriptor: descriptor!,
       vaultCosignerBasePub: FIXTURE_IDENTITIES.vaultCosignerBase,
       arkadeCosignerBasePub: FIXTURE_IDENTITIES.arkadeCosignerBase,
       arkadeCosignerOrigin: FIXTURE_IDENTITIES.arkadeCosigner.origin,
@@ -269,8 +268,8 @@ class FakeAuthorizer implements FakePasskeyAuthorizer {
       vtxoBoardingScript: this.boardingDescriptor?.script || '',
       vtxoBoardingExitDelay: 604_672,
       vtxoBoardingExitDelayUnit: 'seconds',
-      vtxoBoardingDescriptor: this.boardingDescriptor,
-      vtxoBoardingDescriptorHash: this.boardingDescriptorHash,
+      vtxoBoardingDescriptor: this.boardingDescriptor!,
+      vtxoBoardingDescriptorHash: this.boardingDescriptorHash!,
     }
   }
 

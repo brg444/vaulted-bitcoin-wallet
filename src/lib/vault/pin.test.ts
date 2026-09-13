@@ -175,7 +175,7 @@ describe('local program pin', () => {
       ...status,
       [field]: mutatedValue(field, pin[field]),
       ...(field === 'protectionTier' ? { recoveryKeyPub: `02${'66'.repeat(32)}` } : {}),
-    }
+    } as unknown as VaultStatus
     expect(() => requireStatusMatchesPin(changed, pin)).toThrow(
       field === 'network' ? /unsupported Vault network/ : /local pin/,
     )

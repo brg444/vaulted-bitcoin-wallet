@@ -1,7 +1,7 @@
 import { HDKey } from '@scure/bip32'
 import { hex, base64 } from '@scure/base'
 import { ArkAddress, ChainTxType, Transaction, createBoardingProgramScript, getNetwork } from '@arkade-os/sdk'
-import type { BoardingDescriptor, LedgerVaultStatus, VaultStatus } from '../../types'
+import type { BoardingDescriptor, VaultStatus } from '../../types'
 import { POLICY_VERSION } from '../../constants'
 import { VaultPolicyV1Script } from '../../vtxo/script'
 import { ledgerAccountKey, ledgerBip32Versions, type LedgerSavingsKeyContext } from '../../program/ledgerNativeKeys'
@@ -90,7 +90,7 @@ export function ledgerRecoveryFacts(
     script: hex.encode(boardingTree.pkScript),
     address: boardingTree.onchainAddress(getNetwork(pins.sdkNetwork)),
   }
-  const base: Omit<LedgerVaultStatus, 'ledgerSavings'> = {
+  const base = {
     enrolled: true,
     network,
     clientOrigin: 'https://vault.example',
@@ -159,14 +159,14 @@ export function ledgerRecoveryFacts(
   const kit = buildRecoveryKit(buildLedgerRecoveryDescriptor(composite)),
     family = buildLedgerNativeFamily(context, spendingPolicy),
     descriptorHash = hashLedgerSavingsEnrollment(composite)
-  const status: LedgerVaultStatus = {
+  const status = {
     ...base,
     templateVersion: context.templateVersion,
     savingsAddress: family.receive.address,
     savingsScript: hex.encode(family.receive.script),
     ledgerSavings: { context, spendingPolicy, descriptorHash },
     vtxoBoardingDescriptorHash: descriptorHash,
-  }
+  } as VaultStatus
   return { ...recoveryArchiveFixture(kit, status, spending), composite, family, board: boardingTree }
 }
 

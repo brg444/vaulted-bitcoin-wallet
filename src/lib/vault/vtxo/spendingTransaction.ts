@@ -162,7 +162,6 @@ export function vaultPolicyV1ScriptFromStatus(status: VaultStatus): VaultPolicyV
   if (address.hrp !== pins.arkHrp) throw new Error('spending Ark address does not match this network')
   const spendingOnly = status.templateVersion === SPENDING_ONLY_TEMPLATE
   if (spendingOnly) requireSpendingEnrollmentStatus(status)
-  else if (status.protectionTier === 'light') throw new Error('Light requires its shared Spending enrollment')
   const params: VaultPolicyV1Params = {
     userPub: xOnly(status.phoneBip340Pub, 'phone pubkey'),
     vtxoVaultCosignerPub: xOnly(status.vtxoVaultCosignerPub, 'VTXO VaultCosigner pubkey'),

@@ -1,10 +1,16 @@
-import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus } from './spendingEnrollment'
+import { SPENDING_ONLY_TEMPLATE, requireSpendingEnrollmentStatus, spendingEnrollmentHash } from './spendingEnrollment'
 import { readBounded } from './bounded'
 import { POLICY_VERSION, RUNTIME_SCHEMA_VERSION } from './constants'
 import { requireReleaseNetwork } from './releaseNetwork'
 import { authorizerWalletHref, requireMainnetWalletOrigin, requireMainnetWalletRpId } from './productionDomains'
 import { bindStatusToLocalPin } from './pin'
-import type { LedgerVaultStatus, SpendingOnlyVaultStatus, VaultStatus, VaultStatusWire } from './types'
+import type {
+  LedgerAdvancedVaultStatus,
+  LedgerStandardVaultStatus,
+  SpendingOnlyVaultStatus,
+  VaultStatus,
+  VaultStatusWire,
+} from './types'
 import {
   requireCurrentSpendingPolicyCapabilities,
   spendingPolicyDigest,
@@ -12,6 +18,7 @@ import {
   type SpendingPolicyCapabilities,
 } from './spendingPolicy'
 import { requireProtectionTierMatchesRecovery } from './protectionTier'
+import { BOARDING_PROGRAM, requireBoardingStatus } from './vtxo/board'
 import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import { ledgerEnrollmentFromStatus } from './program/ledgerRecoveryDescriptor'
 
@@ -242,17 +249,6 @@ export function requireStatusIdentity(
   ) {
     throw new Error('status spending policy does not match limit fields')
   }
-  if (status.templateVersion === SPENDING_ONLY_TEMPLATE) {
-    requireSpendingEnrollmentStatus(status as VaultStatus)
-    status = { ...status, savingsAddress: '', savingsScript: '' }
-  } else if (status.protectionTier === 'light') {
-    throw new Error('Light requires its shared Spending enrollment template')
-  } else if (
-    status.enrolled &&
-    (!String(status.savingsAddress || '').trim() || !String(status.savingsScript || '').trim())
-  ) {
-    throw new Error('enrolled status is missing the Savings descriptor')
-  }
   const recoveryPub = String(status.recoveryPub || '').trim()
   const recoveryKeyPub = String(status.recoveryKeyPub || '').trim()
   if (recoveryPub && recoveryKeyPub && recoveryPub !== recoveryKeyPub) {
@@ -260,22 +256,90 @@ export function requireStatusIdentity(
   }
   const recovery = recoveryKeyPub || recoveryPub
   requireProtectionTierMatchesRecovery(status.protectionTier, recovery)
-  const recoveryFields = recovery ? { recoveryPub: recovery, recoveryKeyPub: recovery } : {}
-  if (status.templateVersion === LEDGER_NATIVE_TEMPLATE) {
-    ledgerEnrollmentFromStatus(status as VaultStatus)
+  // Required admitted facts are taken from the validated enrollment descriptor
+  // and boarding descriptor, never from raw wire input or casts.
+  if (status.templateVersion === SPENDING_ONLY_TEMPLATE) {
+    const descriptor = requireSpendingEnrollmentStatus(status as unknown as VaultStatus)
+    const boarding = requireBoardingStatus(status as unknown as VaultStatus, descriptor.boarding.boardingPub)
     return {
       ...status,
-      ...recoveryFields,
-      templateVersion: LEDGER_NATIVE_TEMPLATE,
-      ledgerSavings: status.ledgerSavings!,
-      vtxoBoardingDescriptorHash: status.ledgerSavings!.descriptorHash,
-    } as LedgerVaultStatus
+      templateVersion: SPENDING_ONLY_TEMPLATE,
+      protectionTier: 'light',
+      spendingDescriptor: descriptor,
+      ledgerSavings: undefined,
+      externalOwnerWalletPub: undefined,
+      recoveryPub: undefined,
+      recoveryKeyPub: undefined,
+      savingsAddress: '',
+      savingsScript: '',
+      phoneBip340Pub: descriptor.phonePub,
+      phoneDirectP256: descriptor.phoneDirectP256,
+      vtxoVaultCosignerPub: descriptor.cosignerPub,
+      vtxoDelegatePub: descriptor.delegatePub,
+      vtxoExitDelay: descriptor.exitDelay,
+      vtxoExitDelayUnit: descriptor.exitDelayUnit,
+      spendingArkAddress: descriptor.address,
+      spendingArkScript: descriptor.script,
+      spendingPolicy: descriptor.spendingPolicy,
+      spendingPolicyDigest: descriptor.spendingPolicyDigest,
+      vtxoBoardingActive: true,
+      vtxoBoardingProgram: BOARDING_PROGRAM,
+      vtxoBoardingAddress: boarding.address,
+      vtxoBoardingScript: boarding.script,
+      vtxoBoardingExitDelay: boarding.exitDelay,
+      vtxoBoardingExitDelayUnit: boarding.exitDelayUnit,
+      vtxoBoardingDescriptor: boarding,
+      vtxoBoardingDescriptorHash: spendingEnrollmentHash(descriptor),
+    } as SpendingOnlyVaultStatus
   }
-  if (status.ledgerSavings) throw new Error('Ledger Savings metadata requires its enrolled template')
-  return {
+  if (status.protectionTier === 'light') throw new Error('Light requires its shared Spending enrollment template')
+  if (status.enrolled && (!String(status.savingsAddress || '').trim() || !String(status.savingsScript || '').trim())) {
+    throw new Error('enrolled status is missing the Savings descriptor')
+  }
+  const value = ledgerEnrollmentFromStatus(status as unknown as VaultStatus)
+  const authorities = value.spendingAuthorities
+  const boarding = value.boarding
+  const descriptorHash = status.ledgerSavings!.descriptorHash
+  const common = {
     ...status,
-    ...recoveryFields,
-    templateVersion: SPENDING_ONLY_TEMPLATE,
-    ledgerSavings: undefined,
-  } as SpendingOnlyVaultStatus
+    templateVersion: LEDGER_NATIVE_TEMPLATE,
+    ledgerSavings: status.ledgerSavings!,
+    savingsAddress: status.savingsAddress,
+    savingsScript: status.savingsScript,
+    externalOwnerWalletPub: authorities.externalOwnerWalletPub,
+    vaultCosignerBasePub: authorities.vaultCosignerBasePub,
+    arkadeCosignerBasePub: authorities.arkadeCosignerBasePub,
+    phoneBip340Pub: authorities.phoneBip340Pub,
+    phoneDirectP256: authorities.phoneDirectP256,
+    vtxoVaultCosignerPub: authorities.vtxoVaultCosignerPub,
+    vtxoDelegatePub: authorities.vtxoDelegatePub,
+    vtxoExitDelay: authorities.vtxoExitDelay,
+    vtxoExitDelayUnit: authorities.vtxoExitDelayUnit,
+    spendingArkAddress: authorities.spendingArkAddress,
+    spendingArkScript: authorities.spendingArkScript,
+    spendingPolicy: value.savings.spendingPolicy,
+    spendingPolicyDigest: value.savings.context.policyDigest,
+    vtxoBoardingActive: true,
+    vtxoBoardingProgram: BOARDING_PROGRAM,
+    vtxoBoardingAddress: boarding.address,
+    vtxoBoardingScript: boarding.script,
+    vtxoBoardingExitDelay: boarding.exitDelay,
+    vtxoBoardingExitDelayUnit: boarding.exitDelayUnit,
+    vtxoBoardingDescriptor: boarding,
+    vtxoBoardingDescriptorHash: descriptorHash,
+  }
+  if (!authorities.recoveryKeyPub) {
+    return {
+      ...common,
+      protectionTier: 'standard',
+      recoveryPub: undefined,
+      recoveryKeyPub: undefined,
+    } as LedgerStandardVaultStatus
+  }
+  return {
+    ...common,
+    protectionTier: 'advanced',
+    recoveryPub: authorities.recoveryKeyPub,
+    recoveryKeyPub: authorities.recoveryKeyPub,
+  } as LedgerAdvancedVaultStatus
 }
