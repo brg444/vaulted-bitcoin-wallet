@@ -1,5 +1,4 @@
-import { requireSupportedVaultNetwork, DUST_SATS } from '../lib/vault/constants'
-import { loadWatchedSavings, saveWatchedSavings, type WatchedSavingsAddress } from '../lib/vault/watchSavings'
+import { DUST_SATS } from '../lib/vault/constants'
 import { useLedgerPayments } from '../vault/useLedgerPayments'
 import { ledgerPaymentView, LedgerPaymentContext } from '../vault/ledgerPaymentContext'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
@@ -14,6 +13,13 @@ import { useBitcoinPayments } from '../vault/useBitcoinPayments'
 import { bitcoinPaymentView, BitcoinPaymentContext } from '../vault/bitcoinPaymentContext'
 import { useSpendingRenewals } from '../vault/useSpendingRenewals'
 import { useRecoveryCommands } from '../vault/useRecoveryCommands'
+import {
+  useVaultActivityBinding,
+  useVaultDisplayBinding,
+  useVaultNavigationBinding,
+  useVaultSendBinding,
+  useWatchedSavingsBinding,
+} from '../vault/useVaultPresentation'
 import {
   VaultAccountContext,
   VaultActivityContext,
@@ -34,20 +40,12 @@ import {
 } from '../vault/appContexts'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { olderRowKey, recentAccountHistory, type VaultHistoryItem } from '../lib/vault/history'
-import { bitcoinDustSats, isVaultArkAddress, isVaultSpendAddress, isVaultBitcoinAddress } from '../lib/vault/bitcoin'
-import { isVaultLightningInput } from '../lib/vault/lightningConfig'
 
-import type { VaultFiatDisplayRate } from '../lib/vault/fiatDisplay'
-import { useDisplayUnit } from '../lib/vault/useDisplayUnit'
-import { getPriceFeed } from '../lib/fiat'
-import { Fiats } from '../lib/types'
-
-import { DEFAULT_SPEND_FEE_SATS, type VaultAccount, type VaultScreen, type VaultSpend } from '../vault/context'
+import { DEFAULT_SPEND_FEE_SATS, type VaultAccount, type VaultScreen } from '../vault/context'
 import { useRecoveryAlerts } from '../vault/useRecoveryAlerts'
 import { useVaultBalances } from '../vault/useVaultBalances'
-import { useVaultSession, sessionScreen } from '../vault/useVaultSession'
+import { useVaultSession } from '../vault/useVaultSession'
 import { sessionView, VaultSessionContext } from '../vault/sessionContext'
-import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 
 export type { VaultAccount, VaultScreen, VaultSpend } from '../vault/context'
 
@@ -77,9 +75,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const ledgerSavings = useLedgerPayments(session)
   const bitcoinPayments = useBitcoinPayments(session)
   const spendingPayments = useSpendingPayments(session)
-  const [screen, setScreen] = useState<VaultScreen>('welcome')
-  const [recoverEntry, setRecoverEntry] = useState<'kit' | 'lost'>('kit')
-  const [recoverExit, setRecoverExit] = useState<VaultScreen>('keys')
   const [operationError, setOperationError] = useState('')
   const error = operationError || sessionError || ledgerSavings.error || bitcoinPayments.error || spendingPayments.error
   const setError = useCallback(
@@ -92,126 +87,28 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     },
     [session, ledgerSavings.payments, bitcoinPayments.payments, spendingPayments.payments],
   )
+  const clearError = useCallback(() => setError(''), [setError])
   const busy =
     spendingPayments.pending !== null ||
     (bitcoinPayments.pending !== null && !['approval', 'acknowledge'].includes(bitcoinPayments.pending)) ||
     ledgerSavings.pending !== null ||
     (pending !== null && pending !== 'boot')
-  const [spend, setSpend] = useState<VaultSpend>({ address: '', amount: 0, fee: 0 })
-  const spendRef = useRef(spend)
-  spendRef.current = spend
-  const [lastSend, setLastSend] = useState<VaultSpend | null>(null)
-  const [lastTxid, setLastTxid] = useState('')
-  const [lastTxKind, setLastTxKind] = useState<'onchain' | 'vtxo' | 'lightning' | ''>('')
-  const [selectedTx, setSelectedTx] = useState<VaultHistoryItem | null>(null)
-  const [txReturn, setTxReturn] = useState<VaultScreen>('home')
-  const [account, setAccount] = useState<VaultAccount>('spend')
-  const [scanOnSend, setScanOnSend] = useState(false)
-  useEffect(() => {
-    if (screen !== 'review') {
-      bitcoinPayments.payments.cancelReview()
-      spendingPayments.payments.cancelReview()
-    }
-  }, [screen, bitcoinPayments.payments, spendingPayments.payments])
 
-  const [fiatDisplayRate, setFiatDisplayRate] = useState<VaultFiatDisplayRate | null>(null)
-  const [fiatDisplayEnabled, setFiatDisplayEnabled] = useState(false)
-
-  const setFiatDisplay = useCallback(async (enabled: boolean) => {
-    if (!enabled) {
-      setFiatDisplayEnabled(false)
-      setFiatDisplayRate(null)
-      return null
-    }
-    const prices = await getPriceFeed({ silent: true })
-    if (Number.isFinite(prices?.usd) && Number(prices?.usd) > 0) {
-      const rate = { currency: Fiats.USD, pricePerBtc: Number(prices!.usd) }
-      setFiatDisplayRate(rate)
-      setFiatDisplayEnabled(true)
-      return rate
-    }
-    setFiatDisplayEnabled(false)
-    setFiatDisplayRate(null)
-    return null
-  }, [])
-
-  const {
-    unit: balanceUnit,
-    rateStatus: balanceRateStatus,
-    setUnit: setBalanceUnit,
-  } = useDisplayUnit({
-    rate: fiatDisplayRate,
-    ensureRate: () => setFiatDisplay(true),
-    clearRate: () => {
-      setFiatDisplayEnabled(false)
-      setFiatDisplayRate(null)
-    },
-  })
-
-  useEffect(() => {
-    if (!transition) return
-    setScreen(sessionScreen(transition.outcome))
-    setOperationError('')
-    if (transition.outcome === 'signed-out') {
-      setSpend({ address: '', amount: 0, fee: 0 })
-      setLastSend(null)
-      setLastTxid('')
-      setLastTxKind('')
-      setAccount('spend')
-      setScanOnSend(false)
-    }
-  }, [transition])
-  useEffect(() => {
-    session.observeDeployment(['welcome', 'design', 'passkey', 'problem'].includes(screen))
-    if (screen !== 'hardware' && screen !== 'recovery') session.cancelLedgerConnection()
-  }, [screen, session])
-  useEffect(() => {
-    if (status?.network === 'mutinynet' && account === 'savings')
-      setSpend((prev) => (prev.fee === LIVE_FEE ? prev : { ...prev, fee: LIVE_FEE }))
-  }, [account, status?.network])
-
-  const spendingArkAddress = status?.spendingArkAddress || ''
-  const boardingAddress = status?.vtxoBoardingAddress || ''
-  const [watchedSavings, setWatchedSavings] = useState<WatchedSavingsAddress | null>(null)
-  useEffect(() => {
-    if (status?.protectionTier !== 'light') {
-      setWatchedSavings(null)
-      return
-    }
-    try {
-      setWatchedSavings(loadWatchedSavings(status.vaultId, requireSupportedVaultNetwork(status.network)))
-    } catch {
-      setWatchedSavings(null)
-    }
-  }, [status?.vaultId, status?.network, status?.protectionTier])
-  const updateWatchedSavings = useCallback(
-    (address: string, label: string) => {
-      if (status?.protectionTier !== 'light') throw new Error('Watch-only Savings requires a Light wallet')
-      setWatchedSavings(
-        saveWatchedSavings(
-          status.vaultId,
-          { address: address.trim(), label, network: requireSupportedVaultNetwork(status.network) },
-          requireSupportedVaultNetwork(status.network),
-        ),
-      )
-    },
-    [status],
-  )
-  const savingsAddress =
-    status?.protectionTier === 'light' ? watchedSavings?.address || '' : addressPin?.savingsAddress || ''
   const activeNetwork = status?.network || deployment?.network
   const liveNetwork = activeNetwork === 'mutinynet'
-  const selectAccount = useCallback(
-    (next: VaultAccount) => {
-      bitcoinPayments.payments.cancelReview()
-      spendingPayments.payments.cancelReview()
-      setAccount(next)
-      setScreen('home')
-      setSpend((previous) => ({ ...previous, fee: vaultDraftFee(next, liveNetwork) }))
-    },
-    [liveNetwork, bitcoinPayments.payments, spendingPayments.payments],
-  )
-  const reportError = setError
+  const [account, setAccount] = useState<VaultAccount>('spend')
+  const { fiatDisplayRate, fiatDisplayEnabled, setFiatDisplay, balanceUnit, balanceRateStatus, setBalanceUnit } =
+    useVaultDisplayBinding()
+  const { watchedSavings, updateWatchedSavings } = useWatchedSavingsBinding(status)
+
+  const sendRef = useRef<ReturnType<typeof useVaultSendBinding> | null>(null)
+  const { screen, setScreen, navigate, openRecover, recoverEntry, recoverExit } = useVaultNavigationBinding({
+    transition,
+    observeDeployment: session.observeDeployment,
+    cancelLedgerConnection: session.cancelLedgerConnection,
+    clearError,
+    onLeaveSend: () => sendRef.current?.clearSpendDraft(),
+  })
   const {
     accountReads,
     boardingError,
@@ -231,11 +128,87 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setStatus: session.acceptStatus,
     status: admitted?.status ?? status,
   })
+  const send = useVaultSendBinding({
+    status,
+    account,
+    liveNetwork,
+    transition,
+    spendingPayments,
+    bitcoinPayments,
+    ledgerSavings,
+    session,
+    clearError,
+    setError,
+    refreshBalance,
+    setScreen,
+  })
+  sendRef.current = send
+  const {
+    spend,
+    setSpendDraft,
+    clearSpendDraft,
+    restoreDraft,
+    applyDraftFee,
+    lastSend,
+    lastTxid,
+    lastTxKind,
+    scanOnSend,
+    openSendScan,
+    clearSendScan,
+    reviewSpend,
+    reviewReplace,
+    approveSend,
+  } = send
+  const savingsAddress =
+    status?.protectionTier === 'light' ? watchedSavings?.address || '' : addressPin?.savingsAddress || ''
+  const spendingArkAddress = status?.spendingArkAddress || ''
+  const boardingAddress = status?.vtxoBoardingAddress || ''
+  const selectAccount = useCallback(
+    (next: VaultAccount) => {
+      bitcoinPayments.payments.cancelReview()
+      spendingPayments.payments.cancelReview()
+      setAccount(next)
+      setScreen('home')
+      applyDraftFee(vaultDraftFee(next, liveNetwork))
+    },
+    [liveNetwork, bitcoinPayments.payments, spendingPayments.payments, setScreen, applyDraftFee],
+  )
+  const activityRef = useRef<ReturnType<typeof useVaultActivityBinding> | null>(null)
+  const interceptActivity = useCallback(
+    (tx: VaultHistoryItem, returnTo: VaultScreen) => {
+      const ledger = ledgerSavings.view
+      if (
+        tx.activity === 'savings-ledger' &&
+        ledger &&
+        tx.txid === ledger.record.candidateId &&
+        !['broadcast', 'confirmed', 'conflicted'].includes(ledger.outcome)
+      ) {
+        void ledgerSavings.payments
+          .reopen(ledger.record.candidateId)
+          .then((opened) => {
+            if (ledgerSavings.payments.getSnapshot().view !== opened) return
+            const payment = opened.record.payment
+            setAccount('savings')
+            restoreDraft({ address: payment.destAddress, amount: payment.amountSats, fee: payment.feeSats })
+            if (['broadcast', 'confirmed', 'conflicted'].includes(opened.outcome)) {
+              activityRef.current?.select(tx, returnTo)
+              setScreen('tx')
+            } else setScreen(opened.record.phonePsbt && !opened.record.txHex ? 'ledger-sign' : 'review')
+          })
+          .catch(() => undefined)
+        return true
+      }
+      return false
+    },
+    [ledgerSavings.view, ledgerSavings.payments, restoreDraft, setScreen],
+  )
+  const activity = useVaultActivityBinding({ screen, setScreen, clearError, intercept: interceptActivity })
+  activityRef.current = activity
+  const { selectedTx, txReturn, openTx, syncSelection } = activity
   const spendingAvailableSats = positions.spending.availableSats
   const dailyLimit = status?.enrolled ? (status.periodAllowance ?? setup.dailyLimitSats) : setup.dailyLimitSats
   const dailyRemaining = status?.enrolled ? (status.periodRemaining ?? dailyLimit) : 0
   const networkLabel = activeNetwork === 'mainnet' ? 'Bitcoin' : liveNetwork ? 'Mutinynet' : 'Unavailable'
-  const clearError = useCallback(() => reportError(''), [reportError])
 
   const historyWithBitcoin = useMemo(
     () => withBitcoinPaymentHistory(history, bitcoinPayments.operation),
@@ -272,7 +245,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     ]
   }, [ledgerSavings.view, historyWithBitcoin])
   useEffect(() => {
-    setSelectedTx((current) => {
+    syncSelection((current) => {
       if (!current) return current
       return (
         visibleHistory.find(
@@ -369,37 +342,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setScreen('plan')
   }, [setError])
 
-  const clearSpendDraft = useCallback(
-    (acct: VaultAccount = account) => {
-      bitcoinPayments.payments.cancelReview()
-      spendingPayments.payments.cancelReview()
-      setSpend({ address: '', amount: 0, fee: vaultDraftFee(acct, liveNetwork) })
-    },
-    [account, liveNetwork, bitcoinPayments.payments, spendingPayments.payments],
-  )
-
-  const setSpendDraft = useCallback(
-    (draft: Partial<VaultSpend>) => {
-      ledgerSavings.payments.cancelReview()
-      bitcoinPayments.payments.cancelReview()
-      spendingPayments.payments.cancelReview()
-      setSpend((prev) => {
-        const next = { ...prev, ...draft }
-        next.fee = vaultDraftFee(account, liveNetwork)
-        return next
-      })
-      setError('')
-    },
-    [account, liveNetwork, ledgerSavings.payments, bitcoinPayments.payments, spendingPayments.payments, setError],
-  )
-
   const openPendingPayment = useCallback(
     async (operationId: string) => {
       try {
         const opened = await spendingPayments.payments.openPending(operationId)
         if (spendingPayments.payments.getSnapshot().opened !== opened) return
         setAccount('spend')
-        setSpend(opened.payment)
+        restoreDraft(opened.payment)
         setScreen(opened.review ? 'review' : 'send')
       } catch {
         // The owner keeps operation errors bound to the current session.
@@ -407,169 +356,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     },
     [spendingPayments.payments],
   )
-
-  const reviewSpending = useCallback(
-    async (replace = false) => {
-      try {
-        const reviewed = await spendingPayments.payments.review(spend, replace)
-        if (spendingPayments.payments.getSnapshot().review !== reviewed) return
-        setSpend(reviewed.payment)
-        setScreen('review')
-      } catch {
-        // The owner keeps operation errors bound to the current session.
-      }
-    },
-    [spendingPayments.payments, spend],
-  )
-
-  const reviewSpend = useCallback(async () => {
-    setError('')
-    if (!status?.enrolled) {
-      setError('Unlock this vault before sending.')
-      return
-    }
-    if (account === 'savings' && status.protectionTier === 'light') {
-      setError('Savings is watch-only in this wallet.')
-      return
-    }
-    if (isVaultLightningInput(spend.address)) {
-      if (account !== 'spend') {
-        setError('Lightning payments use Spending.')
-        return
-      }
-      await reviewSpending()
-      return
-    }
-    const destNetwork = status.network
-    if (!isVaultSpendAddress(spend.address, destNetwork)) {
-      setError('Enter an Arkade or Bitcoin address.')
-      return
-    }
-    const arkDestination = isVaultArkAddress(spend.address, destNetwork)
-    if (arkDestination && account === 'savings') {
-      setError('Savings sends require a Bitcoin address.')
-      return
-    }
-    if (!arkDestination && account === 'spend') {
-      if (!Number.isSafeInteger(spend.amount) || spend.amount < bitcoinDustSats(spend.address, destNetwork)) {
-        setError(`At least ₿${bitcoinDustSats(spend.address, destNetwork)}.`)
-        return
-      }
-      try {
-        const reviewed = await bitcoinPayments.payments.review(spend)
-        if (!reviewed || bitcoinPayments.payments.getSnapshot().review !== reviewed) return
-        setSpend(reviewed.payment)
-        setScreen('review')
-      } catch {
-        // The owner keeps errors bound to the current payment session.
-      }
-      return
-    }
-    const minimumAmount = account === 'savings' ? bitcoinDustSats(spend.address, destNetwork) : DUST_SATS
-    if (!Number.isInteger(spend.amount) || spend.amount < minimumAmount) {
-      setError(`At least ₿${minimumAmount}.`)
-      return
-    }
-    if (account === 'savings') {
-      if (status.templateVersion !== LEDGER_NATIVE_TEMPLATE) {
-        setError('This Savings program is no longer supported.')
-        return
-      }
-      try {
-        const reviewed = await ledgerSavings.payments.review(spend)
-        if (ledgerSavings.payments.getSnapshot().view !== reviewed) return
-        if (spendRef.current.address !== spend.address || spendRef.current.amount !== spend.amount) {
-          setError('Send details changed. Review the payment again.')
-          return
-        }
-        setSpend({ ...spend, fee: reviewed.record.payment.feeSats })
-        setScreen('review')
-      } catch {
-        // The payment owner publishes errors only into the current session.
-      }
-      return
-    }
-    await reviewSpending()
-  }, [account, status, spend, reviewSpending, bitcoinPayments.payments, ledgerSavings.payments, setError])
-
-  const replaceInFlightSend = useCallback(() => reviewSpending(true), [reviewSpending])
-
-  const spendingEvent = spendingPayments.event
-  useEffect(() => {
-    if (!spendingEvent || spendingPayments.payments.getSnapshot().event !== spendingEvent) return
-    if (!spendingPayments.payments.consumeEvent(spendingEvent.id)) return
-    setAccount('spend')
-    if (spendingEvent.outcome === 'sent') {
-      setLastTxid(spendingEvent.txid!)
-      setLastTxKind(spendingEvent.kind)
-      setLastSend(spendingEvent.payment)
-      setSpend({ address: '', amount: 0, fee: 0 })
-      setScreen('success')
-      void refreshBalance().catch(() => undefined)
-    } else {
-      setSpend(spendingEvent.outcome === 'fee-changed' ? spendingEvent.payment : { ...spendingEvent.payment, fee: 0 })
-      setScreen(spendingEvent.outcome === 'fee-changed' ? 'review' : 'send')
-    }
-  }, [spendingEvent, spendingPayments.payments, refreshBalance])
-
-  const ledgerCompletion = ledgerSavings.completion
-  useEffect(() => {
-    if (!ledgerCompletion || ledgerSavings.payments.getSnapshot().completion !== ledgerCompletion) return
-    if (!ledgerSavings.payments.consumeCompletion(ledgerCompletion.id)) return
-    setAccount('savings')
-    setLastTxid(ledgerCompletion.txid)
-    setLastTxKind('onchain')
-    setLastSend(ledgerCompletion.payment)
-    setSpend({ address: '', amount: 0, fee: vaultDraftFee('savings', liveNetwork) })
-    setScreen('success')
-    void refreshBalance().catch(() => undefined)
-  }, [ledgerCompletion, ledgerSavings.payments, liveNetwork, refreshBalance])
-
-  const bitcoinCompletion = bitcoinPayments.completion
-  useEffect(() => {
-    if (!bitcoinCompletion || bitcoinPayments.payments.getSnapshot().completion !== bitcoinCompletion) return
-    if (!bitcoinPayments.payments.consumeCompletion(bitcoinCompletion.id)) return
-    if (bitcoinCompletion.txid) {
-      setLastTxid(bitcoinCompletion.txid)
-      setLastTxKind('onchain')
-      setLastSend(bitcoinCompletion.payment)
-      setSpend({ address: '', amount: 0, fee: 0 })
-      setScreen('success')
-    } else setScreen('home')
-    void refreshBalance().catch(() => undefined)
-  }, [bitcoinCompletion, bitcoinPayments.payments, refreshBalance])
-
-  const approveSend = useCallback(async () => {
-    if (account === 'savings') {
-      setError('')
-      try {
-        const approved = await ledgerSavings.payments.approve(spend)
-        if (approved && ledgerSavings.payments.getSnapshot().view === approved) setScreen('ledger-sign')
-      } catch {
-        // The payment owner publishes errors only into the current session.
-      }
-      return
-    }
-    if (isVaultBitcoinAddress(spend.address, status?.network)) {
-      bitcoinPayments.payments.approve(spend)
-      return
-    }
-    setError('')
-    try {
-      await spendingPayments.payments.approve(spend)
-    } catch {
-      if (!session.getSnapshot().locked && !spendingPayments.payments.getSnapshot().review) setScreen('send')
-    }
-  }, [
-    account,
-    ledgerSavings.payments,
-    bitcoinPayments.payments,
-    spendingPayments.payments,
-    session,
-    spend,
-    status?.network,
-    setError,
-  ])
 
   const retryLightningRefund = useCallback(
     async (rfqId: string) => {
@@ -584,67 +370,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   )
 
   const spendingRenewals = useSpendingRenewals(admitted?.status ?? status, admitted?.enrollment ?? null, locked)
-
-  const navigate = useCallback(
-    (next: VaultScreen) => {
-      setError('')
-      if (next === 'home') {
-        setScanOnSend(false)
-        clearSpendDraft()
-      }
-      setScreen(next)
-    },
-    [setError, clearSpendDraft],
-  )
-  const openRecover = useCallback(
-    (view: 'kit' | 'lost' = 'kit', exit: VaultScreen = 'keys') => {
-      setError('')
-      setRecoverEntry(view)
-      setRecoverExit(exit)
-      setScreen('recover')
-    },
-    [setError],
-  )
-  const openTx = useCallback(
-    (tx: VaultHistoryItem) => {
-      const ledger = ledgerSavings.view
-      if (
-        tx.activity === 'savings-ledger' &&
-        ledger &&
-        tx.txid === ledger.record.candidateId &&
-        !['broadcast', 'confirmed', 'conflicted'].includes(ledger.outcome)
-      ) {
-        void ledgerSavings.payments
-          .reopen(ledger.record.candidateId)
-          .then((opened) => {
-            if (ledgerSavings.payments.getSnapshot().view !== opened) return
-            const payment = opened.record.payment
-            setAccount('savings')
-            setSpend({ address: payment.destAddress, amount: payment.amountSats, fee: payment.feeSats })
-            setError('')
-            if (['broadcast', 'confirmed', 'conflicted'].includes(opened.outcome)) {
-              setSelectedTx(tx)
-              setTxReturn(screen)
-              setScreen('tx')
-            } else setScreen(opened.record.phonePsbt && !opened.record.txHex ? 'ledger-sign' : 'review')
-          })
-          .catch(() => undefined)
-        return
-      }
-      setSelectedTx(tx)
-      setTxReturn(screen)
-      setError('')
-      setScreen('tx')
-    },
-    [ledgerSavings.view, ledgerSavings.payments, screen, setError],
-  )
-  const openSendScan = useCallback(() => {
-    clearSpendDraft(account)
-    setScanOnSend(true)
-    setError('')
-    setScreen('send')
-  }, [clearSpendDraft, account, setError])
-  const clearSendScan = useCallback(() => setScanOnSend(false), [])
 
   const navigationValue = useMemo<VaultNavigationContextProps>(
     () => ({
@@ -798,7 +523,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           <SpendingPaymentContext.Provider
             value={spendingPaymentView(spendingPayments, {
               openPendingPayment,
-              replaceInFlightSend,
+              replaceInFlightSend: reviewReplace,
               retryLightningRefund,
             })}
           >
