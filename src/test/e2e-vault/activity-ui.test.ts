@@ -34,8 +34,10 @@ function fixtureBody(): string {
       return React.createElement(VaultTestProvider, { value: {
         
         allHistory,
-        balancesLoaded: true,
-        refreshingBalance: false,
+        accountReads: {
+          spend: { loaded: true, refreshing: false, fresh: true, error: '' },
+          savings: { loaded: true, refreshing: false, fresh: true, error: '' },
+        },
         openTx: () => {},
         navigate: () => {},
         loadOlderActivity: async () => {

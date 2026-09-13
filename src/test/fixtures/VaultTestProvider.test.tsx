@@ -86,4 +86,28 @@ describe('VaultTestProvider override ownership', () => {
     expect('balanceUnit' in live.account).toBe(false)
     expect('error' in live.session).toBe(false)
   })
+
+  it('partitions the migrated activity fixture and rejects the legacy balance keys', () => {
+    const accountReads = {
+      spend: { loaded: true, refreshing: false, fresh: true, error: '' },
+      savings: { loaded: true, refreshing: false, fresh: true, error: '' },
+    }
+    const slices = partitionVaultTestOverrides({
+      allHistory: [],
+      accountReads,
+      openTx: () => {},
+      navigate: () => {},
+      loadOlderActivity: async () => ({ added: 0, exhausted: true }),
+      olderActivity: { status: 'idle', error: '' },
+    })
+    expect(slices.activity).toMatchObject({ allHistory: [], openTx: expect.any(Function) })
+    expect(slices.account).toEqual({ accountReads })
+    expect(slices.navigation).toMatchObject({ navigate: expect.any(Function) })
+    expect(() => partitionVaultTestOverrides({ balancesLoaded: true } as never)).toThrow(
+      /belongs to no narrow application context/,
+    )
+    expect(() => partitionVaultTestOverrides({ refreshingBalance: false } as never)).toThrow(
+      /belongs to no narrow application context/,
+    )
+  })
 })

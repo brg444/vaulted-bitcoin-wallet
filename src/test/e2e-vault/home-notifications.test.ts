@@ -14,8 +14,9 @@ function fixtureBody(): string {
     export default function HomeFixture() {
       return React.createElement(ToastProvider, null,
         React.createElement(VaultTestProvider, { value: {
-          account: 'spend', balancesLoaded: true, history: [],
-          navigate: () => {}, openTx: () => {}, refreshingBalance: false,
+          account: 'spend', history: [],
+          accountReads: { spend: { loaded: true, refreshing: false, fresh: true, error: '' }, savings: { loaded: true, refreshing: false, fresh: true, error: '' } },
+          navigate: () => {}, openTx: () => {},
           positions: { spending: { availableSats: 12000, pendingSats: 0, totalSats: 12000 }, savings: { availableSats: 0, pendingSats: 0, totalSats: 0 } },
           setAccount: () => {}, clearSpendDraft: () => {}, setSpendDraft: () => {},
           spendingArkAddress: '', boardingAddress: '', savingsAddress: '',
