@@ -742,7 +742,7 @@ it('settles funded Lightning terminals before review without failing on evidence
     restoreLock()
   }
 })
-it('delegates Lightning recovery acknowledgment, coalesces identical commands and drains before teardown', async () => {
+it('keeps one committed Lightning sweep in flight and drains before teardown', async () => {
   const restoreLock = installImmediateLock()
   try {
     const { payments } = open()
@@ -758,10 +758,10 @@ it('delegates Lightning recovery acknowledgment, coalesces identical commands an
     api.coverage.mockResolvedValue(coverage)
     const watching = deferred<ReturnType<typeof lightningJournalFor>>()
     api.lightningJournal.mockReturnValueOnce(watching.promise)
-    const first = payments.acknowledgeLightningRecovery((record as { rfqId: string }).rfqId, coverage)
-    expect(payments.acknowledgeLightningRecovery((record as { rfqId: string }).rfqId, coverage)).toBe(first)
+    const first = payments.acknowledgeSettledRecovery(coverage)
+    await expect(payments.acknowledgeSettledRecovery(coverage)).resolves.toBeUndefined()
     watching.resolve(lightningJournalFor(record))
-    await expect(first).resolves.toBe(true)
+    await first
     expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
     const lagging = await fundedLightningRecord('settled')
     const pending = memoryLightningRepo([lagging.record])
@@ -771,10 +771,10 @@ it('delegates Lightning recovery acknowledgment, coalesces identical commands an
     const holding = deferred<ReturnType<typeof lightningJournalFor>>()
     api.lightningJournal.mockReturnValueOnce(holding.promise)
     api.coverage.mockResolvedValueOnce(null)
-    const gated = payments.acknowledgeLightningRecovery((lagging.record as { rfqId: string }).rfqId, coverage)
+    const gated = payments.acknowledgeSettledRecovery(coverage)
     const suspended = payments.suspend()
     holding.resolve(lightningJournalFor(lagging.record))
-    await expect(gated).rejects.toThrow()
+    await gated
     await suspended
     expect(payments.getSnapshot().pending).toBe(null)
     expect(await pending.getRfqSwap((lagging.record as { rfqId: string }).rfqId)).not.toBeUndefined()

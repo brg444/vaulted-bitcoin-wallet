@@ -32,6 +32,9 @@ export async function reconcileVaultLightningReceives(input: {
 }) {
   const { status, repository, contracts } = input
   const pins = networkPins(status.network)
+  // Settled and refunded receive records stay in the repository for the
+  // account lifetime. They still carry claim/lockup recovery value, so this
+  // owner does not delete them until a receive-retirement contract exists.
   const records = (await repository.getAllRfqSwaps()).filter(
     (r) => r.kind === 'lightning_receive' && r.state !== 'settled' && r.state !== 'refunded',
   )

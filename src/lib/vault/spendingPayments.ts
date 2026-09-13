@@ -699,33 +699,6 @@ function createSpendingPayments(session: SessionSource) {
         await sweepSettledVaultLightning(covered, check, signal)
       }).catch(() => undefined)
     },
-    acknowledgeLightningRecovery(rfqId: string, coverage?: CommittedRecoveryCoverage): Promise<boolean> {
-      return run(
-        'acknowledge',
-        `acknowledge-lightning:${rfqId}:${coverage?.fileDigest || 'latest'}`,
-        async (check, signal) => {
-          const { status } = access()
-          check()
-          const api = await import('./lightning')
-          check()
-          const snapshot = await fetchVaultWalletVtxoSnapshot(status)
-          check()
-          const evidence = await readCommittedRecoveryEvidence(status)
-          check()
-          return api.withVaultLightningRepository(status.vaultId, (repository) =>
-            acknowledgeVaultLightningRecovery(
-              status,
-              repository,
-              rfqId,
-              snapshot.history,
-              evidence?.lightningJournal ?? null,
-              coverage ?? evidence?.coverage,
-              signal,
-            ),
-          )
-        },
-      )
-    },
     retryRefund(rfqId: string): Promise<void> {
       return run('refund', 'refund:' + rfqId, async (check, signal) => {
         const { status, enrollment } = access()
