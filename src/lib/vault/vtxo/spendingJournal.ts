@@ -363,14 +363,9 @@ export function persistVtxoSpend(record: PersistedVtxoSpend) {
   writeVtxoSpendJournal(record.vaultId, operations)
 }
 
-export function clearPersistedVtxoSpend(vaultId: string, operationId?: string) {
+/** Retire one operation by id, appending its receipt facts to resolved history. */
+export function clearPersistedVtxoSpend(vaultId: string, operationId: string) {
   if (typeof localStorage === 'undefined' || !vaultId) return
-  if (!operationId) {
-    localStorage.removeItem(vtxoSpendJournalKey(vaultId))
-    localStorage.removeItem(vtxoSpendStorageKey(vaultId))
-    window.dispatchEvent(new Event(SPENDING_PAYMENT_EVENT))
-    return
-  }
   const operations = readVtxoSpendJournal(vaultId)
   const cleared = operations.find((record) => record.operationId === operationId)
   const previous = JSON.parse(localStorage.getItem(vtxoSpendJournalKey(vaultId)) || 'null')

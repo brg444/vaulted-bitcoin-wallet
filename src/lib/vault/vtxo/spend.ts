@@ -16,6 +16,9 @@ import {
 } from '../cosignerClient'
 import { networkPins, vaultOperatorOrigin } from '../networkPins'
 import { PRF_SALT, unwrapPhoneSecret } from '../prfEnvelope'
+import { readCommittedRecoveryCoverage, type CommittedRecoveryCoverage } from '../recovery/committedCoverage'
+import { validateExitArchive, type ExitArchive } from '../recovery/exitArchive'
+import { recoveryFileStore } from '../recovery/fileStore'
 import { retainFinalizationRecovery } from '../recovery/finalization'
 import { unlockPhoneBip340 } from '../savingsSpend'
 import type { EnrollmentSecrets } from '../tenantEnrollment'
@@ -75,6 +78,7 @@ import {
   type PersistedVtxoSpend,
   type PersistedVtxoSpendStage,
 } from './spendingTransaction'
+import { fetchVaultWalletVtxoSnapshot } from './walletWorker'
 export type { VtxoOperationState, VtxoOperationView, VtxoReserveResponse } from '../cosignerClient'
 
 export interface VaultVtxoSpendResult {
@@ -416,6 +420,13 @@ export function applyVtxoOperationView(
   const arkTxid = view.arkTxid || pending.arkTxid
   switch (view.state) {
     case 'aborted':
+      // Aborted releases pre-signing reservations. A signed operation the
+      // service reports as aborted is contradictory: retain the exact
+      // immutable operation and signed bytes for attention instead.
+      if (!vtxoSpendIsAbortable(pending)) {
+        persistVtxoSpend({ ...pending, arkTxid })
+        throw new VtxoSpendUnresolvedError(arkTxid, pending.operationId)
+      }
       clearPersistedVtxoSpend(pending.vaultId, pending.operationId)
       return undefined
     case 'unresolved':
@@ -796,8 +807,21 @@ async function reconcileOnePersistedVtxoSpend(
     if (!view.arkTxid || view.arkTxid !== pending.arkTxid) {
       return { kind: 'pending', operationId: pending.operationId, stage: pending.stage }
     }
-    clearPersistedVtxoSpend(status.vaultId, pending.operationId)
-    return { kind: 'receipt-finalized', txid: view.arkTxid, operationId: pending.operationId }
+    // The service receipt is observed, but the journal retires only through
+    // the coverage acknowledgment below so reload and independent completion
+    // keep the exact immutable operation and signed bytes.
+    try {
+      const synced = applyVtxoOperationView(pending, view)
+      if (synced) pending = synced
+    } catch (err) {
+      if (!(err instanceof VtxoSpendUnresolvedError)) throw err
+    }
+    try {
+      await retireFinalizedVtxoSpendLocked(status, pending.operationId)
+    } catch {
+      // Evidence lag keeps the journal; the next reconcile resumes retirement.
+    }
+    return { kind: 'receipt-finalized', txid: pending.arkTxid, operationId: pending.operationId }
   }
   try {
     pending = applyVtxoOperationView(pending, view)
@@ -816,7 +840,7 @@ async function reconcileOnePersistedVtxoSpend(
   if (pending.stage === 'operator-finalized') {
     try {
       await finalizeVaultOperation(pending.vaultId, pending.operationId, pending.bundleDigest, pending.arkTxid)
-      clearPersistedVtxoSpend(status.vaultId, pending.operationId)
+      await retireFinalizedVtxoSpendLocked(status, pending.operationId).catch(() => false)
       return { kind: 'receipt-finalized', txid: pending.arkTxid, operationId: pending.operationId }
     } catch {
       return { kind: 'pending', operationId: pending.operationId, stage: pending.stage }
@@ -835,7 +859,8 @@ async function reconcileOnePersistedVtxoSpend(
       await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
       persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
       await finalizeVaultOperation(pending.vaultId, pending.operationId, pending.bundleDigest, pending.arkTxid)
-      clearPersistedVtxoSpend(status.vaultId, pending.operationId)
+      // Retirement is independently retried; evidence lag must not mask success here.
+      await retireFinalizedVtxoSpendLocked(status, pending.operationId).catch(() => false)
       return { kind: 'receipt-finalized', txid: pending.arkTxid, operationId: pending.operationId }
     } catch {
       return { kind: 'pending', operationId: pending.operationId, stage: pending.stage }
@@ -871,10 +896,172 @@ async function reconcilePersistedVtxoSpendLocked(status: VaultStatus): Promise<V
   return result
 }
 
-async function finishOperatorFinalized(pending: PersistedVtxoSpend): Promise<VaultVtxoSpendResult> {
+function spendingSuccessorChangeCovered(
+  status: VaultStatus,
+  pending: PersistedVtxoSpend,
+  coverage: CommittedRecoveryCoverage,
+): boolean {
+  if ((pending.changeSats ?? 0) <= 0) return true
+  if (pending.changeVout === undefined) return false
+  return coverage.outputs.some(
+    (coin) =>
+      coin.txid === pending.arkTxid &&
+      coin.vout === pending.changeVout &&
+      coin.value === pending.changeSats &&
+      coin.script === status.spendingArkScript,
+  )
+}
+
+/** Bind the service receipt to the exact immutable local operation. Optional
+ * review-time economics must agree when the service reports them; absent
+ * fields cannot establish economics and are covered by history and the
+ * committed file instead. */
+function receiptBindsImmutableOperation(pending: PersistedVtxoSpend, view: VtxoOperationView): boolean {
+  if (view.operationId !== pending.operationId) return false
+  if (view.bundleDigest !== pending.bundleDigest) return false
+  if (!view.arkTxid || view.arkTxid !== pending.arkTxid) return false
+  if (view.feeSats !== undefined && view.feeSats !== pending.feeSats) return false
+  if (view.feePolicyDigest !== undefined && view.feePolicyDigest !== pending.feePolicyDigest) return false
+  if (view.changeSats !== undefined && view.changeSats !== pending.changeSats) return false
+  if ((view.changeVout ?? undefined) !== pending.changeVout) return false
+  return true
+}
+
+/** Prove the signed successor is independently durable.
+ *
+ * When this device holds the operator-signed successor, the stored
+ * finalization archive must validate against the enrolled account and carry
+ * those exact signed bytes. When the operation finalized without a local
+ * operator result, the committed coverage must already reflect the consumed
+ * inputs and carry the change successor instead. */
+async function spendingSuccessorArchiveCovers(
+  status: VaultStatus,
+  pending: PersistedVtxoSpend,
+  coverage: CommittedRecoveryCoverage,
+): Promise<boolean> {
+  if (pending.operatorArkPsbt) {
+    const archive = await recoveryFileStore<ExitArchive>(
+      `finalization:${status.network}:${status.vaultId}:${pending.arkTxid}`,
+    )
+    if (!archive) return false
+    try {
+      validateExitArchive(archive, {
+        network: status.network,
+        scriptPubKey: String(status.spendingArkScript),
+        descriptorHash: status.vaultId,
+      })
+    } catch {
+      return false
+    }
+    return archive.transactions[pending.arkTxid] === pending.operatorArkPsbt
+  }
+  const spentInputs = pending.reservedInputs ?? []
+  if (!spentInputs.length) return false
+  const spent = new Set(spentInputs.map((input) => `${input.txid}:${input.vout}`))
+  if (coverage.outputs.some((coin) => spent.has(`${coin.txid}:${coin.vout}`))) return false
+  return spendingSuccessorChangeCovered(status, pending, coverage)
+}
+
+/** Owner-side retirement predicate for a finalized Spending successor.
+ *
+ * Retires the journal only when the service receipt, the durable
+ * signed-successor archive, the wallet history and the committed recovery
+ * coverage agree on the exact immutable operation. Anything short of that
+ * keeps the pending journal for resume, reload and independent completion.
+ * Failed capture preserves the previous complete archive by construction:
+ * readCommittedRecoveryCoverage only observes committed files. */
+async function retireFinalizedVtxoSpendLocked(
+  status: VaultStatus,
+  operationId: string,
+  evidence?: CommittedRecoveryCoverage,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  signal?.throwIfAborted()
+  const pending = loadPersistedVtxoSpendById(status.vaultId, operationId)
+  if (!pending || !pending.arkTxid) return false
+  let view: VtxoOperationView
+  try {
+    view = await fetchVtxoOperation(pending.vaultId, pending.operationId)
+  } catch {
+    return false
+  }
+  if (view.state !== 'finalized' || !receiptBindsImmutableOperation(pending, view)) return false
+  signal?.throwIfAborted()
+  const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+  const outflow = pending.amountSats + (pending.feeSats ?? 0)
+  if (
+    !snapshot.history.some(
+      (row) =>
+        row.account === 'spend' &&
+        row.type === 'sent' &&
+        row.txid === pending.arkTxid &&
+        row.amount === outflow,
+    )
+  )
+    return false
+  signal?.throwIfAborted()
+  const coverage = await readCommittedRecoveryCoverage(status)
+  if (
+    !coverage ||
+    (evidence &&
+      (evidence.vaultId !== coverage.vaultId ||
+        evidence.network !== coverage.network ||
+        evidence.descriptorHash !== coverage.descriptorHash ||
+        evidence.fileDigest !== coverage.fileDigest)) ||
+    !spendingSuccessorChangeCovered(status, pending, coverage) ||
+    !(await spendingSuccessorArchiveCovers(status, pending, coverage))
+  )
+    return false
+  // A stale observation cannot retire a replacement or rewritten operation.
+  if (JSON.stringify(loadPersistedVtxoSpendById(status.vaultId, operationId)) !== JSON.stringify(pending)) return false
+  signal?.throwIfAborted()
+  clearPersistedVtxoSpend(status.vaultId, operationId)
+  return true
+}
+
+/** Retire one finalized Spending operation under the existing send lock. */
+export async function acknowledgeSpendingVtxoRecovery(
+  status: VaultStatus,
+  operationId: string,
+  evidence?: CommittedRecoveryCoverage,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return withVtxoSendLock(status.vaultId, () =>
+    retireFinalizedVtxoSpendLocked(status, operationId, evidence, signal),
+  )
+}
+
+/** Best-effort retirement of every service-finalized operation. A cancelled
+ * caller aborts the sweep; missing evidence keeps the remaining journals. */
+export async function acknowledgeSettledVtxoSpends(
+  status: VaultStatus,
+  evidence?: CommittedRecoveryCoverage,
+  signal?: AbortSignal,
+): Promise<number> {
+  const settled = listPersistedVtxoSpends(status.vaultId)
+    .filter((record) => record.arkTxid)
+    .map((record) => record.operationId)
+  let retired = 0
+  for (const operationId of settled) {
+    signal?.throwIfAborted()
+    try {
+      if (await acknowledgeSpendingVtxoRecovery(status, operationId, evidence, signal)) retired++
+    } catch (error) {
+      signal?.throwIfAborted()
+      if (signal?.aborted) throw error
+    }
+  }
+  return retired
+}
+
+async function finishOperatorFinalized(
+  status: VaultStatus,
+  pending: PersistedVtxoSpend,
+): Promise<VaultVtxoSpendResult> {
   const { feeSats } = quoteFromPersistedVtxoSpend(pending)
   await finalizeVaultOperation(pending.vaultId, pending.operationId, pending.bundleDigest, pending.arkTxid)
-  clearPersistedVtxoSpend(pending.vaultId, pending.operationId)
+  // Retirement is independently retried; evidence lag must not mask success here.
+  await retireFinalizedVtxoSpendLocked(status, pending.operationId).catch(() => false)
   return { txid: pending.arkTxid, operationId: pending.operationId, feeSats }
 }
 
@@ -1165,7 +1352,8 @@ async function completeFreshSdkVtxoSpend(
         } catch {
           throw new VtxoReceiptPendingError(pending.arkTxid, pending.operationId, feeSats)
         }
-        clearPersistedVtxoSpend(status.vaultId, pending.operationId)
+        // Retirement is independently retried; evidence lag must not mask success here.
+        await retireFinalizedVtxoSpendLocked(status, pending.operationId).catch(() => false)
       },
     },
   })
@@ -1195,7 +1383,7 @@ async function continueSameVtxoSpend(
   }
   requireRecoveryProofForAuthorizedSpend(pending)
   const operator = new RestArkProvider(vaultOperatorOrigin(status.network))
-  if (pending.stage === 'operator-finalized') return finishOperatorFinalized(pending)
+  if (pending.stage === 'operator-finalized') return finishOperatorFinalized(status, pending)
   if (pending.stage === 'checkpoints-authorized' && pending.checkpointPsbts?.length) {
     const info = await requireCurrentReservationPolicy(operator, status, pending)
     const checkpointPsbts = requireFullyAuthorizedCheckpoints(
@@ -1208,7 +1396,7 @@ async function continueSameVtxoSpend(
     signal?.throwIfAborted()
     await operator.finalizeTx(pending.arkTxid, checkpointPsbts)
     persistVtxoSpend({ ...pending, stage: 'operator-finalized', checkpointPsbts })
-    return finishOperatorFinalized({ ...pending, stage: 'operator-finalized', checkpointPsbts })
+    return finishOperatorFinalized(status, { ...pending, stage: 'operator-finalized', checkpointPsbts })
   }
   if (pending.stage === 'reserved') {
     pending = await authorizeReservedVtxoSpend(status, pending, await unlocker.unlock(), signal)
@@ -1248,7 +1436,7 @@ async function continueSameVtxoSpend(
       quoteFromPersistedVtxoSpend(pending).feeSats,
     )
   }
-  clearPersistedVtxoSpend(status.vaultId, pending.operationId)
+  await retireFinalizedVtxoSpendLocked(status, pending.operationId).catch(() => false)
   return {
     txid: pending.arkTxid,
     operationId: pending.operationId,
@@ -1286,7 +1474,11 @@ export async function sendVaultVtxo(
         view = await fetchVtxoOperation(status.vaultId, reviewed.operationId)
       } catch (err) {
         if (operationNotFound(err) || (err instanceof Error && err.message.toLowerCase().includes('expired'))) {
-          clearPersistedVtxoSpend(status.vaultId, reviewed.operationId)
+          // An unknown or expired reservation releases pre-signing stages. A
+          // live operation keeps its identity so unsafe reuse stays blocked.
+          const current = loadPersistedVtxoSpendById(status.vaultId, reviewed.operationId)
+          if (current && !vtxoSpendIsAbortable(current)) throw new VtxoReviewedReservationError()
+          if (current) clearPersistedVtxoSpend(status.vaultId, reviewed.operationId)
           throw new VtxoReviewedReservationError()
         }
         throw err

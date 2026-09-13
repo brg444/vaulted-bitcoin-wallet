@@ -25,6 +25,8 @@ import {
 } from './vtxo/spendingJournal'
 import {
   createVtxoSpendUnlocker,
+  acknowledgeSettledVtxoSpends,
+  acknowledgeSpendingVtxoRecovery,
   isSameVtxoPayment,
   newVtxoSpendChallenge,
   previewVaultVtxoSend,
@@ -44,6 +46,7 @@ import {
   isVtxoSameSendInProgressError,
   isVtxoSpendInFlightError,
 } from './vtxo/spendingErrors'
+import type { CommittedRecoveryCoverage } from './recovery/committedCoverage'
 
 export interface SpendingPaymentDraft {
   address: string
@@ -70,7 +73,7 @@ interface SpendingPaymentsSnapshot {
     authorized: boolean
     reservedSats?: number
   }[]
-  pending: 'review' | 'open' | 'approve' | 'refund' | null
+  pending: 'review' | 'open' | 'approve' | 'refund' | 'acknowledge' | null
   canReplace: boolean
   error: string
   event: {
@@ -296,6 +299,16 @@ function createSpendingPayments(session: SessionSource) {
       const payment = { ...draft, address: draft.address.trim() }
       return run('review', JSON.stringify(['review', payment, replace]), async (check, signal) => {
         const { status, enrollment, setup } = access()
+        // Retire service-finalized operations whose recovery evidence has
+        // caught up, so a settled payment stops blocking review. Evidence
+        // lag keeps the journal; the pending action below still applies.
+        try {
+          await acknowledgeSettledVtxoSpends(status, undefined, signal)
+        } catch (error) {
+          if (signal.aborted) signal.throwIfAborted()
+          consoleError(error, 'Spending settled acknowledgment')
+        }
+        check()
         const operations = listPersistedVtxoSpends(status.vaultId)
         const pending = loadPersistedVtxoSpend(status.vaultId)
         let funding: VaultVtxoSpendQuote
@@ -413,8 +426,17 @@ function createSpendingPayments(session: SessionSource) {
       })
     },
     openPending(operationId: string): Promise<OpenedSpendingPayment> {
-      return run('open', 'open:' + operationId, async (check) => {
+      return run('open', 'open:' + operationId, async (check, signal) => {
         const { status } = access()
+        try {
+          if (await acknowledgeSpendingVtxoRecovery(status, operationId, undefined, signal))
+            throw new ReviewError('This pending payment has already finished. Refresh the wallet.')
+        } catch (error) {
+          if (error instanceof ReviewError) throw error
+          if (signal.aborted) signal.throwIfAborted()
+          consoleError(error, 'Spending settled acknowledgment')
+        }
+        check()
         const pending = loadPersistedVtxoSpendById(status.vaultId, operationId)
         if (!pending) throw new ReviewError('This pending payment has already finished. Refresh the wallet.')
         await ensureVaultWalletWorker(status)
@@ -580,6 +602,13 @@ function createSpendingPayments(session: SessionSource) {
           }
           throw error
         }
+      })
+    },
+    acknowledgeRecovery(operationId: string, coverage?: CommittedRecoveryCoverage): Promise<boolean> {
+      return run('acknowledge', `acknowledge:${operationId}:${coverage?.fileDigest || 'latest'}`, async (check, signal) => {
+        const { status } = access()
+        check()
+        return acknowledgeSpendingVtxoRecovery(status, operationId, coverage, signal)
       })
     },
     retryRefund(rfqId: string): Promise<void> {

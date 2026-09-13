@@ -29,6 +29,8 @@ const api = vi.hoisted(() => ({
   current: vi.fn(),
   refundStatus: vi.fn(),
   ensure: vi.fn(),
+  settle: vi.fn(),
+  acknowledge: vi.fn(),
 }))
 vi.mock('./vtxo/spendingJournal', async (original) => ({
   ...(await original<typeof import('./vtxo/spendingJournal')>()),
@@ -49,6 +51,8 @@ vi.mock('./vtxo/spend', async (original) => ({
   previewVaultVtxoSend: api.preview,
   reserveVaultVtxo: api.reserve,
   sendVaultVtxo: api.send,
+  acknowledgeSettledVtxoSpends: api.settle,
+  acknowledgeSpendingVtxoRecovery: api.acknowledge,
   createVtxoSpendUnlocker: (_e: unknown, _s: unknown, _d: unknown, _u: unknown, signal?: AbortSignal) => ({
     unlock: () => {
       signal?.throwIfAborted()
@@ -173,6 +177,8 @@ beforeEach(() => {
   api.loadFunding.mockResolvedValue(null)
   api.resumeFunding.mockResolvedValue({ address: quote.destAddress, amountSats: quote.amountSats })
   api.refundStatus.mockResolvedValue({ state: 'refunded' })
+  api.settle.mockResolvedValue(0)
+  api.acknowledge.mockResolvedValue(false)
 })
 afterEach(async () => {
   for (const release of releases.splice(0)) release()
@@ -399,4 +405,37 @@ it('rejects competing commands and coalesces an authenticated Lightning refund',
   await refund
   expect(api.sdk.mock.calls[0][3]).toMatchObject({ refundRfqId: lightning.rfqId, signal: expect.any(AbortSignal) })
   expect(phone.every((byte) => byte === 0)).toBe(true)
+})
+it('settles finalized operations before review without failing on evidence lag', async () => {
+  const { payments } = open()
+  api.settle.mockRejectedValueOnce(new Error('coverage syncing'))
+  await payments.review(draft)
+  expect(api.settle).toHaveBeenCalledTimes(1)
+  expect(api.settle.mock.calls[0][0]).toMatchObject({ vaultId: status.vaultId })
+})
+it('delegates recovery acknowledgment, coalesces identical commands and drains before teardown', async () => {
+  const { payments } = open()
+  const watching = deferred<boolean>()
+  api.acknowledge.mockReturnValueOnce(watching.promise)
+  const first = payments.acknowledgeRecovery(quote.operationId)
+  expect(payments.acknowledgeRecovery(quote.operationId)).toBe(first)
+  watching.resolve(true)
+  await expect(first).resolves.toBe(true)
+  expect(api.acknowledge).toHaveBeenCalledTimes(1)
+  expect(api.acknowledge.mock.calls[0][0]).toMatchObject({ vaultId: status.vaultId })
+  expect(api.acknowledge.mock.calls[0][1]).toBe(quote.operationId)
+  const gated = deferred<boolean>()
+  api.acknowledge.mockReturnValueOnce(gated.promise)
+  const pending = payments.acknowledgeRecovery(quote.operationId)
+  const suspended = payments.suspend()
+  gated.resolve(false)
+  await expect(pending).resolves.toBe(false)
+  await suspended
+  expect(payments.getSnapshot().pending).toBe(null)
+})
+it('opens a retired operation as finished after owner acknowledgment', async () => {
+  const { payments } = open()
+  api.acknowledge.mockResolvedValueOnce(true)
+  await expect(payments.openPending(quote.operationId)).rejects.toThrow('already finished')
+  expect(api.acknowledge).toHaveBeenCalledTimes(1)
 })
