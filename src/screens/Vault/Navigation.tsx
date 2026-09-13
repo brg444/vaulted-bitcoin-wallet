@@ -4,8 +4,9 @@ import { useLauncherGlass } from './qg/useLauncherGlass'
 import HollowPixelMark from '../../icons/HollowPixelMark'
 import { formatMoney, type MoneyDenomination } from '../../lib/vault/fiatDisplay'
 import { hapticLight, hapticSubtle } from '../../lib/haptics'
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { VaultContext, type VaultAccount, type VaultScreen } from '../../vault/context'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useVaultAccount, useVaultDisplay, useVaultNavigation } from '../../vault/appContexts'
+import { type VaultAccount, type VaultScreen } from '../../vault/context'
 
 export type VaultDestination = 'wallet' | 'security' | 'settings'
 
@@ -25,16 +26,9 @@ const ACCOUNTS: { id: VaultAccount; label: string; testId: string; icon: ReactNo
 ]
 
 export default function VaultNavigation() {
-  const {
-    account,
-    accountReads,
-    navigate,
-    positions,
-    setAccount,
-    balanceUnit,
-    fiatDisplayRate,
-    watchedSavingsTotalSats,
-  } = useContext(VaultContext)
+  const { account, accountReads, positions, setAccount, watchedSavingsTotalSats } = useVaultAccount()
+  const { navigate } = useVaultNavigation()
+  const { balanceUnit, fiatDisplayRate } = useVaultDisplay()
   return (
     <VaultLauncher
       account={account}

@@ -120,7 +120,7 @@ export const VaultAccountContext = createContext<VaultAccountContextProps>({
   accountReads: EMPTY_ACCOUNT_BALANCE_READS,
   watchedSavings: null,
   updateWatchedSavings: noop,
-  watchedSavingsTotalSats: null,
+  watchedSavingsTotalSats: undefined,
   savingsAddress: '',
   spendingArkAddress: '',
   refreshBalance: async () => {},

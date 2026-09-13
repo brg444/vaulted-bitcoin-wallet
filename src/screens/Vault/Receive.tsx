@@ -4,14 +4,14 @@ import { vaultAccountRuntime, vaultWalletRuntimeKey } from '../../lib/vault/acco
 import { lightningAddressEnabled } from '../../lib/vault/lnurl'
 import LightningReceive from './LightningReceive'
 import { vaultLightningReceiveEnabled } from '../../lib/vault/lightningConfig'
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { KeyRound, Share2, ShieldCheck } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
 import { encodeVaultBip21 } from '../../lib/vault/bip21'
 import { truncateAddress } from '../../lib/vault/policy'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultNavigation } from '../../vault/appContexts'
 import WalletScreen from './qg/WalletScreen'
 import { QgPrimary, QgSecondary } from './qg/QgScreen'
 
@@ -44,7 +44,8 @@ const RECEIVE_POLL_MS = 5000
 
 export default function VaultReceive() {
   const { status } = useSession()
-  const { account, boardingAddress, navigate, savingsAddress, spendingArkAddress } = useContext(VaultContext)
+  const { account, boardingAddress, savingsAddress, spendingArkAddress } = useVaultAccount()
+  const { navigate } = useVaultNavigation()
   const { toast } = useToast()
   const [copied, setCopied] = useState('')
   const spending = account === 'spend'

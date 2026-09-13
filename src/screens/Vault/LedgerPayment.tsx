@@ -1,12 +1,12 @@
-import { useContext, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useLedgerPayment } from '../../vault/ledgerPaymentContext'
-import { VaultContext } from '../../vault/context'
+import { useVaultNavigation } from '../../vault/appContexts'
 import LedgerSavingsApproval from './LedgerSavingsApproval'
 import WalletScreen from './qg/WalletScreen'
 import { QgPrimary } from './qg/QgScreen'
 
 export default function VaultLedgerPayment() {
-  const { navigate } = useContext(VaultContext)
+  const { navigate } = useVaultNavigation()
   const { view: ledgerPayment, approveWithLedger, cancelHardware, pending, hardwarePhase, error } = useLedgerPayment()
   const busy = pending !== null
   useEffect(() => cancelHardware, [cancelHardware])

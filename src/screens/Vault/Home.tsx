@@ -3,10 +3,16 @@ import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
 import { useSession } from '../../vault/sessionContext'
 import WatchedSavings from './WatchedSavings'
 import PaymentNotice from './qg/PaymentNotice'
-import { useContext, useEffect, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { ChevronRight, ShieldAlert } from 'lucide-react'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
-import { VaultContext } from '../../vault/context'
+import {
+  useVaultAccount,
+  useVaultInteraction,
+  useVaultNavigation,
+  useVaultRecovery,
+  useVaultSend,
+} from '../../vault/appContexts'
 import AccountHome from './AccountHome'
 import VaultHistory from './History'
 import PendingPayment from './qg/PendingPayment'
@@ -15,22 +21,11 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
   const { pendingPayments, openPendingPayment } = useSpendingPayment()
   const { status } = useSession()
   const spendingBitcoin = useBitcoinPayment()
-  const {
-    account,
-    boardingAddress,
-    canSend,
-    busy,
-    error,
-    accountReads,
-    boardingError,
-    navigate,
-    openSendScan,
-    openRecover,
-    initiateAlert,
-    positions,
-    clearSpendDraft,
-    setSpendDraft,
-  } = useContext(VaultContext)
+  const { account, boardingAddress, accountReads, boardingError, positions } = useVaultAccount()
+  const { canSend, openSendScan, clearSpendDraft, setSpendDraft } = useVaultSend()
+  const { busy, error } = useVaultInteraction()
+  const { navigate, openRecover } = useVaultNavigation()
+  const { initiateAlert } = useVaultRecovery()
 
   useEffect(() => {
     void reloadIfNewerWallet()

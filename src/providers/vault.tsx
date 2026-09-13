@@ -42,22 +42,14 @@ import { useDisplayUnit } from '../lib/vault/useDisplayUnit'
 import { getPriceFeed } from '../lib/fiat'
 import { Fiats } from '../lib/types'
 
-import {
-  DEFAULT_SPEND_FEE_SATS,
-  VaultContext,
-  type VaultAccount,
-  type VaultContextProps,
-  type VaultScreen,
-  type VaultSpend,
-} from '../vault/context'
+import { DEFAULT_SPEND_FEE_SATS, type VaultAccount, type VaultScreen, type VaultSpend } from '../vault/context'
 import { useRecoveryAlerts } from '../vault/useRecoveryAlerts'
 import { useVaultBalances } from '../vault/useVaultBalances'
 import { useVaultSession, sessionScreen } from '../vault/useVaultSession'
 import { sessionView, VaultSessionContext } from '../vault/sessionContext'
 import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 
-export { VaultContext } from '../vault/context'
-export type { VaultAccount, VaultContextProps, VaultScreen, VaultSpend } from '../vault/context'
+export type { VaultAccount, VaultScreen, VaultSpend } from '../vault/context'
 
 const DEFAULT_FEE = DEFAULT_SPEND_FEE_SATS
 const LIVE_FEE = 1500
@@ -654,140 +646,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [clearSpendDraft, account, setError])
   const clearSendScan = useCallback(() => setScanOnSend(false), [])
 
-  const value = useMemo<VaultContextProps>(
-    () => ({
-      watchedSavings,
-      updateWatchedSavings,
-      watchedSavingsTotalSats: status?.protectionTier === 'light' ? positions.savings.totalSats : undefined,
-      account,
-      spendingRenewals,
-      downloadRecoveryKit,
-      backupRecoveryKit,
-      backupRecoveryArchive,
-      downloadRecoveryArchive,
-      recoveryArchiveStatus,
-      recoveryArchiveError,
-      accountReads,
-      boardingError,
-      boardingAddress,
-      restoreRecoveryKit,
-      hasRecoveryKit,
-      initiateAlert,
-      approveSend,
-      busy,
-      canSend: spendingAvailableSats >= DUST_SATS,
-      confirmConditions,
-      dailyLimit,
-      dailyRemaining,
-      dailySpent: status?.enrolled ? (status.periodSpent ?? 0) : Math.max(0, dailyLimit - dailyRemaining),
-      error,
-      dismissError: clearError,
-      fiatDisplayRate,
-      fiatDisplayEnabled,
-      setFiatDisplay,
-      balanceUnit,
-      balanceRateStatus,
-      setBalanceUnit,
-      lastTxid,
-      lastTxKind,
-      history: recentAccountHistory(visibleHistory, account),
-      selectedTx,
-      txReturn,
-      allHistory: visibleHistory,
-      loadOlderActivity,
-      olderActivity,
-      openTx,
-      liveNetwork,
-      navigate,
-      openRecover,
-      recoverEntry,
-      recoverExit,
-      recoverMatureBoarding,
-      networkLabel,
-      spendingArkAddress,
-      refreshBalance,
-      reviewSpend,
-      openSendScan,
-      scanOnSend,
-      clearSendScan,
-      savingsAddress,
-      positions,
-      screen: loaded || screen === 'unlock' ? screen : 'welcome',
-      setAccount: selectAccount,
-      clearSpendDraft,
-      setSpendDraft,
-      spend,
-      lastSend,
-    }),
-    [
-      watchedSavings,
-      updateWatchedSavings,
-      account,
-      spendingRenewals,
-      downloadRecoveryKit,
-      backupRecoveryKit,
-      backupRecoveryArchive,
-      downloadRecoveryArchive,
-      recoveryArchiveStatus,
-      recoveryArchiveError,
-      accountReads,
-      boardingError,
-      boardingAddress,
-      restoreRecoveryKit,
-      hasRecoveryKit,
-      initiateAlert,
-      approveSend,
-      busy,
-      confirmConditions,
-      ledgerSavings.view,
-      dailyLimit,
-      dailyRemaining,
-      error,
-      clearError,
-      fiatDisplayRate,
-      fiatDisplayEnabled,
-      setFiatDisplay,
-      balanceUnit,
-      balanceRateStatus,
-      setBalanceUnit,
-      lastTxid,
-      lastTxKind,
-      visibleHistory,
-      txReturn,
-      loadOlderActivity,
-      olderActivity,
-      selectedTx,
-      liveNetwork,
-      lastSend,
-      recoverEntry,
-      recoverExit,
-      recoverMatureBoarding,
-      loaded,
-      networkLabel,
-      spendingArkAddress,
-      recoverEntry,
-      recoverExit,
-      refreshBalance,
-      reviewSpend,
-      scanOnSend,
-      savingsAddress,
-      positions,
-      screen,
-      selectAccount,
-      clearSpendDraft,
-      setSpendDraft,
-      spend,
-      spendingAvailableSats,
-      status?.enrolled,
-      status?.periodSpent,
-      openTx,
-      navigate,
-      openRecover,
-      openSendScan,
-      clearSendScan,
-    ],
-  )
-
   const navigationValue = useMemo<VaultNavigationContextProps>(
     () => ({
       screen: loaded || screen === 'unlock' ? screen : 'welcome',
@@ -944,23 +802,21 @@ export function VaultProvider({ children }: { children: ReactNode }) {
               retryLightningRefund,
             })}
           >
-            <VaultContext.Provider value={value}>
-              <VaultNavigationContext.Provider value={navigationValue}>
-                <VaultAccountContext.Provider value={accountValue}>
-                  <VaultSendContext.Provider value={sendValue}>
-                    <VaultActivityContext.Provider value={activityValue}>
-                      <VaultRecoveryContext.Provider value={recoveryValue}>
-                        <VaultInteractionContext.Provider value={interactionValue}>
-                          <VaultDisplayContext.Provider value={displayValue}>
-                            <VaultRenewalContext.Provider value={renewalValue}>{children}</VaultRenewalContext.Provider>
-                          </VaultDisplayContext.Provider>
-                        </VaultInteractionContext.Provider>
-                      </VaultRecoveryContext.Provider>
-                    </VaultActivityContext.Provider>
-                  </VaultSendContext.Provider>
-                </VaultAccountContext.Provider>
-              </VaultNavigationContext.Provider>
-            </VaultContext.Provider>
+            <VaultNavigationContext.Provider value={navigationValue}>
+              <VaultAccountContext.Provider value={accountValue}>
+                <VaultSendContext.Provider value={sendValue}>
+                  <VaultActivityContext.Provider value={activityValue}>
+                    <VaultRecoveryContext.Provider value={recoveryValue}>
+                      <VaultInteractionContext.Provider value={interactionValue}>
+                        <VaultDisplayContext.Provider value={displayValue}>
+                          <VaultRenewalContext.Provider value={renewalValue}>{children}</VaultRenewalContext.Provider>
+                        </VaultDisplayContext.Provider>
+                      </VaultInteractionContext.Provider>
+                    </VaultRecoveryContext.Provider>
+                  </VaultActivityContext.Provider>
+                </VaultSendContext.Provider>
+              </VaultAccountContext.Provider>
+            </VaultNavigationContext.Provider>
           </SpendingPaymentContext.Provider>
         </BitcoinPaymentContext.Provider>
       </LedgerPaymentContext.Provider>

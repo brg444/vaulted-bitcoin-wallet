@@ -8,14 +8,12 @@ function fixtureBody(): string {
   return `
     import React from '/node_modules/.vite/deps/react.js';
     import { ToastProvider } from '/src/components/Toast.tsx';
-    import { VaultContext } from '/src/vault/context.ts';
     import { VaultTestProvider } from '/src/test/fixtures/VaultTestProvider.tsx';
     import Settings from '/src/screens/Vault/Settings.tsx';
     export default function SettingsFixture() {
-      const current = React.useContext(VaultContext);
       return React.createElement(ToastProvider, null,
         React.createElement(VaultTestProvider, { value: {
-          ...current, busy: false, liveNetwork: true, navigate: () => {},
+          busy: false, liveNetwork: true, navigate: () => {},
           refreshBalance: async () => {}, reset: async () => {}, status: null,
         }}, React.createElement(Settings)));
       }

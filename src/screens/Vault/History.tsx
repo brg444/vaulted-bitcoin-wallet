@@ -1,4 +1,3 @@
-import { useContext } from 'react'
 import Text from '../../components/Text'
 import TransferArrowIcon from '../../icons/TransferArrow'
 import { prettyAmount, prettyNumber } from '../../lib/format'
@@ -7,7 +6,7 @@ import { hapticSubtle } from '../../lib/haptics'
 import { RECENT_HISTORY_LIMIT } from '../../lib/vault/constants'
 import { groupVaultHistory, type VaultHistoryItem } from '../../lib/vault/history'
 import { describePayment } from '../../lib/vault/payments'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultActivity } from '../../vault/appContexts'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import styles from './History.module.css'
 
@@ -82,7 +81,8 @@ export function VaultHistoryRow({
 }
 
 export default function VaultHistory() {
-  const { account, accountReads, history, openTx } = useContext(VaultContext)
+  const { account, accountReads } = useVaultAccount()
+  const { history, openTx } = useVaultActivity()
   return (
     <VaultHistoryList
       account={account}

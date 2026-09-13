@@ -1,14 +1,14 @@
-import { useContext, useState } from 'react'
+import { useState } from 'react'
 import { Eye, Pencil, Plus } from 'lucide-react'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultNavigation } from '../../vault/appContexts'
 import AccountHome from './AccountHome'
 import VaultHistory from './History'
 import WalletScreen from './qg/WalletScreen'
 import { QgPrimary } from './qg/QgScreen'
 
 export default function WatchedSavings() {
-  const { watchedSavings, updateWatchedSavings, positions, accountReads, refreshBalance, navigate, openRecover } =
-    useContext(VaultContext)
+  const { watchedSavings, updateWatchedSavings, positions, accountReads, refreshBalance } = useVaultAccount()
+  const { navigate, openRecover } = useVaultNavigation()
   const [editing, setEditing] = useState(false)
   const [address, setAddress] = useState(watchedSavings?.address || '')
   const [label, setLabel] = useState(watchedSavings?.label || '')

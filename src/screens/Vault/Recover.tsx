@@ -1,13 +1,13 @@
 import { useSession } from '../../vault/sessionContext'
 import { inspectRecoveryKit, parseRecoveryKit, isLedgerRecoveryKit } from '../../lib/vault/program/kit'
 import QgGuidance from './qg/QgGuidance'
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { useBalanceDenomination } from './AccountBalance'
 import LedgerRecovery from './LedgerRecovery'
 import { findMatureBoardingInputs } from '../../lib/vault/vtxo/boardingRecovery'
-import { VaultContext } from '../../vault/context'
+import { useVaultInteraction, useVaultNavigation, useVaultRecovery } from '../../vault/appContexts'
 import { HubGroup, HubRow } from './ui'
 import RecoveryCopies from './RecoveryCopies'
 import { checkProtectedRecoveryPackage } from '../../lib/vault/recovery/packageCheck'
@@ -46,16 +46,13 @@ export default function VaultRecover() {
     downloadRecoveryArchive,
     recoveryArchiveStatus,
     recoveryArchiveError,
-    busy,
     downloadRecoveryKit,
-    error,
     hasRecoveryKit,
-    navigate,
-    recoverEntry,
-    recoverExit,
     recoverMatureBoarding,
     restoreRecoveryKit,
-  } = useContext(VaultContext)
+  } = useVaultRecovery()
+  const { busy, error } = useVaultInteraction()
+  const { navigate, recoverEntry, recoverExit } = useVaultNavigation()
   const { toast } = useToast()
   const [backupView, setBackupView] = useState<
     'overview' | 'more' | 'kit' | 'cloud' | 'file' | 'inspect' | 'boarding' | 'exit'

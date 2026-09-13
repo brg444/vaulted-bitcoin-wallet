@@ -1,11 +1,11 @@
-import { useContext } from 'react'
-import { VaultContext } from '../../../vault/context'
+import { useVaultDisplay, useVaultNavigation } from '../../../vault/appContexts'
 import WalletScreen from '../qg/WalletScreen'
 import { QgCheck, QgPrimary, QgTextButton } from '../qg/QgScreen'
 import '../qg/guidance.css'
 
 export default function VaultReady() {
-  const { navigate, networkLabel, openRecover } = useContext(VaultContext)
+  const { navigate, openRecover } = useVaultNavigation()
+  const { networkLabel } = useVaultDisplay()
   return (
     <WalletScreen
       variant='success'

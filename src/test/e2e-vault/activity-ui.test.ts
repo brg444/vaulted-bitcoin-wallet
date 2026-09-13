@@ -8,7 +8,6 @@ import { expectWalletLayout } from './fixtures/layout'
 function fixtureBody(): string {
   return `
     import React from '/node_modules/.vite/deps/react.js';
-    import { VaultContext } from '/src/vault/context.ts';
     import { VaultTestProvider } from '/src/test/fixtures/VaultTestProvider.tsx';
     import Activity from '/src/screens/Vault/Activity.tsx';
     const base = [];
@@ -29,12 +28,11 @@ function fixtureBody(): string {
       { txid: 'browser-older-2', type: 'sent', amount: 2500, confirmed: true, blockTime: 1689000000, account: 'savings' },
     ];
     export default function ActivityFixture() {
-      const current = React.useContext(VaultContext);
       const [extra, setExtra] = React.useState([]);
       const [olderState, setOlderState] = React.useState({ status: 'idle', error: '' });
       const allHistory = base.concat(extra);
       return React.createElement(VaultTestProvider, { value: {
-        ...current,
+        
         allHistory,
         balancesLoaded: true,
         refreshingBalance: false,

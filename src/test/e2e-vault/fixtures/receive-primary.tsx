@@ -1,5 +1,5 @@
 import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
-import React, { useContext } from 'react'
+import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { bech32 } from '@scure/base'
 import '../../../tokens.css'
@@ -11,7 +11,6 @@ import '../../../screens/Vault/quiet-guardian-flows.css'
 import '../../../screens/Vault/qg/layout.css'
 import '../../../screens/Vault/quiet-guardian-screens.css'
 import VaultReceive from '../../../screens/Vault/Receive'
-import { VaultContext } from '../../../vault/context'
 import { ToastProvider } from '../../../components/Toast'
 import { ledgerRecoveryFacts, sharedSpendingRecoveryFixture } from '../../../lib/vault/recovery/testdata/helpers'
 
@@ -57,12 +56,10 @@ else localStorage.removeItem(`vaulted:lnurl:v1:${status.network}:${status.vaultI
 const params = new URLSearchParams(location.search)
 document.documentElement.classList.toggle('palette-dark', params.has('dark'))
 function ReceiveFixture() {
-  const defaults = useContext(VaultContext)
   return (
     <ToastProvider>
       <VaultTestProvider
         value={{
-          ...defaults,
           status,
           account: 'spend',
           boardingAddress: status.vtxoBoardingAddress || '',

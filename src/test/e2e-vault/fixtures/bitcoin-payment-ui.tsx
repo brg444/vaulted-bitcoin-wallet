@@ -2,10 +2,9 @@ import { useSession } from '../../../vault/sessionContext'
 import { VaultTestProvider } from '../../fixtures/VaultTestProvider'
 import PaymentNotice from '../../../screens/Vault/qg/PaymentNotice'
 import { BitcoinPaymentError, bitcoinPaymentRejected } from '../../../lib/vault/bitcoinPaymentError'
-import { useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Address, OutScript } from '@scure/btc-signer'
 import { hex } from '@scure/base'
-import { VaultContext } from '../../../vault/context'
 import { vaultAddressNetwork } from '../../../lib/vault/bitcoin'
 import VaultReview from '../../../screens/Vault/Review'
 import AccountHome from '../../../screens/Vault/AccountHome'
@@ -17,7 +16,6 @@ import type { BitcoinPaymentJournal } from '../../../lib/vault/spendingBitcoinSt
 // Presentation-only fixture; provider tests cover approval/cancellation and SDK
 // vectors cover signed output authority. No payment is created by this view.
 export default function BitcoinPaymentUi() {
-  const context = useContext(VaultContext)
   const session = useSession()
   const [mode, setMode] = useState(1)
   useEffect(() => {
@@ -58,7 +56,6 @@ export default function BitcoinPaymentUi() {
       <VaultTestProvider
         bitcoinPayment={{ paymentError }}
         value={{
-          ...context,
           error: mode === 5 || mode === 7 ? paymentError.message : '',
           dismissError: () => setMode(mode + 1),
         }}
@@ -100,7 +97,6 @@ export default function BitcoinPaymentUi() {
       <VaultTestProvider
         bitcoinPayment={{ operation }}
         value={{
-          ...context,
           selectedTx: history[0],
           navigate: () => setMode(3),
         }}
@@ -112,7 +108,6 @@ export default function BitcoinPaymentUi() {
     <VaultTestProvider
       bitcoinPayment={{ outputs, paymentError: reviewError }}
       value={{
-        ...context,
         account: 'spend',
         error: reviewError?.message || '',
         dismissError: () => setMode(1),

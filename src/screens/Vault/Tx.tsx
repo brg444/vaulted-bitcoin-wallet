@@ -2,14 +2,13 @@ import { useSpendingPayment } from '../../vault/spendingPaymentContext'
 import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
 import { useSession } from '../../vault/sessionContext'
 import BitcoinPaymentStatus from './BitcoinPaymentStatus'
-import { useContext } from 'react'
 import { CircleAlert, CircleCheck, CircleHelp, Clock3 } from 'lucide-react'
 import ErrorMessage from '../../components/Error'
 import { prettyDate } from '../../lib/format'
 import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { describePayment } from '../../lib/vault/payments'
-import { VaultContext } from '../../vault/context'
+import { useVaultActivity, useVaultInteraction, useVaultNavigation } from '../../vault/appContexts'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 import TransactionReference from './qg/TransactionReference'
@@ -20,7 +19,9 @@ export default function VaultTx({ denomination }: { denomination?: BalanceDenomi
   const { retryLightningRefund } = useSpendingPayment()
   const { status: vaultStatus } = useSession()
   const spendingBitcoin = useBitcoinPayment()
-  const { busy, error, navigate, selectedTx, txReturn } = useContext(VaultContext)
+  const { busy, error } = useVaultInteraction()
+  const { navigate } = useVaultNavigation()
+  const { selectedTx, txReturn } = useVaultActivity()
   const denom = useBalanceDenomination(denomination)
   const money = { unit: denom.unit, rate: denom.rate }
   const bitcoin = selectedTx?.activity === 'bitcoin'

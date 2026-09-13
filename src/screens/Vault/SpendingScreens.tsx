@@ -1,5 +1,6 @@
-import { useContext, type ReactNode } from 'react'
-import { VaultContext, type VaultScreen } from '../../vault/context'
+import { type ReactNode } from 'react'
+import { useVaultNavigation } from '../../vault/appContexts'
+import { type VaultScreen } from '../../vault/context'
 import Home from './Home'
 import Activity from './Activity'
 import Receive from './Receive'
@@ -20,7 +21,7 @@ export const spendingScreens = {
 } satisfies Partial<Record<VaultScreen, JSX.Element>>
 
 export default function SpendingScreens({ homeNotice }: { homeNotice?: ReactNode }) {
-  const { screen } = useContext(VaultContext)
+  const { screen } = useVaultNavigation()
   const content =
     screen === 'home' ? <Home>{homeNotice}</Home> : spendingScreens[screen as keyof typeof spendingScreens]
   return (

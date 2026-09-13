@@ -1,7 +1,7 @@
-import { useContext, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { groupVaultHistory, type VaultHistoryItem } from '../../lib/vault/history'
 import { describePayment } from '../../lib/vault/payments'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultActivity, useVaultNavigation } from '../../vault/appContexts'
 import { VaultHistoryRow } from './History'
 import WalletScreen from './qg/WalletScreen'
 import styles from './History.module.css'
@@ -39,7 +39,9 @@ export function filterActivity(rows: readonly VaultHistoryItem[], filters: Activ
 }
 
 export default function VaultActivity() {
-  const { allHistory, accountReads, openTx, navigate, loadOlderActivity, olderActivity } = useContext(VaultContext)
+  const { allHistory, openTx, loadOlderActivity, olderActivity } = useVaultActivity()
+  const { accountReads } = useVaultAccount()
+  const { navigate } = useVaultNavigation()
   const [filters, setFilters] = useState<ActivityFilters>(EMPTY_ACTIVITY_FILTERS)
   const reads = filters.account === 'all' ? Object.values(accountReads) : [accountReads[filters.account]]
   const balancesLoaded = reads.some((read) => read.loaded)

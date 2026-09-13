@@ -1,7 +1,7 @@
 import { spendingScreens } from './screens/Vault/SpendingScreens'
 import VaultLedgerPayment from './screens/Vault/LedgerPayment'
-import { useContext, useEffect, useRef } from 'react'
-import { VaultContext } from './vault/context'
+import { useEffect, useRef } from 'react'
+import { useVaultAccount, useVaultNavigation } from './vault/appContexts'
 import './screens/Vault/vault.css'
 import './screens/Vault/vault-system.css'
 import './screens/Vault/quiet-guardian-flows.css'
@@ -31,7 +31,8 @@ import { useIntentPress } from './screens/Vault/qg/useIntentPress'
 import { useScreenMotion } from './screens/Vault/qg/useScreenMotion'
 
 export default function VaultApp() {
-  const { screen, account } = useContext(VaultContext)
+  const { screen } = useVaultNavigation()
+  const { account } = useVaultAccount()
   const root = useRef<HTMLDivElement>(null)
   const scope = `${screen}:${account}`
   const intentPress = useIntentPress(scope)

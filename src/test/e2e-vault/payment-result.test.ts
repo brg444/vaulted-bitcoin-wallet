@@ -19,13 +19,11 @@ for (const width of [320, 375]) {
             contentType: 'application/javascript',
             body: `
               import React from '/node_modules/.vite/deps/react.js';
-              import { VaultContext } from '/src/vault/context.ts';
     import { VaultTestProvider } from '/src/test/fixtures/VaultTestProvider.tsx';
               import Success from '/src/screens/Vault/Success.tsx';
               export default function ResultFixture() {
-                const current = React.useContext(VaultContext);
                 return React.createElement(VaultTestProvider, {value: {
-                  ...current, account: ${JSON.stringify(account)}, lastTxKind: ${JSON.stringify(kind)},
+                  account: ${JSON.stringify(account)}, lastTxKind: ${JSON.stringify(kind)},
                   lastTxid: '${'ab'.repeat(32)}',
                   lastSend: {address: 'tark1-test-destination', amount: 12000, fee: 0},
                   status: {network: 'mutinynet'}

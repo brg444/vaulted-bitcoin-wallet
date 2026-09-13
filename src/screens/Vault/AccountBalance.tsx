@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react'
+import { useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { hapticSubtle } from '../../lib/haptics'
 import {
@@ -8,7 +8,7 @@ import {
   type VaultFiatDisplayRate,
 } from '../../lib/vault/fiatDisplay'
 import type { VaultRateStatus } from '../../lib/vault/useDisplayUnit'
-import { VaultContext } from '../../vault/context'
+import { useVaultDisplay } from '../../vault/appContexts'
 import QgAmount, { amountSizeStyle } from './qg/QgAmount'
 
 export interface BalanceDenomination {
@@ -19,7 +19,7 @@ export interface BalanceDenomination {
 }
 
 export function useBalanceDenomination(override?: BalanceDenomination): BalanceDenomination {
-  const context = useContext(VaultContext)
+  const context = useVaultDisplay()
   if (override) return override
   return {
     unit: context.balanceUnit ?? 'sats',

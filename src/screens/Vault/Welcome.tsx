@@ -1,14 +1,15 @@
 import { useSession } from '../../vault/sessionContext'
-import { useContext, useEffect } from 'react'
+import { useEffect } from 'react'
 import ErrorMessage from '../../components/Error'
 import { isCoarsePhone } from '../../lib/vault/webauthn'
-import { VaultContext } from '../../vault/context'
+import { useVaultInteraction, useVaultNavigation } from '../../vault/appContexts'
 import WalletScreen from './qg/WalletScreen'
 import { QgMark, QgPrimary, QgTextButton } from './qg/QgScreen'
 
 export default function VaultWelcome() {
   const { enrollmentMode, lightAvailable, hasLocalEnrollment, locked, signIn } = useSession()
-  const { busy, error, navigate } = useContext(VaultContext)
+  const { busy, error } = useVaultInteraction()
+  const { navigate } = useVaultNavigation()
   const onPhone = isCoarsePhone()
 
   useEffect(() => {

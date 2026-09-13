@@ -1,8 +1,8 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext, useState } from 'react'
+import { useState } from 'react'
 import { prettyNumber } from '../../../lib/format'
 import { fingerprint } from '../../../lib/vault/hex'
-import { VaultContext } from '../../../vault/context'
+import { useVaultDisplay, useVaultNavigation } from '../../../vault/appContexts'
 import WalletScreen from '../qg/WalletScreen'
 import { QgPrimary } from '../qg/QgScreen'
 
@@ -12,7 +12,8 @@ function shortPub(pub: string) {
 
 export default function VaultPlan() {
   const { finishPlan, setup } = useSession()
-  const { navigate, networkLabel } = useContext(VaultContext)
+  const { navigate } = useVaultNavigation()
+  const { networkLabel } = useVaultDisplay()
   const [consented, setConsented] = useState(false)
   const light = setup.protectionTier === 'light'
   const advanced = setup.protectionTier === 'advanced'

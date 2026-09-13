@@ -14,13 +14,11 @@ for (const width of [320, 375, 1440]) {
           contentType: 'application/javascript',
           body: `
             import React from '/node_modules/.vite/deps/react.js';
-            import { VaultContext } from '/src/vault/context.ts';
     import { VaultTestProvider } from '/src/test/fixtures/VaultTestProvider.tsx';
             import Review from '/src/screens/Vault/Review.tsx';
             export default function ReviewFixture() {
-              const current = React.useContext(VaultContext);
               return React.createElement(VaultTestProvider, {value: {
-                ...current, account: ${JSON.stringify(state === 'processing' ? 'savings' : 'spend')},
+                account: ${JSON.stringify(state === 'processing' ? 'savings' : 'spend')},
                 busy: ${state === 'processing'},
                 spend: {amount: 1234567890, fee: 240, address: 'tark1${'a'.repeat(100)}'},
                 status: {network: 'mutinynet'}, approveSend: () => {}, navigate: () => {}

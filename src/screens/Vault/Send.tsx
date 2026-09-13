@@ -2,7 +2,7 @@ import { useSpendingPayment } from '../../vault/spendingPaymentContext'
 import { useSession } from '../../vault/sessionContext'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { NetworkName } from '@arkade-os/sdk'
 import type { InvoiceFacts } from '@arkade-os/swap'
 import { KeyRound } from 'lucide-react'
@@ -18,7 +18,7 @@ import {
 import { decodeVaultLightningInvoice } from '../../lib/vault/lightningInvoice'
 import { humanizeVaultError } from '../../lib/vault/humanize'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultInteraction, useVaultNavigation, useVaultSend } from '../../vault/appContexts'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import Scanner from './Scanner'
 import DestinationField from './qg/DestinationField'
@@ -61,20 +61,10 @@ function payloadFromScan(raw: string, allowLightning = true): { address: string;
 export default function VaultSend({ denomination }: { denomination?: BalanceDenomination }) {
   const { pendingPayments, openPendingPayment, canReplaceInFlightSend, replaceInFlightSend } = useSpendingPayment()
   const { setup, status } = useSession()
-  const {
-    account,
-    boardingAddress,
-    busy,
-    clearSendScan,
-    dailyRemaining,
-    error,
-    navigate,
-    reviewSpend,
-    scanOnSend,
-    setSpendDraft,
-    spend,
-    positions,
-  } = useContext(VaultContext)
+  const { account, boardingAddress, dailyRemaining, positions } = useVaultAccount()
+  const { busy, error } = useVaultInteraction()
+  const { clearSendScan, reviewSpend, scanOnSend, setSpendDraft, spend } = useVaultSend()
+  const { navigate } = useVaultNavigation()
   const { toast } = useToast()
   const denom = useBalanceDenomination(denomination)
   const money = { unit: denom.unit, rate: denom.rate }

@@ -13,7 +13,7 @@ const bitcoinDestination = Address(TEST_NETWORK).encode(OutScript.decode(hex.dec
 import { ArkAddress } from '@arkade-os/sdk'
 import { hex } from '@scure/base'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useContext } from 'react'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LEDGER_NATIVE_TEMPLATE } from '../lib/vault/program/ledgerNativeKeys'
 import { ledgerRecoveryFixture } from '../lib/vault/recovery/testdata/ledger'
@@ -27,7 +27,14 @@ import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
 import { persistVtxoSpend } from '../lib/vault/vtxo/spendingJournal'
 import { VtxoReviewedReservationError } from '../lib/vault/vtxo/spendingErrors'
 import { type VaultVtxoSpendQuote } from '../lib/vault/vtxo/spend'
-import { VaultContext, VaultProvider } from './vault'
+import { VaultProvider } from './vault'
+import {
+  useVaultAccount,
+  useVaultActivity,
+  useVaultInteraction,
+  useVaultNavigation,
+  useVaultSend,
+} from '../vault/appContexts'
 import { LedgerHardware } from '../screens/Vault/onboard/Ledger'
 import ledgerVectors from '../lib/vault/program/ledger-key-vectors.json'
 import { ledgerSpendingPublicKey } from '../lib/vault/ledgerSetup'
@@ -220,52 +227,56 @@ const reviewed: VaultVtxoSpendQuote = {
 
 function Probe() {
   const useSpending = useSpendingPayment()
-  const vault = useContext(VaultContext)
+  const nav = useVaultNavigation()
+  const acct = useVaultAccount()
+  const send = useVaultSend()
+  const act = useVaultActivity()
+  const inter = useVaultInteraction()
   const session = useSession()
   return (
     <div>
       <button onClick={() => useSpending.openPendingPayment('11'.repeat(16))}>Open pending</button>
       <button onClick={() => session.setPrivacyLock(!session.privacyLock)}>Toggle privacy</button>
       <span data-testid='privacy'>{String(session.privacyLock)}</span>
-      <span data-testid='screen'>{vault.screen}</span>
-      <span data-testid='account'>{vault.account}</span>
-      <span data-testid='scan'>{String(vault.scanOnSend)}</span>
+      <span data-testid='screen'>{nav.screen}</span>
+      <span data-testid='account'>{acct.account}</span>
+      <span data-testid='scan'>{String(send.scanOnSend)}</span>
       <span data-testid='ready'>{String(Boolean(session.status?.enrolled))}</span>
-      <span data-testid='fee'>{vault.spend.fee}</span>
-      <span data-testid='destination'>{vault.spend.address}</span>
-      <span data-testid='error'>{vault.error}</span>
-      <span data-testid='kind'>{vault.lastTxKind}</span>
-      <span data-testid='sent-amount'>{vault.lastSend?.amount}</span>
-      <span data-testid='sent-destination'>{vault.lastSend?.address}</span>
-      <span data-testid='activity'>{vault.history[0]?.activity || ''}</span>
-      <button type='button' onClick={() => vault.setSpendDraft({ address: destination, amount: 12_000 })}>
+      <span data-testid='fee'>{send.spend.fee}</span>
+      <span data-testid='destination'>{send.spend.address}</span>
+      <span data-testid='error'>{inter.error}</span>
+      <span data-testid='kind'>{send.lastTxKind}</span>
+      <span data-testid='sent-amount'>{send.lastSend?.amount}</span>
+      <span data-testid='sent-destination'>{send.lastSend?.address}</span>
+      <span data-testid='activity'>{act.history[0]?.activity || ''}</span>
+      <button type='button' onClick={() => send.setSpendDraft({ address: destination, amount: 12_000 })}>
         Set draft
       </button>
-      <button type='button' onClick={() => vault.navigate('home')}>
+      <button type='button' onClick={() => nav.navigate('home')}>
         Go home
       </button>
-      <button type='button' onClick={() => vault.openSendScan()}>
+      <button type='button' onClick={() => send.openSendScan()}>
         Open scan
       </button>
-      <button type='button' onClick={() => vault.setSpendDraft({ address: bitcoinDestination, amount: 1500 })}>
+      <button type='button' onClick={() => send.setSpendDraft({ address: bitcoinDestination, amount: 1500 })}>
         Set Bitcoin draft
       </button>
-      <button type='button' onClick={vault.reviewSpend}>
+      <button type='button' onClick={send.reviewSpend}>
         Review
       </button>
-      <button type='button' onClick={() => vault.setSpendDraft({ address: MUTINYNET_INVOICE, amount: 2_100 })}>
+      <button type='button' onClick={() => send.setSpendDraft({ address: MUTINYNET_INVOICE, amount: 2_100 })}>
         Set Lightning draft
       </button>
-      <button type='button' onClick={vault.approveSend}>
+      <button type='button' onClick={send.approveSend}>
         Approve
       </button>
-      <button type='button' onClick={() => vault.setAccount('spend')}>
+      <button type='button' onClick={() => acct.setAccount('spend')}>
         Show Spending
       </button>
-      <button type='button' onClick={() => vault.setAccount('savings')}>
+      <button type='button' onClick={() => acct.setAccount('savings')}>
         Show Savings
       </button>
-      <button type='button' onClick={() => vault.history[0] && vault.openTx(vault.history[0])}>
+      <button type='button' onClick={() => act.history[0] && act.openTx(act.history[0])}>
         Open first activity
       </button>
       <button type='button' onClick={() => useSpending.retryLightningRefund('44'.repeat(32))}>
@@ -680,15 +691,15 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     )
     const savedEnrollment = localStorage.getItem(`${ENROLL_STORE}:12121212121212121212121212121212`)
     function SetupProbe() {
-      const vault = useContext(VaultContext)
+      const { screen } = useVaultNavigation()
       const session = useSession()
       return (
         <>
           <span data-testid='old-vault'>{session.status?.vaultId}</span>
           <span data-testid='new-key'>{session.setup.hardwarePub}</span>
-          <span data-testid='setup-screen'>{vault.screen}</span>
+          <span data-testid='setup-screen'>{screen}</span>
           <button onClick={() => session.acceptDesign('standard')}>Start another vault</button>
-          {vault.screen === 'hardware' ? <LedgerHardware /> : null}
+          {screen === 'hardware' ? <LedgerHardware /> : null}
         </>
       )
     }

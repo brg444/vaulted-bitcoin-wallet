@@ -1,10 +1,9 @@
 import { useSession } from '../../vault/sessionContext'
 import QgAmount from './qg/QgAmount'
-import { useContext } from 'react'
 import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { vaultTransactionExplorer } from '../../lib/vault/explorer'
 import { truncateAddress } from '../../lib/vault/policy'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultNavigation, useVaultSend } from '../../vault/appContexts'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import TransactionReference from './qg/TransactionReference'
 import WalletScreen from './qg/WalletScreen'
@@ -13,7 +12,9 @@ import PaymentResult from './qg/PaymentResult'
 
 export default function VaultSuccess({ denomination }: { denomination?: BalanceDenomination }) {
   const { status } = useSession()
-  const { account, boardingAddress, lastSend, lastTxid, lastTxKind, navigate } = useContext(VaultContext)
+  const { account, boardingAddress } = useVaultAccount()
+  const { lastSend, lastTxid, lastTxKind } = useVaultSend()
+  const { navigate } = useVaultNavigation()
   const denom = useBalanceDenomination(denomination)
   const money = { unit: denom.unit, rate: denom.rate }
   const movingToSpending = Boolean(lastSend && boardingAddress && lastSend.address === boardingAddress)

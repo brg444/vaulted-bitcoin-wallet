@@ -1,14 +1,14 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext } from 'react'
 import { CircleHelp } from 'lucide-react'
 import '../qg/guidance.css'
-import { VaultContext } from '../../../vault/context'
+import { useVaultInteraction, useVaultNavigation } from '../../../vault/appContexts'
 import WalletScreen from '../qg/WalletScreen'
 import { QgPrimary, QgSecondary } from '../qg/QgScreen'
 
 export default function VaultProblem() {
   const { enrollmentMode } = useSession()
-  const { error, navigate } = useContext(VaultContext)
+  const { error } = useVaultInteraction()
+  const { navigate } = useVaultNavigation()
   return (
     <WalletScreen
       title='Setup help'

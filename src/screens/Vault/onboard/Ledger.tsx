@@ -1,6 +1,6 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext, useEffect, useState } from 'react'
-import { VaultContext } from '../../../vault/context'
+import { useEffect, useState } from 'react'
+import { useVaultInteraction, useVaultNavigation } from '../../../vault/appContexts'
 import LedgerSavingsApproval from '../LedgerSavingsApproval'
 import WalletScreen from '../qg/WalletScreen'
 import { QgPrimary } from '../qg/QgScreen'
@@ -8,7 +8,8 @@ import QgGuidance from '../qg/QgGuidance'
 
 export function LedgerHardware() {
   const { connectLedgerKey, ledgerAvailable } = useSession()
-  const { busy, error, navigate } = useContext(VaultContext)
+  const { busy, error } = useVaultInteraction()
+  const { navigate } = useVaultNavigation()
   const supported = globalThis.isSecureContext && typeof navigator !== 'undefined' && 'hid' in navigator
   return (
     <WalletScreen
@@ -50,7 +51,8 @@ export function LedgerHardware() {
 
 export function LedgerRecoveryKey() {
   const { connectLedgerKey, applyLedgerRecovery } = useSession()
-  const { busy, error, navigate } = useContext(VaultContext)
+  const { busy, error } = useVaultInteraction()
+  const { navigate } = useVaultNavigation()
   const [value, setValue] = useState('')
   const supported = globalThis.isSecureContext && typeof navigator !== 'undefined' && 'hid' in navigator
   return (
@@ -107,7 +109,8 @@ export function LedgerEnrollmentRegistration() {
   const { approveLedgerEnrollment, cancelLedgerRegistration, ledgerApprovalPhase, enroll, pendingLedgerSetup } =
     useSession()
   useEffect(() => cancelLedgerRegistration, [cancelLedgerRegistration])
-  const { navigate, busy, error } = useContext(VaultContext)
+  const { navigate } = useVaultNavigation()
+  const { busy, error } = useVaultInteraction()
   if (!pendingLedgerSetup)
     return (
       <WalletScreen title='Set up Ledger' back={() => navigate('hardware')}>

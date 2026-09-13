@@ -3,13 +3,13 @@ import { useBitcoinPayment } from '../../vault/bitcoinPaymentContext'
 import { useSession } from '../../vault/sessionContext'
 import PaymentNotice from './qg/PaymentNotice'
 import { isVaultBitcoinAddress } from '../../lib/vault/bitcoin'
-import { useContext, useState } from 'react'
+import { useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { copyToClipboard } from '../../lib/clipboard'
 import { formatMoney, hasUsdRate } from '../../lib/vault/fiatDisplay'
 import { isVaultLightningInput } from '../../lib/vault/lightningConfig'
 import { truncateAddress } from '../../lib/vault/policy'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultInteraction, useVaultNavigation, useVaultSend } from '../../vault/appContexts'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
 import QgAmount from './qg/QgAmount'
 import ReviewAmount from './qg/ReviewAmount'
@@ -20,7 +20,10 @@ export default function VaultReview({ denomination }: { denomination?: BalanceDe
   const { resumingPayment } = useSpendingPayment()
   const { status } = useSession()
   const { outputs: bitcoinOutputs } = useBitcoinPayment()
-  const { account, approveSend, boardingAddress, busy, error, navigate, spend } = useContext(VaultContext)
+  const { account, boardingAddress } = useVaultAccount()
+  const { approveSend, spend } = useVaultSend()
+  const { busy, error } = useVaultInteraction()
+  const { navigate } = useVaultNavigation()
   const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
   const denom = useBalanceDenomination(denomination)

@@ -1,11 +1,11 @@
 import { useSession } from '../../vault/sessionContext'
 import QgGuidance from './qg/QgGuidance'
-import { useContext, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Fingerprint, FileKey, Server, ShieldCheck } from 'lucide-react'
 import { formatMoney } from '../../lib/vault/fiatDisplay'
 import { useBalanceDenomination } from './AccountBalance'
 import { shortKey } from '../../lib/vault/setupPlan'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultInteraction, useVaultNavigation, useVaultRenewals } from '../../vault/appContexts'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import RecoveryExplanation from './qg/RecoveryExplanation'
@@ -56,7 +56,10 @@ export default function VaultKeys() {
   const denomination = useBalanceDenomination()
   const money = (value: number) => formatMoney(value, denomination)
   const { enablePasskeyLogin, hasLocalEnrollment, setup, status } = useSession()
-  const { busy, spendingRenewals, navigate, openRecover, savingsAddress, spendingArkAddress } = useContext(VaultContext)
+  const { busy } = useVaultInteraction()
+  const { spendingRenewals } = useVaultRenewals()
+  const { navigate, openRecover } = useVaultNavigation()
+  const { savingsAddress, spendingArkAddress } = useVaultAccount()
   const [view, setView] = useState<'overview' | 'keys' | 'limits' | 'renewal'>('overview')
   const phoneCovered = Boolean(status?.enrolled)
   const devicesCovered = Boolean(status?.passkeyLoginAvailable)

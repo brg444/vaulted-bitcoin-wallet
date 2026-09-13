@@ -1,15 +1,15 @@
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import SpinnerIcon from '../../icons/Spinner'
 import { hapticSubtle } from '../../lib/haptics'
 import { sleep } from '../../lib/sleep'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount } from '../../vault/appContexts'
 
 const THRESHOLD = 104
 
 export default function VaultRefresher({ onRefresh }: { onRefresh?: () => Promise<void> } = {}) {
-  const context = useContext(VaultContext)
-  const refreshBalance = onRefresh || context.refreshBalance
+  const { refreshBalance: accountRefresh } = useVaultAccount()
+  const refreshBalance = onRefresh || accountRefresh
   const indicator = useRef<HTMLDivElement>(null)
   const [distance, setDistance] = useState(0)
   const [refreshing, setRefreshing] = useState(false)

@@ -1,12 +1,12 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Clock3 } from 'lucide-react'
 import ErrorMessage from '../../../components/Error'
 import { prettyNumber } from '../../../lib/format'
 import { ABSOLUTE_FEE_CEILING_SATS, FEERATE_CEILING_SAT_PER_V } from '../../../lib/vault/constants'
 import { setupSpendingPolicy } from '../../../lib/vault/setupPlan'
 import { spendingPolicyFromLimits } from '../../../lib/vault/spendingPolicy'
-import { VaultContext } from '../../../vault/context'
+import { useVaultInteraction, useVaultNavigation } from '../../../vault/appContexts'
 import WalletScreen from '../qg/WalletScreen'
 import { QgPrimary } from '../qg/QgScreen'
 
@@ -22,7 +22,8 @@ function displaySats(raw: string) {
 
 export default function VaultConditions() {
   const { setSpendingPolicy, setup, spendingPolicyCapabilities } = useSession()
-  const { confirmConditions, error, navigate } = useContext(VaultContext)
+  const { confirmConditions, navigate } = useVaultNavigation()
+  const { error } = useVaultInteraction()
   const setupPolicy = setupSpendingPolicy(setup)
   const [txCap, setTxCap] = useState(String(setupPolicy.txRecipientCapSats))
   const [allowance, setAllowance] = useState(String(setupPolicy.periodAllowanceSats))

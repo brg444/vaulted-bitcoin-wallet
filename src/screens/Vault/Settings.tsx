@@ -1,5 +1,5 @@
 import { useSession } from '../../vault/sessionContext'
-import { useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useToast } from '../../components/Toast'
 import { gitCommit } from '../../_gitCommit'
 import { copyToClipboard } from '../../lib/clipboard'
@@ -18,7 +18,7 @@ import {
 } from '../../lib/vault/prefs'
 import { useBalanceDenomination } from './AccountBalance'
 import { reloadIfNewerWallet } from '../../lib/vault/update'
-import { VaultContext } from '../../vault/context'
+import { useVaultAccount, useVaultDisplay, useVaultInteraction, useVaultNavigation } from '../../vault/appContexts'
 import { useVaultReadiness } from '../../vault/useVaultReadiness'
 import { HubGroup, HubRow } from './ui'
 import WalletScreen from './qg/WalletScreen'
@@ -132,18 +132,18 @@ function ResetView({ onBack, onReset }: { onBack: () => void; onReset: () => voi
 }
 
 export default function VaultSettings() {
-  const context = useContext(VaultContext)
+  const { busy } = useVaultInteraction()
+  const { liveNetwork } = useVaultDisplay()
+  const { accountReads, refreshBalance } = useVaultAccount()
+  const { navigate } = useVaultNavigation()
   const session = useSession()
   const { reset, setup, privacyLock, setPrivacyLock } = session
   const denom = useBalanceDenomination()
   const money = { unit: denom.unit, rate: denom.rate }
   const status = session.status
-  const busy = context.busy
-  const liveNetwork = context.liveNetwork
-  const balanceError = [context.accountReads.spend.error, context.accountReads.savings.error].filter(Boolean).join(' ')
-  const refreshingBalance = context.accountReads.spend.refreshing || context.accountReads.savings.refreshing
-  const refreshBalance = context.refreshBalance
-  const close = () => context.navigate('home')
+  const balanceError = [accountReads.spend.error, accountReads.savings.error].filter(Boolean).join(' ')
+  const refreshingBalance = accountReads.spend.refreshing || accountReads.savings.refreshing
+  const close = () => navigate('home')
   const readiness = useVaultReadiness()
   const { toast } = useToast()
   const [view, setView] = useState<View>('menu')

@@ -1,10 +1,9 @@
 import { useBitcoinPayment } from '../../../vault/bitcoinPaymentContext'
-import { useContext } from 'react'
 import { X } from 'lucide-react'
-import { VaultContext } from '../../../vault/context'
+import { useVaultInteraction } from '../../../vault/appContexts'
 
 export default function PaymentNotice({ message }: { message: string }) {
-  const { error, dismissError } = useContext(VaultContext)
+  const { error, dismissError } = useVaultInteraction()
   const { paymentError } = useBitcoinPayment()
   const payment = paymentError?.message === message ? paymentError : undefined
   const waiting = Boolean(payment?.retryAt)

@@ -1,12 +1,11 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext } from 'react'
-import { VaultContext } from '../../../vault/context'
+import { useVaultNavigation } from '../../../vault/appContexts'
 import WalletScreen from '../qg/WalletScreen'
 
 export default function VaultDesign() {
   const lightOnly = import.meta.env.VITE_VAULT_LIGHT_ONLY_ENROLLMENT === 'true'
   const { acceptDesign, lightAvailable } = useSession()
-  const { navigate } = useContext(VaultContext)
+  const { navigate } = useVaultNavigation()
   return (
     <WalletScreen title='Choose your Vault' stepLabel='1 of 6' back={() => navigate('welcome')}>
       <h1>Choose your protection</h1>

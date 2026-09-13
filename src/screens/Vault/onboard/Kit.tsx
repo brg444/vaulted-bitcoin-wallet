@@ -1,8 +1,8 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext, useState } from 'react'
+import { useState } from 'react'
 import { Download, LockKeyhole } from 'lucide-react'
 import { useToast } from '../../../components/Toast'
-import { VaultContext } from '../../../vault/context'
+import { useVaultNavigation, useVaultRecovery } from '../../../vault/appContexts'
 import WalletScreen from '../qg/WalletScreen'
 import { QgMark, QgPrimary, QgTextButton } from '../qg/QgScreen'
 import '../qg/guidance.css'
@@ -20,7 +20,8 @@ function downloadJson(name: string, body: string) {
 
 export default function VaultKit() {
   const { status } = useSession()
-  const { downloadRecoveryKit, navigate } = useContext(VaultContext)
+  const { downloadRecoveryKit } = useVaultRecovery()
+  const { navigate } = useVaultNavigation()
   const [downloadRequested, setDownloadRequested] = useState(false)
   const { toast } = useToast()
 

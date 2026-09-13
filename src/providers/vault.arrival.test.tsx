@@ -11,19 +11,20 @@ import type { VaultStatus } from '../lib/vault/types'
 import type { EnrollmentSecrets } from '../lib/vault/tenantEnrollment'
 import { ledgerRecoveryFixture } from '../lib/vault/recovery/testdata/ledger'
 import golden from '../lib/vault/vtxo/testdata/vault-policy-v1-tree.json'
-import { VaultProvider, VaultContext } from './vault'
+import { VaultProvider } from './vault'
+import { useVaultActivity, useVaultNavigation } from '../vault/appContexts'
 import VaultHome from '../screens/Vault/Home'
-import { useContext } from 'react'
 
 function DebugProbe() {
-  const vault = useContext(VaultContext)
+  const { allHistory, selectedTx } = useVaultActivity()
+  const { screen } = useVaultNavigation()
   const session = useSession()
   return (
     <div>
       <span data-testid='dbg-vault'>{session.status?.vaultId || 'none'}</span>
-      <span data-testid='dbg-history'>{vault.allHistory.length}</span>
-      <span data-testid='dbg-screen'>{vault.screen}</span>
-      <span data-testid='dbg-selected'>{vault.selectedTx?.txid || 'none'}</span>
+      <span data-testid='dbg-history'>{allHistory.length}</span>
+      <span data-testid='dbg-screen'>{screen}</span>
+      <span data-testid='dbg-selected'>{selectedTx?.txid || 'none'}</span>
     </div>
   )
 }

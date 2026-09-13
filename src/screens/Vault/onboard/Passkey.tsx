@@ -1,16 +1,17 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Clipboard, Fingerprint } from 'lucide-react'
 import ErrorMessage from '../../../components/Error'
 import { pasteFromClipboard } from '../../../lib/clipboard'
 import { isPlatformPasskeyAvailable } from '../../../lib/vault/webauthn'
-import { VaultContext } from '../../../vault/context'
+import { useVaultInteraction, useVaultNavigation } from '../../../vault/appContexts'
 import WalletScreen from '../qg/WalletScreen'
 import { QgPrimary } from '../qg/QgScreen'
 
 export default function VaultPasskey() {
   const { enroll, enrollmentMode } = useSession()
-  const { busy, error, navigate } = useContext(VaultContext)
+  const { busy, error } = useVaultInteraction()
+  const { navigate } = useVaultNavigation()
   const [token, setToken] = useState('')
   const [passkeyAvailable, setPasskeyAvailable] = useState<boolean | null>(null)
 
