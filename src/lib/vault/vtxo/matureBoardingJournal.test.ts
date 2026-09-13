@@ -23,6 +23,13 @@ import {
 } from './testdata/matureBoarding'
 import { validateMatureBoardingRecoveryFile } from './boardingRecoveryFile'
 import { acknowledgeMatureBoardingRecovery, recoverMatureBoardingInputs } from './boardingRecovery'
+import { hex } from '@scure/base'
+import { createBoardingProgramScript } from '@arkade-os/sdk'
+import { ledgerRecoveryFixture } from '../recovery/testdata/ledger'
+import { scalarSecret } from '../program/fixtures'
+import { BOARDING_PROGRAM } from './board'
+import { validateVaultRecoveryFile } from '../recovery/backupCodec'
+import { readCommittedRecoveryEvidence } from '../recovery/committedCoverage'
 
 beforeEach(() => {
   vi.stubGlobal('indexedDB', new IDBFactory())
@@ -287,8 +294,7 @@ describe('producer through the real mature boarding journal', () => {
         coverage,
         onchainProvider: confirmedProvider,
         locks: exclusiveVaultLocks(),
-        readCommittedJournal: async () => live,
-        readCoverage: async () => coverage,
+        readEvidence: async () => ({ coverage, matureBoardingJournal: live }),
       }),
     ).resolves.toBe(true)
     expect(await loadMatureBoardingAttempt(f.status)).toBeNull()
@@ -335,8 +341,7 @@ describe('producer through the real mature boarding journal', () => {
         onchainProvider: confirmed,
         locks: exclusiveVaultLocks(),
         persistAttempt: persistMatureBoardingAttempt,
-        readCommittedJournal: async () => null,
-        readCoverage: async () => coverage,
+        readEvidence: async () => ({ coverage, matureBoardingJournal: null }),
       }),
     ).resolves.toBe(false)
     expect((await loadMatureBoardingAttempt(status))?.phase).toBe('confirmed')
@@ -350,8 +355,7 @@ describe('producer through the real mature boarding journal', () => {
           },
         }),
         locks: exclusiveVaultLocks(),
-        readCommittedJournal: async () => ({ ...record, phase: 'confirmed' }),
-        readCoverage: async () => coverage,
+        readEvidence: async () => ({ coverage, matureBoardingJournal: { ...record, phase: 'confirmed' } }),
       }),
     ).resolves.toBe(false)
 
@@ -363,8 +367,7 @@ describe('producer through the real mature boarding journal', () => {
           transactions: async () => [],
         }),
         locks: exclusiveVaultLocks(),
-        readCommittedJournal: async () => ({ ...record, phase: 'confirmed' }),
-        readCoverage: async () => coverage,
+        readEvidence: async () => ({ coverage, matureBoardingJournal: { ...record, phase: 'confirmed' } }),
       }),
     ).resolves.toBe(false)
 
@@ -373,8 +376,10 @@ describe('producer through the real mature boarding journal', () => {
         coverage,
         onchainProvider: confirmed,
         locks: exclusiveVaultLocks(),
-        readCommittedJournal: async () => ({ ...record, phase: 'confirmed', txid: 'ff'.repeat(32), hex: '00' }),
-        readCoverage: async () => coverage,
+        readEvidence: async () => ({
+          coverage,
+          matureBoardingJournal: { ...record, phase: 'confirmed', txid: 'ff'.repeat(32), hex: '00' },
+        }),
       }),
     ).resolves.toBe(false)
 
@@ -383,13 +388,141 @@ describe('producer through the real mature boarding journal', () => {
         coverage,
         onchainProvider: confirmed,
         locks: exclusiveVaultLocks(),
-        readCommittedJournal: async () => ({ ...record, phase: 'confirmed' }),
-        readCoverage: async () => coverage,
+        readEvidence: async () => ({ coverage, matureBoardingJournal: { ...record, phase: 'confirmed' } }),
         retireAttempt: async () => {
           throw new Error('Storage is full')
         },
       }),
     ).resolves.toBe(false)
     expect((await loadMatureBoardingAttempt(status))?.txid).toBe(record.txid)
+  })
+})
+
+describe('production acknowledgment with a committed recovery file', () => {
+  async function signedCompleteFile() {
+    const f = await ledgerRecoveryFixture()
+    const descriptor = f.status.vtxoBoardingDescriptor!
+    const program = createBoardingProgramScript(
+      {
+        name: BOARDING_PROGRAM,
+        boardingPubKey: hex.decode(descriptor.boardingPub).slice(1),
+        cosignerPubKey: hex.decode(descriptor.vaultBoardCosignerPub).slice(1),
+        recoveryPubKey: hex.decode(descriptor.recoveryPhonePub).slice(1),
+      },
+      hex.decode(descriptor.operatorPub).slice(1),
+      { type: 'seconds', value: BigInt(descriptor.exitDelay) },
+    )
+    const mature = {
+      txid: '11'.repeat(32),
+      vout: 0,
+      value: 100_000,
+      status: {
+        confirmed: true,
+        block_height: 1,
+        block_time: Math.floor(Date.now() / 1000) - descriptor.exitDelay - 1,
+      },
+      tapTree: program.encode(),
+      forfeitTapLeafScript: [] as never,
+      intentTapLeafScript: [] as never,
+    }
+    await recoverMatureBoardingInputs(f.enrollment, f.status, {
+      getBoardingUtxos: async () => [mature],
+      unlockPhone: async () => scalarSecret(3),
+      onchainProvider: chainProvider(),
+      locks: exclusiveVaultLocks(),
+    })
+    const live = (await loadMatureBoardingAttempt(f.status))!
+    const file = validateVaultRecoveryFile({ ...f.file, matureBoardingJournal: live })
+    const key = file.header.binding.descriptorHash
+    await recoveryFileStore(key, file)
+    const evidence = (await readCommittedRecoveryEvidence(f.status))!
+    return { f, live, file, key, evidence }
+  }
+
+  function confirmedProvider(live: Awaited<ReturnType<typeof signedCompleteFile>>['live']) {
+    const amountSats = matureBoardingOutputSats(live)
+    return chainProvider({
+      txStatus: async (txid) =>
+        txid === live.txid ? { confirmed: true, blockHeight: 12, blockTime: 1 } : Promise.reject(new Error('404')),
+      transactions: async () => [
+        {
+          txid: live.txid,
+          vout: [{ scriptpubkey_address: live.evidence.destination, value: String(amountSats) }],
+          status: { confirmed: true, block_time: 1 },
+        },
+      ],
+    })
+  }
+
+  it('saves, reads back and retires the exact signed journal from the committed file', async () => {
+    const { f, live, evidence } = await signedCompleteFile()
+    expect(evidence.matureBoardingJournal?.txid).toBe(live.txid)
+    expect(evidence.matureBoardingJournal?.hex).toBe(live.hex)
+    expect(evidence.coverage.fileDigest).toMatch(/^[0-9a-f]{64}$/)
+    await expect(
+      acknowledgeMatureBoardingRecovery(f.status, {
+        coverage: evidence.coverage,
+        onchainProvider: confirmedProvider(live),
+        locks: exclusiveVaultLocks(),
+      }),
+    ).resolves.toBe(true)
+    expect(await loadMatureBoardingAttempt(f.status)).toBeNull()
+    expect(await loadMatureBoardingRecord(f.status)).toMatchObject({ phase: 'retired', txid: live.txid })
+  })
+
+  it('retains the journal when the committed file has no boarding journal', async () => {
+    const { f, live, key } = await signedCompleteFile()
+    await recoveryFileStore(key, f.file)
+    await expect(
+      acknowledgeMatureBoardingRecovery(f.status, {
+        onchainProvider: confirmedProvider(live),
+        locks: exclusiveVaultLocks(),
+      }),
+    ).resolves.toBe(false)
+    expect((await loadMatureBoardingAttempt(f.status))?.txid).toBe(live.txid)
+  })
+
+  it('retains the journal when the supplied coverage digest belongs to another file', async () => {
+    const { f, live, evidence } = await signedCompleteFile()
+    await expect(
+      acknowledgeMatureBoardingRecovery(f.status, {
+        coverage: { ...evidence.coverage, fileDigest: 'bb'.repeat(32) },
+        onchainProvider: confirmedProvider(live),
+        locks: exclusiveVaultLocks(),
+      }),
+    ).resolves.toBe(false)
+    expect((await loadMatureBoardingAttempt(f.status))?.txid).toBe(live.txid)
+  })
+
+  it('retains the journal when a later committed file replaces the snapshot during history', async () => {
+    const { f, live, file, key, evidence } = await signedCompleteFile()
+    const provider = chainProvider({
+      txStatus: async () => ({ confirmed: true, blockHeight: 12, blockTime: 1 }),
+      transactions: async () => {
+        const replaced = structuredClone(file)
+        replaced.archive.spending.capturedAt = new Date(Date.now() + 60_000).toISOString()
+        await recoveryFileStore(key, validateVaultRecoveryFile(replaced))
+        return [
+          {
+            txid: live.txid,
+            vout: [
+              {
+                scriptpubkey_address: live.evidence.destination,
+                value: String(matureBoardingOutputSats(live)),
+              },
+            ],
+            status: { confirmed: true, block_time: 1 },
+          },
+        ]
+      },
+    })
+    await expect(
+      acknowledgeMatureBoardingRecovery(f.status, {
+        coverage: evidence.coverage,
+        onchainProvider: provider,
+        locks: exclusiveVaultLocks(),
+      }),
+    ).resolves.toBe(false)
+    expect((await loadMatureBoardingAttempt(f.status))?.txid).toBe(live.txid)
   })
 })

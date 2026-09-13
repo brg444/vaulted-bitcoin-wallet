@@ -3,7 +3,7 @@ import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { ledgerRecoveryFixture } from './testdata/ledger'
 import { recoveryFileStore } from './fileStore'
-import { readCommittedRecoveryCoverage } from './committedCoverage'
+import { readCommittedRecoveryCoverage, readCommittedRecoveryEvidence } from './committedCoverage'
 
 beforeEach(() => vi.stubGlobal('indexedDB', new IDBFactory()))
 afterEach(() => {
@@ -19,6 +19,9 @@ it('only returns evidence for a committed, validated file belonging to the compl
   const evidence = await readCommittedRecoveryCoverage(f.status)
   expect(evidence).toMatchObject({ vaultId: f.status.vaultId, network: f.status.network, descriptorHash: key })
   expect(evidence?.fileDigest).toMatch(/^[0-9a-f]{64}$/)
+  const snapshot = await readCommittedRecoveryEvidence(f.status)
+  expect(snapshot?.coverage).toEqual(evidence)
+  expect(snapshot?.matureBoardingJournal).toBeNull()
   const other = await ledgerRecoveryFixture(true)
   await recoveryFileStore(key, other.file)
   await expect(readCommittedRecoveryCoverage(f.status)).rejects.toThrow('another account')

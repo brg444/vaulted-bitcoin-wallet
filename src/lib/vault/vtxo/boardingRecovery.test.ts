@@ -18,8 +18,13 @@ import {
   BOARDING_SCHEMA,
   BOARDING_TEMPLATE,
 } from './board'
-import { findMatureBoardingInputs, recoverMatureBoardingInputs } from './boardingRecovery'
+import {
+  acknowledgeMatureBoardingRecovery,
+  findMatureBoardingInputs,
+  recoverMatureBoardingInputs,
+} from './boardingRecovery'
 import { validateMatureBoardingRecoveryFile } from './boardingRecoveryFile'
+import { matureBoardingOutputSats, type MatureBoardingAttempt } from './matureBoardingJournal'
 import type { VaultLockManager } from './lock'
 import {
   chainProvider,
@@ -615,5 +620,155 @@ describe('durable mature boarding recovery', () => {
     expect(provider.broadcast).not.toHaveBeenCalled()
     expect(store.get()).toBeNull()
     expect(phoneSecret.every((value) => value === 0)).toBe(true)
+  })
+})
+
+describe('acknowledgment session fences', () => {
+  async function prepared() {
+    const { enrollment, mature, phoneSecret, status } = fixture()
+    const signed = await signLiveMatureBoarding({ enrollment, status, inputs: [mature], phoneSecret })
+    const attempt = { ...signed.store.get()!, phase: 'confirmed' as const }
+    signed.store.set(attempt)
+    const coverage = {
+      vaultId: attempt.vaultId,
+      network: attempt.network,
+      descriptorHash: attempt.descriptorHash,
+      fileDigest: 'aa'.repeat(32),
+      outputs: [] as const,
+    }
+    return { status, attempt, store: signed.store, coverage }
+  }
+
+  function snapshot(attempt: MatureBoardingAttempt, coverage: Awaited<ReturnType<typeof prepared>>['coverage']) {
+    return { coverage, matureBoardingJournal: attempt }
+  }
+
+  it.each(['current', 'signal', 'owner'] as const)('fences delayed history: %s', async (mode) => {
+    const { status, attempt, store, coverage } = await prepared()
+    const abort = new AbortController()
+    let current = true
+    const retire = vi.fn(async () => null)
+    const provider = chainProvider({
+      txStatus: async () => ({ confirmed: true, blockHeight: 12, blockTime: 1 }),
+      transactions: async () => {
+        if (mode === 'signal') abort.abort(new DOMException('Session ended', 'AbortError'))
+        if (mode === 'owner') current = false
+        return [
+          {
+            txid: attempt.txid,
+            vout: [
+              { scriptpubkey_address: attempt.evidence.destination, value: String(matureBoardingOutputSats(attempt)) },
+            ],
+            status: { confirmed: true, block_time: 1 },
+          },
+        ]
+      },
+    })
+    const outcome = await acknowledgeMatureBoardingRecovery(status, {
+      coverage,
+      onchainProvider: provider,
+      locks: exclusiveVaultLocks(),
+      signal: abort.signal,
+      check: () => {
+        if (!current) throw new DOMException('Owner replaced', 'AbortError')
+      },
+      loadAttempt: store.loadAttempt,
+      persistAttempt: store.persistAttempt,
+      retireAttempt: retire,
+      readEvidence: async () => snapshot(attempt, coverage),
+    }).catch((error) => (error instanceof DOMException && error.name === 'AbortError' ? false : Promise.reject(error)))
+    expect(retire).toHaveBeenCalledTimes(mode === 'current' ? 1 : 0)
+    expect(outcome).toBe(mode === 'current')
+    expect(store.get()?.phase).toBe('confirmed')
+  })
+
+  it.each(['chain', 'file', 'journal'] as const)('fences delayed %s observation before retirement', async (hook) => {
+    const { status, attempt, store, coverage } = await prepared()
+    const abort = new AbortController()
+    const retire = vi.fn(async () => null)
+    let loads = 0
+    const provider = chainProvider({
+      txStatus: async () => {
+        if (hook === 'chain') abort.abort(new DOMException('Session ended', 'AbortError'))
+        return { confirmed: true, blockHeight: 12, blockTime: 1 }
+      },
+      transactions: async () => [
+        {
+          txid: attempt.txid,
+          vout: [
+            { scriptpubkey_address: attempt.evidence.destination, value: String(matureBoardingOutputSats(attempt)) },
+          ],
+          status: { confirmed: true, block_time: 1 },
+        },
+      ],
+    })
+    const outcome = await acknowledgeMatureBoardingRecovery(status, {
+      coverage,
+      onchainProvider: provider,
+      locks: exclusiveVaultLocks(),
+      signal: abort.signal,
+      loadAttempt: async () => {
+        loads += 1
+        if (hook === 'journal' && loads > 1) abort.abort(new DOMException('Session ended', 'AbortError'))
+        return store.loadAttempt()
+      },
+      persistAttempt: store.persistAttempt,
+      retireAttempt: retire,
+      readEvidence: async () => {
+        if (hook === 'file') abort.abort(new DOMException('Session ended', 'AbortError'))
+        return snapshot(attempt, coverage)
+      },
+    }).catch((error) => (error instanceof DOMException && error.name === 'AbortError' ? false : Promise.reject(error)))
+    expect(retire).not.toHaveBeenCalled()
+    expect(outcome).toBe(false)
+    expect(store.get()?.phase).toBe('confirmed')
+  })
+
+  it('drains an admitted confirmed write and then fences retirement', async () => {
+    const { enrollment, mature, phoneSecret, status } = fixture()
+    const signed = await signLiveMatureBoarding({ enrollment, status, inputs: [mature], phoneSecret })
+    const pending = { ...signed.store.get()!, phase: 'dispatched' as const, conflictTxid: undefined }
+    signed.store.set(pending)
+    const abort = new AbortController()
+    const retire = vi.fn(async () => null)
+    const coverage = {
+      vaultId: pending.vaultId,
+      network: pending.network,
+      descriptorHash: pending.descriptorHash,
+      fileDigest: 'aa'.repeat(32),
+      outputs: [] as const,
+    }
+    await expect(
+      acknowledgeMatureBoardingRecovery(status, {
+        coverage,
+        onchainProvider: chainProvider({
+          txStatus: async () => ({ confirmed: true, blockHeight: 12, blockTime: 1 }),
+          transactions: async () => [
+            {
+              txid: pending.txid,
+              vout: [
+                {
+                  scriptpubkey_address: pending.evidence.destination,
+                  value: String(matureBoardingOutputSats(pending)),
+                },
+              ],
+              status: { confirmed: true, block_time: 1 },
+            },
+          ],
+        }),
+        locks: exclusiveVaultLocks(),
+        signal: abort.signal,
+        loadAttempt: signed.store.loadAttempt,
+        persistAttempt: async (nextStatus, next) => {
+          const saved = await signed.store.persistAttempt(nextStatus, next)
+          if (next.phase === 'confirmed') abort.abort(new DOMException('Session ended', 'AbortError'))
+          return saved
+        },
+        retireAttempt: retire,
+        readEvidence: async () => snapshot(pending, coverage),
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(signed.store.get()?.phase).toBe('confirmed')
+    expect(retire).not.toHaveBeenCalled()
   })
 })

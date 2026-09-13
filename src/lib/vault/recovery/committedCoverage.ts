@@ -17,8 +17,13 @@ export interface CommittedRecoveryCoverage {
   outputs: readonly RecoveryOutput[]
 }
 
-/** Read back a complete, committed file. Callers cannot acknowledge an unsaved capture. */
-export async function readCommittedRecoveryCoverage(status: VaultStatus): Promise<CommittedRecoveryCoverage | null> {
+export interface CommittedRecoveryEvidence {
+  coverage: CommittedRecoveryCoverage
+  matureBoardingJournal: MatureBoardingAttempt | null
+}
+
+/** One committed file snapshot: account identity, archive, coverage digest and optional boarding journal. */
+export async function readCommittedRecoveryEvidence(status: VaultStatus): Promise<CommittedRecoveryEvidence | null> {
   const kit = kitFromFacts({ status })
   if (!kit) throw new Error('Committed recovery descriptor is unavailable')
   const expected = recoveryBinding(kit, status)
@@ -32,27 +37,20 @@ export async function readCommittedRecoveryCoverage(status: VaultStatus): Promis
     throw new Error('Committed recovery coverage belongs to another account')
   const { coins } = validateExitArchive(file.archive.spending, vaultRecoveryBinding(kit, status))
   return {
-    vaultId: status.vaultId,
-    network: status.network,
-    descriptorHash: expected.descriptorHash,
-    fileDigest: hex.encode(sha256(new TextEncoder().encode(JSON.stringify(file)))),
-    outputs: coins.map(({ txid, vout, value, script }) => ({ txid, vout, value, script })),
+    coverage: {
+      vaultId: status.vaultId,
+      network: status.network,
+      descriptorHash: expected.descriptorHash,
+      fileDigest: hex.encode(sha256(new TextEncoder().encode(JSON.stringify(file)))),
+      outputs: coins.map(({ txid, vout, value, script }) => ({ txid, vout, value, script })),
+    },
+    matureBoardingJournal: file.matureBoardingJournal
+      ? validateMatureBoardingAttempt(status, file.matureBoardingJournal)
+      : null,
   }
 }
 
-/** Independent recovery evidence is the committed file's signed journal, not caller-supplied strings. */
-export async function readCommittedMatureBoardingJournal(status: VaultStatus): Promise<MatureBoardingAttempt | null> {
-  const kit = kitFromFacts({ status })
-  if (!kit) throw new Error('Committed recovery descriptor is unavailable')
-  const expected = recoveryBinding(kit, status)
-  const saved = await recoveryFileStore<VaultRecoveryFile>(expected.descriptorHash)
-  if (!saved) return null
-  const file = validateVaultRecoveryFile(saved)
-  if (
-    JSON.stringify(file.header.binding) !== JSON.stringify(expected) ||
-    JSON.stringify(file.header.status) !== JSON.stringify(recoveryStatusFacts(status))
-  )
-    throw new Error('Committed recovery coverage belongs to another account')
-  if (!file.matureBoardingJournal) return null
-  return validateMatureBoardingAttempt(status, file.matureBoardingJournal)
+/** Read back a complete, committed file. Callers cannot acknowledge an unsaved capture. */
+export async function readCommittedRecoveryCoverage(status: VaultStatus): Promise<CommittedRecoveryCoverage | null> {
+  return (await readCommittedRecoveryEvidence(status))?.coverage ?? null
 }

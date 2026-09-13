@@ -146,7 +146,14 @@ function createRecoveryCommands(session: SessionSource) {
       if (current()) await account.spendingPayments?.acknowledgeSettledRecovery(coverage)
     }
     if (context !== generation) throw new RecoveryError('Wallet session changed during recovery backup')
-    if (current()) await acknowledgeMatureBoardingRecovery(status, { coverage, signal })
+    if (current())
+      await acknowledgeMatureBoardingRecovery(status, {
+        coverage,
+        signal,
+        check: () => {
+          if (!current()) throw new DOMException('Recovery session ended', 'AbortError')
+        },
+      })
     if (context !== generation) throw new RecoveryError('Wallet session changed during recovery backup')
     await recordRecoveryFileCopy('local', file)
     return { status, file, context, epoch, activity, current }

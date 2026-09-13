@@ -164,7 +164,7 @@ describe('session-owned recovery commands', () => {
     expect(mocks.acknowledge).toHaveBeenCalledWith(coverage)
     expect(mocks.acknowledgeBoarding).toHaveBeenCalledWith(
       status,
-      expect.objectContaining({ coverage, signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ coverage, signal: expect.any(AbortSignal), check: expect.any(Function) }),
     )
     expect(mocks.record).toHaveBeenCalledWith('local', file)
     expect(phone.every((byte) => byte === 0)).toBe(true)
@@ -372,6 +372,53 @@ describe('session-owned recovery commands', () => {
     expect(seen?.aborted).toBe(true)
     finish('66'.repeat(32))
     await expect(operation).rejects.toThrow()
+    release()
+  })
+
+  it('preserves boarding acknowledgment work when activity advances during a pending history read', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finish!: () => void
+    let retired = false
+    mocks.acknowledgeBoarding.mockImplementation(async (_status, opts: { check?: () => void }) => {
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      opts.check?.()
+      retired = true
+      return true
+    })
+    const operation = commands.downloadRecoveryArchive()
+    await vi.waitFor(() => expect(mocks.acknowledgeBoarding).toHaveBeenCalled())
+    observed!.options.requested()
+    finish()
+    await expect(operation).rejects.toThrow()
+    expect(retired).toBe(false)
+    expect(mocks.record).not.toHaveBeenCalledWith('local', file)
+    release()
+  })
+
+  it('preserves boarding acknowledgment work when the session is torn down during a pending history read', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finish!: () => void
+    let retired = false
+    mocks.acknowledgeBoarding.mockImplementation(async (_status, opts: { check?: () => void }) => {
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      opts.check?.()
+      retired = true
+      return true
+    })
+    const operation = commands.downloadRecoveryArchive()
+    await vi.waitFor(() => expect(mocks.acknowledgeBoarding).toHaveBeenCalled())
+    session.set({ locked: true })
+    finish()
+    await expect(operation).rejects.toThrow()
+    expect(retired).toBe(false)
     release()
   })
 

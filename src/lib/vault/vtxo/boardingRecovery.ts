@@ -34,9 +34,9 @@ import {
   type MatureBoardingAttempt,
 } from './matureBoardingJournal'
 import {
-  readCommittedMatureBoardingJournal,
-  readCommittedRecoveryCoverage,
+  readCommittedRecoveryEvidence,
   type CommittedRecoveryCoverage,
+  type CommittedRecoveryEvidence,
 } from '../recovery/committedCoverage'
 
 type RecoveryDependencies = {
@@ -50,8 +50,7 @@ type RecoveryDependencies = {
   loadAttempt?: (status: VaultStatus) => Promise<MatureBoardingAttempt | null>
   persistAttempt?: (status: VaultStatus, record: MatureBoardingAttempt) => Promise<MatureBoardingAttempt>
   retireAttempt?: typeof retireMatureBoardingAttempt
-  readCommittedJournal?: (status: VaultStatus) => Promise<MatureBoardingAttempt | null>
-  readCoverage?: (status: VaultStatus) => Promise<CommittedRecoveryCoverage | null>
+  readEvidence?: (status: VaultStatus) => Promise<CommittedRecoveryEvidence | null>
 }
 
 function exactProgram(status: VaultStatus) {
@@ -331,6 +330,15 @@ function destinationReceive(
   return null
 }
 
+function sameCoverage(left: CommittedRecoveryCoverage, right: CommittedRecoveryCoverage) {
+  return (
+    left.vaultId === right.vaultId &&
+    left.network === right.network &&
+    left.descriptorHash === right.descriptorHash &&
+    left.fileDigest === right.fileDigest
+  )
+}
+
 /** Retires a confirmed sweep only from committed file evidence and chain observations. */
 export async function acknowledgeMatureBoardingRecovery(
   status: VaultStatus,
@@ -340,8 +348,7 @@ export async function acknowledgeMatureBoardingRecovery(
   const load = options.loadAttempt || loadMatureBoardingAttempt
   const persist = options.persistAttempt || persistMatureBoardingAttempt
   const retire = options.retireAttempt || retireMatureBoardingAttempt
-  const readJournal = options.readCommittedJournal || readCommittedMatureBoardingJournal
-  const readCoverage = options.readCoverage || readCommittedRecoveryCoverage
+  const readEvidence = options.readEvidence || readCommittedRecoveryEvidence
   return locks.request(`arkade-vault-boarding-recovery:${status.vaultId}`, { mode: 'exclusive' }, async (lock) => {
     if (!lock) throw new Error('Web Locks API returned no exclusive boarding recovery lock')
     fence(options)
@@ -356,22 +363,20 @@ export async function acknowledgeMatureBoardingRecovery(
     } catch {
       return false
     }
+    fence(options)
     if (!confirmation) return false
     let current = live
     if (current.phase !== 'confirmed') current = await persistPhase(status, persist, current, 'confirmed')
     fence(options)
-    const committed = await readJournal(status)
-    const coverage = await readCoverage(status)
+    const snapshot = await readEvidence(status)
+    fence(options)
+    const committed = snapshot?.matureBoardingJournal
     if (
+      !snapshot ||
       !committed ||
       committed.txid !== current.txid ||
       committed.hex !== current.hex ||
-      !coverage ||
-      (options.coverage &&
-        (options.coverage.vaultId !== coverage.vaultId ||
-          options.coverage.network !== coverage.network ||
-          options.coverage.descriptorHash !== coverage.descriptorHash ||
-          options.coverage.fileDigest !== coverage.fileDigest))
+      (options.coverage && !sameCoverage(options.coverage, snapshot.coverage))
     )
       return false
     let history
@@ -380,9 +385,16 @@ export async function acknowledgeMatureBoardingRecovery(
     } catch {
       return false
     }
+    fence(options)
     if (!history) return false
     const still = await load(status)
+    fence(options)
     if (!still || still.txid !== current.txid || still.hex !== current.hex) return false
+    const latest = await readEvidence(status)
+    fence(options)
+    if (!latest || !sameCoverage(latest.coverage, snapshot.coverage) || !latest.matureBoardingJournal) return false
+    if (latest.matureBoardingJournal.txid !== committed.txid || latest.matureBoardingJournal.hex !== committed.hex)
+      return false
     const evidence = {
       confirmation,
       history,

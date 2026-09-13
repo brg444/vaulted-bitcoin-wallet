@@ -200,7 +200,7 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
     JSON.stringify(file).length > MAX_RECOVERY_PLAIN_BYTES
   )
     throw new Error('Invalid recovery file')
-  const { header } = validateRecoveryDataBinding(file.header, file.archive)
+  const { archive } = validateRecoveryDataBinding(file.header, file.archive)
   if ('connectorJournal' in file) throw new Error('Retired recovery journal')
   if (
     file.spendingJournal !== undefined ||
@@ -209,7 +209,7 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
     file.ledgerRecoveryJournal !== undefined ||
     file.matureBoardingJournal !== undefined
   )
-    validateRecoveryJournals(header.status, file as VaultRecoveryFile & RecoveryJournals)
+    validateRecoveryJournals(archive.status, file as VaultRecoveryFile & RecoveryJournals)
   return file
 }
 
