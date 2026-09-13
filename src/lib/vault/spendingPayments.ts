@@ -615,6 +615,24 @@ function createSpendingPayments(session: SessionSource) {
         },
       )
     },
+    /** Best-effort retirement of every service-finalized operation when the
+     * caller has committed recovery evidence. A cancelled or replaced session
+     * performs no mutation; a concurrent command keeps the existing journal. */
+    async acknowledgeSettledRecovery(coverage: CommittedRecoveryCoverage): Promise<void> {
+      if (flight || !identity || identity !== sessionIdentity()) return
+      let status: ReturnType<typeof access>['status'] | undefined
+      try {
+        status = access().status
+      } catch {
+        return
+      }
+      if (!status || coverage.vaultId !== status.vaultId || coverage.network !== status.network) return
+      const covered = status
+      await run('acknowledge', `acknowledge-settled:${coverage.fileDigest}`, async (check, signal) => {
+        check()
+        await acknowledgeSettledVtxoSpends(covered, coverage, signal)
+      }).catch(() => undefined)
+    },
     retryRefund(rfqId: string): Promise<void> {
       return run('refund', 'refund:' + rfqId, async (check, signal) => {
         const { status, enrollment } = access()

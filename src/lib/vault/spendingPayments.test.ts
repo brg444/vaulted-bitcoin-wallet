@@ -439,3 +439,50 @@ it('opens a retired operation as finished after owner acknowledgment', async () 
   await expect(payments.openPending(quote.operationId)).rejects.toThrow('already finished')
   expect(api.acknowledge).toHaveBeenCalledTimes(1)
 })
+
+it('retires settled operations with committed recovery evidence', async () => {
+  const { payments } = open()
+  const coverage = {
+    vaultId: status.vaultId,
+    network: status.network,
+    descriptorHash: 'aa'.repeat(32),
+    fileDigest: 'bb'.repeat(32),
+    outputs: [],
+  }
+  api.settle.mockResolvedValueOnce(2)
+  await payments.acknowledgeSettledRecovery(coverage)
+  expect(api.settle).toHaveBeenCalledTimes(1)
+  expect(api.settle.mock.calls[0][0]).toMatchObject({ vaultId: status.vaultId })
+  expect(api.settle.mock.calls[0][1]).toMatchObject({ fileDigest: coverage.fileDigest })
+})
+
+it('does not acknowledge settled operations from a replaced session', async () => {
+  const { payments, update } = open()
+  update({
+    account: {
+      savings: 'absent',
+      status: { ...status, vaultId: 'other-vault' },
+      enrollment,
+    } as unknown as AdmittedAccount,
+  })
+  await payments.acknowledgeSettledRecovery({
+    vaultId: status.vaultId,
+    network: status.network,
+    descriptorHash: 'aa'.repeat(32),
+    fileDigest: 'bb'.repeat(32),
+    outputs: [],
+  })
+  expect(api.settle).not.toHaveBeenCalled()
+})
+
+it('ignores committed evidence for another network', async () => {
+  const { payments } = open()
+  await payments.acknowledgeSettledRecovery({
+    vaultId: status.vaultId,
+    network: 'mainnet',
+    descriptorHash: 'aa'.repeat(32),
+    fileDigest: 'bb'.repeat(32),
+    outputs: [],
+  })
+  expect(api.settle).not.toHaveBeenCalled()
+})

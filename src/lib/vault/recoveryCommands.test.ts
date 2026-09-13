@@ -7,6 +7,7 @@ import type { VaultSessionSnapshot } from './session'
 const mocks = vi.hoisted(() => ({
   capture: vi.fn(),
   acknowledge: vi.fn(),
+  spendingAcknowledge: vi.fn(),
   open: vi.fn(),
   sync: vi.fn(),
   header: vi.fn(),
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 const account = {
   maintenance: { observe: mocks.observe },
   bitcoinPayments: { acknowledgeRecovery: mocks.acknowledge },
+  spendingPayments: { acknowledgeSettledRecovery: mocks.spendingAcknowledge },
   balances: { refreshBalance: mocks.refreshBalance },
 }
 
@@ -116,6 +118,7 @@ beforeEach(() => {
   observed = undefined
   mocks.capture.mockResolvedValue(captured)
   mocks.acknowledge.mockResolvedValue(undefined)
+  mocks.spendingAcknowledge.mockResolvedValue(undefined)
   mocks.record.mockResolvedValue(undefined)
   mocks.sync.mockResolvedValue(file)
   mocks.open.mockResolvedValue({
@@ -156,6 +159,51 @@ describe('session-owned recovery commands', () => {
     expect(mocks.acknowledge).toHaveBeenCalledWith(coverage)
     expect(mocks.record).toHaveBeenCalledWith('local', file)
     expect(phone.every((byte) => byte === 0)).toBe(true)
+    release()
+  })
+
+  it('acknowledges committed Spending evidence after capture through the account owner', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    await commands.downloadRecoveryArchive()
+    expect(mocks.acknowledge).toHaveBeenCalledWith(coverage)
+    expect(mocks.spendingAcknowledge).toHaveBeenCalledWith(coverage)
+    expect(mocks.acknowledge.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.spendingAcknowledge.mock.invocationCallOrder[0],
+    )
+    release()
+  })
+
+  it('skips Spending acknowledgment when activity arrives during a delayed capture', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finishCapture!: (value: unknown) => void
+    mocks.capture.mockImplementationOnce(() => new Promise((resolve) => (finishCapture = resolve)))
+    const operation = commands.downloadRecoveryArchive()
+    await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledTimes(1))
+    observed!.options.requested()
+    finishCapture(captured)
+    await operation
+    expect(mocks.spendingAcknowledge).not.toHaveBeenCalled()
+    release()
+  })
+
+  it('skips Spending acknowledgment when the session is replaced during capture', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finishCapture!: (value: unknown) => void
+    mocks.capture.mockImplementationOnce(() => new Promise((resolve) => (finishCapture = resolve)))
+    const operation = commands.downloadRecoveryArchive().catch(() => undefined)
+    await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledTimes(1))
+    session.set({
+      account: { savings: 'absent', status, enrollment: { vaultId: 'test', credId: 'replacement' } } as AdmittedAccount,
+    })
+    finishCapture(captured)
+    await operation
+    expect(mocks.spendingAcknowledge).not.toHaveBeenCalled()
     release()
   })
 

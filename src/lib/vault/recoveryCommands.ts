@@ -140,7 +140,11 @@ function createRecoveryCommands(session: SessionSource) {
     const current = () =>
       !signal?.aborted && context === generation && epoch === sessionIdentity() && activity === activityEpoch
     if (context !== generation) throw new RecoveryError('Wallet session changed during recovery backup')
-    if (current()) await vaultAccountRuntime(status).bitcoinPayments?.acknowledgeRecovery(coverage)
+    if (current()) {
+      const account = vaultAccountRuntime(status)
+      await account.bitcoinPayments?.acknowledgeRecovery(coverage)
+      if (current()) await account.spendingPayments?.acknowledgeSettledRecovery(coverage)
+    }
     if (context !== generation) throw new RecoveryError('Wallet session changed during recovery backup')
     await recordRecoveryFileCopy('local', file)
     return { status, file, context, epoch, activity, current }
