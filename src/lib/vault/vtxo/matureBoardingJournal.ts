@@ -2,6 +2,7 @@ import { recoveryFileStore } from '../recovery/fileStore'
 import type { VaultStatus } from '../types'
 import { requireBoardingStatus } from './board'
 import { validateMatureBoardingRecoveryFile, type MatureBoardingRecoveryFile } from './boardingRecoveryFile'
+import { browserVaultLockManager, requireVaultLockManager, type VaultLockManager } from './lock'
 
 /** signed: exact bytes stored, not dispatched. dispatched: broadcast requested. uncertain: lost
  * response or missing indexer. conflict: another transaction spent an input. confirmed: our
@@ -207,10 +208,17 @@ export function canRetireMatureBoardingAttempt(
   )
 }
 
-export async function retireMatureBoardingAttempt(status: VaultStatus, evidence: MatureBoardingRetirementEvidence) {
-  if (!navigator.locks) throw new Error('Web Locks required to preserve mature boarding recovery')
+/** Retire a confirmed attempt under the injected lock manager, defaulting
+ * to the browser Web Locks. The exclusive storage-key lock is always held;
+ * callers that inject a test manager cover retirement without navigator. */
+export async function retireMatureBoardingAttempt(
+  status: VaultStatus,
+  evidence: MatureBoardingRetirementEvidence,
+  locks?: VaultLockManager | null,
+) {
+  const manager = requireVaultLockManager(locks === undefined ? browserVaultLockManager() : locks)
   const key = storageKey(status)
-  return navigator.locks.request(key, async () => {
+  return manager.request(key, { mode: 'exclusive' }, async () => {
     const current = await loadMatureBoardingAttempt(status)
     if (!current) return null
     if (!canRetireMatureBoardingAttempt(current, evidence))

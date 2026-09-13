@@ -408,7 +408,7 @@ export async function acknowledgeMatureBoardingRecovery(
     }
     if (still.phase !== 'confirmed' || !canRetireMatureBoardingAttempt(still, evidence)) return false
     try {
-      await retire(status, evidence)
+      await retire(status, evidence, locks)
     } catch {
       return false
     }

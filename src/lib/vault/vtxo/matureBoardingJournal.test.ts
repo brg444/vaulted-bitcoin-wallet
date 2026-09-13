@@ -36,8 +36,9 @@ beforeEach(() => {
   const pending = new Map<string, Promise<unknown>>()
   vi.stubGlobal('navigator', {
     locks: {
-      request: (key: string, run: () => Promise<unknown>) => {
-        const next = (pending.get(key) ?? Promise.resolve()).then(run)
+      request: (key: string, optionsOrRun: unknown, run?: (lock: unknown) => Promise<unknown>) => {
+        const runFn = typeof optionsOrRun === 'function' ? (optionsOrRun as (lock: unknown) => Promise<unknown>) : run!
+        const next = (pending.get(key) ?? Promise.resolve()).then(() => runFn({}))
         pending.set(
           key,
           next.catch(() => undefined),
@@ -180,6 +181,50 @@ describe('mature boarding attempt journal', () => {
     expect(await retireMatureBoardingAttempt(status, valid)).toMatchObject({ phase: 'retired', txid: confirmed.txid })
     expect(await loadMatureBoardingAttempt(status)).toBeNull()
     expect(await loadMatureBoardingRecord(status)).toMatchObject({ phase: 'retired', txid: confirmed.txid })
+  })
+
+  it('retires through the injected lock manager without touching navigator.locks', async () => {
+    const { status, record } = await signedAttempt()
+    const confirmed = { ...record, phase: 'confirmed' as const }
+    const amountSats = matureBoardingOutputSats(confirmed)
+    const valid = {
+      confirmation: { txid: confirmed.txid, confirmed: true as const, blockHeight: 12 },
+      history: { txid: confirmed.txid, kind: 'received' as const, amountSats },
+      recovery: {
+        vaultId: confirmed.vaultId,
+        network: confirmed.network,
+        descriptorHash: confirmed.descriptorHash,
+        attemptTxid: confirmed.txid,
+        attemptHex: confirmed.hex,
+      },
+    }
+    await persistMatureBoardingAttempt(status, record)
+    await persistMatureBoardingAttempt(status, { ...record, phase: 'dispatched' })
+    await persistMatureBoardingAttempt(status, { ...record, phase: 'confirmed' })
+    const inner = exclusiveVaultLocks()
+    const requests: { name: string; options: unknown }[] = []
+    const recording = {
+      request: async <T>(
+        name: string,
+        options: { mode: 'exclusive' },
+        run: (lock: unknown) => Promise<T>,
+      ): Promise<T> => {
+        requests.push({ name, options })
+        return inner.request(name, options, run)
+      },
+    }
+    vi.stubGlobal('navigator', {})
+    expect(await retireMatureBoardingAttempt(status, valid, recording)).toMatchObject({
+      phase: 'retired',
+      txid: confirmed.txid,
+    })
+    expect(requests).toEqual([
+      {
+        name: matureBoardingAttemptKey(status.vaultId, record.evidence.network, record.evidence.descriptor.script),
+        options: { mode: 'exclusive' },
+      },
+    ])
+    expect(await loadMatureBoardingAttempt(status)).toBeNull()
   })
 
   it('restores matching evidence and rejects a conflicting live record', async () => {
