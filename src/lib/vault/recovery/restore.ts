@@ -17,6 +17,7 @@ import { isLedgerRecoveryKit } from '../program/kit'
 import { canonicalLedgerValue } from '../program/ledgerEnrollment'
 import { restoreLedgerSavingsPaymentJournal } from '../ledgerSavingsWallet'
 import { restoreLedgerRecoveryJournal } from '../ledgerRecoveryWallet'
+import { restoreMatureBoardingAttempt } from '../vtxo/matureBoardingJournal'
 import { deriveLedgerPhoneAccount } from '../ledgerPhoneBackup'
 import { provisionBoardingKey } from '../vtxo/board'
 import { storeRecoveryImport } from './fileStore'
@@ -102,6 +103,7 @@ async function restoreLocked(
       if (file.ledgerSavingsJournal) await restoreLedgerSavingsPaymentJournal(contract, file.ledgerSavingsJournal)
       if (file.ledgerRecoveryJournal) await restoreLedgerRecoveryJournal(contract, file.ledgerRecoveryJournal)
     }
+    if (file.matureBoardingJournal) await restoreMatureBoardingAttempt(status, file.matureBoardingJournal)
     await storeVaultRecoveryArchive(file.archive)
     await storeRecoveryImport(file.header.binding.descriptorHash, file)
     saveLocalKit(file.header.kit)

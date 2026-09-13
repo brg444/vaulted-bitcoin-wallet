@@ -389,9 +389,9 @@ function createRecoveryCommands(session: SessionSource) {
       })
     },
     recoverMatureBoarding(): Promise<string> {
-      return run('boarding', 'mature-boarding', async (check) => {
+      return run('boarding', 'mature-boarding', async (check, signal) => {
         const { status, enrollment } = unlocked()
-        const txid = await recoverMatureBoardingInputs(enrollment, status)
+        const txid = await recoverMatureBoardingInputs(enrollment, status, { check, signal })
         check()
         await Promise.resolve(vaultAccountRuntime(status).balances?.refreshBalance(status.vaultId)).catch(
           () => undefined,

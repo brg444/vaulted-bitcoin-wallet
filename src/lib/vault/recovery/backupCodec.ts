@@ -206,7 +206,8 @@ export function validateVaultRecoveryFile(file: VaultRecoveryFile) {
     file.spendingJournal !== undefined ||
     file.lightningJournal !== undefined ||
     file.ledgerSavingsJournal !== undefined ||
-    file.ledgerRecoveryJournal !== undefined
+    file.ledgerRecoveryJournal !== undefined ||
+    file.matureBoardingJournal !== undefined
   )
     validateRecoveryJournals(header.status, file as VaultRecoveryFile & RecoveryJournals)
   return file

@@ -52,7 +52,10 @@ import {
   prepareBoardingRecoveryFile,
   validateBoardingRecoveryFile,
   executeBoardingRecoveryFile,
+  validateMatureBoardingRecoveryFile,
+  executeMatureBoardingRecoveryFile,
   type BoardingRecoveryFile,
+  type MatureBoardingRecoveryFile,
 } from '../../src/lib/vault/vtxo/boardingRecoveryFile'
 import {
   prepareLightningRecovery,
@@ -85,7 +88,12 @@ type Source = {
   full?: VaultRecoveryFile | ReadableRecoverySource
   ledgerKit?: LedgerRecoveryKit | SpendingRecoveryKit
 }
-type Prepared = SavingsRecoveryFile | SpendingRecoveryPackage | BoardingRecoveryFile | LightningRecoveryPackage
+type Prepared =
+  | SavingsRecoveryFile
+  | SpendingRecoveryPackage
+  | BoardingRecoveryFile
+  | MatureBoardingRecoveryFile
+  | LightningRecoveryPackage
 type Draft = {
   name: 'vaulted-recovery-signing'
   version: 1
@@ -208,6 +216,11 @@ function review() {
   const options: { value: string; label: string }[] = []
   if (source.full) options.push({ value: 'spending', label: 'Spending — unilateral Bitcoin exit' })
   if (source.full) options.push({ value: 'boarding', label: 'Boarding — phone recovery after its delay' })
+  if (source.full?.name === 'vaulted-recovery' && source.full.matureBoardingJournal)
+    options.push({
+      value: 'mature-boarding',
+      label: 'Boarding — saved signed mature recovery',
+    })
   if (k && !isSpendingRecoveryKit(k)) {
     options.push({ value: 'savings-admin', label: 'Savings — phone and hardware' })
     if (k.descriptor.schema === LEDGER_RECOVERY_SCHEMA)
@@ -269,11 +282,15 @@ function programChanged() {
     program === 'spending'
       ? `Required: ${source.full?.header.kit.protectionTier === 'light' ? 'the wallet key unlocked by your original passkey' : source.full?.header.kit.protectionTier === 'advanced' ? 'hardware and recovery keys' : 'the wallet key unlocked by your original passkey, and your hardware key'}. Saved transaction paths, Bitcoin fees and the committed waiting periods apply. No new Guardian or Operator approval is required.`
       : 'Use the keys and waiting conditions in this saved account. Review the signing request before approving.'
-  el('fee-label').hidden = program === 'spending' || program === 'boarding' || program.startsWith('lightning:')
-  el('coin-label').hidden = program === 'spending' || program.startsWith('lightning:')
-  el('scan').hidden = program === 'spending' || program.startsWith('lightning:')
-  el<HTMLInputElement>('destination').disabled = program === 'boarding'
-  if (program === 'boarding')
+  el('fee-label').hidden =
+    program === 'spending' ||
+    program === 'boarding' ||
+    program === 'mature-boarding' ||
+    program.startsWith('lightning:')
+  el('coin-label').hidden = program === 'spending' || program === 'mature-boarding' || program.startsWith('lightning:')
+  el('scan').hidden = program === 'spending' || program === 'mature-boarding' || program.startsWith('lightning:')
+  el<HTMLInputElement>('destination').disabled = program === 'boarding' || program === 'mature-boarding'
+  if (program === 'boarding' || program === 'mature-boarding')
     el<HTMLInputElement>('destination').value = p2tr(
       hex.decode(keys().find((k) => k.role === 'phone')!.publicKey).slice(1),
       undefined,
@@ -633,6 +650,10 @@ async function prepare() {
     } finally {
       key.fill(0)
     }
+  } else if (d.program === 'mature-boarding') {
+    const journal = source.full?.name === 'vaulted-recovery' ? source.full.matureBoardingJournal : undefined
+    if (!journal) throw new Error('Saved mature boarding recovery is missing')
+    prepared = validateMatureBoardingRecoveryFile(journal.evidence) && journal.evidence
   } else if (d.program.startsWith('lightning:')) {
     const journal = source.full?.name === 'vaulted-recovery' ? source.full.lightningJournal : undefined
     const entry = journal?.entries.find((e) => e.record.rfqId === d.program.slice(10))
@@ -695,6 +716,9 @@ function paintPrepared() {
   } else if (p.name === 'vaulted-boarding-recovery') {
     const view = validateBoardingRecoveryFile(p)
     details = `Bitcoin destination: ${view.destination}\nNetwork fee: ${view.fee} sats\nRequired delay: ${view.descriptor.exitDelay} seconds`
+  } else if (p.name === 'vaulted-mature-boarding-recovery') {
+    const view = validateMatureBoardingRecoveryFile(p)
+    details = `Bitcoin destination: ${view.destination}\nNetwork fee: ${view.fee} sats\nInputs: ${view.inputs.length}\nTransaction: ${view.txid}`
   } else details = 'The saved transaction paths are validated and ready to resume.'
   el('details').textContent = details
   const needsFeeWallet = p.name === 'vaulted-spending-recovery' || p.name === 'vaulted-lightning-refund'
@@ -860,6 +884,10 @@ function validatePrepared() {
       validateBoardingRecoveryFile(prepared)
       if (prepared.archive.kit.descriptorHash !== kit().descriptorHash) throw new Error('Prepared wallet changed')
       break
+    case 'vaulted-mature-boarding-recovery':
+      validateMatureBoardingRecoveryFile(prepared)
+      if (prepared.vaultId !== kit().descriptor.vaultId) throw new Error('Prepared wallet changed')
+      break
     case 'vaulted-savings-recovery':
       validateSavingsRecovery(prepared)
       if (prepared.kit.descriptorHash !== kit().descriptorHash) throw new Error('Prepared wallet changed')
@@ -912,6 +940,12 @@ el('execute').onclick = () =>
     try {
       if (file.name === 'vaulted-savings-recovery') {
         el('status').textContent = JSON.stringify(await executeSavingsRecovery(file, chain))
+        return
+      }
+      if (file.name === 'vaulted-mature-boarding-recovery') {
+        const txid = await executeMatureBoardingRecoveryFile(file, bitcoin, controller.signal)
+        el('events').textContent += JSON.stringify({ status: 'broadcast', txid }) + '\n'
+        el('status').textContent = 'Recovery execution finished. Check the transaction confirmations above.'
         return
       }
       const role = value('fee-key'),

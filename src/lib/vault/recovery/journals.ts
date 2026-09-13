@@ -29,12 +29,18 @@ import {
   validateLightningRecoveryJournal,
   type LightningRecoveryJournal,
 } from './lightningArchive'
+import {
+  loadMatureBoardingAttempt,
+  validateMatureBoardingAttempt,
+  type MatureBoardingAttempt,
+} from '../vtxo/matureBoardingJournal'
 
 export interface RecoveryJournals {
   spendingJournal: SpendingRecoveryJournal
   lightningJournal: LightningRecoveryJournal
   ledgerSavingsJournal?: LedgerSavingsPaymentJournal
   ledgerRecoveryJournal?: LedgerRecoveryJournal
+  matureBoardingJournal?: MatureBoardingAttempt
 }
 export function recoveryLightningBinding(status: VaultStatus) {
   const kit = kitFromFacts({ status })
@@ -57,6 +63,7 @@ export function validateRecoveryJournals(status: VaultStatus, data: RecoveryJour
     if (data.ledgerRecoveryJournal !== undefined) validateLedgerRecoveryJournal(contract, data.ledgerRecoveryJournal)
   } else if (data.ledgerSavingsJournal !== undefined || data.ledgerRecoveryJournal !== undefined)
     throw new Error('Ledger journal on another program')
+  if (data.matureBoardingJournal !== undefined) validateMatureBoardingAttempt(status, data.matureBoardingJournal)
   return data
 }
 export async function captureRecoveryJournals(
@@ -76,6 +83,7 @@ export async function captureRecoveryJournals(
       previous: previous?.lightningJournal,
     })
     const contract = status.ledgerSavings ? ledgerEnrollmentFromStatus(status).savings : undefined
+    const matureBoardingJournal = await loadMatureBoardingAttempt(status)
     return validateRecoveryJournals(status, {
       spendingJournal,
       lightningJournal,
@@ -85,6 +93,7 @@ export async function captureRecoveryJournals(
             ledgerRecoveryJournal: exportLedgerRecoveryJournal(contract),
           }
         : {}),
+      ...(matureBoardingJournal ? { matureBoardingJournal } : {}),
     })
   } finally {
     await Promise.allSettled([

@@ -36,6 +36,27 @@ export interface BoardingRecoveryFile {
   psbt: string
 }
 
+/** Independent signed multi-input sweep. The live wallet journal wraps this evidence. */
+export interface MatureBoardingRecoveryInput {
+  txid: string
+  vout: number
+  value: number
+  script: string
+}
+
+export interface MatureBoardingRecoveryFile {
+  name: 'vaulted-mature-boarding-recovery'
+  version: 1
+  vaultId: string
+  network: BoardingDescriptor['network']
+  descriptor: BoardingDescriptor
+  inputs: MatureBoardingRecoveryInput[]
+  destination: string
+  feerateCapSatVb: number
+  absoluteFeeCapSats: number
+  psbt: string
+}
+
 function facts(archive: BoardingRecoverySource) {
   let descriptor: BoardingDescriptor
   let kit: RecoveryKit
@@ -266,4 +287,144 @@ export function executeBoardingRecoveryFile(
     ],
   }
   return new UnilateralExit.Executor(pkg, onchain, { signal })
+}
+
+const MATURE_DUST = 330n
+const MATURE_MAX_INPUTS = 64
+const MATURE_MAX_BYTES = 12_000_000
+
+function requireMatureInputs(inputs: unknown, script: string): MatureBoardingRecoveryInput[] {
+  if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > MATURE_MAX_INPUTS)
+    throw new Error('Invalid mature boarding inputs')
+  const seen = new Set<string>()
+  const result: MatureBoardingRecoveryInput[] = []
+  for (const input of inputs) {
+    if (
+      !input ||
+      typeof input !== 'object' ||
+      !/^[0-9a-f]{64}$/.test((input as MatureBoardingRecoveryInput).txid) ||
+      !Number.isSafeInteger((input as MatureBoardingRecoveryInput).vout) ||
+      (input as MatureBoardingRecoveryInput).vout < 0 ||
+      (input as MatureBoardingRecoveryInput).vout > 0xffffffff ||
+      !Number.isSafeInteger((input as MatureBoardingRecoveryInput).value) ||
+      (input as MatureBoardingRecoveryInput).value <= 0 ||
+      (input as MatureBoardingRecoveryInput).value > 2_100_000_000_000_000 ||
+      (input as MatureBoardingRecoveryInput).script !== script
+    )
+      throw new Error('Invalid mature boarding input')
+    const coin = input as MatureBoardingRecoveryInput
+    const outpoint = `${coin.txid}:${coin.vout}`
+    if (seen.has(outpoint)) throw new Error('Duplicate mature boarding input')
+    seen.add(outpoint)
+    result.push({ txid: coin.txid, vout: coin.vout, value: coin.value, script: coin.script })
+  }
+  return result
+}
+
+export function matureBoardingInputSetKey(inputs: readonly { txid: string; vout: number }[]) {
+  return inputs
+    .map((input) => `${input.txid}:${input.vout}`)
+    .sort()
+    .join(',')
+}
+
+export function validateMatureBoardingRecoveryFile(file: MatureBoardingRecoveryFile) {
+  if (
+    !file ||
+    file.name !== 'vaulted-mature-boarding-recovery' ||
+    file.version !== 1 ||
+    typeof file.vaultId !== 'string' ||
+    !file.vaultId ||
+    file.vaultId.length > 128 ||
+    typeof file.psbt !== 'string' ||
+    file.psbt.length > 10_000_000 ||
+    JSON.stringify(file).length > MATURE_MAX_BYTES ||
+    !Number.isFinite(file.feerateCapSatVb) ||
+    file.feerateCapSatVb <= 0 ||
+    !Number.isSafeInteger(file.absoluteFeeCapSats) ||
+    file.absoluteFeeCapSats <= 0
+  )
+    throw new Error('Invalid mature boarding recovery file')
+  const descriptor = requireBoardingDescriptor(file.descriptor, {
+    vaultId: file.vaultId,
+    phonePub: file.descriptor.recoveryPhonePub,
+    boardingPub: file.descriptor.boardingPub,
+    network: file.network,
+  })
+  if (descriptor.network !== file.network) throw new Error('Mature boarding recovery network changed')
+  const program = {
+    name: BOARDING_PROGRAM,
+    boardingPubKey: hex.decode(descriptor.boardingPub).slice(1),
+    cosignerPubKey: hex.decode(descriptor.vaultBoardCosignerPub).slice(1),
+    recoveryPubKey: hex.decode(descriptor.recoveryPhonePub).slice(1),
+  }
+  const network = getNetwork(networkPins(descriptor.network).sdkNetwork)
+  const operatorPubKey = hex.decode(descriptor.operatorPub).slice(1)
+  const boardingTimelock = { type: 'seconds' as const, value: BigInt(descriptor.exitDelay) }
+  const script = createBoardingProgramScript(program, operatorPubKey, boardingTimelock)
+  const destination = p2tr(program.recoveryPubKey, undefined, network).address!
+  if (!destination || file.destination !== destination) throw new Error('Mature boarding recovery destination changed')
+  const inputs = requireMatureInputs(file.inputs, descriptor.script)
+  const tx = Transaction.fromPSBT(hex.decode(file.psbt))
+  if (tx.inputsLength !== inputs.length || tx.outputsLength !== 1)
+    throw new Error('Mature boarding recovery inputs changed')
+  const output = tx.getOutput(0)
+  const total = inputs.reduce((sum, input) => sum + input.value, 0)
+  const fee = total - Number(output.amount)
+  if (!Number.isSafeInteger(fee) || fee < 0 || fee > file.absoluteFeeCapSats || output.amount! < MATURE_DUST)
+    throw new Error('Mature boarding recovery fee is outside the vault limits')
+  const expected = new Transaction()
+  for (let index = 0; index < inputs.length; index++) {
+    const coin = inputs[index]
+    const input = tx.getInput(index)
+    if (hex.encode(input.txid!) !== coin.txid || input.index !== coin.vout)
+      throw new Error('Mature boarding recovery input set changed')
+    expected.addInput({
+      txid: coin.txid,
+      index: coin.vout,
+      witnessUtxo: { amount: BigInt(coin.value), script: script.pkScript },
+      tapLeafScript: [script.exit()],
+      sequence: timelockToSequence(boardingTimelock),
+    })
+  }
+  expected.addOutputAddress(destination, output.amount!, network)
+  for (let index = 0; index < inputs.length; index++)
+    expected.updateInput(index, { tapScriptSig: tx.getInput(index).tapScriptSig })
+  if (hex.encode(tx.toPSBT()) !== hex.encode(expected.toPSBT()))
+    throw new Error('Mature boarding recovery destination or metadata changed')
+  for (let index = 0; index < inputs.length; index++)
+    requireExactDefaultTapscriptSignatures(tx, index, [descriptor.recoveryPhonePub.slice(2)])
+  tx.finalize()
+  if (fee > Math.ceil(tx.vsize * file.feerateCapSatVb))
+    throw new Error('Mature boarding recovery fee rate exceeds the vault cap')
+  return {
+    descriptor,
+    destination,
+    inputs,
+    tx,
+    fee,
+    txid: tx.id,
+    hex: hex.encode(tx.extract()),
+    network,
+  }
+}
+
+/** Broadcasts the exact saved transaction. Missing indexer status is not proof of consumption. */
+export async function executeMatureBoardingRecoveryFile(
+  file: MatureBoardingRecoveryFile,
+  onchain: OnchainProvider,
+  signal?: AbortSignal,
+) {
+  const view = validateMatureBoardingRecoveryFile(file)
+  signal?.throwIfAborted()
+  try {
+    const status = await onchain.getTxStatus(view.txid)
+    if (status.confirmed) return view.txid
+  } catch {
+    // Absence from an indexer cannot prove the sweep was consumed or replaced.
+  }
+  signal?.throwIfAborted()
+  const txid = await onchain.broadcastTransaction(view.hex)
+  if (txid !== view.txid) throw new Error('Mature boarding recovery identity changed')
+  return txid
 }

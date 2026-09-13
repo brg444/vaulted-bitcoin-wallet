@@ -8,8 +8,11 @@ import {
   prepareBoardingRecoveryFile,
   validateBoardingRecoveryFile,
   executeBoardingRecoveryFile,
+  validateMatureBoardingRecoveryFile,
+  executeMatureBoardingRecoveryFile,
   type BoardingRecoverySource,
 } from './boardingRecoveryFile'
+import { matureBoardingFixture, matureCoin, scalar, signLiveMatureBoarding } from './testdata/matureBoarding'
 
 describe('standalone named boarding recovery', () => {
   it.each([
@@ -145,5 +148,43 @@ describe('standalone named boarding recovery', () => {
     } finally {
       networkRequest.mockRestore()
     }
+  })
+
+  it('validates and exact-byte executes a signed multi-input mature recovery', async () => {
+    const { enrollment, mature, status } = matureBoardingFixture()
+    const { store } = await signLiveMatureBoarding({
+      enrollment,
+      status,
+      inputs: [mature, matureCoin(mature, '22'.repeat(32))],
+      phoneSecret: scalar(2),
+    })
+    const file = store.get()!.evidence
+    expect(file.name).toBe('vaulted-mature-boarding-recovery')
+    const view = validateMatureBoardingRecoveryFile(JSON.parse(JSON.stringify(file)))
+    expect(view.inputs).toHaveLength(2)
+    const broadcast = vi.fn(async (raw: string) => Transaction.fromRaw(hex.decode(raw)).id)
+    const chain: OnchainProvider = {
+      getFeeRate: async () => 1,
+      getCoins: async () => [],
+      getTxStatus: async () => {
+        throw new Error('404')
+      },
+      getChainTip: async () => ({ height: 10000, time: 2_000_000_000, hash: 'ab'.repeat(32) }),
+      getTxOutspends: async () => [{ spent: false }],
+      getTransactions: async () => [],
+      watchAddresses: async () => () => {},
+      broadcastTransaction: broadcast,
+    }
+    await expect(executeMatureBoardingRecoveryFile(file, chain)).resolves.toBe(view.txid)
+    expect(broadcast).toHaveBeenCalledWith(view.hex)
+    chain.getTxStatus = async () => ({ confirmed: true, blockHeight: 1, blockTime: 1 })
+    await expect(executeMatureBoardingRecoveryFile(file, chain)).resolves.toBe(view.txid)
+    expect(broadcast).toHaveBeenCalledTimes(1)
+    const mutated = structuredClone(file)
+    mutated.inputs[0].value++
+    expect(() => validateMatureBoardingRecoveryFile(mutated)).toThrow()
+    mutated.inputs[0].value--
+    mutated.destination = 'bcrt1qinvalid'
+    expect(() => validateMatureBoardingRecoveryFile(mutated)).toThrow()
   })
 })

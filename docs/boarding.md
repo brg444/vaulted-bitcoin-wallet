@@ -104,11 +104,35 @@ wakes the official SDK lifecycle and resumes from persisted intent state.
 
 After the 604672-second recovery delay matures, the Backups screen may
 offer an explicit recovery action for current, confirmed, unspent
-`vault-board-v1` outputs. Face ID unlocks the enrolled phone key for that action
-only. The wallet calls the SDK's `recoverBoardingProgram` helper, which verifies
-the exact named tree, maturity, phone-controlled Taproot destination, fee-rate
-cap, and absolute fee cap before signing and broadcasting. The phone scalar is
-cleared when the helper returns or fails.
+`vault-board-v1` outputs. The recovery command owner coalesces that action and
+checks session freshness. Face ID unlocks the enrolled phone key for a new
+attempt only; cancellation is passed through unlock, and a key returned after
+cancellation is wiped without signing. The wallet calls the SDK's
+`recoverBoardingProgram` helper, which verifies the exact named tree, maturity,
+phone-controlled Taproot destination, fee-rate cap, and absolute fee cap. The
+supplied `OnchainProvider` persists the exact signed transaction and its locally
+derived transaction ID before dispatch. The phone scalar is cleared when the
+helper returns or fails.
+
+A saved attempt is bound to the admitted vault, network, boarding descriptor,
+immutable input set, destination and fee authority. Restore and retry validate
+those facts and the saved bytes. The live path may sweep several mature inputs
+in one transaction. Independent recovery keeps the existing
+`vaulted-boarding-recovery` v1 single-input file and adds
+`vaulted-mature-boarding-recovery` v1 for the signed multi-input evidence. The
+live journal wraps that evidence as `vaulted-mature-boarding-attempt` v1 and is
+copied into the complete recovery file when present.
+
+Phases are `signed`, `dispatched`, `uncertain`, `conflict` and `confirmed`. A
+lost broadcast response or missing indexer read stays uncertain and retries the
+same bytes. Absence from an indexer or archive cannot prove consumption or
+authorize a replacement attempt. Positive outspend evidence of a different
+transaction is a conflict. The journal retires only after the exact transaction
+is confirmed, matching history or receipt facts exist, and the committed
+recovery file contains the same signed evidence.
 
 This path is not automatic and does not construct a parallel Vault transaction
 lifecycle. It does not recover an immature, foreign, or already-spent output.
+The existing per-vault boarding recovery lock remains the cross-tab financial
+lock. A failed durable write prevents dispatch and leaves the previous valid
+record and complete recovery archive in place.

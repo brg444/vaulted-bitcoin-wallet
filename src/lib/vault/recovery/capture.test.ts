@@ -66,6 +66,16 @@ describe('complete recovery snapshot replacement', () => {
     await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous backup')
     expect(await recoveryFileStore(f.key)).toEqual(f.previous)
   })
+  it('retains the previous complete file when capture fails after a mature boarding journal is present', async () => {
+    const f = await fixture()
+    mocks.journals.mockImplementation(async () => {
+      f.read.mockResolvedValue([f.coin, { ...f.coin, txid: 'ee'.repeat(32) }])
+      return {}
+    })
+    await expect(captureVaultRecoveryFile(f.status, f.enrollment)).rejects.toThrow('previous backup')
+    expect(await recoveryFileStore(f.key)).toEqual(f.previous)
+    expect(f.previous).not.toHaveProperty('matureBoardingJournal')
+  })
   it('retains the previous file when an equal-balance renewal arrives during journal capture', async () => {
     const f = await fixture()
     mocks.journals.mockImplementation(async () => {

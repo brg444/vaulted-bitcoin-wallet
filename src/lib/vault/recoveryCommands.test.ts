@@ -332,9 +332,35 @@ describe('session-owned recovery commands', () => {
     const second = commands.recoverMatureBoarding()
     expect(first).toBe(second)
     expect(mocks.boarding).toHaveBeenCalledTimes(1)
+    expect(mocks.boarding).toHaveBeenCalledWith(
+      enrollment,
+      status,
+      expect.objectContaining({ signal: expect.any(AbortSignal), check: expect.any(Function) }),
+    )
     finish('66'.repeat(32))
     await expect(first).resolves.toBe('66'.repeat(32))
     await vi.waitFor(() => expect(mocks.refreshBalance).toHaveBeenCalledWith('test'))
+    release()
+  })
+
+  it('passes cancellation into an in-flight mature boarding unlock', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let seen: AbortSignal | undefined
+    let finish!: (value: string) => void
+    mocks.boarding.mockImplementation((_enrollment, _status, deps: { signal?: AbortSignal }) => {
+      seen = deps.signal
+      return new Promise<string>((resolve) => {
+        finish = resolve
+      })
+    })
+    const operation = commands.recoverMatureBoarding()
+    await vi.waitFor(() => expect(seen).toBeInstanceOf(AbortSignal))
+    session.set({ locked: true })
+    expect(seen?.aborted).toBe(true)
+    finish('66'.repeat(32))
+    await expect(operation).rejects.toThrow()
     release()
   })
 
