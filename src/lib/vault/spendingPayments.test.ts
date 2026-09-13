@@ -643,7 +643,7 @@ it('settles funded Lightning terminals before review without failing on evidence
     await payments.review(draft)
     expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
     expect(api.snapshot).toHaveBeenCalled()
-    api.coverage.mockResolvedValueOnce(null)
+    api.coverage.mockResolvedValue(null)
     const lagging = await fundedLightningRecord('settled')
     const pending = memoryLightningRepo([lagging.record])
     api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
