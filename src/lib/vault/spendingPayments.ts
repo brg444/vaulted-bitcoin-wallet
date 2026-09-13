@@ -300,17 +300,17 @@ function createSpendingPayments(session: SessionSource) {
       return run('review', JSON.stringify(['review', payment, replace]), async (check, signal) => {
         const { status, enrollment, setup } = access()
         // Retire service-finalized operations whose recovery evidence has
-        // caught up, so a settled payment stops blocking review. Evidence
-        // lag keeps the journal; the pending action below still applies.
-        try {
-          await acknowledgeSettledVtxoSpends(status, undefined, signal)
-        } catch (error) {
-          if (signal.aborted) signal.throwIfAborted()
-          consoleError(error, 'Spending settled acknowledgment')
+        // caught up, so a settled payment stops blocking review. Evidence lag
+        // keeps the journal; the live-pending check below still applies. The
+        // sweep runs after the passkey gesture so WebAuthn starts in the click.
+        const retireSettled = async () => {
+          try {
+            await acknowledgeSettledVtxoSpends(status, undefined, signal)
+          } catch (error) {
+            if (signal.aborted) signal.throwIfAborted()
+            consoleError(error, 'Spending settled acknowledgment')
+          }
         }
-        check()
-        const operations = listPersistedVtxoSpends(status.vaultId)
-        const pending = loadPersistedVtxoSpend(status.vaultId)
         let funding: VaultVtxoSpendQuote
         let lightning: VaultLightningQuote | null = null
         if (isVaultLightningInput(payment.address)) {
@@ -321,28 +321,31 @@ function createSpendingPayments(session: SessionSource) {
             const pinned = vaultLightningSolverProfile(status.network)
             if (!pinned) throw new ReviewError('No Lightning solver is configured for this network.')
             const invoice = decodeVaultLightningInvoice(payment.address, pinned.network)
-            if (operations.some(vtxoSpendIsLivePending))
-              throw new ReviewError(
-                'A payment is still pending. Open Pending payment to resume it before starting another.',
-              )
             if (invoice.amountSats > setup.txCapSats)
               throw new ReviewError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
             if (invoice.amountSats > available()) throw new ReviewError('Not enough confirmed spending funds.')
-            const resumeVtxo =
-              pending?.bundleDigest && pending.destAddress && Number.isSafeInteger(pending.amountSats)
-                ? {
-                    operationId: pending.operationId,
-                    bundleDigest: pending.bundleDigest,
-                    address: pending.destAddress,
-                    amountSats: pending.amountSats,
-                    fundingFeeSats: pending.feeSats,
-                  }
-                : undefined
             // Start WebAuthn in the click gesture, before solver discovery or dynamic imports.
             phase = 'passkey approval'
             const phoneSecret = await unlockPhoneBip340(enrollment, status, signal)
             try {
               check()
+              await retireSettled()
+              check()
+              if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending))
+                throw new ReviewError(
+                  'A payment is still pending. Open Pending payment to resume it before starting another.',
+                )
+              const current = loadPersistedVtxoSpend(status.vaultId)
+              const resumeVtxo =
+                current?.bundleDigest && current.destAddress && Number.isSafeInteger(current.amountSats)
+                  ? {
+                      operationId: current.operationId,
+                      bundleDigest: current.bundleDigest,
+                      address: current.destAddress,
+                      amountSats: current.amountSats,
+                      fundingFeeSats: current.feeSats,
+                    }
+                  : undefined
               phase = 'solver verification'
               const profile = await discoverVaultLightningSolver(status.network)
               check()
@@ -399,6 +402,10 @@ function createSpendingPayments(session: SessionSource) {
           if (!isVaultArkAddress(payment.address, status.network)) throw new ReviewError('Enter an Arkade address.')
           if (!Number.isSafeInteger(payment.amount) || payment.amount < DUST_SATS)
             throw new ReviewError(`At least ₿${DUST_SATS}.`)
+          await retireSettled()
+          check()
+          const operations = listPersistedVtxoSpends(status.vaultId)
+          const pending = loadPersistedVtxoSpend(status.vaultId)
           const resuming = !!pending && isSameVtxoPayment(pending, payment.address, payment.amount)
           if (!resuming && operations.some(vtxoSpendIsLivePending))
             throw new ReviewError(

@@ -261,8 +261,8 @@ export function useVaultSendBinding(input: {
         if (spendingPayments.payments.getSnapshot().review !== reviewed) return
         setSpend(reviewed.payment)
         setScreen('review')
-      } catch (error) {
-        throw error
+      } catch {
+        // The owner keeps operation errors bound to the current session.
       }
     },
     [spendingPayments.payments, spend, setScreen],
