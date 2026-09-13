@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { base64 } from '@scure/base'
+import { base64, hex } from '@scure/base'
 import {
   InMemoryContractRepository,
   InMemoryVirtualTxRepository,
@@ -16,13 +16,16 @@ import {
   restoreLightningRecoveryJournal,
   lightningArchiveProviders,
 } from './lightningArchive'
+import { recordRefundAttemptProgress, type VaultLightningRefundAttempt } from '../lightningEvidence'
 
 beforeEach(() => {
   vi.stubGlobal('navigator', { locks: { request: vi.fn(async (_name, _options, run) => run({})) } })
+  localStorage.clear()
 })
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  localStorage.clear()
 })
 
 async function stores(f = lightningRecoveryFixture()) {
@@ -303,5 +306,49 @@ describe('outbound Lightning recovery journal', () => {
     )
     expect(await swaps.getAllRfqSwaps()).toEqual([])
     expect(await contracts.getContracts()).toEqual([])
+  })
+
+  it('captures refund attempts through the shared merge and rejects conflicting identity regardless of timestamps', async () => {
+    const f = lightningRecoveryFixture()
+    const storage = await stores(f)
+    await chainFixture(f)
+    const script = VHTLCV2ContractHandler.createScript(f.contract.params)
+    const attempt = (stage: VaultLightningRefundAttempt['stage'], updatedAt: number): VaultLightningRefundAttempt => ({
+      rfqId: f.record.rfqId,
+      lockupAddress: f.record.lockupAddress,
+      lockupPkScriptHex: f.contract.script,
+      amountSats: 2125,
+      destination: 'ark1spending',
+      vaultId: f.binding.vaultId,
+      network: f.binding.network === 'mainnet' ? 'bitcoin' : 'mutinynet',
+      senderPub: hex.encode(script.options.sender),
+      serverPub: hex.encode(script.options.server),
+      fundedInputs: [{ txid: 'ee'.repeat(32), vout: 0, value: 2125 }],
+      stage,
+      updatedAt,
+    })
+    const previous = structuredClone(f.journal)
+    previous.entries[0].refundAttempt = attempt('dispatched', 10)
+    const captured = await captureLightningRecoveryJournal({
+      binding: f.binding,
+      ...storage,
+      previous,
+    })
+    expect(captured.entries[0].refundAttempt).toMatchObject({ stage: 'dispatched', updatedAt: 10 })
+
+    recordRefundAttemptProgress({ ...attempt('dispatched', 500) }, 'dispatched')
+    const laterClock = await captureLightningRecoveryJournal({
+      binding: f.binding,
+      ...storage,
+      previous,
+    })
+    expect(laterClock.entries[0].refundAttempt?.stage).toBe('dispatched')
+    expect(laterClock.entries[0].refundAttempt?.updatedAt).toBeGreaterThanOrEqual(500)
+
+    localStorage.clear()
+    recordRefundAttemptProgress({ ...attempt('dispatched', 40), destination: 'ark1other' }, 'dispatched')
+    await expect(captureLightningRecoveryJournal({ binding: f.binding, ...storage, previous })).rejects.toThrow(
+      /inputs changed|Conflicting/,
+    )
   })
 })

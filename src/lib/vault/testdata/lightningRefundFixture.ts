@@ -33,6 +33,27 @@ export interface LightningRefundFinalization {
   checkpointPsbts: string[]
 }
 
+export interface LightningRefundPackageFacts {
+  rfqId: string
+  lockupAddress: string
+  lockupPkScriptHex: string
+  amountSats: number
+  destination: string
+  vaultId: string
+  network: string
+  senderPub: string
+  serverPub: string
+}
+
+export interface LightningRefundOperatorArk {
+  getInfo: () => Promise<{ checkpointTapscript: string }>
+  submitTx: (
+    signedRefundPsbt: string,
+    checkpointPsbts: string[],
+  ) => Promise<{ arkTxid: string; finalArkTx?: string; signedCheckpointTxs: string[] }>
+  finalizeTx: (arkTxid: string, checkpointPsbts: string[]) => Promise<void>
+}
+
 export interface LightningRefundPackageFixture {
   originalLockupInputs: LightningRefundLockupInput[]
   swap: RfqSwap
@@ -130,53 +151,69 @@ async function recordingRefundOperator(server: Identity, serverPub: Uint8Array) 
 }
 
 /** Build a real two-input `arkadeRefunder` refund against in-memory transports. */
-export async function lightningRefundPackageFixture(): Promise<LightningRefundPackageFixture> {
+export async function lightningRefundPackageFixture(options?: {
+  wrapArk?: (ark: LightningRefundOperatorArk, facts: LightningRefundPackageFacts) => LightningRefundOperatorArk
+}): Promise<LightningRefundPackageFixture> {
   const harness = await lightningQuoteHarness({ rfqId: 'ab'.repeat(32) })
-  const quote = await harness.request()
-  const record = await harness.repository.getRfqSwap(quote.rfqId)
-  if (!record) throw new Error('Lightning refund fixture has no RFQ record.')
-  const params = await lockupContractParams(harness.contracts, record.lockupAddress)
-  const swap = rebuildRfqSwap(record, params)
-  if (!swap.lockup?.script) throw new Error('Rebuilt Lightning refund swap is missing its lockup script.')
+  try {
+    const quote = await harness.request()
+    const record = await harness.repository.getRfqSwap(quote.rfqId)
+    if (!record) throw new Error('Lightning refund fixture has no RFQ record.')
+    const params = await lockupContractParams(harness.contracts, record.lockupAddress)
+    const swap = rebuildRfqSwap(record, params)
+    if (!swap.lockup?.script) throw new Error('Rebuilt Lightning refund swap is missing its lockup script.')
 
-  const inputs = originalLockupInputs()
-  const scriptHex = hex.encode(swap.lockup.script.pkScript)
-  const server = operatorIdentity()
-  const serverPub = (await server.xOnlyPublicKey())!
-  const { ark, submissions, finalizations } = await recordingRefundOperator(server, serverPub)
-  const result = await arkadeRefunder({
-    ark: ark as never,
-    indexer: lockupIndexer(scriptHex, inputs) as never,
-    wallet: harness.wallet,
-    repository: harness.repository,
-  })(swap)
-  if (!result) throw new Error('Lightning refund fixture produced no package result.')
-  await harness.manager.stop()
+    const inputs = originalLockupInputs()
+    const scriptHex = hex.encode(swap.lockup.script.pkScript)
+    const server = operatorIdentity()
+    const serverPub = (await server.xOnlyPublicKey())!
+    const { ark, submissions, finalizations } = await recordingRefundOperator(server, serverPub)
+    const destinationAddress = await harness.wallet.getAddress()
+    const facts: LightningRefundPackageFacts = {
+      rfqId: swap.rfqId,
+      lockupAddress: record.lockupAddress,
+      lockupPkScriptHex: hex.encode(swap.lockup.script.pkScript),
+      amountSats: inputs.reduce((total, input) => total + input.value, 0),
+      destination: destinationAddress,
+      vaultId: 'vault-lightning',
+      network: 'bitcoin',
+      senderPub: hex.encode(swap.lockup.script.options.sender),
+      serverPub: hex.encode(serverPub),
+    }
+    const result = await arkadeRefunder({
+      ark: (options?.wrapArk ? options.wrapArk(ark, facts) : ark) as never,
+      indexer: lockupIndexer(scriptHex, inputs) as never,
+      wallet: harness.wallet,
+      repository: harness.repository,
+    })(swap)
+    if (!result) throw new Error('Lightning refund fixture produced no package result.')
 
-  const submitted = submissions[0]
-  if (!submitted) throw new Error('Lightning refund fixture captured no submit.')
-  const finalized = finalizations[0]
-  if (!finalized) throw new Error('Lightning refund fixture captured no finalize.')
+    const submitted = submissions[0]
+    if (!submitted) throw new Error('Lightning refund fixture captured no submit.')
+    const finalized = finalizations[0]
+    if (!finalized) throw new Error('Lightning refund fixture captured no finalize.')
 
-  const destinationAddress = await harness.wallet.getAddress()
-  return {
-    originalLockupInputs: inputs,
-    swap,
-    signedRefundPsbt: submitted.signedRefundPsbt,
-    serverRefundPsbt: submitted.serverRefundPsbt,
-    submittedCheckpointPsbts: submitted.checkpointPsbts,
-    serverCheckpointPsbts: submitted.serverCheckpointPsbts,
-    finalCheckpointPsbts: finalized.checkpointPsbts,
-    refundId: result.arkTxid,
-    resultAmount: result.amount,
-    quotedAmountSats: quote.fundAmountSats,
-    destinationAddress,
-    destinationPkScriptHex: hex.encode(swap.lockup.script.options.nonInteractiveRefund!.senderPkScript),
-    senderPub: hex.encode(swap.lockup.script.options.sender),
-    serverPub: hex.encode(serverPub),
-    submissions,
-    finalizations,
-    wallet: harness.wallet,
-    repository: harness.repository,
+    return {
+      originalLockupInputs: inputs,
+      swap,
+      signedRefundPsbt: submitted.signedRefundPsbt,
+      serverRefundPsbt: submitted.serverRefundPsbt,
+      submittedCheckpointPsbts: submitted.checkpointPsbts,
+      serverCheckpointPsbts: submitted.serverCheckpointPsbts,
+      finalCheckpointPsbts: finalized.checkpointPsbts,
+      refundId: result.arkTxid,
+      resultAmount: result.amount,
+      quotedAmountSats: quote.fundAmountSats,
+      destinationAddress,
+      destinationPkScriptHex: hex.encode(swap.lockup.script.options.nonInteractiveRefund!.senderPkScript),
+      senderPub: hex.encode(swap.lockup.script.options.sender),
+      serverPub: hex.encode(serverPub),
+      submissions,
+      finalizations,
+      wallet: harness.wallet,
+      repository: harness.repository,
+    }
+  } finally {
+    await harness.manager.stop()
   }
 }

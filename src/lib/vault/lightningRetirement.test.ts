@@ -721,6 +721,39 @@ describe('Lightning refund merge hardening', () => {
     localStorage.setItem(`vaulted-lightning-refund-attempt:${facts.rfqId}`, 'not-json')
     expect(seedRestoredRefundAttempt({ ...attempt, updatedAt: 13 })).toBe(true)
   })
+
+  it('rejects equal-timestamp conflicting bytes and keeps later-phase fields when they are omitted', () => {
+    const finalized: VaultLightningRefundAttempt = {
+      ...submitted,
+      stage: 'finalized',
+      serverCheckpointPsbts: ['cp-server'],
+      serverRefundPsbt: 'server-psbt',
+      finalCheckpointPsbts: ['cp-final'],
+      updatedAt: 40,
+    }
+    expect(seedRestoredRefundAttempt(finalized)).toBe(true)
+    expect(() =>
+      seedRestoredRefundAttempt({
+        ...submitted,
+        stage: 'submitted',
+        signedRefundPsbt: refundPsbtBytes('ff'.repeat(32)).psbt,
+        updatedAt: 40,
+      }),
+    ).toThrow('Conflicting')
+    expect(
+      mergeLightningRefundAttempts(readLightningRefundAttempt(facts.rfqId), {
+        ...submitted,
+        stage: 'submitted',
+        updatedAt: 40,
+      }),
+    ).toMatchObject({
+      stage: 'finalized',
+      signedRefundPsbt: signed.psbt,
+      serverRefundPsbt: 'server-psbt',
+      finalCheckpointPsbts: ['cp-final'],
+      updatedAt: 40,
+    })
+  })
 })
 
 describe('Lightning refund graph validation', () => {
@@ -920,14 +953,24 @@ describe('Lightning refund recording against real package bytes', () => {
     }
     const base = {
       getInfo: vi.fn(async () => ({}) as never),
-      submitTx: vi.fn(async () => ({
-        arkTxid: fixture.refundId,
-        finalArkTx: fixture.serverRefundPsbt,
-        signedCheckpointTxs: [...fixture.serverCheckpointPsbts],
-      })),
+      submitTx: vi.fn(
+        async (): Promise<{ arkTxid: string; finalArkTx?: string; signedCheckpointTxs: string[] }> => ({
+          arkTxid: fixture.refundId,
+          finalArkTx: fixture.serverRefundPsbt,
+          signedCheckpointTxs: [...fixture.serverCheckpointPsbts],
+        }),
+      ),
       finalizeTx: vi.fn(async () => undefined),
     }
-    return { fixture, facts, base, ark: recordingVaultLightningRefundArk(base, facts) }
+    return {
+      fixture,
+      facts,
+      base,
+      ark: recordingVaultLightningRefundArk(
+        base as unknown as Parameters<typeof recordingVaultLightningRefundArk>[0],
+        facts,
+      ),
+    }
   }
 
   it('records exact submission and finalization bytes before dispatch', async () => {
@@ -977,7 +1020,11 @@ describe('Lightning refund recording against real package bytes', () => {
     const controller = new AbortController()
     controller.abort()
     const { facts } = await recordingHarness()
-    const cancelled = recordingVaultLightningRefundArk(base, facts, controller.signal)
+    const cancelled = recordingVaultLightningRefundArk(
+      base as unknown as Parameters<typeof recordingVaultLightningRefundArk>[0],
+      facts,
+      controller.signal,
+    )
     await expect(cancelled.submitTx('signed-psbt', ['cp-a'])).rejects.toThrow()
     expect(base.submitTx).not.toHaveBeenCalled()
   })
@@ -1015,6 +1062,44 @@ describe('Lightning refund recording against real package bytes', () => {
       'invalid signer',
     )
     expect(base.finalizeTx).not.toHaveBeenCalled()
+  })
+
+  it('withholds package finalization for missing, sender-only, and forged successors', async () => {
+    const run = async (
+      mutate: (
+        submitted: { arkTxid: string; finalArkTx?: string; signedCheckpointTxs: string[] },
+        signedRefundPsbt: string,
+      ) => { arkTxid: string; finalArkTx?: string; signedCheckpointTxs: string[] },
+      expected: RegExp,
+    ) => {
+      localStorage.clear()
+      const finalizeTx = vi.fn(async () => undefined)
+      await expect(
+        lightningRefundPackageFixture({
+          wrapArk: (ark, facts) =>
+            recordingVaultLightningRefundArk(
+              {
+                getInfo: ark.getInfo,
+                submitTx: async (signedRefundPsbt: string, checkpoints: string[]) =>
+                  mutate(await ark.submitTx(signedRefundPsbt, checkpoints), signedRefundPsbt),
+                finalizeTx,
+              } as unknown as Parameters<typeof recordingVaultLightningRefundArk>[0],
+              facts,
+            ),
+        }),
+      ).rejects.toThrow(expected)
+      expect(finalizeTx).not.toHaveBeenCalled()
+    }
+
+    await run((submitted) => ({ ...submitted, finalArkTx: undefined }), /incomplete/)
+    await run((submitted, signedRefundPsbt) => ({ ...submitted, finalArkTx: signedRefundPsbt }), /invalid signer/)
+    await run(
+      (submitted) => ({
+        ...submitted,
+        finalArkTx: submitted.finalArkTx ? corruptFirstInputSignature(submitted.finalArkTx) : submitted.finalArkTx,
+      }),
+      /invalid signer/,
+    )
   })
 })
 
