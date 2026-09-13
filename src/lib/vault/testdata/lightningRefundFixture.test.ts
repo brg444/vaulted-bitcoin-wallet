@@ -26,6 +26,7 @@ describe('Lightning refund package fixture', () => {
   it('refunds two original lockup inputs through checkpoints with real signatures', async () => {
     const fixture = await lightningRefundPackageFixture()
     const refund = tx(fixture.signedRefundPsbt)
+    const serverRefund = tx(fixture.serverRefundPsbt)
     const submitted = fixture.submittedCheckpointPsbts.map(tx)
     const server = fixture.serverCheckpointPsbts.map(tx)
     const finals = fixture.finalCheckpointPsbts.map(tx)
@@ -39,6 +40,8 @@ describe('Lightning refund package fixture', () => {
     expect(fixture.resultAmount).toBeGreaterThan(fixture.quotedAmountSats)
     expect(fixture.refundId).toBe(refund.id)
     expect(refund.inputsLength).toBe(2)
+    expect(refund.outputsLength).toBe(2)
+    expect(refund.getOutput(1)).toMatchObject({ amount: 0n, script: hex.decode('51024e73') })
     expect(submitted).toHaveLength(2)
     expect(server).toHaveLength(2)
     expect(finals).toHaveLength(2)
@@ -47,6 +50,9 @@ describe('Lightning refund package fixture', () => {
 
     fixture.originalLockupInputs.forEach((lockup, index) => {
       const checkpoint = submitted[index]
+      expect(checkpoint.inputsLength).toBe(1)
+      expect(checkpoint.outputsLength).toBe(2)
+      expect(checkpoint.getOutput(1)).toMatchObject({ amount: 0n, script: hex.decode('51024e73') })
       const checkpointIn = outpoint(checkpoint.getInput(0))
       expect(checkpointIn).toEqual({ txid: lockup.txid, vout: lockup.vout })
       expect(Number(checkpoint.getInput(0).witnessUtxo?.amount)).toBe(lockup.value)
@@ -54,15 +60,17 @@ describe('Lightning refund package fixture', () => {
       const refundIn = outpoint(refund.getInput(index))
       expect(refundIn).toEqual({ txid: checkpoint.id, vout: 0 })
       expect(Number(refund.getInput(index).witnessUtxo?.amount)).toBe(lockup.value)
+      expect(refund.getInput(index).witnessUtxo?.script).toEqual(checkpoint.getOutput(0).script)
       expect(server[index].id).toBe(checkpoint.id)
       expect(finals[index].id).toBe(checkpoint.id)
       requireExactDefaultTapscriptSignatures(refund, index, [fixture.senderPub])
+      requireExactDefaultTapscriptSignatures(serverRefund, index, [fixture.senderPub, fixture.serverPub])
       requireExactDefaultTapscriptSignatures(server[index], 0, [fixture.serverPub])
       requireExactDefaultTapscriptSignatures(finals[index], 0, [fixture.senderPub, fixture.serverPub])
     })
 
     assertSubmittedArkTxid(
-      { arkTxid: fixture.refundId, finalArkTx: fixture.signedRefundPsbt },
+      { arkTxid: fixture.refundId, finalArkTx: fixture.serverRefundPsbt },
       refund,
       'lightningRefundFixture',
     )

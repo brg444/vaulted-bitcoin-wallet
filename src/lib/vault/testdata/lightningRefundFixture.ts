@@ -23,6 +23,7 @@ export interface LightningRefundLockupInput {
 
 export interface LightningRefundSubmission {
   signedRefundPsbt: string
+  serverRefundPsbt: string
   checkpointPsbts: string[]
   serverCheckpointPsbts: string[]
 }
@@ -36,6 +37,7 @@ export interface LightningRefundPackageFixture {
   originalLockupInputs: LightningRefundLockupInput[]
   swap: RfqSwap
   signedRefundPsbt: string
+  serverRefundPsbt: string
   submittedCheckpointPsbts: string[]
   serverCheckpointPsbts: string[]
   finalCheckpointPsbts: string[]
@@ -100,6 +102,8 @@ async function recordingRefundOperator(server: Identity, serverPub: Uint8Array) 
     ark: {
       getInfo: async () => ({ checkpointTapscript: tapscript }),
       submitTx: async (signedRefundPsbt: string, checkpointPsbts: string[]) => {
+        const serverRefund = await server.sign(Transaction.fromPSBT(base64.decode(signedRefundPsbt)))
+        const serverRefundPsbt = base64.encode(serverRefund.toPSBT())
         const serverCheckpointPsbts = await Promise.all(
           checkpointPsbts.map(async (psbt) => {
             const signed = await server.sign(Transaction.fromPSBT(base64.decode(psbt)), [0])
@@ -108,12 +112,13 @@ async function recordingRefundOperator(server: Identity, serverPub: Uint8Array) 
         )
         submissions.push({
           signedRefundPsbt,
+          serverRefundPsbt,
           checkpointPsbts: [...checkpointPsbts],
           serverCheckpointPsbts: [...serverCheckpointPsbts],
         })
         return {
           arkTxid: Transaction.fromPSBT(base64.decode(signedRefundPsbt)).id,
-          finalArkTx: signedRefundPsbt,
+          finalArkTx: serverRefundPsbt,
           signedCheckpointTxs: serverCheckpointPsbts,
         }
       },
@@ -158,6 +163,7 @@ export async function lightningRefundPackageFixture(): Promise<LightningRefundPa
     originalLockupInputs: inputs,
     swap,
     signedRefundPsbt: submitted.signedRefundPsbt,
+    serverRefundPsbt: submitted.serverRefundPsbt,
     submittedCheckpointPsbts: submitted.checkpointPsbts,
     serverCheckpointPsbts: submitted.serverCheckpointPsbts,
     finalCheckpointPsbts: finalized.checkpointPsbts,
