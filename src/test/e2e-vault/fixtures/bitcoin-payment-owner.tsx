@@ -2,6 +2,16 @@ import { createRoot } from 'react-dom/client'
 import { useState } from 'react'
 import { Address, TEST_NETWORK } from '@scure/btc-signer'
 import { hex } from '@scure/base'
+import {
+  ContractManager,
+  InMemoryContractRepository,
+  InMemoryWalletRepository,
+  RestIndexerProvider,
+} from '@arkade-os/sdk'
+import { vaultAccountRuntime } from '../../../lib/vault/accountRuntime'
+import { vaultOperatorOrigin } from '../../../lib/vault/networkPins'
+import { registerVaultPolicyV1ContractHandler, vaultPolicyV1Contract } from '../../../lib/vault/vtxo/contractHandler'
+import { vaultPolicyV1ScriptFromStatus } from '../../../lib/vault/vtxo/spend'
 import { ledgerRecoveryFixture, ledgerFixturePRF } from '../../../lib/vault/recovery/testdata/ledger'
 import { guardianRenewalContextDigest } from '../../../lib/vault/vtxo/renewalContext'
 import {
@@ -27,6 +37,23 @@ import '../../../screens/Vault/quiet-guardian-screens.css'
 
 let fixture: Awaited<ReturnType<typeof ledgerRecoveryFixture>>
 let passkeys = 0
+/** The UI fixture uses a real SDK manager; worker transport has its own browser suite. */
+export async function connectBitcoinAccount() {
+  registerVaultPolicyV1ContractHandler()
+  const contracts = await ContractManager.create({
+    indexerProvider: new RestIndexerProvider(vaultOperatorOrigin(fixture.status.network)),
+    walletRepository: new InMemoryWalletRepository(),
+    contractRepository: new InMemoryContractRepository(),
+  })
+  await contracts.createContract({
+    ...vaultPolicyV1Contract(vaultPolicyV1ScriptFromStatus(fixture.status), fixture.status.spendingArkAddress!),
+    // This fixture drives refresh explicitly after installing its intercepted indexer.
+    watch: 'retained',
+  })
+  const account = vaultAccountRuntime(fixture.status)
+  account.connection = { wallet: { getContractManager: async () => contracts } } as never
+  account.closeConnection = async () => contracts.dispose()
+}
 export function storedPayment() {
   return readSpendingBitcoin(fixture.status)
 }

@@ -16,10 +16,10 @@ import { base64, hex } from '@scure/base'
 import {
   Wallet,
   Batch,
+  createSettlementSession,
   SettlementEventType,
   RestArkProvider,
   EsploraProvider,
-  RestIndexerProvider,
   SingleKey,
   InMemoryContractRepository,
   InMemoryWalletRepository,
@@ -112,6 +112,34 @@ async function bitcoinFixture(count = 1, light = false, network: 'mainnet' | 'mu
   ).info
   return { ...source, spending, coin, phoneSecret, plan, prepared, journal, operatorInfo }
 }
+function bitcoinInput(f: Awaited<ReturnType<typeof bitcoinFixture>>) {
+  return {
+    ...f.coin,
+    txid: f.plan.txid,
+    value: f.plan.valueSats,
+    script: hex.encode(f.spending.pkScript),
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 86400000),
+    isSpent: false,
+    virtualStatus: { state: 'settled' as const },
+    commitmentTxIds: ['cc'.repeat(32)],
+  }
+}
+
+function mockBitcoinAccount(
+  f: Pick<Awaited<ReturnType<typeof bitcoinFixture>>, 'status' | 'spending'>,
+  vtxos: ExtendedVirtualCoin[] = [],
+) {
+  const contract = { ...vaultPolicyV1Contract(f.spending, f.status.spendingArkAddress!), state: 'active', createdAt: 0 }
+  const contracts = {
+    refreshVtxos: vi.fn(async () => {}),
+    getContractsWithVtxos: vi.fn(async () => [{ ...contract, vtxos }]),
+    getContracts: vi.fn(async () => [contract]),
+  }
+  vi.spyOn(walletWorker, 'withVaultWalletState').mockImplementation(async (_status, run) => run({ contracts } as never))
+  return contracts
+}
+
 beforeEach(() => {
   vi.stubGlobal('indexedDB', new IDBFactory())
   localStorage.clear()
@@ -281,6 +309,12 @@ describe('Bitcoin payment binding and lifecycle', () => {
     try {
       const manager = await wallet.getContractManager()
       await manager.createContract(vaultPolicyV1Contract(f.spending, f.status.spendingArkAddress!))
+      const settlement = await createSettlementSession({
+        identity: SingleKey.fromPrivateKey(f.phoneSecret),
+        contracts: manager,
+        arkProvider: provider,
+        network: 'bitcoin',
+      })
       const input = {
         ...f.coin,
         txid: f.plan.txid,
@@ -290,7 +324,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
         forfeitTapLeafScript: f.spending.forfeit(),
         intentTapLeafScript: f.spending.forfeit(),
       } as ExtendedVirtualCoin
-      const intent = await wallet.makeRegisterIntentSignature(
+      const intent = await settlement.makeRegisterIntentSignature(
         [input],
         [
           { amount: BigInt(f.plan.changeSats), script: f.spending.pkScript },
@@ -302,7 +336,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
         undefined,
         f.plan.registerExpireAt,
       )
-      const deletion = await wallet.makeDeleteIntentSignature([input])
+      const deletion = await settlement.makeDeleteIntentSignature([input])
       const deleteIntent = { proof: deletion.proof, message: JSON.stringify(deletion.message) }
       saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent })
       expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deleteIntent)
@@ -423,11 +457,13 @@ it('reconciles a new Bitcoin payment through the shared status path without crea
 })
 
 it.each(
-  ['protected', 'light'].flatMap((profile) =>
-    ['rejected', 'expiry', 'uncertain', 'registered'].map((state) => [profile, state]),
+  (['mainnet', 'mutinynet'] as const).flatMap((network) =>
+    ['protected', 'light'].flatMap((profile) =>
+      ['rejected', 'expiry', 'uncertain', 'registered'].map((state) => [network, profile, state] as const),
+    ),
   ),
-)('%s explicit batch preserves the Guardian %s outcome without retrying or cancelling', async (profile, state) => {
-  const f = await bitcoinFixture(1, profile === 'light')
+)('%s %s batch preserves the Guardian %s outcome without retrying or cancelling', async (network, profile, state) => {
+  const f = await bitcoinFixture(1, profile === 'light', network)
   vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt - 240) * 1000)
   const dispose = vi.fn()
   const unlock = vi.fn(async () => ({
@@ -449,21 +485,8 @@ it.each(
   vi.spyOn(streamModule, 'waitForVaultSettlementStream').mockResolvedValue(undefined)
   vi.spyOn(RestArkProvider.prototype, 'getInfo').mockResolvedValue(f.operatorInfo)
   vi.spyOn(RestArkProvider.prototype, 'getEventStream').mockImplementation(async function* () {})
-  vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({
-    vtxos: [
-      {
-        ...f.coin,
-        txid: f.plan.txid,
-        value: f.plan.valueSats,
-        script: hex.encode(f.spending.pkScript),
-        createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 86400000),
-        isSpent: false,
-        virtualStatus: { state: 'settled' },
-        commitmentTxIds: ['cc'.repeat(32)],
-      },
-    ],
-  } as never)
+  const account = mockBitcoinAccount(f, [bitcoinInput(f)])
+  const extraWallet = vi.spyOn(Wallet, 'create')
   vi.spyOn(bitcoinPaymentClient, 'prepare').mockResolvedValue(f.prepared)
   vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'uncertain' })
   const settle = vi.spyOn(Wallet.prototype, 'settle')
@@ -498,6 +521,9 @@ it.each(
     error = caught
   }
   expect(registered, String(error)).toHaveBeenCalledOnce()
+  expect(extraWallet).not.toHaveBeenCalled()
+  expect(account.refreshVtxos).toHaveBeenCalledWith({ scripts: [hex.encode(f.spending.pkScript)] })
+  expect(account.getContracts).toHaveBeenCalledWith({ script: [hex.encode(f.spending.pkScript)] })
   expect(released).not.toHaveBeenCalled()
   expect(settle).not.toHaveBeenCalled()
   expect(dispose).toHaveBeenCalledOnce()
@@ -543,7 +569,8 @@ it('checks the enrolled Light output before asking for a Bitcoin payment signatu
     maxInputs: 1,
     descriptorHash: guardianRenewalContextDigest(status),
   })
-  const coins = vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockResolvedValue({ vtxos: [] } as never)
+  const account = mockBitcoinAccount({ status, spending: spendModule.vaultPolicyV1ScriptFromStatus(status) })
+  const coins = account.getContractsWithVtxos
   const approve = vi.fn()
   await expect(
     sendSpendingToBitcoin(
@@ -554,7 +581,7 @@ it('checks the enrolled Light output before asking for a Bitcoin payment signatu
       () => {},
     ),
   ).rejects.toThrow('No live Spending output is available')
-  expect(coins).toHaveBeenCalledWith({ scripts: [status.spendingArkScript] })
+  expect(coins).toHaveBeenCalledWith({ script: status.spendingArkScript })
   expect(unlock).not.toHaveBeenCalled()
   expect(approve).not.toHaveBeenCalled()
   expect(dispose).toHaveBeenCalledOnce()
@@ -766,7 +793,7 @@ it('preserves confirmed evidence when the account locks during SDK history obser
   await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(true)
 })
 
-it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session'])(
+it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session', 'contract-read', 'intent-signature'])(
   'fences canceled Bitcoin %s before registration while retaining the exact operation',
   async (phase) => {
     const f = await bitcoinFixture()
@@ -784,23 +811,24 @@ it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session'])(
       maxInputs: 1,
       descriptorHash: f.plan.descriptorHash,
     })
-    vi.spyOn(RestIndexerProvider.prototype, 'getVtxos').mockImplementation(async () => {
+    const account = mockBitcoinAccount(f, [bitcoinInput(f)])
+    account.refreshVtxos.mockImplementation(async () => {
       if (phase === 'discovery') abort.abort()
-      return {
-        vtxos: [
-          {
-            ...f.coin,
-            txid: f.plan.txid,
-            value: f.plan.valueSats,
-            script: hex.encode(f.spending.pkScript),
-            createdAt: new Date(),
-            expiresAt: new Date(Date.now() + 86400000),
-            isSpent: false,
-            virtualStatus: { state: 'settled' },
-            commitmentTxIds: ['cc'.repeat(32)],
-          },
-        ],
-      } as never
+    })
+    const contractRead = account.getContracts.getMockImplementation()!
+    account.getContracts.mockImplementation(async () => {
+      if (phase === 'contract-read') abort.abort()
+      return contractRead()
+    })
+    const originalSign = SingleKey.prototype.sign
+    const signing = vi.spyOn(SingleKey.prototype, 'sign').mockImplementation(async function (
+      this: SingleKey,
+      tx,
+      indexes,
+    ) {
+      const signed = await originalSign.call(this, tx, indexes)
+      if (phase === 'intent-signature') abort.abort()
+      return signed
     })
     const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare').mockImplementation(async () => {
       if (phase === 'prepared') abort.abort()
@@ -809,14 +837,13 @@ it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session'])(
     const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state: 'uncertain' })
     vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'uncertain' })
     let scopedProvider: RestArkProvider | undefined
-    const sdkDispose = vi.fn(async () => undefined)
-    if (phase === 'sdk-session') {
-      vi.spyOn(Wallet, 'create').mockImplementation(async (options) => {
-        scopedProvider = options.arkProvider as RestArkProvider
+    vi.spyOn(RestArkProvider.prototype, 'getInfo').mockImplementation(async function (this: RestArkProvider) {
+      if (phase === 'sdk-session') {
+        scopedProvider = this
         abort.abort()
-        return { dispose: sdkDispose } as never
-      })
-    }
+      }
+      return f.operatorInfo
+    })
     const register = vi.spyOn(bitcoinPaymentClient, 'register')
     const approve = vi.fn(async () => {
       if (phase === 'approved') abort.abort()
@@ -833,8 +860,12 @@ it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session'])(
     expect(unlocker.mock.calls[0][4]).toBe(abort.signal)
     expect(register).not.toHaveBeenCalled()
     expect(dispose).toHaveBeenCalledOnce()
+    if (phase === 'contract-read') expect(signing).not.toHaveBeenCalled()
+    if (phase === 'intent-signature') {
+      expect(signing).toHaveBeenCalledOnce()
+      expect(readSpendingBitcoin(f.status)?.deleteIntent?.proof).toBeDefined()
+    }
     if (phase === 'sdk-session') {
-      expect(sdkDispose).toHaveBeenCalledOnce()
       const nonceDispatch = vi.spyOn(RestArkProvider.prototype, 'submitTreeNonces')
       const signatureDispatch = vi.spyOn(RestArkProvider.prototype, 'submitTreeSignatures')
       await expect(scopedProvider!.submitTreeNonces('batch', 'pub', {} as never)).rejects.toThrow()

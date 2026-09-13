@@ -5,6 +5,15 @@ import ts from 'typescript'
 import { expect, it } from 'vitest'
 
 const root = process.cwd()
+
+it('Bitcoin settlement borrows the account SDK graph and cannot create a second wallet or contract writer', () => {
+  const source = readFileSync(resolve(root, 'src/lib/vault/spendingBitcoinFunding.ts'), 'utf8')
+  expect(source).not.toMatch(
+    /\bWallet\b|InMemoryWalletRepository|InMemoryContractRepository|RestIndexerProvider|\.createContract\(/,
+  )
+  expect(source).toMatch(/createSettlementSession/)
+  expect(source).toMatch(/withVaultWalletState/)
+})
 const config = ts.readConfigFile(resolve(root, 'tsconfig.json'), ts.sys.readFile)
 const options = ts.parseJsonConfigFileContent(config.config, ts.sys, root).options
 

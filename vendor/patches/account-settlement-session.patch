@@ -1,0 +1,2099 @@
+diff --git a/packages/ts-sdk/src/index.ts b/packages/ts-sdk/src/index.ts
+index e7229b33..9a024c01 100644
+--- a/packages/ts-sdk/src/index.ts
++++ b/packages/ts-sdk/src/index.ts
+@@ -1088,3 +1088,9 @@ export type {
+     VirtualTx,
+     VtxoBranch,
+ };
++
++export {
++    createSettlementSession,
++    type SettlementSessionConfig,
++    type SettlementSession,
++} from "./wallet/settlementSession";
+diff --git a/packages/ts-sdk/src/wallet/inputSignerRouter.ts b/packages/ts-sdk/src/wallet/inputSignerRouter.ts
+index 7dfb672d..f10fe44a 100644
+--- a/packages/ts-sdk/src/wallet/inputSignerRouter.ts
++++ b/packages/ts-sdk/src/wallet/inputSignerRouter.ts
+@@ -22,9 +22,9 @@ export interface InputSigningJob {
+ 
+ export interface InputSignerRouterDeps {
+     identity: Identity;
+-    contractRepository: ContractRepository;
++    contractRepository: Pick<ContractRepository, "getContracts">;
+     descriptorProvider?: DescriptorProvider;
+-    boardingPkScript: Uint8Array;
++    boardingPkScript?: Uint8Array;
+ }
+ 
+ const DESCRIPTOR_CAPABLE_CONTRACT_TYPES = new Set(["default", "delegate", "boarding"]);
+@@ -95,7 +95,8 @@ export class InputSignerRouter {
+         }
+ 
+         const baselinePubKeyHex = hex.encode(await this.deps.identity.xOnlyPublicKey());
+-        const boardingScriptHex = hex.encode(this.deps.boardingPkScript);
++        const boardingScriptHex =
++            this.deps.boardingPkScript && hex.encode(this.deps.boardingPkScript);
+ 
+         for (const job of jobs) {
+             const scriptHex = hex.encode(job.lookupScript);
+@@ -163,8 +164,30 @@ export class InputSignerRouter {
+ 
+     async sign(tx: Transaction, jobs: InputSigningJob[]): Promise<Transaction> {
+         if (jobs.length === 0) return tx;
+-        const { identityIndexes, descriptorGroups } = await this.classify(jobs);
++        return this.signPlan(tx, await this.classify(jobs));
++    }
++
++    /** Explicit operation inputs must all resolve before any signer is invoked. */
++    async signRegisteredInputs(tx: Transaction, jobs: InputSigningJob[]): Promise<Transaction> {
++        const plan = await this.classify(jobs);
++        const resolved = new Set([
++            ...plan.identityIndexes,
++            ...Array.from(plan.descriptorGroups.values()).flat(),
++        ]);
++        const missing = jobs.find((job) => !resolved.has(job.index));
++        if (missing) {
++            throw new Error(`Settlement input ${missing.index} has no registered signing contract`);
++        }
++        if (plan.descriptorGroups.size > 0 && !this.deps.descriptorProvider) {
++            throw new DescriptorSigningProviderMissingError();
++        }
++        return this.signPlan(tx, plan);
++    }
+ 
++    private async signPlan(
++        tx: Transaction,
++        { identityIndexes, descriptorGroups }: InputRoutingPlan,
++    ): Promise<Transaction> {
+         let signed = tx;
+         if (identityIndexes.length > 0) {
+             signed = await this.deps.identity.sign(signed, identityIndexes);
+diff --git a/packages/ts-sdk/src/wallet/settlementSession.ts b/packages/ts-sdk/src/wallet/settlementSession.ts
+new file mode 100644
+index 00000000..a49faf6f
+--- /dev/null
++++ b/packages/ts-sdk/src/wallet/settlementSession.ts
+@@ -0,0 +1,565 @@
++import { base64, hex } from "@scure/base";
++import { tapLeafHash } from "@scure/btc-signer/payment.js";
++import { Address, OutScript, SigHash, Transaction } from "@scure/btc-signer";
++import type { TransactionOutput } from "@scure/btc-signer/psbt.js";
++import { type Bytes, equalBytes, sha256 } from "@scure/btc-signer/utils.js";
++import { getNetwork, type Network, type NetworkName } from "../networks";
++import type {
++    ArkProvider,
++    BatchFinalizationEvent,
++    BatchStartedEvent,
++    SignedIntent,
++    TreeNoncesEvent,
++    TreeSigningStartedEvent,
++} from "../providers/ark";
++import type { SignerSession } from "../tree/signingSession";
++import { buildForfeitTx } from "../forfeit";
++import { validateConnectorsTxGraph, validateVtxoTxGraph } from "../tree/validation";
++import {
++    assertFinalCommitmentMatchesValidated,
++    validateBatchRecipients,
++    validateBatchRecipientsWithoutTree,
++} from "./validation";
++import { canRecoverOnchain, isVirtualCoin } from "./vtxo";
++import { isSubdust, type ExtendedCoin, type Recipient, type SettleParams } from ".";
++import { VtxoScript } from "../script/base";
++import { CSVMultisigTapscript } from "../script/tapscript";
++import {
++    assertValidBatchExpiry,
++    resolveBatchExpiryPolicy,
++    type BatchExpiryPolicy,
++} from "./batchExpiry";
++import {
++    assertValidServerUnrollScript,
++    resolveCheckpointExitDelayPolicy,
++} from "./checkpointExitDelay";
++import { toXOnly } from "../utils/keys";
++import { Intent } from "../intent";
++import { TxTree } from "../tree/txTree";
++import type { Batch } from "./batch";
++import type {
++    BoardingSigningAdapter,
++    PreparedBoardingRegistration,
++    ValidatedBoardingBatch,
++} from "./boarding";
++import { InputSignerRouter, type InputSigningJob } from "./inputSignerRouter";
++import type { Identity } from "../identity";
++import type { ContractRepository } from "../repositories/contractRepository";
++
++type SignInputs = InputSignerRouter["sign"];
++
++/** Dependencies borrowed by one SDK batch operation; no account state is created. */
++export interface WalletBatchContext {
++    arkProvider: ArkProvider;
++    network: Network;
++    batchExpiryPolicy?: Partial<BatchExpiryPolicy>;
++    forfeitPubkey: Bytes;
++    forfeitOutputScript: Bytes;
++    dustAmount: bigint;
++    signInputs: SignInputs;
++    unsignableBoardingInputError(
++        input: { txid: string; vout: number },
++        script: Bytes,
++    ): Promise<string>;
++    boarding?: {
++        adapter: BoardingSigningAdapter;
++        assertCooperativeWindow(inputs: SettleParams["inputs"]): Promise<void>;
++    };
++}
++
++export interface SettlementSessionConfig {
++    identity: Identity;
++    /** Read contracts from the account's existing manager; this session cannot write them. */
++    contracts: Pick<ContractRepository, "getContracts">;
++    arkProvider: ArkProvider;
++    network: NetworkName;
++}
++
++/**
++ * Use the SDK's intent signing and batch execution with an existing account.
++ * Does not construct a Wallet, repositories, ContractManager, watcher or maintenance task.
++ * Contracts must already be registered by the account before their inputs can be signed.
++ */
++export async function createSettlementSession(config: SettlementSessionConfig) {
++    const info = await config.arkProvider.getInfo();
++    if (info.network !== config.network)
++        throw new Error("Settlement Operator network does not match the account");
++    const network = getNetwork(config.network);
++    const forfeitPubkey = toXOnly(hex.decode(info.forfeitPubkey), "forfeit key");
++    const forfeitOutputScript = OutScript.encode(Address(network).decode(info.forfeitAddress));
++    // Preserve Wallet construction's checkpoint-policy admission before exposing signing.
++    assertValidServerUnrollScript(
++        info.checkpointTapscript,
++        resolveCheckpointExitDelayPolicy(network, {
++            advertisedForfeitPubkey: forfeitPubkey,
++        }),
++    );
++    const router = new InputSignerRouter({
++        identity: config.identity,
++        contractRepository: config.contracts,
++    });
++    const signInputs: SignInputs = (tx, jobs) => router.signRegisteredInputs(tx, jobs);
++    const context: WalletBatchContext = {
++        arkProvider: config.arkProvider,
++        network,
++        forfeitPubkey,
++        forfeitOutputScript,
++        dustAmount: info.dust,
++        batchExpiryPolicy: { advertisedVtxoTreeExpiry: info.vtxoTreeExpiry },
++        signInputs,
++        unsignableBoardingInputError: async (input) =>
++            `failed to sign boarding input ${input.txid}:${input.vout}: contract is not available to the settlement signer`,
++    };
++    return {
++        makeRegisterIntentSignature: signRegisterIntent.bind(undefined, signInputs),
++        makeDeleteIntentSignature: signDeleteIntent.bind(undefined, signInputs),
++        createBatchHandler: (
++            intentId: string,
++            inputs: ExtendedCoin[],
++            recipients: Recipient[],
++            session?: SignerSession,
++        ) => createWalletBatchHandler(context, intentId, inputs, recipients, session),
++    };
++}
++export type SettlementSession = Awaited<ReturnType<typeof createSettlementSession>>;
++
++export function intentProofJobs(coins: ReadonlyArray<{ tapTree: Bytes }>): InputSigningJob[] {
++    if (coins.length === 0) return [];
++    const coinJobs = coins.map((coin, i) => ({
++        index: i + 1,
++        lookupScript: VtxoScript.decode(coin.tapTree).pkScript,
++    }));
++    return [{ index: 0, lookupScript: coinJobs[0].lookupScript }, ...coinJobs];
++}
++
++function snapshotTxTree(tree: TxTree) {
++    return [...tree.iterator()].map((node) => ({
++        txid: node.root.id,
++        tx: base64.encode(node.root.toPSBT()),
++        children: Object.fromEntries(
++            [...node.children.entries()].map(([index, child]) => [index, child.root.id]),
++        ),
++    }));
++}
++
++export async function signRegisterIntent(
++    signInputs: SignInputs,
++    coins: ExtendedCoin[],
++    outputs: TransactionOutput[],
++    onchainOutputsIndexes: number[],
++    cosignerPubKeys: string[],
++    validAt?: number,
++    expireAt?: number,
++): Promise<SignedIntent<Intent.RegisterMessage>> {
++    const message: Intent.RegisterMessage = {
++        type: "register",
++        onchain_output_indexes: onchainOutputsIndexes,
++        valid_at: validAt ? Math.floor(validAt) : 0,
++        expire_at: expireAt ? Math.floor(expireAt) : 0,
++        cosigners_public_keys: cosignerPubKeys,
++    };
++
++    const proof = Intent.create(message, coins, outputs);
++    const signedProof = await signInputs(proof, intentProofJobs(coins));
++
++    return {
++        proof: base64.encode(signedProof.toPSBT()),
++        message,
++    };
++}
++
++export async function signDeleteIntent(
++    signInputs: SignInputs,
++    coins: ExtendedCoin[],
++    expireAt?: number,
++): Promise<SignedIntent<Intent.DeleteMessage>> {
++    const message: Intent.DeleteMessage = {
++        type: "delete",
++        expire_at: expireAt ? Math.floor(expireAt) : 0,
++    };
++
++    const proof = Intent.create(message, coins, []);
++    const signedProof = await signInputs(proof, intentProofJobs(coins));
++
++    return {
++        proof: base64.encode(signedProof.toPSBT()),
++        message,
++    };
++}
++
++async function finalizeSettlement(
++    context: WalletBatchContext,
++    event: BatchFinalizationEvent,
++    inputs: SettleParams["inputs"],
++    forfeitOutputScript: Bytes,
++    expectedRecipients: Recipient[],
++    connectorsGraph?: TxTree,
++    validatedCommitmentTxid?: string,
++    boardingRegistration?: PreparedBoardingRegistration,
++    customBoardingScript?: Bytes,
++    validatedBoardingBatch?: ValidatedBoardingBatch,
++) {
++    // the signed forfeits transactions to submit
++    const signedForfeits: string[] = [];
++
++    let settlementPsbt = Transaction.fromPSBT(base64.decode(event.commitmentTx));
++    assertFinalCommitmentMatchesValidated(
++        settlementPsbt,
++        validatedCommitmentTxid,
++        "settlement finalization",
++    );
++
++    // No validated txid means tree signing never ran (onchain-only settle),
++    // so the recipients have not been checked yet and this commitment tx is
++    // the only thing to check them against. Before any signature is handed
++    // over, in either direction: boarding inputs below, forfeits after.
++    if (!validatedCommitmentTxid && expectedRecipients.length > 0) {
++        validateBatchRecipientsWithoutTree(settlementPsbt, expectedRecipients, context.network);
++    }
++    let hasBoardingUtxos = false;
++    const customBoardingInputIndexes: number[] = [];
++
++    let connectorIndex = 0;
++
++    const connectorsLeaves = connectorsGraph?.leaves() || [];
++
++    for (const input of inputs) {
++        // boarding input, we need to sign the settlement tx
++        if (!isVirtualCoin(input)) {
++            for (let i = 0; i < settlementPsbt.inputsLength; i++) {
++                const settlementInput = settlementPsbt.getInput(i);
++
++                if (!settlementInput.txid || settlementInput.index === undefined) {
++                    throw new Error(
++                        "The server returned incomplete data. No settlement input found in the PSBT",
++                    );
++                }
++                const inputTxId = hex.encode(settlementInput.txid);
++                if (inputTxId !== input.txid) continue;
++                if (settlementInput.index !== input.vout) continue;
++                // input found in the settlement tx, sign it
++                settlementPsbt.updateInput(i, {
++                    tapLeafScript: [input.forfeitTapLeafScript],
++                });
++                const script = settlementPsbt.getInput(i).witnessUtxo?.script;
++                if (!script) {
++                    throw new Error(
++                        "The server returned incomplete data. Settlement input is missing witnessUtxo.script",
++                    );
++                }
++                settlementPsbt = await context.signInputs(settlementPsbt, [
++                    { index: i, lookupScript: script },
++                ]);
++                // The signer router silently skips inputs it can't resolve,
++                // which would leave this boarding input unsigned and cause
++                // arkd to reject it as "not a wallet script". Fail early.
++                if (!settlementPsbt.getInput(i).tapScriptSig?.length) {
++                    throw new Error(await context.unsignableBoardingInputError(input, script));
++                }
++                if (customBoardingScript && equalBytes(script, customBoardingScript)) {
++                    customBoardingInputIndexes.push(i);
++                }
++                hasBoardingUtxos = true;
++                break;
++            }
++
++            continue;
++        }
++
++        if (
++            canRecoverOnchain(input, { timestamp: new Date() }) ||
++            isSubdust({ value: input.value }, context.dustAmount)
++        ) {
++            // recoverable or subdust coin, we don't need to create a forfeit tx
++            continue;
++        }
++
++        if (connectorsLeaves.length === 0) {
++            throw new Error("connectors not received");
++        }
++
++        if (connectorIndex >= connectorsLeaves.length) {
++            throw new Error("not enough connectors received");
++        }
++
++        const connectorLeaf = connectorsLeaves[connectorIndex];
++        const connectorTxId = connectorLeaf.id;
++        const connectorOutput = connectorLeaf.getOutput(0);
++        if (!connectorOutput) {
++            throw new Error("connector output not found");
++        }
++
++        const connectorAmount = connectorOutput.amount;
++        const connectorPkScript = connectorOutput.script;
++
++        if (!connectorAmount || !connectorPkScript) {
++            throw new Error("invalid connector output");
++        }
++
++        connectorIndex++;
++
++        let forfeitTx = buildForfeitTx(
++            [
++                {
++                    txid: input.txid,
++                    index: input.vout,
++                    witnessUtxo: {
++                        amount: BigInt(input.value),
++                        script: VtxoScript.decode(input.tapTree).pkScript,
++                    },
++                    sighashType: SigHash.DEFAULT,
++                    tapLeafScript: [input.forfeitTapLeafScript],
++                },
++                {
++                    txid: connectorTxId,
++                    index: 0,
++                    witnessUtxo: {
++                        amount: connectorAmount,
++                        script: connectorPkScript,
++                    },
++                },
++            ],
++            forfeitOutputScript,
++        );
++
++        // do not sign the connector input
++        forfeitTx = await context.signInputs(forfeitTx, [
++            {
++                index: 0,
++                lookupScript: VtxoScript.decode(input.tapTree).pkScript,
++            },
++        ]);
++
++        signedForfeits.push(base64.encode(forfeitTx.toPSBT()));
++    }
++
++    if (boardingRegistration) {
++        if (
++            !context.boarding?.adapter ||
++            !validatedBoardingBatch ||
++            customBoardingInputIndexes.length === 0
++        ) {
++            throw new Error("named boarding finalization lacks validated batch evidence");
++        }
++        await context.boarding.assertCooperativeWindow(inputs);
++        let result;
++        try {
++            result = await context.boarding?.adapter.submitCommitment({
++                handle: boardingRegistration.handle,
++                psbt: base64.encode(settlementPsbt.toPSBT()),
++                inputIndexes: customBoardingInputIndexes,
++                signedForfeits,
++                validatedBatch: validatedBoardingBatch,
++            });
++        } catch {
++            throw new Error("named boarding finalization outcome is ambiguous");
++        }
++        if (result.status === "ambiguous") {
++            throw new Error("named boarding finalization outcome is ambiguous");
++        }
++        return;
++    }
++
++    if (signedForfeits.length > 0 || hasBoardingUtxos) {
++        await context.arkProvider.submitSignedForfeitTxs(
++            signedForfeits,
++            hasBoardingUtxos ? base64.encode(settlementPsbt.toPSBT()) : undefined,
++        );
++    }
++}
++
++export function createWalletBatchHandler(
++    context: WalletBatchContext,
++    intentId: string,
++    inputs: ExtendedCoin[],
++    expectedRecipients: Recipient[],
++    session?: SignerSession,
++    boardingRegistration?: PreparedBoardingRegistration,
++    customBoardingScript?: Bytes,
++): Batch.Handler {
++    let sweepTapTreeRoot: Uint8Array | undefined;
++    // Assigned only after the tree it commits to has been validated, so it
++    // always names a commitment tx this handler has checked.
++    let validatedCommitmentTxid: string | undefined;
++    let validatedBatchExpiry: bigint | undefined;
++    let validatedBoardingBatch: ValidatedBoardingBatch | undefined;
++    return {
++        onBatchStarted: async (event: BatchStartedEvent): Promise<{ skip: boolean }> => {
++            const utf8IntentId = new TextEncoder().encode(intentId);
++            const intentIdHash = sha256(utf8IntentId);
++            const intentIdHashStr = hex.encode(intentIdHash);
++
++            // check if our intent ID hash matches any in the event
++            const skip = !event.intentIdHashes.includes(intentIdHashStr);
++
++            if (skip) {
++                return { skip };
++            }
++
++            if (!context.arkProvider) {
++                throw new Error("Arkade provider not configured");
++            }
++
++            // Bound the expiry before confirming, so a rejected round is
++            // never confirmed to the operator.
++            const timelock = assertValidBatchExpiry(
++                event.batchExpiry,
++                resolveBatchExpiryPolicy(context.network, context.batchExpiryPolicy),
++            );
++            validatedBatchExpiry = event.batchExpiry;
++
++            await context.arkProvider.confirmRegistration(intentId);
++
++            const sweepTapscript = CSVMultisigTapscript.encode({
++                timelock,
++                pubkeys: [context.forfeitPubkey],
++            }).script;
++
++            sweepTapTreeRoot = tapLeafHash(sweepTapscript);
++
++            return { skip: false };
++        },
++        onTreeSigningStarted: async (
++            event: TreeSigningStartedEvent,
++            vtxoTree: TxTree,
++        ): Promise<{ skip: boolean }> => {
++            if (!session) {
++                return { skip: true };
++            }
++            if (!sweepTapTreeRoot) {
++                throw new Error("Sweep tap tree root not set");
++            }
++
++            const xOnlyPublicKeys = event.cosignersPublicKeys.map((k) =>
++                hex.encode(toXOnly(hex.decode(k), "cosigner key")),
++            );
++            const signerPublicKey = await session.getPublicKey();
++            const xonlySignerPublicKey = toXOnly(signerPublicKey, "signer key");
++
++            if (!xOnlyPublicKeys.includes(hex.encode(xonlySignerPublicKey))) {
++                // not a cosigner, skip the signing
++                return { skip: true };
++            }
++
++            // validate the unsigned virtual output tree
++            const commitmentTx = Transaction.fromPSBT(base64.decode(event.unsignedCommitmentTx));
++            validateVtxoTxGraph(vtxoTree, commitmentTx, sweepTapTreeRoot);
++
++            // validate that all expected receivers are in the virtual output tree with correct amounts and assets
++            if (expectedRecipients && expectedRecipients.length > 0) {
++                validateBatchRecipients(
++                    commitmentTx,
++                    vtxoTree.leaves(),
++                    expectedRecipients,
++                    context.network,
++                );
++            }
++
++            const sharedOutput = commitmentTx.getOutput(0);
++            if (!sharedOutput?.amount) {
++                throw new Error("Shared output not found");
++            }
++
++            validatedCommitmentTxid = commitmentTx.id;
++            if (boardingRegistration) {
++                if (validatedBatchExpiry === undefined) {
++                    throw new Error("named boarding batch expiry was not validated");
++                }
++                validatedBoardingBatch = {
++                    batchId: event.id,
++                    batchExpiry: validatedBatchExpiry,
++                    unsignedCommitmentTx: event.unsignedCommitmentTx,
++                    vtxoTree: snapshotTxTree(vtxoTree),
++                    expectedRecipients: expectedRecipients.map((recipient) => ({
++                        ...recipient,
++                        assets: recipient.assets?.map((asset) => ({ ...asset })),
++                    })),
++                };
++            }
++
++            await session.init(vtxoTree, sweepTapTreeRoot, sharedOutput.amount);
++
++            const pubkey = hex.encode(await session.getPublicKey());
++            const nonces = await session.getNonces();
++
++            await context.arkProvider.submitTreeNonces(event.id, pubkey, nonces);
++
++            return { skip: false };
++        },
++        onTreeNonces: async (event: TreeNoncesEvent): Promise<{ fullySigned: boolean }> => {
++            if (!session) {
++                return { fullySigned: true }; // Signing complete (no signing needed)
++            }
++
++            const { hasAllNonces } = await session.aggregatedNonces(event.txid, event.nonces);
++
++            // wait to receive and aggregate all nonces before sending signatures
++            if (!hasAllNonces) return { fullySigned: false };
++
++            const signatures = await session.sign();
++            const pubkey = hex.encode(await session.getPublicKey());
++
++            await context.arkProvider.submitTreeSignatures(event.id, pubkey, signatures);
++            return { fullySigned: true };
++        },
++        onBatchFinalization: async (
++            event: BatchFinalizationEvent,
++            vtxoTree?: TxTree,
++            connectorTree?: TxTree,
++        ): Promise<void> => {
++            if (!context.forfeitOutputScript) {
++                throw new Error("Forfeit output script not set");
++            }
++
++            if (connectorTree) {
++                validateConnectorsTxGraph(event.commitmentTx, connectorTree);
++            }
++
++            if (boardingRegistration) {
++                if (
++                    !validatedBoardingBatch ||
++                    !vtxoTree ||
++                    event.id !== validatedBoardingBatch.batchId
++                ) {
++                    throw new Error("named boarding finalization lacks its signed batch tree");
++                }
++                const signedTree = snapshotTxTree(vtxoTree);
++                const captured = new Map(
++                    validatedBoardingBatch.vtxoTree.map((node) => [node.txid, node]),
++                );
++                if (!signedTree.length || signedTree.length !== captured.size) {
++                    throw new Error("named boarding final tree changed");
++                }
++                for (const node of signedTree) {
++                    const prior = captured.get(node.txid);
++                    if (
++                        !prior ||
++                        JSON.stringify(node.children) !== JSON.stringify(prior.children)
++                    ) {
++                        throw new Error("named boarding final tree changed");
++                    }
++                    const tx = Transaction.fromPSBT(base64.decode(node.tx));
++                    if (tx.inputsLength !== 1 || tx.getInput(0).tapKeySig?.length !== 64) {
++                        throw new Error("named boarding final tree is not signed");
++                    }
++                }
++                // The adapter verifies these final aggregate signatures before
++                // co-signing; retain the previously validated batch authority.
++                validatedBoardingBatch = { ...validatedBoardingBatch, vtxoTree: signedTree };
++            }
++
++            await finalizeSettlement(
++                context,
++                event,
++                inputs,
++                context.forfeitOutputScript,
++                expectedRecipients,
++                connectorTree,
++                validatedCommitmentTxid,
++                boardingRegistration,
++                customBoardingScript,
++                validatedBoardingBatch,
++            );
++        },
++    };
++}
+diff --git a/packages/ts-sdk/src/wallet/wallet.ts b/packages/ts-sdk/src/wallet/wallet.ts
+index c1707880..2196e76b 100644
+--- a/packages/ts-sdk/src/wallet/wallet.ts
++++ b/packages/ts-sdk/src/wallet/wallet.ts
+@@ -1,8 +1,13 @@
++import {
++    createWalletBatchHandler,
++    signRegisterIntent,
++    signDeleteIntent,
++    intentProofJobs,
++} from "./settlementSession";
+ import { base64, hex } from "@scure/base";
+-import { tapLeafHash } from "@scure/btc-signer/payment.js";
+-import { Address, OutScript, SigHash, Transaction } from "@scure/btc-signer";
++import { Address, OutScript, Transaction } from "@scure/btc-signer";
+ import { TransactionOutput } from "@scure/btc-signer/psbt.js";
+-import { Bytes, equalBytes, sha256 } from "@scure/btc-signer/utils.js";
++import { Bytes, equalBytes } from "@scure/btc-signer/utils.js";
+ import { ArkAddress } from "../script/address";
+ import { DefaultVtxo } from "../script/default";
+ import { DEFAULT_ARKADE_SERVER_URL, getNetwork, Network, NetworkName } from "../networks";
+@@ -10,23 +15,12 @@ import { ESPLORA_URL, EsploraProvider, OnchainProvider } from "../providers/onch
+ import {
+     ArkInfo,
+     ArkProvider,
+-    BatchFinalizationEvent,
+-    BatchStartedEvent,
+     PendingTx,
+     RestArkProvider,
+     SettlementEvent,
+     SignedIntent,
+-    TreeNoncesEvent,
+-    TreeSigningStartedEvent,
+ } from "../providers/ark";
+ import { SignerSession } from "../tree/signingSession";
+-import { buildForfeitTx } from "../forfeit";
+-import { validateConnectorsTxGraph, validateVtxoTxGraph } from "../tree/validation";
+-import {
+-    assertFinalCommitmentMatchesValidated,
+-    validateBatchRecipients,
+-    validateBatchRecipientsWithoutTree,
+-} from "./validation";
+ import { Identity, ReadonlyIdentity, isBatchSignable } from "../identity";
+ import {
+     canRecoverOnchain,
+@@ -73,7 +67,6 @@ import { createAssetPacket, selectCoinsWithAsset, selectedCoinsToAssetInputs } f
+ import { TapTreeCoder, VtxoScript } from "../script/base";
+ import { CSVMultisigTapscript, RelativeTimelock } from "../script/tapscript";
+ import { classifyAgainstSignerSet, signerSetFromInfo, toXOnlySignerHex } from "./signerRotation";
+-import { assertValidBatchExpiry, resolveBatchExpiryPolicy } from "./batchExpiry";
+ import type { BatchExpiryPolicy } from "./batchExpiry";
+ import {
+     assertValidServerUnrollScript,
+@@ -104,7 +97,6 @@ import { ArkNote } from "../arknote";
+ import { ArkadeCash } from "../arkadeCash";
+ import { Intent } from "../intent";
+ import { IndexerProvider, RestIndexerProvider } from "../providers/indexer";
+-import { TxTree } from "../tree/txTree";
+ import { WalletRepository } from "../repositories/walletRepository";
+ import { ContractRepository } from "../repositories/contractRepository";
+ import type { IntentRepository, ArkIntent, ArkIntentState } from "../repositories/intentRepository";
+@@ -180,7 +172,6 @@ import {
+     type BoardingSigningAdapter,
+     type BoardingPreparationResult,
+     type PreparedBoardingRegistration,
+-    type ValidatedBoardingBatch,
+ } from "./boarding";
+ import { BoardingProgramScript, createBoardingProgramScript } from "../script/boarding";
+ 
+@@ -189,19 +180,6 @@ type BoardingScript = DefaultVtxo.Script | BoardingProgramScript;
+ export const getArkadeServerUrl = ({ arkServerUrl }: { arkServerUrl?: string }) =>
+     arkServerUrl || DEFAULT_ARKADE_SERVER_URL;
+ 
+-// Build per-input jobs for an intent proof. Index 0 of the proof is a
+-// synthetic BIP-322 toSpend reference whose witnessUtxo.script mirrors
+-// coin[0]'s pkScript, so we map it to the same source contract as
+-// coin[0]; coins 0..N-1 then map to proof inputs 1..N.
+-function intentProofJobs(coins: ReadonlyArray<{ tapTree: Bytes }>): InputSigningJob[] {
+-    if (coins.length === 0) return [];
+-    const coinJobs = coins.map((coin, i) => ({
+-        index: i + 1,
+-        lookupScript: VtxoScript.decode(coin.tapTree).pkScript,
+-    }));
+-    return [{ index: 0, lookupScript: coinJobs[0].lookupScript }, ...coinJobs];
+-}
+-
+ function coinUsesScript(coin: { tapTree: Bytes }, script: Bytes): boolean {
+     try {
+         return equalBytes(VtxoScript.decode(coin.tapTree).pkScript, script);
+@@ -222,16 +200,6 @@ function isCanonicalTxid(txid: string): boolean {
+     return /^[0-9a-f]{64}$/.test(txid);
+ }
+ 
+-function snapshotTxTree(tree: TxTree) {
+-    return [...tree.iterator()].map((node) => ({
+-        txid: node.root.id,
+-        tx: base64.encode(node.root.toPSBT()),
+-        children: Object.fromEntries(
+-            [...node.children.entries()].map(([index, child]) => [index, child.root.id]),
+-        ),
+-    }));
+-}
+-
+ // `send` takes either a recipient list or an options object, told apart by
+ // `recipients` — which no `Recipient` has and every `SendParams` does — rather
+ // than by "one argument", which both forms produce for a single recipient.
+@@ -4127,186 +4095,6 @@ export class Wallet extends ReadonlyWallet implements IWallet, HDWalletCapable {
+         }
+     }
+ 
+-    private async handleSettlementFinalizationEvent(
+-        event: BatchFinalizationEvent,
+-        inputs: SettleParams["inputs"],
+-        forfeitOutputScript: Bytes,
+-        expectedRecipients: Recipient[],
+-        connectorsGraph?: TxTree,
+-        validatedCommitmentTxid?: string,
+-        boardingRegistration?: PreparedBoardingRegistration,
+-        customBoardingScript?: Bytes,
+-        validatedBoardingBatch?: ValidatedBoardingBatch,
+-    ) {
+-        // the signed forfeits transactions to submit
+-        const signedForfeits: string[] = [];
+-
+-        let settlementPsbt = Transaction.fromPSBT(base64.decode(event.commitmentTx));
+-        assertFinalCommitmentMatchesValidated(
+-            settlementPsbt,
+-            validatedCommitmentTxid,
+-            "settlement finalization",
+-        );
+-
+-        // No validated txid means tree signing never ran (onchain-only settle),
+-        // so the recipients have not been checked yet and this commitment tx is
+-        // the only thing to check them against. Before any signature is handed
+-        // over, in either direction: boarding inputs below, forfeits after.
+-        if (!validatedCommitmentTxid && expectedRecipients.length > 0) {
+-            validateBatchRecipientsWithoutTree(settlementPsbt, expectedRecipients, this.network);
+-        }
+-        let hasBoardingUtxos = false;
+-        const customBoardingInputIndexes: number[] = [];
+-
+-        let connectorIndex = 0;
+-
+-        const connectorsLeaves = connectorsGraph?.leaves() || [];
+-
+-        for (const input of inputs) {
+-            // boarding input, we need to sign the settlement tx
+-            if (!isVirtualCoin(input)) {
+-                for (let i = 0; i < settlementPsbt.inputsLength; i++) {
+-                    const settlementInput = settlementPsbt.getInput(i);
+-
+-                    if (!settlementInput.txid || settlementInput.index === undefined) {
+-                        throw new Error(
+-                            "The server returned incomplete data. No settlement input found in the PSBT",
+-                        );
+-                    }
+-                    const inputTxId = hex.encode(settlementInput.txid);
+-                    if (inputTxId !== input.txid) continue;
+-                    if (settlementInput.index !== input.vout) continue;
+-                    // input found in the settlement tx, sign it
+-                    settlementPsbt.updateInput(i, {
+-                        tapLeafScript: [input.forfeitTapLeafScript],
+-                    });
+-                    const script = settlementPsbt.getInput(i).witnessUtxo?.script;
+-                    if (!script) {
+-                        throw new Error(
+-                            "The server returned incomplete data. Settlement input is missing witnessUtxo.script",
+-                        );
+-                    }
+-                    settlementPsbt = await this._signerRouter.sign(settlementPsbt, [
+-                        { index: i, lookupScript: script },
+-                    ]);
+-                    // The signer router silently skips inputs it can't resolve,
+-                    // which would leave this boarding input unsigned and cause
+-                    // arkd to reject it as "not a wallet script". Fail early.
+-                    if (!settlementPsbt.getInput(i).tapScriptSig?.length) {
+-                        throw new Error(await this.unsignableBoardingInputError(input, script));
+-                    }
+-                    if (customBoardingScript && equalBytes(script, customBoardingScript)) {
+-                        customBoardingInputIndexes.push(i);
+-                    }
+-                    hasBoardingUtxos = true;
+-                    break;
+-                }
+-
+-                continue;
+-            }
+-
+-            if (
+-                canRecoverOnchain(input, { timestamp: new Date() }) ||
+-                isSubdust({ value: input.value }, this.dustAmount)
+-            ) {
+-                // recoverable or subdust coin, we don't need to create a forfeit tx
+-                continue;
+-            }
+-
+-            if (connectorsLeaves.length === 0) {
+-                throw new Error("connectors not received");
+-            }
+-
+-            if (connectorIndex >= connectorsLeaves.length) {
+-                throw new Error("not enough connectors received");
+-            }
+-
+-            const connectorLeaf = connectorsLeaves[connectorIndex];
+-            const connectorTxId = connectorLeaf.id;
+-            const connectorOutput = connectorLeaf.getOutput(0);
+-            if (!connectorOutput) {
+-                throw new Error("connector output not found");
+-            }
+-
+-            const connectorAmount = connectorOutput.amount;
+-            const connectorPkScript = connectorOutput.script;
+-
+-            if (!connectorAmount || !connectorPkScript) {
+-                throw new Error("invalid connector output");
+-            }
+-
+-            connectorIndex++;
+-
+-            let forfeitTx = buildForfeitTx(
+-                [
+-                    {
+-                        txid: input.txid,
+-                        index: input.vout,
+-                        witnessUtxo: {
+-                            amount: BigInt(input.value),
+-                            script: VtxoScript.decode(input.tapTree).pkScript,
+-                        },
+-                        sighashType: SigHash.DEFAULT,
+-                        tapLeafScript: [input.forfeitTapLeafScript],
+-                    },
+-                    {
+-                        txid: connectorTxId,
+-                        index: 0,
+-                        witnessUtxo: {
+-                            amount: connectorAmount,
+-                            script: connectorPkScript,
+-                        },
+-                    },
+-                ],
+-                forfeitOutputScript,
+-            );
+-
+-            // do not sign the connector input
+-            forfeitTx = await this._signerRouter.sign(forfeitTx, [
+-                {
+-                    index: 0,
+-                    lookupScript: VtxoScript.decode(input.tapTree).pkScript,
+-                },
+-            ]);
+-
+-            signedForfeits.push(base64.encode(forfeitTx.toPSBT()));
+-        }
+-
+-        if (boardingRegistration) {
+-            if (
+-                !this.boardingSigningAdapter ||
+-                !validatedBoardingBatch ||
+-                customBoardingInputIndexes.length === 0
+-            ) {
+-                throw new Error("named boarding finalization lacks validated batch evidence");
+-            }
+-            await this.assertNamedBoardingCooperativeWindow(inputs);
+-            let result;
+-            try {
+-                result = await this.boardingSigningAdapter.submitCommitment({
+-                    handle: boardingRegistration.handle,
+-                    psbt: base64.encode(settlementPsbt.toPSBT()),
+-                    inputIndexes: customBoardingInputIndexes,
+-                    signedForfeits,
+-                    validatedBatch: validatedBoardingBatch,
+-                });
+-            } catch {
+-                throw new Error("named boarding finalization outcome is ambiguous");
+-            }
+-            if (result.status === "ambiguous") {
+-                throw new Error("named boarding finalization outcome is ambiguous");
+-            }
+-            return;
+-        }
+-
+-        if (signedForfeits.length > 0 || hasBoardingUtxos) {
+-            await this.arkProvider.submitSignedForfeitTxs(
+-                signedForfeits,
+-                hasBoardingUtxos ? base64.encode(settlementPsbt.toPSBT()) : undefined,
+-            );
+-        }
+-    }
+-
+     // Best-effort: every enrichment is guarded so a secondary failure can't
+     // mask the original signing error.
+     private async unsignableBoardingInputError(
+@@ -4349,192 +4137,32 @@ export class Wallet extends ReadonlyWallet implements IWallet, HDWalletCapable {
+         boardingRegistration?: PreparedBoardingRegistration,
+         customBoardingScript?: Bytes,
+     ): Batch.Handler {
+-        let sweepTapTreeRoot: Uint8Array | undefined;
+-        // Assigned only after the tree it commits to has been validated, so it
+-        // always names a commitment tx this handler has checked.
+-        let validatedCommitmentTxid: string | undefined;
+-        let validatedBatchExpiry: bigint | undefined;
+-        let validatedBoardingBatch: ValidatedBoardingBatch | undefined;
+-        return {
+-            onBatchStarted: async (event: BatchStartedEvent): Promise<{ skip: boolean }> => {
+-                const utf8IntentId = new TextEncoder().encode(intentId);
+-                const intentIdHash = sha256(utf8IntentId);
+-                const intentIdHashStr = hex.encode(intentIdHash);
+-
+-                // check if our intent ID hash matches any in the event
+-                const skip = !event.intentIdHashes.includes(intentIdHashStr);
+-
+-                if (skip) {
+-                    return { skip };
+-                }
+-
+-                if (!this.arkProvider) {
+-                    throw new Error("Arkade provider not configured");
+-                }
+-
+-                // Bound the expiry before confirming, so a rejected round is
+-                // never confirmed to the operator.
+-                const timelock = assertValidBatchExpiry(
+-                    event.batchExpiry,
+-                    resolveBatchExpiryPolicy(this.network, this.batchExpiryPolicy),
+-                );
+-                validatedBatchExpiry = event.batchExpiry;
+-
+-                await this.arkProvider.confirmRegistration(intentId);
+-
+-                const sweepTapscript = CSVMultisigTapscript.encode({
+-                    timelock,
+-                    pubkeys: [this.forfeitPubkey],
+-                }).script;
+-
+-                sweepTapTreeRoot = tapLeafHash(sweepTapscript);
+-
+-                return { skip: false };
+-            },
+-            onTreeSigningStarted: async (
+-                event: TreeSigningStartedEvent,
+-                vtxoTree: TxTree,
+-            ): Promise<{ skip: boolean }> => {
+-                if (!session) {
+-                    return { skip: true };
+-                }
+-                if (!sweepTapTreeRoot) {
+-                    throw new Error("Sweep tap tree root not set");
+-                }
+-
+-                const xOnlyPublicKeys = event.cosignersPublicKeys.map((k) =>
+-                    hex.encode(toXOnly(hex.decode(k), "cosigner key")),
+-                );
+-                const signerPublicKey = await session.getPublicKey();
+-                const xonlySignerPublicKey = toXOnly(signerPublicKey, "signer key");
+-
+-                if (!xOnlyPublicKeys.includes(hex.encode(xonlySignerPublicKey))) {
+-                    // not a cosigner, skip the signing
+-                    return { skip: true };
+-                }
+-
+-                // validate the unsigned virtual output tree
+-                const commitmentTx = Transaction.fromPSBT(
+-                    base64.decode(event.unsignedCommitmentTx),
+-                );
+-                validateVtxoTxGraph(vtxoTree, commitmentTx, sweepTapTreeRoot);
+-
+-                // validate that all expected receivers are in the virtual output tree with correct amounts and assets
+-                if (expectedRecipients && expectedRecipients.length > 0) {
+-                    validateBatchRecipients(
+-                        commitmentTx,
+-                        vtxoTree.leaves(),
+-                        expectedRecipients,
+-                        this.network,
+-                    );
+-                }
+-
+-                const sharedOutput = commitmentTx.getOutput(0);
+-                if (!sharedOutput?.amount) {
+-                    throw new Error("Shared output not found");
+-                }
+-
+-                validatedCommitmentTxid = commitmentTx.id;
+-                if (boardingRegistration) {
+-                    if (validatedBatchExpiry === undefined) {
+-                        throw new Error("named boarding batch expiry was not validated");
+-                    }
+-                    validatedBoardingBatch = {
+-                        batchId: event.id,
+-                        batchExpiry: validatedBatchExpiry,
+-                        unsignedCommitmentTx: event.unsignedCommitmentTx,
+-                        vtxoTree: snapshotTxTree(vtxoTree),
+-                        expectedRecipients: expectedRecipients.map((recipient) => ({
+-                            ...recipient,
+-                            assets: recipient.assets?.map((asset) => ({ ...asset })),
+-                        })),
+-                    };
+-                }
+-
+-                await session.init(vtxoTree, sweepTapTreeRoot, sharedOutput.amount);
+-
+-                const pubkey = hex.encode(await session.getPublicKey());
+-                const nonces = await session.getNonces();
+-
+-                await this.arkProvider.submitTreeNonces(event.id, pubkey, nonces);
+-
+-                return { skip: false };
+-            },
+-            onTreeNonces: async (event: TreeNoncesEvent): Promise<{ fullySigned: boolean }> => {
+-                if (!session) {
+-                    return { fullySigned: true }; // Signing complete (no signing needed)
+-                }
+-
+-                const { hasAllNonces } = await session.aggregatedNonces(event.txid, event.nonces);
+-
+-                // wait to receive and aggregate all nonces before sending signatures
+-                if (!hasAllNonces) return { fullySigned: false };
+-
+-                const signatures = await session.sign();
+-                const pubkey = hex.encode(await session.getPublicKey());
+-
+-                await this.arkProvider.submitTreeSignatures(event.id, pubkey, signatures);
+-                return { fullySigned: true };
+-            },
+-            onBatchFinalization: async (
+-                event: BatchFinalizationEvent,
+-                vtxoTree?: TxTree,
+-                connectorTree?: TxTree,
+-            ): Promise<void> => {
+-                if (!this.forfeitOutputScript) {
+-                    throw new Error("Forfeit output script not set");
+-                }
+-
+-                if (connectorTree) {
+-                    validateConnectorsTxGraph(event.commitmentTx, connectorTree);
+-                }
+-
+-                if (boardingRegistration) {
+-                    if (
+-                        !validatedBoardingBatch ||
+-                        !vtxoTree ||
+-                        event.id !== validatedBoardingBatch.batchId
+-                    ) {
+-                        throw new Error("named boarding finalization lacks its signed batch tree");
+-                    }
+-                    const signedTree = snapshotTxTree(vtxoTree);
+-                    const captured = new Map(
+-                        validatedBoardingBatch.vtxoTree.map((node) => [node.txid, node]),
+-                    );
+-                    if (!signedTree.length || signedTree.length !== captured.size) {
+-                        throw new Error("named boarding final tree changed");
+-                    }
+-                    for (const node of signedTree) {
+-                        const prior = captured.get(node.txid);
+-                        if (
+-                            !prior ||
+-                            JSON.stringify(node.children) !== JSON.stringify(prior.children)
+-                        ) {
+-                            throw new Error("named boarding final tree changed");
+-                        }
+-                        const tx = Transaction.fromPSBT(base64.decode(node.tx));
+-                        if (tx.inputsLength !== 1 || tx.getInput(0).tapKeySig?.length !== 64) {
+-                            throw new Error("named boarding final tree is not signed");
+-                        }
+-                    }
+-                    // The adapter verifies these final aggregate signatures before
+-                    // co-signing; retain the previously validated batch authority.
+-                    validatedBoardingBatch = { ...validatedBoardingBatch, vtxoTree: signedTree };
+-                }
+-
+-                await this.handleSettlementFinalizationEvent(
+-                    event,
+-                    inputs,
+-                    this.forfeitOutputScript,
+-                    expectedRecipients,
+-                    connectorTree,
+-                    validatedCommitmentTxid,
+-                    boardingRegistration,
+-                    customBoardingScript,
+-                    validatedBoardingBatch,
+-                );
++        return createWalletBatchHandler(
++            {
++                arkProvider: this.arkProvider,
++                network: this.network,
++                batchExpiryPolicy: this.batchExpiryPolicy,
++                forfeitPubkey: this.forfeitPubkey,
++                forfeitOutputScript: this.forfeitOutputScript,
++                dustAmount: this.dustAmount,
++                signInputs: (tx, jobs) => this._signerRouter.sign(tx, jobs),
++                unsignableBoardingInputError: (input, script) =>
++                    this.unsignableBoardingInputError(input, script),
++                boarding: this.boardingSigningAdapter
++                    ? {
++                          adapter: this.boardingSigningAdapter,
++                          assertCooperativeWindow: (inputs) =>
++                              this.assertNamedBoardingCooperativeWindow(inputs),
++                      }
++                    : undefined,
+             },
+-        };
++            intentId,
++            inputs,
++            expectedRecipients,
++            session,
++            boardingRegistration,
++            customBoardingScript,
++        );
+     }
+ 
+     /**
+@@ -4770,39 +4398,22 @@ export class Wallet extends ReadonlyWallet implements IWallet, HDWalletCapable {
+         validAt?: number,
+         expireAt?: number,
+     ): Promise<SignedIntent<Intent.RegisterMessage>> {
+-        const message: Intent.RegisterMessage = {
+-            type: "register",
+-            onchain_output_indexes: onchainOutputsIndexes,
+-            valid_at: validAt ? Math.floor(validAt) : 0,
+-            expire_at: expireAt ? Math.floor(expireAt) : 0,
+-            cosigners_public_keys: cosignerPubKeys,
+-        };
+-
+-        const proof = Intent.create(message, coins, outputs);
+-        const signedProof = await this._signerRouter.sign(proof, intentProofJobs(coins));
+-
+-        return {
+-            proof: base64.encode(signedProof.toPSBT()),
+-            message,
+-        };
++        return signRegisterIntent(
++            (tx, jobs) => this._signerRouter.sign(tx, jobs),
++            coins,
++            outputs,
++            onchainOutputsIndexes,
++            cosignerPubKeys,
++            validAt,
++            expireAt,
++        );
+     }
+ 
+     async makeDeleteIntentSignature(
+         coins: ExtendedCoin[],
+         expireAt?: number,
+     ): Promise<SignedIntent<Intent.DeleteMessage>> {
+-        const message: Intent.DeleteMessage = {
+-            type: "delete",
+-            expire_at: expireAt ? Math.floor(expireAt) : 0,
+-        };
+-
+-        const proof = Intent.create(message, coins, []);
+-        const signedProof = await this._signerRouter.sign(proof, intentProofJobs(coins));
+-
+-        return {
+-            proof: base64.encode(signedProof.toPSBT()),
+-            message,
+-        };
++        return signDeleteIntent((tx, jobs) => this._signerRouter.sign(tx, jobs), coins, expireAt);
+     }
+ 
+     async makeGetPendingTxIntentSignature(
+diff --git a/packages/ts-sdk/test/batch-recipient-validation.test.ts b/packages/ts-sdk/test/batch-recipient-validation.test.ts
+index 8bed126c..1a12ef53 100644
+--- a/packages/ts-sdk/test/batch-recipient-validation.test.ts
++++ b/packages/ts-sdk/test/batch-recipient-validation.test.ts
+@@ -192,8 +192,6 @@ function onchainOnlyHandler(recipients: Recipient[]) {
+             submitSignedForfeitTxs: vi.fn(async () => {}),
+         },
+         _signerRouter: { sign: vi.fn(async () => signed) },
+-        handleSettlementFinalizationEvent: (Wallet.prototype as any)
+-            .handleSettlementFinalizationEvent,
+     };
+ 
+     const handler = (Wallet.prototype as any).createBatchHandler.call(
+diff --git a/packages/ts-sdk/test/contractSecrets.test.ts b/packages/ts-sdk/test/contractSecrets.test.ts
+index e6c3b6b3..316c3715 100644
+--- a/packages/ts-sdk/test/contractSecrets.test.ts
++++ b/packages/ts-sdk/test/contractSecrets.test.ts
+@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from "vitest";
+ import { hex } from "@scure/base";
+ import { sha256 } from "@noble/hashes/sha2.js";
+ import {
++    ArkAddress,
++    DefaultVtxo,
+     DescriptorIdentity,
+     HDDescriptorProvider,
+     InMemoryWalletRepository,
+@@ -19,6 +21,7 @@ import {
+     resolveDescriptorSigner,
+     ForeignDescriptorError,
+     WalletCannotSignError,
++    type Identity,
+ } from "../src";
+ import {
+     ARKADE_SALTED_PREIMAGE_TAG,
+@@ -37,6 +40,16 @@ import {
+ const MNEMONIC =
+     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+ 
++async function refundAddress(identity: Identity) {
++    const serverPubKey = await SingleKey.fromHex("02".repeat(32)).xOnlyPublicKey();
++    const script = new DefaultVtxo.Script({
++        pubKey: await identity.xOnlyPublicKey(),
++        serverPubKey,
++        csvTimelock: { type: "seconds", value: 604672n },
++    });
++    return new ArkAddress(serverPubKey, script.tweakedPublicKey, "tark").encode();
++}
++
+ /** Set by `hdWallet()`; the vectors name indices the wallet has not allocated. */
+ let descriptorAt: (index: number) => string;
+ 
+@@ -53,6 +66,7 @@ const hdWallet = async (repository = new InMemoryWalletRepository()) => {
+         repository,
+         wallet: {
+             identity,
++            getAddress: vi.fn(() => refundAddress(identity)),
+             getCurrentSigningDescriptor: () => provider.getCurrentSigningDescriptor(),
+             getNextSigningDescriptor: () => provider.getNextSigningDescriptor(),
+             getUsedSigningDescriptors: async () => [],
+@@ -67,7 +81,10 @@ const hdWallet = async (repository = new InMemoryWalletRepository()) => {
+ };
+ 
+ /** A wallet with no descriptor surface at all: its identity is its policy. */
+-const staticWallet = () => ({ identity: SingleKey.fromRandomBytes() }) as unknown as IWallet;
++const staticWallet = () => {
++    const identity = SingleKey.fromRandomBytes();
++    return { identity, getAddress: vi.fn(() => refundAddress(identity)) } as unknown as IWallet;
++};
+ 
+ const indexOf = (descriptor: string): number => strictSigningDescriptorIndex(descriptor)!;
+ 
+@@ -131,26 +148,29 @@ describe("buildSaltedPreimageMessage", () => {
+ });
+ 
+ describe("provisionRefundKey", () => {
+-    it("gives every artifact its own key on an HD wallet", async () => {
+-        // The regression test for peeking instead of allocating: a peek
+-        // returns the same descriptor until the wallet rotates.
++    it("reuses the identity refund key without consuming an HD index", async () => {
+         const { wallet } = await hdWallet();
++        const allocator = vi.spyOn(wallet, "getNextSigningDescriptor" as never);
+         const keys = [
+             await provisionRefundKey(wallet),
+             await provisionRefundKey(wallet),
+             await provisionRefundKey(wallet),
+         ];
+-        expect(new Set(keys.map((k) => k.descriptor)).size).toBe(3);
+-        expect(new Set(keys.map((k) => hex.encode(k.pubkey))).size).toBe(3);
+-        // and the pubkey really is the descriptor's key, not the baseline one
++        expect(new Set(keys.map((k) => k.descriptor)).size).toBe(1);
++        expect(new Set(keys.map((k) => hex.encode(k.pubkey))).size).toBe(1);
++        expect(allocator).not.toHaveBeenCalled();
++        expect(wallet.getAddress).toHaveBeenCalledTimes(3);
+         for (const k of keys) {
++            expect(k.pubkey).toEqual(await wallet.identity.xOnlyPublicKey());
++            expect(k.pkScript).toEqual(ArkAddress.decode(k.address).pkScript);
++            expect(k.address).toBe(await refundAddress(wallet.identity));
+             expect(
+                 hex.encode(await (await contractSigner(wallet, k.descriptor)).xOnlyPublicKey()),
+             ).toBe(hex.encode(k.pubkey));
+         }
+     });
+ 
+-    it("refuses a descriptor the wallet cannot sign for, before anything is funded", async () => {
++    it("ignores a foreign allocator for refunds and refuses it for claim secrets", async () => {
+         // A wallet whose allocator hands back another seed's descriptor — a
+         // worker rebound to a second identity, a restore onto the wrong seed.
+         // Deriving the leaf key would succeed anyway (it is pure parsing), so
+@@ -173,15 +193,26 @@ describe("provisionRefundKey", () => {
+             signerForDescriptor: (d: string) => resolveDescriptorSigner(d, wallet.identity),
+         } as unknown as IWallet;
+ 
+-        await expect(provisionRefundKey(rogue)).rejects.toThrow(/holds no key/);
+-        // and the claim-secret path inherits it, including the arm that
+-        // supplies its own preimage and so never derives one
++        expect((await provisionRefundKey(rogue)).pubkey).toEqual(
++            await wallet.identity.xOnlyPublicKey(),
++        );
++        // Claim secrets still allocate, including caller-supplied preimages.
+         await expect(provisionClaimSecret(rogue)).rejects.toThrow(/holds no key/);
+         await expect(
+             provisionClaimSecret(rogue, { preimage: new Uint8Array(32).fill(1) }),
+         ).rejects.toThrow(/holds no key/);
+     });
+ 
++    it("refuses a substituted refund signer before reading the address", async () => {
++        const { wallet } = await hdWallet();
++        const rogue = {
++            ...wallet,
++            signerForDescriptor: async () => SingleKey.fromHex("03".repeat(32)),
++        } as unknown as IWallet;
++        await expect(provisionRefundKey(rogue)).rejects.toBeInstanceOf(ForeignDescriptorError);
++        expect(wallet.getAddress).not.toHaveBeenCalled();
++    });
++
+     it("refuses a wallet that holds the key but cannot sign with it", async () => {
+         // Watch-only, or a remote signer that is not attached. The pubkey
+         // check passes — it IS our key — so without a capability check the
+@@ -365,7 +396,7 @@ describe("provisionClaimSecret", () => {
+         // broken wallet, not a fallback case — the salted arm's tolerance must
+         // not leak into this one.
+         const { wallet } = await hdWallet();
+-        const { descriptor } = await provisionRefundKey(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         const identity = (wallet as unknown as { identity: Record<string, unknown> }).identity;
+         const broken = {
+             identity,
+@@ -421,8 +452,8 @@ describe("contractSigner", () => {
+         const { wallet } = await hdWallet();
+         // Burn index 0 first: a fresh seed's baseline key aliases the index-0
+         // child key, and an aliased key would be a RIGHT answer.
+-        await provisionRefundKey(wallet);
+-        const { descriptor } = await provisionRefundKey(wallet);
++        await provisionClaimSecret(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         const broken = {
+             ...wallet,
+             signerForDescriptor: async () => wallet.identity,
+@@ -438,7 +469,7 @@ describe("contractSigner", () => {
+ 
+     it("refuses a wallet with no descriptor surface for another wallet's record", async () => {
+         const { wallet } = await hdWallet();
+-        const { descriptor } = await provisionRefundKey(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         await expect(contractSigner(staticWallet(), descriptor)).rejects.toBeInstanceOf(
+             ForeignDescriptorError,
+         );
+@@ -446,7 +477,7 @@ describe("contractSigner", () => {
+ 
+     it("signs deterministically, from the same identity the message is built from", async () => {
+         const { wallet } = await hdWallet();
+-        const { descriptor } = await provisionRefundKey(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         const signer = await contractSigner(wallet, descriptor);
+ 
+         // Passing a different key in is the silent-failure mode: a
+@@ -458,7 +489,7 @@ describe("contractSigner", () => {
+ describe("contractPreimage", () => {
+     it("prefers a stored preimage over deriving one", async () => {
+         const { wallet } = await hdWallet();
+-        const { descriptor } = await provisionRefundKey(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         const stored = new Uint8Array(32).fill(3);
+         expect(await contractPreimage(wallet, descriptor, { stored })).toEqual(stored);
+     });
+@@ -467,7 +498,7 @@ describe("contractPreimage", () => {
+         // Precedence, not a coin flip: a stored P is the artifact's, whatever
+         // the wallet could derive now.
+         const wallet = staticWallet();
+-        const { descriptor } = await provisionRefundKey(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         const stored = new Uint8Array(32).fill(9);
+         expect(
+             await contractPreimage(wallet, descriptor, {
+@@ -483,7 +514,7 @@ describe("contractPreimage", () => {
+         // built. The empty case is the one an explicit length test buys: a
+         // zero-length array is truthy, so it would be handed straight back.
+         const wallet = staticWallet();
+-        const { descriptor } = await provisionRefundKey(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         for (const stored of [new Uint8Array(0), new Uint8Array(20).fill(3), new Uint8Array(31)]) {
+             await expect(contractPreimage(wallet, descriptor, { stored })).rejects.toThrow(
+                 /stored preimage must be 32 bytes/,
+@@ -496,7 +527,7 @@ describe("contractPreimage", () => {
+         // preimage — without accusing the record of losing anything: a leg
+         // whose P belongs to the counterparty legitimately has none.
+         const wallet = staticWallet();
+-        const { descriptor } = await provisionRefundKey(wallet);
++        const { descriptor } = await provisionClaimSecret(wallet);
+         await expect(contractPreimage(wallet, descriptor)).rejects.toThrow(
+             /names no single artifact/,
+         );
+@@ -508,12 +539,12 @@ describe("adoptContractDescriptor", () => {
+         // Reallocating it would derive that artifact's preimage for a new one.
+         const source = await hdWallet();
+         let ahead = "";
+-        for (let i = 0; i < 3; i++) ahead = (await provisionRefundKey(source.wallet)).descriptor;
++        for (let i = 0; i < 3; i++) ahead = (await provisionClaimSecret(source.wallet)).descriptor;
+ 
+         const fresh = await hdWallet();
+         await adoptContractDescriptor(fresh.wallet, ahead);
+ 
+-        const next = (await provisionRefundKey(fresh.wallet)).descriptor;
++        const next = (await provisionClaimSecret(fresh.wallet)).descriptor;
+         expect(next).not.toBe(ahead);
+         expect(indexOf(next)).toBeGreaterThan(indexOf(ahead));
+     });
+@@ -560,7 +591,7 @@ describe("adoptContractDescriptor", () => {
+         expect(spy).not.toHaveBeenCalled();
+ 
+         // and an own artifact still adopts through the same path
+-        const own = (await provisionRefundKey(wallet)).descriptor;
++        const own = (await provisionClaimSecret(wallet)).descriptor;
+         await adoptContractDescriptor(honest, own);
+         expect(spy).toHaveBeenCalledWith(own);
+     });
+diff --git a/packages/ts-sdk/test/fixtures/settlement-session-parent.json b/packages/ts-sdk/test/fixtures/settlement-session-parent.json
+new file mode 100644
+index 00000000..54131cb7
+--- /dev/null
++++ b/packages/ts-sdk/test/fixtures/settlement-session-parent.json
+@@ -0,0 +1,214 @@
++{
++    "sourceRevision": "552106239d9ebfadd56e79c1a5286951029e97b1",
++    "archiveSha256": "baf08f891e4a3e9dbad57d8fa731c47c0b57b69662688bb4a163765810c21b9d",
++    "indexSha256": "a16cd5640d60c6a0101f0e23691321ff94263b3e15575fddf5454b30449fefc9",
++    "proofs": [
++        {
++            "kind": "register",
++            "coinCount": 1,
++            "outputCount": 1,
++            "message": {
++                "type": "register",
++                "onchain_output_indexes": [1],
++                "valid_at": 1789271000,
++                "expire_at": 1789271600,
++                "cosigners_public_keys": [
++                    "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
++                ]
++            },
++            "unsignedProof": "cHNidP8BALICAAAAAuLnoHg8jD06iNWhHjy9rKcpVitEXa0nRAcMRXlDoD61AAAAAAD/////qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAP////8CcBcAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKOgDAAAAAAAAIlEgTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2YAAAAAAQm8eyJ0eXBlIjoicmVnaXN0ZXIiLCJvbmNoYWluX291dHB1dF9pbmRleGVzIjpbMV0sInZhbGlkX2F0IjoxNzg5MjcxMDAwLCJleHBpcmVfYXQiOjE3ODkyNzE2MDAsImNvc2lnbmVyc19wdWJsaWNfa2V5cyI6WyIwMjRkNGI2Y2QxMzYxMDMyY2E5YmQyYWViOWQ5MDBhYTRkNDVkOWVhZDgwYWM5NDIzMzc0YzQ1MWE3MjU0ZDA3NjYiXX0AAQErAAAAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAABASsQJwAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4oAQMEAQAAAEIVwVCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAtX37gjAs2tDqr39V4ONsuC/7waIG8cm4enUnAQwDE09FIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqzACN50YXB0cmVlcgHARCAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2asAcAoA50EQLJ1IBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrAAAAA==",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        },
++        {
++            "kind": "register",
++            "coinCount": 1,
++            "outputCount": 2,
++            "message": {
++                "type": "register",
++                "onchain_output_indexes": [1, 2],
++                "valid_at": 1789271000,
++                "expire_at": 1789271600,
++                "cosigners_public_keys": [
++                    "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
++                ]
++            },
++            "unsignedProof": "cHNidP8BAN0CAAAAAoZeAEHdTngFagJNfHFC4esCnOiDKoxGtHniVX+KraMfAAAAAAD/////qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAP////8DcBcAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKOgDAAAAAAAAIlEgTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2bQBwAAAAAAACJRIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmAAAAAAEJvnsidHlwZSI6InJlZ2lzdGVyIiwib25jaGFpbl9vdXRwdXRfaW5kZXhlcyI6WzEsMl0sInZhbGlkX2F0IjoxNzg5MjcxMDAwLCJleHBpcmVfYXQiOjE3ODkyNzE2MDAsImNvc2lnbmVyc19wdWJsaWNfa2V5cyI6WyIwMjRkNGI2Y2QxMzYxMDMyY2E5YmQyYWViOWQ5MDBhYTRkNDVkOWVhZDgwYWM5NDIzMzc0YzQ1MWE3MjU0ZDA3NjYiXX0AAQErAAAAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAABASsQJwAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4oAQMEAQAAAEIVwVCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAtX37gjAs2tDqr39V4ONsuC/7waIG8cm4enUnAQwDE09FIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqzACN50YXB0cmVlcgHARCAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2asAcAoA50EQLJ1IBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrAAAAAA=",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        },
++        {
++            "kind": "delete",
++            "coinCount": 1,
++            "expiry": null,
++            "message": {
++                "type": "delete",
++                "expire_at": 0
++            },
++            "unsignedProof": "cHNidP8BAGYCAAAAAqL0S9HZ5phu9n1t4QnrZSduAJWpTAJ6u50hTN6F0PSyAAAAAAD/////qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAP////8BAAAAAAAAAAABagAAAAABCR97InR5cGUiOiJkZWxldGUiLCJleHBpcmVfYXQiOjB9AAEBKwAAAAAAAAAAIlEg4/Tu0AWZU7a+tBpOAlfaeGBv63TSF7vHS5+2I4dkzigBAwQBAAAAQhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsC1ffuCMCza0Oqvf1Xg42y4L/vBogbxybh6dScBDAMTT0UgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrMAAAQErECcAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAjedGFwdHJlZXIBwEQgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrAHAKAOdBECydSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj6wAAA==",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        },
++        {
++            "kind": "delete",
++            "coinCount": 1,
++            "expiry": 1789271600.9,
++            "message": {
++                "type": "delete",
++                "expire_at": 1789271600
++            },
++            "unsignedProof": "cHNidP8BAGYCAAAAAnciisxbEzczDZCJaBy0rIJX3qmoXgg97hY0leLaap8nAAAAAAD/////qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAP////8BAAAAAAAAAAABagAAAAABCSh7InR5cGUiOiJkZWxldGUiLCJleHBpcmVfYXQiOjE3ODkyNzE2MDB9AAEBKwAAAAAAAAAAIlEg4/Tu0AWZU7a+tBpOAlfaeGBv63TSF7vHS5+2I4dkzigBAwQBAAAAQhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsC1ffuCMCza0Oqvf1Xg42y4L/vBogbxybh6dScBDAMTT0UgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrMAAAQErECcAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAjedGFwdHJlZXIBwEQgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrAHAKAOdBECydSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj6wAAA==",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        },
++        {
++            "kind": "register",
++            "coinCount": 2,
++            "outputCount": 1,
++            "message": {
++                "type": "register",
++                "onchain_output_indexes": [1],
++                "valid_at": 1789271000,
++                "expire_at": 1789271600,
++                "cosigners_public_keys": [
++                    "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
++                ]
++            },
++            "unsignedProof": "cHNidP8BANsCAAAAA+LnoHg8jD06iNWhHjy9rKcpVitEXa0nRAcMRXlDoD61AAAAAAD/////qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAP////+7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7uwEAAAAA/////wJwFwAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4o6AMAAAAAAAAiUSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZgAAAAABCbx7InR5cGUiOiJyZWdpc3RlciIsIm9uY2hhaW5fb3V0cHV0X2luZGV4ZXMiOlsxXSwidmFsaWRfYXQiOjE3ODkyNzEwMDAsImV4cGlyZV9hdCI6MTc4OTI3MTYwMCwiY29zaWduZXJzX3B1YmxpY19rZXlzIjpbIjAyNGQ0YjZjZDEzNjEwMzJjYTliZDJhZWI5ZDkwMGFhNGQ0NWQ5ZWFkODBhYzk0MjMzNzRjNDUxYTcyNTRkMDc2NiJdfQABASsAAAAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4oAQMEAQAAAEIVwVCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAtX37gjAs2tDqr39V4ONsuC/7waIG8cm4enUnAQwDE09FIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqzAAAEBKxAnAAAAAAAAIlEg4/Tu0AWZU7a+tBpOAlfaeGBv63TSF7vHS5+2I4dkzigBAwQBAAAAQhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsC1ffuCMCza0Oqvf1Xg42y4L/vBogbxybh6dScBDAMTT0UgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrMAI3nRhcHRyZWVyAcBEIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqwBwCgDnQRAsnUgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+sAAEBK/gqAAAAAAAAIlEg4/Tu0AWZU7a+tBpOAlfaeGBv63TSF7vHS5+2I4dkzigBAwQBAAAAQhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsC1ffuCMCza0Oqvf1Xg42y4L/vBogbxybh6dScBDAMTT0UgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrMAI3nRhcHRyZWVyAcBEIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqwBwCgDnQRAsnUgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+sAAAA",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 2,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        },
++        {
++            "kind": "register",
++            "coinCount": 2,
++            "outputCount": 2,
++            "message": {
++                "type": "register",
++                "onchain_output_indexes": [1, 2],
++                "valid_at": 1789271000,
++                "expire_at": 1789271600,
++                "cosigners_public_keys": [
++                    "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
++                ]
++            },
++            "unsignedProof": "cHNidP8BAP0GAQIAAAADhl4AQd1OeAVqAk18cULh6wKc6IMqjEa0eeJVf4qtox8AAAAAAP////+qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqgAAAAAA/////7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7AQAAAAD/////A3AXAAAAAAAAIlEg4/Tu0AWZU7a+tBpOAlfaeGBv63TSF7vHS5+2I4dkzijoAwAAAAAAACJRIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdm0AcAAAAAAAAiUSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZgAAAAABCb57InR5cGUiOiJyZWdpc3RlciIsIm9uY2hhaW5fb3V0cHV0X2luZGV4ZXMiOlsxLDJdLCJ2YWxpZF9hdCI6MTc4OTI3MTAwMCwiZXhwaXJlX2F0IjoxNzg5MjcxNjAwLCJjb3NpZ25lcnNfcHVibGljX2tleXMiOlsiMDI0ZDRiNmNkMTM2MTAzMmNhOWJkMmFlYjlkOTAwYWE0ZDQ1ZDllYWQ4MGFjOTQyMzM3NGM0NTFhNzI1NGQwNzY2Il19AAEBKwAAAAAAAAAAIlEg4/Tu0AWZU7a+tBpOAlfaeGBv63TSF7vHS5+2I4dkzigBAwQBAAAAQhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsC1ffuCMCza0Oqvf1Xg42y4L/vBogbxybh6dScBDAMTT0UgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrMAAAQErECcAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAjedGFwdHJlZXIBwEQgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrAHAKAOdBECydSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj6wAAQEr+CoAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAjedGFwdHJlZXIBwEQgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrAHAKAOdBECydSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj6wAAAAA",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 2,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        },
++        {
++            "kind": "delete",
++            "coinCount": 2,
++            "expiry": null,
++            "message": {
++                "type": "delete",
++                "expire_at": 0
++            },
++            "unsignedProof": "cHNidP8BAI8CAAAAA6L0S9HZ5phu9n1t4QnrZSduAJWpTAJ6u50hTN6F0PSyAAAAAAD/////qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAP////+7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7uwEAAAAA/////wEAAAAAAAAAAAFqAAAAAAEJH3sidHlwZSI6ImRlbGV0ZSIsImV4cGlyZV9hdCI6MH0AAQErAAAAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAABASsQJwAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4oAQMEAQAAAEIVwVCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAtX37gjAs2tDqr39V4ONsuC/7waIG8cm4enUnAQwDE09FIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqzACN50YXB0cmVlcgHARCAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2asAcAoA50EQLJ1IBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrAABASv4KgAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4oAQMEAQAAAEIVwVCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAtX37gjAs2tDqr39V4ONsuC/7waIG8cm4enUnAQwDE09FIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqzACN50YXB0cmVlcgHARCAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2asAcAoA50EQLJ1IBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrAAA",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 2,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        },
++        {
++            "kind": "delete",
++            "coinCount": 2,
++            "expiry": 1789271600.9,
++            "message": {
++                "type": "delete",
++                "expire_at": 1789271600
++            },
++            "unsignedProof": "cHNidP8BAI8CAAAAA3ciisxbEzczDZCJaBy0rIJX3qmoXgg97hY0leLaap8nAAAAAAD/////qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAAAAP////+7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7uwEAAAAA/////wEAAAAAAAAAAAFqAAAAAAEJKHsidHlwZSI6ImRlbGV0ZSIsImV4cGlyZV9hdCI6MTc4OTI3MTYwMH0AAQErAAAAAAAAAAAiUSDj9O7QBZlTtr60Gk4CV9p4YG/rdNIXu8dLn7Yjh2TOKAEDBAEAAABCFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wLV9+4IwLNrQ6q9/VeDjbLgv+8GiBvHJuHp1JwEMAxNPRSAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2aswAABASsQJwAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4oAQMEAQAAAEIVwVCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAtX37gjAs2tDqr39V4ONsuC/7waIG8cm4enUnAQwDE09FIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqzACN50YXB0cmVlcgHARCAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2asAcAoA50EQLJ1IBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrAABASv4KgAAAAAAACJRIOP07tAFmVO2vrQaTgJX2nhgb+t00he7x0uftiOHZM4oAQMEAQAAAEIVwVCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAtX37gjAs2tDqr39V4ONsuC/7waIG8cm4enUnAQwDE09FIBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZqzACN50YXB0cmVlcgHARCAbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj60gTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2asAcAoA50EQLJ1IBuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QePrAAA",
++            "jobs": [
++                {
++                    "index": 0,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 1,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                },
++                {
++                    "index": 2,
++                    "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++                }
++            ]
++        }
++    ],
++    "forfeit": {
++        "commitment": "cHNidP8BAIkCAAAAAczMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMAAAAAAD/////AhAnAAAAAAAAIlEgTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2ZKAQAAAAAAACJRIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmAAAAAAABASsgTgAAAAAAACJRIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmAAAA",
++        "connector": "cHNidP8BAF4CAAAAAW+XggWiTKKnEgc6RNtwW5m2PGa+lhzZdYt+dHng9dfWAQAAAAD/////AUoBAAAAAAAAIlEgTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2YAAAAAAAEBK0oBAAAAAAAAIlEgTUts0TYQMsqb0q652QCqTUXZ6tgKyUIzdMRRpyVNB2YAAA==",
++        "unsignedProof": "cHNidP8BAJQDAAAAAqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////N1Mg9QZkGfPI+96XVZMP2Pt4TOKN67/8jZHK729m8CsAAAAAAP////8CWigAAAAAAAAiUSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZgAAAAAAAAAABFECTnMAAAAAAAEBKxAnAAAAAAAAIlEg4/Tu0AWZU7a+tBpOAlfaeGBv63TSF7vHS5+2I4dkzigBAwQAAAAAQhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsC1ffuCMCza0Oqvf1Xg42y4L/vBogbxybh6dScBDAMTT0UgG4TFVnsSZECZXT7VqroFZdceGDRgSBn/nBf16dXdB4+tIE1LbNE2EDLKm9KuudkAqk1F2erYCslCM3TEUaclTQdmrMAAAQErSgEAAAAAAAAiUSBNS2zRNhAyypvSrrnZAKpNRdnq2ArJQjN0xFGnJU0HZgAAAA==",
++        "jobs": [
++            {
++                "index": 0,
++                "lookupScript": "5120e3f4eed0059953b6beb41a4e0257da78606feb74d217bbc74b9fb6238764ce28"
++            }
++        ]
++    }
++}
+diff --git a/packages/ts-sdk/test/serviceWorkerContractSecrets.test.ts b/packages/ts-sdk/test/serviceWorkerContractSecrets.test.ts
+index 18cb6742..8672398d 100644
+--- a/packages/ts-sdk/test/serviceWorkerContractSecrets.test.ts
++++ b/packages/ts-sdk/test/serviceWorkerContractSecrets.test.ts
+@@ -345,17 +345,20 @@ describe("page-side and worker-side wallets answer identically", () => {
+ });
+ 
+ describe("contract secrets behind the service worker", () => {
+-    it("allocates over the bus and hands back a descriptor that signs", async () => {
++    it("reads the refund address over the bus and retains the identity signing key", async () => {
+         const { sw, identity } = await hdPair();
+ 
+         const { descriptor, pubkey } = await provisionRefundKey(sw as unknown as IWallet);
+ 
+-        // Allocation really crossed the bus rather than being answered locally.
++        // Refund provisioning uses the current address and consumes no HD index.
+         expect((sw.serviceWorker as any).postMessage).toHaveBeenCalledWith(
++            expect.objectContaining({ type: "GET_ADDRESS" }),
++        );
++        expect((sw.serviceWorker as any).postMessage).not.toHaveBeenCalledWith(
+             expect.objectContaining({ type: "GET_NEXT_SIGNING_DESCRIPTOR" }),
+         );
+         expect(hex.encode(pubkey)).toBe(hex.encode(deriveDescriptorLeafPubKey(descriptor)));
+-        expect(hex.encode(pubkey)).not.toBe(hex.encode(await identity.xOnlyPublicKey()));
++        expect(hex.encode(pubkey)).toBe(hex.encode(await identity.xOnlyPublicKey()));
+ 
+         const signer = await contractSigner(sw as unknown as IWallet, descriptor);
+         await expect(signsUnderDescriptorKey(signer, descriptor)).resolves.toBe(true);
+diff --git a/packages/ts-sdk/test/settlement-session.test.ts b/packages/ts-sdk/test/settlement-session.test.ts
+new file mode 100644
+index 00000000..420ce16d
+--- /dev/null
++++ b/packages/ts-sdk/test/settlement-session.test.ts
+@@ -0,0 +1,369 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { base64, hex } from "@scure/base";
++import { Address, OutScript, SigHash } from "@scure/btc-signer";
++import { sha256 } from "@scure/btc-signer/utils.js";
++import { schnorr } from "@noble/secp256k1";
++import {
++    createSettlementSession,
++    DefaultVtxo,
++    SingleKey,
++    Transaction,
++    TxTree,
++    Wallet,
++} from "../src";
++import { CSVMultisigTapscript } from "../src/script/tapscript";
++import { networks } from "../src/networks";
++import type { Contract } from "../src/contracts/types";
++import type { ExtendedVirtualCoin } from "../src/wallet";
++import { SettlementEventType, type ArkInfo, type ArkProvider } from "../src/providers/ark";
++import parent from "./fixtures/settlement-session-parent.json";
++
++afterEach(() => vi.restoreAllMocks());
++
++async function fixture() {
++    const identity = SingleKey.fromHex("01".repeat(32));
++    const operator = SingleKey.fromHex("02".repeat(32));
++    const publicKey = await identity.xOnlyPublicKey();
++    const operatorKey = await operator.xOnlyPublicKey();
++    const script = new DefaultVtxo.Script({
++        pubKey: publicKey,
++        serverPubKey: operatorKey,
++        csvTimelock: { type: "seconds", value: 604672n },
++    });
++    const address = Address(networks.bitcoin).encode({ type: "tr", pubkey: operatorKey });
++    const outputScript = OutScript.encode(Address(networks.bitcoin).decode(address));
++    const checkpoint = (value = 86528n, pubkeys = [operatorKey]) =>
++        hex.encode(
++            CSVMultisigTapscript.encode({ timelock: { type: "seconds", value }, pubkeys }).script,
++        );
++    const info = {
++        network: "bitcoin",
++        forfeitPubkey: hex.encode(await operator.compressedPublicKey()),
++        forfeitAddress: address,
++        checkpointTapscript: checkpoint(),
++        dust: 330n,
++        vtxoTreeExpiry: 604672n,
++    } as ArkInfo;
++    const provider = {
++        getInfo: vi.fn(async () => info),
++        confirmRegistration: vi.fn(async () => {}),
++        submitSignedForfeitTxs: vi.fn(async (_forfeits: string[], _commitment?: string) => {}),
++    };
++    // Deliberately only the account's contract read capability. No repository writer,
++    // indexer, event stream, Wallet or ContractManager is available to construction.
++    const records: Contract[] = [
++        {
++            type: "default",
++            script: hex.encode(script.pkScript),
++            params: { pubKey: hex.encode(publicKey) },
++            address,
++            state: "active",
++            createdAt: 0,
++        },
++    ];
++    const contracts = { getContracts: vi.fn(async () => records) };
++    const unsigned: string[] = [];
++    const realSign = identity.sign.bind(identity);
++    const sign = vi.spyOn(identity, "sign").mockImplementation(async (tx, indexes) => {
++        unsigned.push(base64.encode(tx.toPSBT()));
++        return realSign(tx, indexes);
++    });
++    const coin = (index = 0): ExtendedVirtualCoin => ({
++        txid: (index ? "bb" : "aa").repeat(32),
++        vout: index,
++        value: 10000 + index * 1000,
++        status: { confirmed: true },
++        createdAt: new Date("2026-01-01T00:00:00Z"),
++        script: hex.encode(script.pkScript),
++        isUnrolled: false,
++        isSpent: false,
++        isSwept: false,
++        virtualStatus: { state: "settled" },
++        forfeitTapLeafScript: script.forfeit(),
++        intentTapLeafScript: script.forfeit(),
++        tapTree: script.encode(),
++    });
++    const create = () =>
++        createSettlementSession({
++            identity,
++            contracts,
++            arkProvider: provider as unknown as ArkProvider,
++            network: "bitcoin",
++        });
++    const event = (overrides = {}) => ({
++        type: SettlementEventType.BatchStarted,
++        id: "fixture-batch",
++        intentIdHashes: [hex.encode(sha256(new TextEncoder().encode("fixture-intent")))],
++        batchExpiry: 604672n,
++        ...overrides,
++    });
++    const final = (commitmentTx = parent.forfeit.commitment) => ({
++        type: SettlementEventType.BatchFinalization,
++        id: "fixture-batch",
++        commitmentTx,
++    });
++    const connector = () =>
++        new TxTree(Transaction.fromPSBT(base64.decode(parent.forfeit.connector)));
++    return {
++        create,
++        identity,
++        operator,
++        publicKey,
++        script,
++        outputScript,
++        address,
++        info,
++        checkpoint,
++        provider,
++        contracts,
++        records,
++        sign,
++        unsigned,
++        coin,
++        event,
++        final,
++        connector,
++    };
++}
++
++async function verifySignatures(proof: string, indexes: number[], pubkey: Uint8Array) {
++    const tx = Transaction.fromPSBT(base64.decode(proof));
++    const inputs = Array.from({ length: tx.inputsLength }, (_, i) => tx.getInput(i));
++    for (const index of indexes) {
++        const input = inputs[index];
++        const leaf = input.tapLeafScript![0][1];
++        expect(input.tapScriptSig).toHaveLength(1);
++        const [key, signature] = input.tapScriptSig![0];
++        expect(key.pubKey).toEqual(pubkey);
++        const hashType = input.sighashType ?? SigHash.DEFAULT;
++        const preimage = tx.preimageWitnessV1(
++            index,
++            inputs.map((i) => i.witnessUtxo!.script),
++            hashType,
++            inputs.map((i) => i.witnessUtxo!.amount),
++            undefined,
++            leaf.slice(0, -1),
++            leaf[leaf.length - 1],
++        );
++        expect(await schnorr.verifyAsync(signature.slice(0, 64), preimage, pubkey)).toBe(true);
++    }
++    for (let i = 0; i < inputs.length; i++) {
++        if (!indexes.includes(i)) expect(inputs[i].tapScriptSig).toBeUndefined();
++    }
++}
++
++describe("settlement session parent compatibility", () => {
++    for (const [index, golden] of parent.proofs.entries()) {
++        it(`preserves parent proof ${index + 1}: ${golden.kind}, ${golden.coinCount} inputs`, async () => {
++            const f = await fixture();
++            const operation = await f.create();
++            const coins = Array.from({ length: golden.coinCount }, (_, i) => f.coin(i));
++            const signed =
++                golden.kind === "delete"
++                    ? await operation.makeDeleteIntentSignature(coins, golden.expiry ?? undefined)
++                    : await operation.makeRegisterIntentSignature(
++                          coins,
++                          [
++                              { amount: 6000n, script: f.script.pkScript },
++                              ...Array.from({ length: golden.outputCount! }, (_, i) => ({
++                                  amount: BigInt(1000 + i * 1000),
++                                  script: f.outputScript,
++                              })),
++                          ],
++                          Array.from({ length: golden.outputCount! }, (_, i) => i + 1),
++                          [hex.encode(await f.operator.compressedPublicKey())],
++                          1789271000.9,
++                          1789271600.9,
++                      );
++            expect(signed.message).toEqual(golden.message);
++            expect(f.unsigned).toEqual([golden.unsignedProof]);
++            const indexes = golden.jobs.map((job) => job.index);
++            expect(f.sign.mock.calls[0][1]).toEqual(indexes);
++            expect(f.contracts.getContracts).toHaveBeenCalledExactlyOnceWith({
++                script: [...new Set(golden.jobs.map((job) => job.lookupScript))],
++            });
++            await verifySignatures(signed.proof, indexes, f.publicKey);
++        });
++    }
++
++    it("preserves parent forfeit bytes and signs only the VTXO input", async () => {
++        const f = await fixture();
++        const operation = await f.create();
++        const handler = operation.createBatchHandler(
++            "fixture-intent",
++            [f.coin()],
++            [{ address: f.address, amount: 10000 }],
++        );
++        await handler.onBatchFinalization(f.final(), undefined, f.connector());
++        expect(f.unsigned).toEqual([parent.forfeit.unsignedProof]);
++        expect(f.sign.mock.calls[0][1]).toEqual([0]);
++        const [forfeits, commitment] = f.provider.submitSignedForfeitTxs.mock.calls[0];
++        expect(forfeits).toHaveLength(1);
++        expect(commitment).toBeUndefined();
++        await verifySignatures(forfeits[0], [0], f.publicKey);
++    });
++});
++
++describe("settlement session authority", () => {
++    it("borrows account contracts and fetches terms once without constructing a Wallet", async () => {
++        const wallet = vi.spyOn(Wallet, "create");
++        const f = await fixture();
++        const operation = await f.create();
++        expect(wallet).not.toHaveBeenCalled();
++        expect(f.contracts.getContracts).not.toHaveBeenCalled();
++        expect(f.sign).not.toHaveBeenCalled();
++        await operation.makeDeleteIntentSignature([f.coin()]);
++        const handler = operation.createBatchHandler("fixture-intent", [], []);
++        expect(await handler.onBatchStarted(f.event())).toEqual({ skip: false });
++        expect(f.provider.getInfo).toHaveBeenCalledTimes(1);
++        expect(f.provider.confirmRegistration).toHaveBeenCalledExactlyOnceWith("fixture-intent");
++    });
++
++    it("does not cache contract authority across operations", async () => {
++        const f = await fixture();
++        const operation = await f.create();
++        await operation.makeDeleteIntentSignature([f.coin()]);
++        f.records.length = 0;
++        f.sign.mockClear();
++        await expect(operation.makeDeleteIntentSignature([f.coin()])).rejects.toThrow(
++            /no registered signing contract/,
++        );
++        expect(f.sign).not.toHaveBeenCalled();
++    });
++
++    it("rejects a mixed known and unknown contract before signing any input", async () => {
++        const f = await fixture();
++        const operation = await f.create();
++        const other = new DefaultVtxo.Script({
++            pubKey: await f.operator.xOnlyPublicKey(),
++            serverPubKey: f.publicKey,
++            csvTimelock: { type: "seconds", value: 604672n },
++        });
++        const coin = {
++            ...f.coin(1),
++            tapTree: other.encode(),
++            intentTapLeafScript: other.forfeit(),
++            forfeitTapLeafScript: other.forfeit(),
++        };
++        await expect(operation.makeDeleteIntentSignature([f.coin(), coin])).rejects.toThrow(
++            /input 2 has no registered/,
++        );
++        expect(f.sign).not.toHaveBeenCalled();
++    });
++
++    it("rejects a non-baseline descriptor before signing baseline inputs", async () => {
++        const f = await fixture();
++        const other = new DefaultVtxo.Script({
++            pubKey: await f.operator.xOnlyPublicKey(),
++            serverPubKey: f.publicKey,
++            csvTimelock: { type: "seconds", value: 604672n },
++        });
++        f.records.push({
++            ...f.records[0],
++            script: hex.encode(other.pkScript),
++            params: { pubKey: hex.encode(await f.operator.xOnlyPublicKey()) },
++            metadata: { signingDescriptor: "tr(foreign)" },
++        });
++        const operation = await f.create();
++        await expect(
++            operation.makeDeleteIntentSignature([
++                f.coin(),
++                { ...f.coin(1), tapTree: other.encode(), intentTapLeafScript: other.forfeit() },
++            ]),
++        ).rejects.toThrow(/descriptor/i);
++        expect(f.sign).not.toHaveBeenCalled();
++    });
++
++    it.each(["network", "delay", "key", "address"])(
++        "rejects invalid Operator %s before exposing a signer",
++        async (kind) => {
++            const f = await fixture();
++            if (kind === "network") f.info.network = "regtest";
++            if (kind === "delay") f.info.checkpointTapscript = f.checkpoint(4096n);
++            if (kind === "key") f.info.checkpointTapscript = f.checkpoint(86528n, [f.publicKey]);
++            if (kind === "address")
++                f.info.forfeitAddress = Address(networks.regtest).encode({
++                    type: "tr",
++                    pubkey: f.publicKey,
++                });
++            await expect(f.create()).rejects.toThrow();
++            expect(f.sign).not.toHaveBeenCalled();
++        },
++    );
++
++    it("propagates unavailable terms without constructing account state", async () => {
++        const f = await fixture();
++        const failure = new Error("Operator unavailable");
++        f.provider.getInfo.mockRejectedValue(failure);
++        await expect(f.create()).rejects.toBe(failure);
++        expect(f.contracts.getContracts).not.toHaveBeenCalled();
++    });
++});
++
++describe("settlement session batch validation", () => {
++    it.each([512n, 86528n])("rejects batch expiry %s before confirming", async (batchExpiry) => {
++        const f = await fixture();
++        const operation = await f.create();
++        await expect(
++            operation
++                .createBatchHandler("fixture-intent", [], [])
++                .onBatchStarted(f.event({ batchExpiry })),
++        ).rejects.toThrow();
++        expect(f.provider.confirmRegistration).not.toHaveBeenCalled();
++    });
++
++    it("skips a batch for another intent without confirming", async () => {
++        const f = await fixture();
++        const operation = await f.create();
++        expect(
++            await operation.createBatchHandler("other", [], []).onBatchStarted(f.event()),
++        ).toEqual({ skip: true });
++        expect(f.provider.confirmRegistration).not.toHaveBeenCalled();
++    });
++
++    it("rejects an unpaid recipient before signing or submitting forfeits", async () => {
++        const f = await fixture();
++        const operation = await f.create();
++        const handler = operation.createBatchHandler(
++            "fixture-intent",
++            [f.coin()],
++            [{ address: f.address, amount: 10001 }],
++        );
++        await expect(
++            handler.onBatchFinalization(f.final(), undefined, f.connector()),
++        ).rejects.toThrow(/onchain output not found/);
++        expect(f.sign).not.toHaveBeenCalled();
++        expect(f.provider.submitSignedForfeitTxs).not.toHaveBeenCalled();
++    });
++
++    it("rejects a connector from another commitment before signing", async () => {
++        const f = await fixture();
++        const operation = await f.create();
++        const commitment = Transaction.fromPSBT(base64.decode(parent.forfeit.commitment));
++        commitment.addOutput({ amount: 1n, script: f.outputScript });
++        await expect(
++            operation
++                .createBatchHandler("fixture-intent", [f.coin()], [])
++                .onBatchFinalization(
++                    f.final(base64.encode(commitment.toPSBT())),
++                    undefined,
++                    f.connector(),
++                ),
++        ).rejects.toThrow(/wrong settlement txid/);
++        expect(f.sign).not.toHaveBeenCalled();
++    });
++
++    it.each(["expired", "swept", "subdust"])("does not forfeit a %s input", async (kind) => {
++        const f = await fixture();
++        const coin = f.coin();
++        if (kind === "expired") coin.expiresAt = new Date("2000-01-01T00:00:00Z");
++        if (kind === "swept") coin.isSwept = true;
++        if (kind === "subdust") coin.value = 1;
++        const operation = await f.create();
++        await operation
++            .createBatchHandler("fixture-intent", [coin], [])
++            .onBatchFinalization(f.final());
++        expect(f.sign).not.toHaveBeenCalled();
++        expect(f.provider.submitSignedForfeitTxs).not.toHaveBeenCalled();
++    });
++});
+diff --git a/packages/ts-sdk/test/transactionHistory.test.ts b/packages/ts-sdk/test/transactionHistory.test.ts
+index d6affde8..749f6123 100644
+--- a/packages/ts-sdk/test/transactionHistory.test.ts
++++ b/packages/ts-sdk/test/transactionHistory.test.ts
+@@ -82,8 +82,7 @@ describe("buildTransactionHistory", () => {
+             expect(sentTxs[0].key.arkTxid).toBe(arkTxId);
+         });
+ 
+-        // TODO: this is a well known issue and we block in the wallet self transfers
+-        it.skip("should handle the case where both result vtxos belong to the user (self-transfer/split)", async () => {
++        it("preserves the original receipt without recording an internal split as another payment", async () => {
+             // This might be the actual scenario from the bug report:
+             // - User spends 1000 sats
+             // - Gets back 2x 500 sats (both to their own address)
+@@ -147,7 +146,7 @@ describe("buildTransactionHistory", () => {
+             };
+ 
+             const transactions = await buildTransactionHistory(
+-                [resultVtxo0, resultVtxo1],
++                [resultVtxo0, resultVtxo1, spentVtxo],
+                 [],
+                 new Set<string>(),
+             );
+@@ -159,8 +158,10 @@ describe("buildTransactionHistory", () => {
+             // So no sent transaction should be created (filtered out at line 98-100)
+             expect(sentTxs).toHaveLength(0);
+ 
+-            // The result vtxos should not show as received either (they're change from our own spend)
+-            expect(receivedTxs).toHaveLength(0);
++            // Both split outputs are change. The original input's receipt remains history.
++            expect(receivedTxs).toHaveLength(1);
++            expect(receivedTxs[0].amount).toBe(1000);
++            expect(receivedTxs[0].key.arkTxid).toBe(spentVtxo.txid);
+         });
+ 
+         it("should not record a ghost zero-amount sent for a signer-rotation migration", async () => {

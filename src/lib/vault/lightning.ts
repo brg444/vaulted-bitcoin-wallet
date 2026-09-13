@@ -44,6 +44,7 @@ import {
 import type { VaultStatus } from './types'
 import { withActiveVaultWalletState, withVaultWalletState } from './vtxo/walletWorker'
 import { vaultOperatorOrigin } from './networkPins'
+import { cancellableSdkCapability } from './sdkCapability'
 
 export {
   isVaultLightningInput,
@@ -117,21 +118,6 @@ export function validateVaultLightningRefund(
   return refund
 }
 
-/** A canceled approval can drain a response, but cannot issue another signing or Operator call. */
-function cancellableLightningCapability<T extends object>(target: T, signal?: AbortSignal): T {
-  return new Proxy(target, {
-    get(object, property) {
-      const value = Reflect.get(object, property)
-      if (typeof value !== 'function') return value
-      return (...args: unknown[]) => {
-        signal?.throwIfAborted()
-        const result = Reflect.apply(value, object, args)
-        return property === 'signerSession' ? cancellableLightningCapability(result, signal) : result
-      }
-    },
-  })
-}
-
 export async function withVaultLightningSdkWallet<T>(
   phoneSecret: Uint8Array,
   status: VaultStatus,
@@ -160,12 +146,12 @@ async function withUnlockedVaultLightningSdkWallet<T>(
 ): Promise<T> {
   options.signal?.throwIfAborted()
   if (!status.spendingArkAddress) throw new Error('Vault has no Spending address.')
-  const identity = cancellableLightningCapability(SingleKey.fromPrivateKey(phoneSecret), options.signal)
+  const identity = cancellableSdkCapability(SingleKey.fromPrivateKey(phoneSecret), options.signal)
   if (hex.encode(await identity.compressedPublicKey()) !== String(status.phoneBip340Pub || '')) {
     throw new Error('Phone key does not match this vault.')
   }
   const arkServerUrl = vaultOperatorOrigin(status.network)
-  const operator = cancellableLightningCapability(new RestArkProvider(arkServerUrl), options.signal)
+  const operator = cancellableSdkCapability(new RestArkProvider(arkServerUrl), options.signal)
   const indexer = new RestIndexerProvider(arkServerUrl)
   const info = await operator.getInfo()
   requireMatchingLightningOperatorNetwork(status.network, info.network)

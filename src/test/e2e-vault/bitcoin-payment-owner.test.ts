@@ -59,6 +59,7 @@ for (const lock of [false, true]) {
         },
       }),
     )
+    await page.evaluate(async (path) => (await import(/* @vite-ignore */ path)).connectBitcoinAccount(), fixturePath)
     await page.getByRole('button', { name: 'Review Bitcoin', exact: true }).click()
     await expect(page.locator('h1, h2, [data-testid=bitcoin-owner-error]').first()).toBeVisible()
     if (await page.getByTestId('bitcoin-owner-error').isVisible()) {
