@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   revoke: vi.fn(),
   connect: vi.fn(),
   readLedger: vi.fn(),
+  registerLedger: vi.fn(),
 }))
 vi.mock('./recovery/backupCodec', async (original) => ({
   ...(await original<typeof import('./recovery/backupCodec')>()),
@@ -84,7 +85,12 @@ vi.mock('./vtxo/board', async (original) => ({
 }))
 vi.mock('./pushSubscription', () => ({ disableBackgroundPush: mocks.push }))
 vi.mock('./vtxo/guardianRenewal', () => ({ clearSpendingRenewalReads: mocks.revoke }))
-vi.mock('./ledgerClient', () => ({ connectLedgerSavings: mocks.connect, readLedgerSavingsAccount: mocks.readLedger }))
+vi.mock('./ledgerClient', () => ({
+  connectLedgerSavings: mocks.connect,
+  readLedgerSavingsAccount: mocks.readLedger,
+  registerLedgerSavings: mocks.registerLedger,
+  signLedgerSavings: vi.fn(),
+}))
 
 const { status, kit } = sharedSpendingRecoveryFixture()
 const enrollment = {
@@ -453,18 +459,71 @@ describe('enrollment ownership', () => {
       expect(loadStagedEnrollment()).toEqual(saved)
     },
   )
+  it.each(['connecting', 'approving'])(
+    'discards canceled Ledger registration during %s and closes the device',
+    async (phase) => {
+      const { f, selected, saved } = await nativeSetup()
+      saveStagedEnrollment(saved)
+      const { session } = await create(selected)
+      const close = vi.fn().mockResolvedValue(undefined)
+      const connection = deferred<{ app: object; close: typeof close }>()
+      const registration = deferred<typeof f.enrollment.ledgerSavings.registration>()
+      mocks.connect.mockReturnValue(connection.promise)
+      mocks.registerLedger.mockReturnValue(registration.promise)
+      const pending = session.approveLedgerEnrollment()
+      await vi.waitFor(() => expect(session.getSnapshot().ledgerApprovalPhase).toBe('connecting'))
+      if (phase === 'approving') {
+        connection.resolve({ app: {}, close })
+        await vi.waitFor(() => expect(mocks.registerLedger).toHaveBeenCalledOnce())
+      }
+      session.cancelLedgerRegistration()
+      connection.resolve({ app: {}, close })
+      registration.resolve(f.enrollment.ledgerSavings.registration)
+      await pending
+      expect(mocks.completeLedger).not.toHaveBeenCalled()
+      expect(loadStagedEnrollment()).toEqual(saved)
+      expect(close).toHaveBeenCalledOnce()
+      if (phase === 'connecting') expect(mocks.registerLedger).not.toHaveBeenCalled()
+    },
+  )
+
+  it('shares Ledger registration and finishes accepted persistence before closing the device', async () => {
+    const { f, selected, saved } = await nativeSetup()
+    saveStagedEnrollment(saved)
+    const { session } = await create(selected)
+    const close = vi.fn().mockResolvedValue(undefined)
+    const finish = deferred<{ enrollment: EnrollmentSecrets; status: VaultStatus }>()
+    mocks.connect.mockResolvedValue({ app: {}, close })
+    mocks.registerLedger.mockResolvedValue(f.enrollment.ledgerSavings.registration)
+    mocks.completeLedger.mockReturnValue(finish.promise)
+    mocks.enable.mockResolvedValue(f.status)
+    const pending = session.approveLedgerEnrollment()
+    expect(session.approveLedgerEnrollment()).toBe(pending)
+    await vi.waitFor(() => expect(session.getSnapshot().ledgerApprovalPhase).toBe('saving'))
+    session.cancelLedgerRegistration()
+    expect(close).not.toHaveBeenCalled()
+    saveStagedEnrollment({ ...saved, ledgerSavings: f.enrollment.ledgerSavings })
+    finish.resolve({ enrollment: f.enrollment, status: f.status })
+    await pending
+    expect(session.getSnapshot().ledgerApprovalPhase).toBe('complete')
+    expect(mocks.connect).toHaveBeenCalledOnce()
+    expect(mocks.registerLedger).toHaveBeenCalledOnce()
+    expect(mocks.completeLedger).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+  })
+
   it('retains registration after a lost finish response and resumes without another approval', async () => {
     const { f, selected, saved } = await nativeSetup(true)
     saveStagedEnrollment(saved)
     const first = await create(selected)
     expect(first.session.getSnapshot().stagedEnrollment).toEqual(saved)
+    mocks.connect.mockResolvedValue({ app: {}, close: vi.fn().mockResolvedValue(undefined) })
+    mocks.registerLedger.mockResolvedValue(f.enrollment.ledgerSavings.registration)
     mocks.completeLedger.mockImplementation(async () => {
       saveStagedEnrollment({ ...saved, ledgerSavings: f.enrollment.ledgerSavings })
       throw new Error('finish response lost')
     })
-    await expect(first.session.completeLedgerEnrollment(f.enrollment.ledgerSavings.registration)).rejects.toThrow(
-      'finish response lost',
-    )
+    await expect(first.session.approveLedgerEnrollment()).rejects.toThrow('finish response lost')
     expect(first.session.getSnapshot().stagedEnrollment?.ledgerSavings).toEqual(f.enrollment.ledgerSavings)
     first.release()
     await Promise.resolve()

@@ -77,7 +77,7 @@ it.each([
 it.each([
   'useSpendingRenewals',
   'useSpendingBitcoin',
-  'useLedgerSavings',
+  'useLedgerPayments',
   'useRecoveryArchive',
   'useRecoveryKit',
   'useRecoveryAlerts',
@@ -196,6 +196,25 @@ it('balance state belongs to the controller and React only binds its external st
   expect(controller).not.toMatch(/from ['"]react['"]|from ['"].*\/screens\//)
   expect(hook).toContain('useSyncExternalStore')
   expect(hook).not.toMatch(/fetchVault|saveBalanceSnapshot|setTimeout|setInterval|reconcilePersisted/)
+})
+
+it('Ledger payment ownership and device actions stay outside presentation', () => {
+  const owner = readFileSync(resolve(root, 'src/lib/vault/ledgerPayments.ts'), 'utf8')
+  expect(owner).not.toMatch(/from ['"]react['"]|from ['"].*\/(screens|providers|vault)\/|setInterval|setTimeout/)
+  for (const path of [
+    'src/screens/Vault/LedgerPayment.tsx',
+    'src/screens/Vault/LedgerSavingsApproval.tsx',
+    'src/screens/Vault/onboard/Ledger.tsx',
+  ]) {
+    expect(imports(path)).not.toContain('src/lib/vault/ledgerClient.ts')
+    expect(imports(path)).not.toContain('src/lib/vault/ledgerSavingsWallet.ts')
+    expect(readFileSync(resolve(root, path), 'utf8')).not.toMatch(
+      /connectLedgerSavings|signLedgerSavings|saveLedgerSavings|onSigned|onRegistered/,
+    )
+  }
+  const hook = readFileSync(resolve(root, 'src/vault/useLedgerPayments.ts'), 'utf8')
+  expect(hook).toContain('useSyncExternalStore')
+  expect(hook).not.toMatch(/useState|useCallback|reconcile|broadcast|signLedger|setInterval|setTimeout/)
 })
 
 it('balance observations and primary Receive use account maintenance without local timers', () => {

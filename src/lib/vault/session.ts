@@ -37,7 +37,7 @@ import {
   reconcileStagedEnrollment,
   type EnrollmentSecrets,
 } from './tenantEnrollment'
-import type { LedgerSavingsRegistration } from './ledgerClient'
+import { approveLedgerRegistration, type LedgerApprovalPhase } from './ledgerApproval'
 import { ledgerSpendingPublicKey, parseLedgerAccountOrigin } from './ledgerSetup'
 import { LEDGER_NATIVE_TEMPLATE } from './program/ledgerNativeKeys'
 import { canonicalLedgerValue } from './program/ledgerEnrollment'
@@ -68,6 +68,7 @@ export interface VaultSessionSnapshot {
   readonly enrollment: EnrollmentSecrets | null
   readonly stagedEnrollment: ReturnType<typeof loadStagedEnrollment>
   readonly privacyLock: boolean
+  readonly ledgerApprovalPhase: LedgerApprovalPhase
   readonly status: VaultStatus | null
   readonly addressPin: AddressPin | null
   readonly deployment: PublicAuthorizerStatus | null
@@ -102,6 +103,7 @@ export function createVaultSession() {
     enrollment: null,
     stagedEnrollment: null,
     privacyLock: false,
+    ledgerApprovalPhase: 'idle',
     status: null,
     addressPin: null,
     deployment: null,
@@ -676,21 +678,45 @@ export function createVaultSession() {
         JSON.stringify([token, setup]),
       )
     },
-    completeLedgerEnrollment(registration: LedgerSavingsRegistration) {
-      registration = structuredClone(registration)
+    cancelLedgerRegistration() {
+      if (flight?.kind === 'register-ledger' && ['connecting', 'approving'].includes(snapshot.ledgerApprovalPhase))
+        cancel()
+    },
+    approveLedgerEnrollment() {
       const setup = structuredClone(snapshot.setup)
       return run(
         'register-ledger',
         async (signal) => {
           const staged = loadStagedEnrollment()
-          if (staged) remember(staged.vaultId)
-          await acceptEnrollment(
-            await completeLedgerTenantEnrollment(registration, localStorage, signal),
-            setup,
-            signal,
-          )
+          if (!staged?.ledgerSavingsDraft || staged.ledgerSavings)
+            throw new Error('Reopen the saved Ledger setup before requesting approval.')
+          remember(staged.vaultId)
+          publish({ ledgerApprovalPhase: 'connecting' })
+          let saving = false
+          try {
+            await approveLedgerRegistration(
+              staged.ledgerSavingsDraft.contract,
+              signal,
+              () => publish({ ledgerApprovalPhase: 'approving' }),
+              async (registration) => {
+                signal.throwIfAborted()
+                saving = true
+                publish({ ledgerApprovalPhase: 'saving' })
+                await acceptEnrollment(
+                  await completeLedgerTenantEnrollment(registration, localStorage, signal),
+                  setup,
+                  signal,
+                )
+                signal.throwIfAborted()
+                publish({ ledgerApprovalPhase: 'complete' })
+              },
+            )
+          } catch (error) {
+            if (!signal.aborted) publish({ ledgerApprovalPhase: saving ? 'check' : 'idle' })
+            throw error
+          }
         },
-        JSON.stringify(registration),
+        'register-ledger',
         true,
       )
     },

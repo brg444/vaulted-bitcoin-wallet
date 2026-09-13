@@ -4,7 +4,7 @@ import { chromium } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const output = root + 'tools/native-savings-signers/evidence/ledger-ui'
+const output = process.env.VAULT_LEDGER_UI_OUTPUT || root + 'tools/native-savings-signers/evidence/ledger-ui'
 mkdirSync(output, { recursive: true })
 const server = await createServer({
   root,

@@ -28,6 +28,9 @@ import { VaultContext, VaultProvider } from './vault'
 import { LedgerHardware } from '../screens/Vault/onboard/Ledger'
 import ledgerVectors from '../lib/vault/program/ledger-key-vectors.json'
 import { ledgerSpendingPublicKey } from '../lib/vault/ledgerSetup'
+import type { LedgerSavingsView } from '../lib/vault/ledgerPayments'
+
+let ledgerView: LedgerSavingsView
 
 const mocks = vi.hoisted(() => ({
   ledger: vi.fn(),
@@ -62,7 +65,7 @@ const mocks = vi.hoisted(() => ({
   })),
 }))
 
-vi.mock('../vault/useLedgerSavings', () => ({ useLedgerSavings: mocks.ledger }))
+vi.mock('../vault/useLedgerPayments', () => ({ useLedgerPayments: mocks.ledger }))
 
 vi.mock('../lib/vault/ledgerClient', async (original) => ({
   ...(await original<typeof import('../lib/vault/ledgerClient')>()),
@@ -208,6 +211,8 @@ function Probe() {
   return (
     <div>
       <button onClick={() => vault.openPendingPayment('11'.repeat(16))}>Open pending</button>
+      <button onClick={() => session.setPrivacyLock(!session.privacyLock)}>Toggle privacy</button>
+      <span data-testid='privacy'>{String(session.privacyLock)}</span>
       <span data-testid='screen'>{vault.screen}</span>
       <span data-testid='account'>{vault.account}</span>
       <span data-testid='scan'>{String(vault.scanOnSend)}</span>
@@ -257,6 +262,20 @@ function Probe() {
 }
 
 describe('VaultProvider reviewed VTXO reservation', () => {
+  it('publishes privacy-only session changes through the complete snapshot', async () => {
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    expect(screen.getByTestId('privacy')).toHaveTextContent('false')
+    fireEvent.click(screen.getByText('Toggle privacy'))
+    expect(screen.getByTestId('privacy')).toHaveTextContent('true')
+    expect(localStorage.getItem('arkade-vault-privacy-lock')).toBe('1')
+    fireEvent.click(screen.getByText('Toggle privacy'))
+    expect(screen.getByTestId('privacy')).toHaveTextContent('false')
+  })
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
@@ -264,16 +283,28 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   })
 
   beforeEach(() => {
-    mocks.ledgerReview.mockReset().mockResolvedValue(212)
-    mocks.ledgerApprove.mockReset().mockResolvedValue(undefined)
+    ledgerView = { record: { payment: { feeSats: 212 } } } as LedgerSavingsView
+    mocks.ledgerReview.mockReset().mockResolvedValue(ledgerView)
+    mocks.ledgerApprove.mockReset().mockResolvedValue(ledgerView)
     mocks.ledgerComplete.mockReset().mockResolvedValue('ab'.repeat(32))
     mocks.ledgerRefresh.mockReset().mockResolvedValue(undefined)
     mocks.ledger.mockReturnValue({
       view: null,
-      review: mocks.ledgerReview,
-      approve: mocks.ledgerApprove,
-      complete: mocks.ledgerComplete,
-      refresh: mocks.ledgerRefresh,
+      pending: null,
+      error: '',
+      hardwarePhase: 'idle',
+      completion: null,
+      payments: {
+        review: mocks.ledgerReview,
+        approve: mocks.ledgerApprove,
+        approveWithLedger: mocks.ledgerComplete,
+        refresh: mocks.ledgerRefresh,
+        cancelReview: vi.fn(),
+        cancelHardware: vi.fn(),
+        clearError: vi.fn(),
+        consumeCompletion: vi.fn(),
+        getSnapshot: vi.fn(() => ({ completion: null, view: ledgerView })),
+      },
     })
     mocks.bitcoinSend.mockReset()
     mocks.refreshBalance.mockReset().mockResolvedValue(undefined)
@@ -362,19 +393,60 @@ describe('VaultProvider reviewed VTXO reservation', () => {
 
   it('rejects a Ledger review result after the draft changes', async () => {
     await openLedgerSavings()
-    let complete!: (fee: number) => void
+    let complete!: (view: LedgerSavingsView) => void
     mocks.ledgerReview.mockReturnValue(
-      new Promise<number>((resolve) => {
+      new Promise<LedgerSavingsView>((resolve) => {
         complete = resolve
       }),
     )
     fireEvent.click(screen.getByText('Review'))
     await waitFor(() => expect(mocks.ledgerReview).toHaveBeenCalledOnce())
     fireEvent.click(screen.getByText('Set draft'))
-    await act(async () => complete(212))
+    await act(async () => complete(ledgerView))
     expect(screen.getByTestId('error')).toHaveTextContent('Send details changed. Review the payment again.')
     expect(screen.getByTestId('screen')).not.toHaveTextContent('review')
     expect(mocks.ledgerApprove).not.toHaveBeenCalled()
+  })
+
+  it.each(['review', 'approve'])(
+    'ignores a canceled Ledger %s result and leaves its error with the owner',
+    async (command) => {
+      await openLedgerSavings()
+      let reject!: (error: Error) => void
+      const method = command === 'review' ? mocks.ledgerReview : mocks.ledgerApprove
+      method.mockReturnValue(
+        new Promise((_resolve, fail) => {
+          reject = fail
+        }),
+      )
+      fireEvent.click(screen.getByText(command === 'review' ? 'Review' : 'Approve'))
+      await waitFor(() => expect(method).toHaveBeenCalledOnce())
+      fireEvent.click(screen.getByText('Go home'))
+      await act(async () => reject(new DOMException('The active vault changed.', 'AbortError')))
+      expect(screen.getByTestId('screen')).toHaveTextContent('home')
+      expect(screen.getByTestId('error')).toHaveTextContent(/^$/)
+    },
+  )
+
+  it('consumes a Ledger completion once and preserves its reviewed payment details', async () => {
+    await openLedgerSavings()
+    const binding = mocks.ledger.mock.results.at(-1)!.value
+    const completed = { id: 1, txid: 'ab'.repeat(32), payment: { address: 'saved-recipient', amount: 4200, fee: 212 } }
+    binding.completion = completed
+    binding.payments.getSnapshot.mockReturnValue({ completion: completed, view: ledgerView })
+    binding.payments.consumeCompletion.mockImplementation(() => {
+      binding.payments.getSnapshot.mockReturnValue({ completion: null, view: ledgerView })
+      return completed
+    })
+    fireEvent.click(screen.getByText('Toggle privacy'))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
+    expect(screen.getByTestId('sent-destination')).toHaveTextContent('saved-recipient')
+    expect(screen.getByTestId('sent-amount')).toHaveTextContent('4200')
+    fireEvent.click(screen.getByText('Go home'))
+    mocks.refreshBalance = vi.fn().mockResolvedValue(undefined)
+    fireEvent.click(screen.getByText('Toggle privacy'))
+    expect(screen.getByTestId('screen')).toHaveTextContent('home')
+    expect(binding.payments.consumeCompletion).toHaveBeenCalledExactlyOnceWith(1)
   })
 
   it.each([
@@ -386,10 +458,6 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     expect(templateVersion).not.toBe(LEDGER_NATIVE_TEMPLATE)
     await openLedgerSavings(templateVersion)
     fireEvent.click(screen.getByText('Review'))
-    await waitFor(() =>
-      expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
-    )
-    fireEvent.click(screen.getByText('Approve'))
     await waitFor(() =>
       expect(screen.getByTestId('error')).toHaveTextContent('This Savings program is no longer supported.'),
     )

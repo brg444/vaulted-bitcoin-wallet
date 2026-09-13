@@ -1,7 +1,7 @@
 export async function setupLedgerUi(width) {
   const React = await import('react')
   const { createRoot } = await import('react-dom/client')
-  const { VaultContext } = await import('/src/vault/context.ts')
+  const { VaultTestProvider } = await import('/src/test/fixtures/VaultTestProvider.tsx')
   const { ledgerPaymentFixture } = await import('/src/test/ledgerSavingsFixture.ts')
   const { LedgerHardware } = await import('/src/screens/Vault/onboard/Ledger.tsx')
   const { default: Approval } = await import('/src/screens/Vault/LedgerSavingsApproval.tsx')
@@ -32,6 +32,7 @@ export async function setupLedgerUi(width) {
     account: 'savings',
     networkLabel: 'Bitcoin',
     savingsAddress: family.receive.address,
+    ledgerAvailable: true,
     status: { templateVersion: payment.contract.context.templateVersion, network: 'mainnet' },
     setup: {
       protectionTier: 'standard',
@@ -50,16 +51,13 @@ export async function setupLedgerUi(width) {
       React.createElement(Approval, {
         mode: 'sign',
         payment,
-        phonePsbt: 'fixture-only',
-        registration: {},
-        onSigned: async () => {},
+        busy: false,
+        phase: 'idle',
+        error: '',
+        onApprove: async () => {},
         onBack: () => {},
       }),
   }
   window.showLedgerFixture = (name) =>
-    app.render(
-      React.createElement(VaultContext.Consumer, null, (defaults) =>
-        React.createElement(VaultContext.Provider, { value: { ...defaults, ...state } }, screens[name]()),
-      ),
-    )
+    app.render(React.createElement(VaultTestProvider, { value: state }, screens[name]()))
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { createVaultSession, type VaultSession, type SessionOutcome } from '../lib/vault/session'
 import type { VaultScreen } from './context'
 
@@ -9,7 +9,7 @@ export function useVaultSession() {
   const session = owner.current
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot)
   useEffect(() => session.retain(), [session])
-  return { session, ...snapshot }
+  return useMemo(() => ({ session, ...snapshot }), [session, snapshot])
 }
 
 const destinations: Record<SessionOutcome, VaultScreen> = {

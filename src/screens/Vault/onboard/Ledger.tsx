@@ -1,5 +1,5 @@
 import { useSession } from '../../../vault/sessionContext'
-import { useContext, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { VaultContext } from '../../../vault/context'
 import LedgerSavingsApproval from '../LedgerSavingsApproval'
 import WalletScreen from '../qg/WalletScreen'
@@ -104,7 +104,9 @@ export function LedgerRecoveryKey() {
 }
 
 export function LedgerEnrollmentRegistration() {
-  const { completeLedgerEnrollment, enroll, pendingLedgerSetup } = useSession()
+  const { approveLedgerEnrollment, cancelLedgerRegistration, ledgerApprovalPhase, enroll, pendingLedgerSetup } =
+    useSession()
+  useEffect(() => cancelLedgerRegistration, [cancelLedgerRegistration])
   const { navigate, busy, error } = useContext(VaultContext)
   if (!pendingLedgerSetup)
     return (
@@ -126,8 +128,10 @@ export function LedgerEnrollmentRegistration() {
   return (
     <LedgerSavingsApproval
       mode='register'
-      contract={pendingLedgerSetup.contract}
-      onRegistered={completeLedgerEnrollment}
+      busy={busy}
+      phase={ledgerApprovalPhase}
+      error={error}
+      onApprove={approveLedgerEnrollment}
       onBack={() => navigate('plan')}
     />
   )

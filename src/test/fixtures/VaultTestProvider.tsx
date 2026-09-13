@@ -3,6 +3,7 @@ import { VaultContext, type VaultContextProps } from '../../vault/context'
 import { VaultSessionContext, type VaultSessionContextProps } from '../../vault/sessionContext'
 import { emptySetupPlan } from '../../lib/vault/setupPlan'
 import { CURRENT_SPENDING_POLICY_CAPABILITIES } from '../../lib/vault/spendingPolicy'
+import { LedgerPaymentContext, type LedgerPaymentContextProps } from '../../vault/ledgerPaymentContext'
 
 export type VaultTestContextProps = VaultContextProps & VaultSessionContextProps
 const emptySession: VaultSessionContextProps = {
@@ -12,6 +13,9 @@ const emptySession: VaultSessionContextProps = {
   privacyLock: false,
   setPrivacyLock: () => {},
   pendingLedgerSetup: null,
+  ledgerApprovalPhase: 'idle',
+  approveLedgerEnrollment: async () => {},
+  cancelLedgerRegistration: () => {},
   enrolled: false,
   hasLocalEnrollment: false,
   ledgerAvailable: false,
@@ -21,7 +25,6 @@ const emptySession: VaultSessionContextProps = {
   acceptDesign: () => {},
   connectLedgerKey: async () => {},
   applyLedgerRecovery: () => {},
-  completeLedgerEnrollment: async () => {},
   setProtectionTier: () => {},
   skipRecovery: () => {},
   setSpendingPolicy: () => {},
@@ -32,20 +35,33 @@ const emptySession: VaultSessionContextProps = {
   restoreRecoveryArchive: async () => {},
   reset: () => {},
 }
+const emptyLedgerPayment: LedgerPaymentContextProps = {
+  view: null,
+  pending: null,
+  hardwarePhase: 'idle',
+  error: '',
+  approveWithLedger: async () => '',
+  cancelHardware: () => {},
+}
 
 /** Fixtures may override either context without reintroducing the application's shared facade. */
 export function VaultTestProvider({
   value,
   children,
+  ledgerPayment,
 }: {
   value?: Partial<VaultTestContextProps>
   children: ReactNode
+  ledgerPayment?: Partial<LedgerPaymentContextProps>
 }) {
   const defaults = useContext(VaultContext)
   const inherited = useContext(VaultSessionContext)
+  const inheritedLedger = useContext(LedgerPaymentContext)
   return (
     <VaultSessionContext.Provider value={{ ...emptySession, ...inherited, ...value }}>
-      <VaultContext.Provider value={{ ...defaults, ...value }}>{children}</VaultContext.Provider>
+      <LedgerPaymentContext.Provider value={{ ...emptyLedgerPayment, ...inheritedLedger, ...ledgerPayment }}>
+        <VaultContext.Provider value={{ ...defaults, ...value }}>{children}</VaultContext.Provider>
+      </LedgerPaymentContext.Provider>
     </VaultSessionContext.Provider>
   )
 }

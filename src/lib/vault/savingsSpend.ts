@@ -99,7 +99,12 @@ export function buildNativeSavingsPsbt<Coin extends SavingsCoin>(input: {
   return hex.encode(tx.toPSBT())
 }
 
-async function unlockVaultPrf(rec: EnrollmentSecrets, status: VaultStatus): Promise<Uint8Array<ArrayBuffer>> {
+async function unlockVaultPrf(
+  rec: EnrollmentSecrets,
+  status: VaultStatus,
+  signal?: AbortSignal,
+): Promise<Uint8Array<ArrayBuffer>> {
+  signal?.throwIfAborted()
   const rpId = String(status.rpId || '').toLowerCase()
   if (!rpId || rpId !== location.hostname.toLowerCase()) {
     throw new Error('deployment RP ID does not match this signing client host')
@@ -114,6 +119,7 @@ async function unlockVaultPrf(rec: EnrollmentSecrets, status: VaultStatus): Prom
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const credentialId = hexToBytes(rec.credId)
   const get = (await navigator.credentials.get({
+    signal,
     publicKey: deviceSigningOptions(
       {
         challenge,
@@ -128,8 +134,14 @@ async function unlockVaultPrf(rec: EnrollmentSecrets, status: VaultStatus): Prom
   if (hex.encode(new Uint8Array(get.rawId)) !== hex.encode(credentialId))
     throw new Error('passkey credential does not match this vault')
   const prf = prfFrom(get)
-  if (!prf || prf.length !== 32) throw new Error('authenticator did not return PRF')
-  return prf
+  try {
+    signal?.throwIfAborted()
+    if (!prf || prf.length !== 32) throw new Error('authenticator did not return PRF')
+    return prf
+  } catch (error) {
+    prf?.fill(0)
+    throw error
+  }
 }
 
 function ledgerEnrollmentForUnlock(rec: EnrollmentSecrets, status: VaultStatus) {
@@ -162,13 +174,25 @@ export async function unlockPhoneBip340(rec: EnrollmentSecrets, status: VaultSta
 }
 
 /** The caller wipes the returned seed. This never reinterprets the Spending scalar. */
-export async function unlockLedgerSavingsSeed(rec: EnrollmentSecrets, status: VaultStatus): Promise<Uint8Array> {
+export async function unlockLedgerSavingsSeed(
+  rec: EnrollmentSecrets,
+  status: VaultStatus,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  signal?.throwIfAborted()
   rec = structuredClone(rec)
   status = structuredClone(status)
   const enrolled = ledgerEnrollmentForUnlock(rec, status)
-  const prf = await unlockVaultPrf(rec, status)
+  const prf = await unlockVaultPrf(rec, status, signal)
+  let seed: Uint8Array | undefined
   try {
-    return await unlockLedgerPhoneSeed(enrolled.phoneSeedBackup, prf, 'passkey-prf', enrolled.contract.context)
+    signal?.throwIfAborted()
+    seed = await unlockLedgerPhoneSeed(enrolled.phoneSeedBackup, prf, 'passkey-prf', enrolled.contract.context)
+    signal?.throwIfAborted()
+    return seed
+  } catch (error) {
+    seed?.fill(0)
+    throw error
   } finally {
     zeroBytes(prf)
   }

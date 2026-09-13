@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hex } from '@scure/base'
 import * as webauthn from './webauthn'
+import * as phoneBackup from './ledgerPhoneBackup'
 import { ledgerRecoveryFixture, ledgerFixturePRF, ledgerFixtureSeed } from './recovery/testdata/ledger'
 import { unlockLedgerSavingsSeed, unlockVaultPhoneKeys } from './savingsSpend'
 import { scalarSecret } from './program/fixtures'
@@ -28,6 +29,63 @@ function credential(enrollment: EnrollmentSecrets, prf = ledgerFixturePRF.slice(
 }
 
 describe('Ledger passkey access keeps both phone identities', () => {
+  it('does not prompt or decrypt after cancellation', async () => {
+    const { enrollment, status } = await ledgerRecoveryFixture()
+    const abort = new AbortController()
+    abort.abort()
+    const get = vi.fn()
+    const decrypt = vi.spyOn(phoneBackup, 'unlockLedgerPhoneSeed')
+    vi.stubGlobal('navigator', { credentials: { get } })
+    await expect(unlockLedgerSavingsSeed(enrollment, status, abort.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(get).not.toHaveBeenCalled()
+    expect(decrypt).not.toHaveBeenCalled()
+  }, 60000)
+
+  it('wipes an owned PRF returned after cancellation without decrypting a seed', async () => {
+    const { enrollment, status } = await ledgerRecoveryFixture()
+    Object.assign(status, { rpId: location.hostname, clientOrigin: location.origin })
+    const abort = new AbortController()
+    const ownedPrf = ledgerFixturePRF.slice()
+    vi.spyOn(webauthn, 'prfFrom').mockReturnValue(ownedPrf)
+    const decrypt = vi.spyOn(phoneBackup, 'unlockLedgerPhoneSeed')
+    const get = vi.fn(async (options: CredentialRequestOptions) => {
+      expect(options.signal).toBe(abort.signal)
+      abort.abort()
+      return credential(enrollment)
+    })
+    vi.stubGlobal('navigator', { credentials: { get } })
+    await expect(unlockLedgerSavingsSeed(enrollment, status, abort.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(ownedPrf.every((byte) => byte === 0)).toBe(true)
+    expect(decrypt).not.toHaveBeenCalled()
+  }, 60000)
+
+  it('wipes the decrypted seed and PRF when cancellation arrives during decryption', async () => {
+    const { enrollment, status } = await ledgerRecoveryFixture()
+    Object.assign(status, { rpId: location.hostname, clientOrigin: location.origin })
+    const abort = new AbortController()
+    const ownedPrf = ledgerFixturePRF.slice()
+    vi.spyOn(webauthn, 'prfFrom').mockReturnValue(ownedPrf)
+    const decrypt = phoneBackup.unlockLedgerPhoneSeed
+    let lateSeed: Uint8Array<ArrayBuffer> | undefined
+    vi.spyOn(phoneBackup, 'unlockLedgerPhoneSeed').mockImplementation(async (...args) => {
+      lateSeed = await decrypt(...args)
+      expect(lateSeed).toEqual(ledgerFixtureSeed)
+      abort.abort()
+      return lateSeed
+    })
+    vi.stubGlobal('navigator', { credentials: { get: vi.fn(async () => credential(enrollment)) } })
+    await expect(unlockLedgerSavingsSeed(enrollment, status, abort.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(lateSeed).toBeDefined()
+    expect(lateSeed!.every((byte) => byte === 0)).toBe(true)
+    expect(ownedPrf.every((byte) => byte === 0)).toBe(true)
+  }, 60000)
+
   it('unlocks both distinct secrets with one credential prompt and wipes the PRF', async () => {
     const { enrollment, status } = await ledgerRecoveryFixture()
     Object.assign(status, { rpId: location.hostname, clientOrigin: location.origin })

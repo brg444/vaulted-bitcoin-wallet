@@ -1,11 +1,15 @@
-import { useContext } from 'react'
+import { useContext, useEffect } from 'react'
+import { useLedgerPayment } from '../../vault/ledgerPaymentContext'
 import { VaultContext } from '../../vault/context'
 import LedgerSavingsApproval from './LedgerSavingsApproval'
 import WalletScreen from './qg/WalletScreen'
 import { QgPrimary } from './qg/QgScreen'
 
 export default function VaultLedgerPayment() {
-  const { ledgerPayment, completeLedgerPayment, navigate, busy, error } = useContext(VaultContext)
+  const { navigate } = useContext(VaultContext)
+  const { view: ledgerPayment, approveWithLedger, cancelHardware, pending, hardwarePhase, error } = useLedgerPayment()
+  const busy = pending !== null
+  useEffect(() => cancelHardware, [cancelHardware])
   const back = () => navigate('home')
   if (busy && ledgerPayment?.record.txHex)
     return (
@@ -25,15 +29,16 @@ export default function VaultLedgerPayment() {
       </WalletScreen>
     )
   }
-  const { record, registration } = ledgerPayment
+  const { record } = ledgerPayment
   return (
     <LedgerSavingsApproval
       mode='sign'
       payment={record.payment}
-      phonePsbt={record.phonePsbt!}
-      registration={registration}
+      busy={busy}
+      phase={hardwarePhase}
+      error={error}
       onBack={back}
-      onSigned={(signed) => completeLedgerPayment(record.candidateId, signed)}
+      onApprove={() => approveWithLedger(record.candidateId)}
     />
   )
 }

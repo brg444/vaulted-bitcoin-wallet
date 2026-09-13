@@ -3,6 +3,7 @@ import { vaultOperatorOrigin } from './networkPins'
 import type { VaultStatus } from './types'
 import type { VaultBalanceController } from './accountBalances'
 import type { VaultRecoveryWatch } from './accountRecoveryWatch'
+import type { LedgerPayments } from './ledgerPayments'
 import type { WalletConnection } from './vtxo/walletWorker'
 
 export interface VaultAccountRuntime {
@@ -12,6 +13,7 @@ export interface VaultAccountRuntime {
   enrolled: boolean
   balances?: VaultBalanceController
   recoveryWatch?: VaultRecoveryWatch
+  ledgerPayments?: LedgerPayments
   maintenance: VaultAccountMaintenance
   listeners: Set<() => void>
   disposed: boolean
@@ -51,10 +53,12 @@ export function disposeVaultAccountRuntime(account: VaultAccountRuntime): Promis
   account.listeners.clear()
   account.balances?.dispose()
   account.recoveryWatch?.dispose()
+  const payments = account.ledgerPayments?.suspend()
   if (current === account) current = undefined
   const drain = account.maintenance.dispose()
   account.disposal = (async () => {
     await drain
+    await payments
     await account.initialization?.catch(() => undefined)
     await account.replacement?.promise.catch(() => undefined)
     await account.closeConnection?.()

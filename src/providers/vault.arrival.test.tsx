@@ -78,13 +78,22 @@ vi.mock('../vault/useSpendingBitcoin', () => ({
   useSpendingBitcoin: () => ({ snapshot: { operation: null, error: '' }, acknowledgeRecovery: vi.fn() }),
 }))
 vi.mock('../vault/useSpendingRenewals', () => ({ useSpendingRenewals: () => null }))
-vi.mock('../vault/useLedgerSavings', () => ({
-  useLedgerSavings: () => ({
+vi.mock('../vault/useLedgerPayments', () => ({
+  useLedgerPayments: () => ({
     view: null,
-    review: vi.fn(),
-    approve: vi.fn(),
-    complete: vi.fn(),
-    refresh: vi.fn(),
+    pending: null,
+    error: '',
+    hardwarePhase: 'idle',
+    completion: null,
+    payments: {
+      review: vi.fn(),
+      approve: vi.fn(),
+      refresh: vi.fn(),
+      approveWithLedger: vi.fn(),
+      cancelReview: vi.fn(),
+      cancelHardware: vi.fn(),
+      clearError: vi.fn(),
+    },
   }),
 }))
 vi.mock('../lib/vault/status', () => ({

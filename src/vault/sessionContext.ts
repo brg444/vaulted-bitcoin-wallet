@@ -14,6 +14,9 @@ export function sessionView(snapshot: VaultSessionSnapshot, session: VaultSessio
     pendingLedgerSetup: stagedEnrollment?.ledgerSavingsDraft
       ? { contract: stagedEnrollment.ledgerSavingsDraft.contract, registered: Boolean(stagedEnrollment.ledgerSavings) }
       : null,
+    ledgerApprovalPhase: snapshot.ledgerApprovalPhase,
+    approveLedgerEnrollment: session.approveLedgerEnrollment,
+    cancelLedgerRegistration: session.cancelLedgerRegistration,
     enrolled: Boolean(status?.enrolled),
     hasLocalEnrollment: Boolean(enrollment),
     ledgerAvailable:
@@ -25,7 +28,6 @@ export function sessionView(snapshot: VaultSessionSnapshot, session: VaultSessio
     acceptDesign: session.acceptDesign,
     connectLedgerKey: session.connectLedgerKey,
     applyLedgerRecovery: session.applyLedgerRecovery,
-    completeLedgerEnrollment: session.completeLedgerEnrollment,
     setProtectionTier: session.setProtectionTier,
     skipRecovery: session.skipRecovery,
     setSpendingPolicy: session.setSpendingPolicy,

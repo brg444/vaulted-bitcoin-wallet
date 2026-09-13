@@ -1,6 +1,7 @@
 import { requireSupportedVaultNetwork, DUST_SATS } from '../lib/vault/constants'
 import { loadWatchedSavings, saveWatchedSavings, type WatchedSavingsAddress } from '../lib/vault/watchSavings'
-import { useLedgerSavings } from '../vault/useLedgerSavings'
+import { useLedgerPayments } from '../vault/useLedgerPayments'
+import { ledgerPaymentView, LedgerPaymentContext } from '../vault/ledgerPaymentContext'
 import { BitcoinPaymentError } from '../lib/vault/bitcoinPaymentError'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import { useNativePaymentNotifications } from '../vault/useNativePaymentNotifications'
@@ -94,6 +95,7 @@ export function reviewedVtxoQuoteMatchesDraft(quote: VaultVtxoSpendQuote | null,
 }
 
 export function VaultProvider({ children }: { children: ReactNode }) {
+  const sessionState = useVaultSession()
   const {
     session,
     setup,
@@ -107,22 +109,24 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     pending,
     transition,
     error: sessionError,
-  } = useVaultSession()
+  } = sessionState
+  const ledgerSavings = useLedgerPayments(session)
   const [screen, setScreen] = useState<VaultScreen>('welcome')
   const [recoverEntry, setRecoverEntry] = useState<'kit' | 'lost'>('kit')
   const [recoverExit, setRecoverExit] = useState<VaultScreen>('keys')
   const [operationError, setOperationError] = useState('')
-  const error = operationError || sessionError
+  const error = operationError || sessionError || ledgerSavings.error
   const setError = useCallback(
     (message: string) => {
       session.clearError()
+      ledgerSavings.payments.clearError()
       setOperationError(message)
     },
-    [session],
+    [session, ledgerSavings.payments],
   )
   const [paymentError, setPaymentError] = useState<BitcoinPaymentError | undefined>()
   const [paymentBusy, setPaymentBusy] = useState(false)
-  const busy = paymentBusy || (pending !== null && pending !== 'boot')
+  const busy = paymentBusy || ledgerSavings.pending !== null || (pending !== null && pending !== 'boot')
   const [spend, setSpend] = useState<VaultSpend>({ address: '', amount: 0, fee: 0 })
   const spendRef = useRef(spend)
   spendRef.current = spend
@@ -281,7 +285,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const networkLabel = activeNetwork === 'mainnet' ? 'Bitcoin' : liveNetwork ? 'Mutinynet' : 'Unavailable'
   const clearError = useCallback(() => reportError(''), [reportError])
 
-  const ledgerSavings = useLedgerSavings(status, enrollment, locked)
   const { snapshot: spendingBitcoin, acknowledgeRecovery: acknowledgeBitcoinRecovery } = useSpendingBitcoin(
     status,
     locked,
@@ -423,6 +426,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const setSpendDraft = useCallback(
     (draft: Partial<VaultSpend>) => {
+      ledgerSavings.payments.cancelReview()
       setReviewedVtxoQuote(null)
       setLightningQuote(null)
       setCanReplaceInFlightSend(false)
@@ -433,7 +437,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       })
       setError('')
     },
-    [account, liveNetwork],
+    [account, liveNetwork, ledgerSavings.payments, setError],
   )
 
   const reviewedPendingPayment =
@@ -703,19 +707,17 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setError('This Savings program is no longer supported.')
         return
       }
-      setPaymentBusy(true)
       try {
-        const fee = await ledgerSavings.review(spend)
+        const reviewed = await ledgerSavings.payments.review(spend)
+        if (ledgerSavings.payments.getSnapshot().view !== reviewed) return
         if (spendRef.current.address !== spend.address || spendRef.current.amount !== spend.amount) {
           setError('Send details changed. Review the payment again.')
           return
         }
-        setSpend({ ...spend, fee })
+        setSpend({ ...spend, fee: reviewed.record.payment.feeSats })
         setScreen('review')
-      } catch (err) {
-        setError(humanizeVaultError(err))
-      } finally {
-        setPaymentBusy(false)
+      } catch {
+        // The payment owner publishes errors only into the current session.
       }
       return
     }
@@ -769,7 +771,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     enrollment,
     reviewLightningSpend,
     reviewBitcoinPayment,
-    ledgerSavings.review,
+    ledgerSavings.payments,
     setup.txCapSats,
     spend,
     status,
@@ -805,38 +807,30 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [account, liveNetwork, refreshBalance, spend, status],
   )
 
-  const approveSavingsSend = useCallback(async () => {
-    if (status?.protectionTier === 'light') throw new Error('Savings is watch-only in this wallet.')
-    if (!status?.enrolled || !enrollment || !savingsAddress) {
-      throw new Error('Sign in with the passkey that created this vault.')
-    }
-    if (status.templateVersion !== LEDGER_NATIVE_TEMPLATE) {
-      throw new Error('This Savings program is no longer supported.')
-    }
-    const txid = await ledgerSavings.approve(spend)
-    if (txid) await finishBroadcast(txid)
-    else setScreen('ledger-sign')
-  }, [enrollment, savingsAddress, spend, status, finishBroadcast, ledgerSavings.approve])
-
-  const completeLedgerPayment = useCallback(
-    async (candidateId: string, signedPsbt: string) => {
-      setPaymentBusy(true)
-      setError('')
-      try {
-        const txid = await ledgerSavings.complete(candidateId, signedPsbt)
-        await finishBroadcast(txid)
-      } catch (err) {
-        setError(humanizeVaultError(err))
-        throw err
-      } finally {
-        await ledgerSavings.refresh().catch(() => {})
-        setPaymentBusy(false)
-      }
-    },
-    [ledgerSavings.complete, ledgerSavings.refresh, finishBroadcast],
-  )
+  const ledgerCompletion = ledgerSavings.completion
+  useEffect(() => {
+    if (!ledgerCompletion || ledgerSavings.payments.getSnapshot().completion !== ledgerCompletion) return
+    if (!ledgerSavings.payments.consumeCompletion(ledgerCompletion.id)) return
+    setAccount('savings')
+    setLastTxid(ledgerCompletion.txid)
+    setLastTxKind('onchain')
+    setLastSend(ledgerCompletion.payment)
+    setSpend({ address: '', amount: 0, fee: vaultDraftFee('savings', liveNetwork) })
+    setScreen('success')
+    void refreshBalance().catch(() => undefined)
+  }, [ledgerCompletion, ledgerSavings.payments, liveNetwork, refreshBalance])
 
   const approveSend = useCallback(async () => {
+    if (account === 'savings') {
+      setError('')
+      try {
+        const approved = await ledgerSavings.payments.approve(spend)
+        if (approved && ledgerSavings.payments.getSnapshot().view === approved) setScreen('ledger-sign')
+      } catch {
+        // The payment owner publishes errors only into the current session.
+      }
+      return
+    }
     if (bitcoinApproval.current) {
       const approval = bitcoinApproval.current
       bitcoinApproval.current = null
@@ -853,10 +847,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setPaymentBusy(true)
     setError('')
     try {
-      if (account === 'savings') {
-        await approveSavingsSend()
-        return
-      }
       if (!status?.enrolled || !enrollment) {
         setError('Sign in with the passkey that created this vault.')
         return
@@ -1039,7 +1029,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
   }, [
     account,
-    approveSavingsSend,
+    ledgerSavings.payments,
     enrollment,
     finishBroadcast,
     lightningQuote,
@@ -1121,8 +1111,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       approveSend,
       busy,
       canSend: spendingAvailableSats >= DUST_SATS,
-      ledgerPayment: ledgerSavings.view,
-      completeLedgerPayment,
       confirmConditions,
       dailyLimit,
       dailyRemaining,
@@ -1152,11 +1140,21 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           tx.txid === ledger.record.candidateId &&
           !['broadcast', 'confirmed', 'conflicted'].includes(ledger.outcome)
         ) {
-          const payment = ledger.record.payment
-          setAccount('savings')
-          setSpend({ address: payment.destAddress, amount: payment.amountSats, fee: payment.feeSats })
-          setError('')
-          setScreen(ledger.record.phonePsbt && !ledger.record.txHex ? 'ledger-sign' : 'review')
+          void ledgerSavings.payments
+            .reopen(ledger.record.candidateId)
+            .then((opened) => {
+              if (ledgerSavings.payments.getSnapshot().view !== opened) return
+              const payment = opened.record.payment
+              setAccount('savings')
+              setSpend({ address: payment.destAddress, amount: payment.amountSats, fee: payment.feeSats })
+              setError('')
+              if (['broadcast', 'confirmed', 'conflicted'].includes(opened.outcome)) {
+                setSelectedTx(tx)
+                setTxReturn(screen)
+                setScreen('tx')
+              } else setScreen(opened.record.phonePsbt && !opened.record.txHex ? 'ledger-sign' : 'review')
+            })
+            .catch(() => undefined)
           return
         }
         setSelectedTx(tx)
@@ -1232,7 +1230,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       busy,
       confirmConditions,
       ledgerSavings.view,
-      completeLedgerPayment,
       dailyLimit,
       dailyRemaining,
       enrollment,
@@ -1285,13 +1282,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     ],
   )
 
-  const sessionValue = useMemo(
-    () => sessionView(session.getSnapshot(), session),
-    [session, setup, status, deployment, enrollment, locked],
-  )
+  const sessionValue = useMemo(() => sessionView(sessionState, sessionState.session), [sessionState])
   return (
     <VaultSessionContext.Provider value={sessionValue}>
-      <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+      <LedgerPaymentContext.Provider value={ledgerPaymentView(ledgerSavings, ledgerSavings.payments)}>
+        <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+      </LedgerPaymentContext.Provider>
     </VaultSessionContext.Provider>
   )
 }
