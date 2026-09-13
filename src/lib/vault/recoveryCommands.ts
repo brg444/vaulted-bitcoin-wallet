@@ -22,6 +22,19 @@ interface RecoverySnapshot {
   hasKit: boolean
   pending: 'archive' | 'backup' | 'kit' | 'boarding' | null
 }
+interface CaptureFence {
+  generation: number
+  identity: string
+  activity: number
+}
+interface CaptureLocal {
+  status: VaultStatus
+  file: Awaited<ReturnType<typeof captureVaultRecoveryFile>>['file']
+  context: number
+  epoch: string
+  activity: number
+  current: () => boolean
+}
 type SessionSource = Pick<VaultSession, 'getSnapshot' | 'subscribe'>
 const owners = new WeakMap<SessionSource, RecoveryCommands>()
 class RecoveryError extends Error {}
@@ -53,7 +66,9 @@ function createRecoveryCommands(session: SessionSource) {
   let cloud: RecoveryBackupSession | null = null
   let observation: VaultMaintenanceTask<void> | undefined
   let flight: { key: string; abort: AbortController; promise: Promise<unknown> } | undefined
-  let captureChain: Promise<unknown> = Promise.resolve()
+  let captureTail: Promise<unknown> = Promise.resolve()
+  let captureFlight: { key: string; promise: Promise<CaptureLocal> } | undefined
+  let cloudChain: Promise<unknown> = Promise.resolve()
   let unsubscribe: (() => void) | undefined
   const listeners = new Set<() => void>()
   const publish = (change: Partial<RecoverySnapshot>) => {
@@ -115,18 +130,14 @@ function createRecoveryCommands(session: SessionSource) {
     void dropObservation()
     cloud = null
   }
-  // One capture writer: background observation, explicit backup and export
-  // serialize, and account-runtime disposal drains the chain.
-  const withCapture = <T>(work: () => Promise<T>): Promise<T> => {
-    const next = captureChain.catch(() => undefined).then(work)
-    captureChain = next.catch(() => undefined)
-    return next
-  }
-  const captureLocalWork = async (signal?: AbortSignal) => {
+  const currentFence = (): CaptureFence => ({ generation, identity: sessionIdentity(), activity: activityEpoch })
+  const captureLocalWork = async (signal: AbortSignal | undefined, fence: CaptureFence): Promise<CaptureLocal> => {
+    if (fence.generation !== generation || fence.identity !== sessionIdentity())
+      throw new DOMException('Recovery session ended', 'AbortError')
     const { status, enrollment } = unlocked()
     const context = generation
     const epoch = identity
-    const activity = activityEpoch
+    const activity = fence.activity
     const { file, coverage } = await captureVaultRecoveryFile(status, enrollment)
     const current = () =>
       !signal?.aborted && context === generation && epoch === sessionIdentity() && activity === activityEpoch
@@ -136,11 +147,40 @@ function createRecoveryCommands(session: SessionSource) {
     await recordRecoveryFileCopy('local', file)
     return { status, file, context, epoch, activity, current }
   }
-  const captureArchive = async (requireCloudBackup: boolean, signal?: AbortSignal) => {
-    const { status, file, context, current } = await withCapture(() => captureLocalWork(signal))
+  // Concurrent demand for the same generation and activity shares one capture;
+  // later activity queues the later capture it requires. A queued capture checks
+  // its fence before touching the session, so a stale command fails admission.
+  // Account-runtime disposal drains the tail and the cloud chain.
+  const captureFor = (fence: CaptureFence, signal?: AbortSignal): Promise<CaptureLocal> => {
+    const key = JSON.stringify([fence.generation, fence.identity, fence.activity])
+    if (captureFlight && captureFlight.key === key) return captureFlight.promise
+    const promise = captureTail.catch(() => undefined).then(() => captureLocalWork(signal, fence))
+    const entry = { key, promise }
+    captureFlight = entry
+    captureTail = promise.then(
+      () => undefined,
+      () => undefined,
+    )
+    void promise
+      .catch(() => undefined)
+      .finally(() => {
+        if (captureFlight === entry) captureFlight = undefined
+      })
+    return promise
+  }
+  const withCloud = <T>(work: () => Promise<T>): Promise<T> => {
+    const next = cloudChain.catch(() => undefined).then(work)
+    cloudChain = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    return next
+  }
+  const captureArchive = async (requireCloudBackup: boolean, signal: AbortSignal | undefined, fence: CaptureFence) => {
+    const { status, file, context, current } = await captureFor(fence, signal)
     const active = cloud
     if (active && active.header.binding.vaultId === status.vaultId) {
-      await syncRecoveryCloudBackup(active, file)
+      await withCloud(() => syncRecoveryCloudBackup(active, file))
       if (requireCloudBackup && context !== generation)
         throw new RecoveryError('Wallet session changed during recovery backup')
       await recordRecoveryFileCopy('service', file)
@@ -160,7 +200,7 @@ function createRecoveryCommands(session: SessionSource) {
     observation = vaultAccountRuntime(status).maintenance.observe(
       'recovery-archive',
       async (signal) => {
-        await captureArchive(false, signal)
+        await captureArchive(false, signal, currentFence())
       },
       {
         intervalMs: 30_000,
@@ -221,7 +261,11 @@ function createRecoveryCommands(session: SessionSource) {
     publish({ pending: kind })
     current.promise = (async () => {
       check()
-      return work(check, abort.signal)
+      const result = await work(check, abort.signal)
+      // Accepted persistence drains, but a canceled or replaced caller cannot
+      // publish completion: one fence for every command at the common boundary.
+      check()
+      return result
     })().finally(() => {
       if (flight === current) {
         flight = undefined
@@ -256,8 +300,9 @@ function createRecoveryCommands(session: SessionSource) {
       }
     },
     backupRecoveryArchive(): Promise<void> {
-      return run('backup', 'backup-archive', async (check) => {
+      return run('backup', 'backup-archive', async (check, signal) => {
         const { status, enrollment } = unlocked()
+        const fence = currentFence()
         const kit = kitFromFacts({ status, enrollment })
         if (!kit) throw new RecoveryError('Recovery descriptor is unavailable')
         const header = buildRecoveryHeader(kit, status, enrollment)
@@ -268,14 +313,14 @@ function createRecoveryCommands(session: SessionSource) {
           if (epoch !== generation) throw new RecoveryError('Unlock this vault again to enable backup')
           cloud = opened
         }
-        await captureArchive(true)
-        check()
+        await captureArchive(true, signal, fence)
       })
     },
     downloadRecoveryArchive(format: 'encrypted' | 'portable' = 'encrypted'): Promise<string> {
       return run('archive', `download:${format}`, async (check, signal) => {
         const { status, enrollment } = unlocked()
-        const { file } = await withCapture(() => captureLocalWork())
+        const fence = currentFence()
+        const { file } = await captureFor(fence, signal)
         check()
         const encode = async (key: CryptoKey) =>
           JSON.stringify(
@@ -286,17 +331,10 @@ function createRecoveryCommands(session: SessionSource) {
             2,
           )
         const active = cloud
-        if (active?.header.binding.vaultId === status.vaultId) {
-          const encoded = await encode(active.key)
-          check()
-          return encoded
-        }
+        if (active?.header.binding.vaultId === status.vaultId) return encode(active.key)
         const phone = await unlockPhoneBip340(enrollment, status, signal)
         try {
-          check()
-          const encoded = await encode(await recoveryBackupKey(phone, file.header))
-          check()
-          return encoded
+          return await encode(await recoveryBackupKey(phone, file.header))
         } finally {
           zeroBytes(phone)
         }
@@ -360,7 +398,7 @@ function createRecoveryCommands(session: SessionSource) {
       cancel()
       identity = ''
       publish({ archiveStatus: '', archiveError: '', pending: null, hasKit: false })
-      await Promise.allSettled([flight?.promise, captureChain])
+      await Promise.allSettled([flight?.promise, captureTail, cloudChain])
     },
   }
   return owner

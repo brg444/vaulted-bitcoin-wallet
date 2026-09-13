@@ -344,36 +344,64 @@ describe('Codex independent recovery-owner review', () => {
       release()
     }
   })
-})
 
-describe('single capture owner', () => {
-  it('serializes background observation and explicit export into one capture writer', async () => {
+  it('rejects a kit backup whose accepted push completes after locking', async () => {
     const session = sessionFor()
     const commands = recoveryCommandsForSession(session)
     const release = commands.retain()
-    let active = 0
-    let maxActive = 0
-    const pending: (() => void)[] = []
-    mocks.capture.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          active++
-          maxActive = Math.max(maxActive, active)
-          pending.push(() => {
-            active--
-            resolve(captured)
-          })
-        }),
-    )
+    let finish!: (value: boolean) => void
+    mocks.push.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    try {
+      const operation = commands.backupRecoveryKit()
+      await vi.waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(1))
+      session.set({ locked: true })
+      const outcome = expect(operation).rejects.toThrow()
+      finish(true)
+      await outcome
+      expect(mocks.save).toHaveBeenCalledWith(kit)
+    } finally {
+      release()
+    }
+  })
+})
+
+describe('single capture owner', () => {
+  it('shares one capture across background observation and explicit export at the same activity', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finish!: (value: unknown) => void
+    mocks.capture.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
     const operation = commands.downloadRecoveryArchive()
-    await vi.waitFor(() => expect(pending.length).toBe(1))
+    await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledTimes(1))
     const background = observed!.run(new AbortController().signal)
     expect(mocks.capture).toHaveBeenCalledTimes(1)
-    pending.shift()!()
-    await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledTimes(2))
-    pending.shift()!()
+    finish(captured)
     await Promise.all([operation, background])
-    expect(maxActive).toBe(1)
+    expect(mocks.capture).toHaveBeenCalledTimes(1)
+    observed!.options.requested()
+    await observed!.run(new AbortController().signal)
+    expect(mocks.capture).toHaveBeenCalledTimes(2)
+    release()
+  })
+
+  it('fails a capture queued before a session change at its admission fence', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finish!: (value: unknown) => void
+    mocks.capture.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    const foreground = commands.downloadRecoveryArchive()
+    await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledTimes(1))
+    observed!.options.requested()
+    const background = observed!.run(new AbortController().signal)
+    const foregroundOutcome = expect(foreground).rejects.toThrow()
+    const backgroundOutcome = expect(background).rejects.toThrow()
+    session.set({ locked: true })
+    finish(captured)
+    await foregroundOutcome
+    await backgroundOutcome
+    expect(mocks.capture).toHaveBeenCalledTimes(1)
     release()
   })
 
@@ -386,6 +414,27 @@ describe('single capture owner', () => {
     observed!.options.requested()
     await observed!.run(new AbortController().signal)
     expect(mocks.capture).toHaveBeenCalledTimes(2)
+    release()
+  })
+
+  it('drains in-flight capture work during teardown', async () => {
+    const session = sessionFor()
+    const commands = recoveryCommandsForSession(session)
+    const release = commands.retain()
+    let finishCapture!: (value: unknown) => void
+    mocks.capture.mockImplementationOnce(() => new Promise((resolve) => (finishCapture = resolve)))
+    const operation = commands.downloadRecoveryArchive().catch(() => undefined)
+    await vi.waitFor(() => expect(mocks.capture).toHaveBeenCalledTimes(1))
+    let drained = false
+    const teardown = commands.suspend().then(() => {
+      drained = true
+    })
+    await Promise.resolve()
+    expect(drained).toBe(false)
+    finishCapture(captured)
+    await operation
+    await teardown
+    expect(drained).toBe(true)
     release()
   })
 })
