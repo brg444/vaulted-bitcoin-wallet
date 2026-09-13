@@ -10,7 +10,7 @@ import {
   memoryAttemptStore,
   signLiveMatureBoarding,
 } from '../../vtxo/testdata/matureBoarding'
-import { recoveryBackupKey, validateVaultRecoveryFile } from '../backupCodec'
+import { validateVaultRecoveryFile } from '../backupCodec'
 import { ledgerRecoveryFixture } from './ledger'
 import type { MatureBoardingAttempt } from '../../vtxo/matureBoardingJournal'
 
@@ -62,6 +62,5 @@ export async function signedPortableMatureBoarding(network: 'mainnet' | 'mutinyn
     live,
     file,
     txid,
-    key: await recoveryBackupKey(scalarSecret(3), file.header),
   }
 }
