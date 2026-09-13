@@ -102,13 +102,20 @@ async function deriveDirectP256(prf: Uint8Array<ArrayBuffer>): Promise<{ pub: Ui
   throw new Error('authenticator did not return PRF')
 }
 
-export interface EnrollmentRoles {
-  ledger?: { hardware: LedgerAccountOrigin; recovery?: LedgerAccountOrigin }
-  protectionTier: ProtectionTier
-  hardwarePub: string
-  recoveryPub?: string
-  spendingPolicy: SpendingPolicy
-}
+export type EnrollmentRoles =
+  | {
+      savings: 'absent'
+      protectionTier: 'light'
+      spendingPolicy: SpendingPolicy
+    }
+  | {
+      savings: 'ledger'
+      protectionTier: Exclude<ProtectionTier, 'light'>
+      ledger: { hardware: LedgerAccountOrigin; recovery?: LedgerAccountOrigin }
+      hardwarePub: string
+      recoveryPub?: string
+      spendingPolicy: SpendingPolicy
+    }
 
 export async function beginTenantEnrollment(
   enrollmentToken: string,
@@ -122,13 +129,16 @@ export async function beginTenantEnrollment(
   signal?.throwIfAborted()
   roles = structuredClone(roles)
   if (Object.hasOwn(roles, 'connector')) throw new Error('Unsupported Savings enrollment')
-  if (roles.protectionTier !== 'light' && !roles.ledger)
-    throw new Error('Connect a Ledger before creating protected Savings')
+  const spendingOnly = roles.savings === 'absent'
+  const ledger = roles.savings === 'ledger' ? roles.ledger : undefined
+  if (!spendingOnly && !ledger) throw new Error('Connect a Ledger before creating protected Savings')
+  const recoveryPub = roles.savings === 'ledger' ? roles.recoveryPub || '' : ''
+  const hardwarePub = roles.savings === 'ledger' ? roles.hardwarePub : ''
   if (typeof location !== 'undefined' && location.hostname === '127.0.0.1') {
     throw new Error('Open this page as http://localhost:3003 so the passkey can bind to localhost.')
   }
   let token = String(enrollmentToken || '').trim()
-  const protectionTier = requireProtectionTierMatchesRecovery(roles.protectionTier, roles.recoveryPub || '')
+  const protectionTier = requireProtectionTierMatchesRecovery(roles.protectionTier, recoveryPub)
   const wantRecovery = protectionTier === 'advanced'
   const selectedPolicy = validateSpendingPolicy(roles.spendingPolicy)
   const selectedPolicyDigest = spendingPolicyDigest(selectedPolicy)
@@ -137,12 +147,10 @@ export async function beginTenantEnrollment(
   if (publicStatus.vtxoBoardingProgram !== BOARDING_PROGRAM) {
     throw new Error('vault service does not advertise the required boarding program')
   }
-  const ledger = roles.ledger
-  const spendingOnly = protectionTier === 'light'
-  if (spendingOnly && (roles.hardwarePub || roles.recoveryPub || ledger))
-    throw new Error('Light setup must not contain protected Savings keys')
-  const hardwareXOnly = spendingOnly ? '' : xOnly(roles.hardwarePub)
-  const recoveryXOnly = wantRecovery ? xOnly(roles.recoveryPub || '') : ''
+  if (spendingOnly !== (protectionTier === 'light'))
+    throw new Error('Savings choice does not match the selected protection')
+  const hardwareXOnly = spendingOnly ? '' : xOnly(hardwarePub)
+  const recoveryXOnly = wantRecovery ? xOnly(recoveryPub) : ''
   if (wantRecovery && hardwareXOnly === recoveryXOnly) throw new Error('Recovery must be a different key')
   const enrollmentNetwork =
     publicStatus.network === 'mainnet' || publicStatus.network === 'mutinynet' ? publicStatus.network : null

@@ -56,8 +56,9 @@ const cleanupVaults = new Set<string>()
 const createCredential = vi.fn()
 const getCredential = vi.fn()
 
-function roles(f: Fixture): EnrollmentRoles {
+function roles(f: Fixture): Extract<EnrollmentRoles, { savings: 'ledger' }> {
   return {
+    savings: 'ledger',
     protectionTier: f.composite.savings.context.recovery ? 'advanced' : 'standard',
     hardwarePub: f.status.externalOwnerWalletPub!,
     ...(f.status.recoveryPub ? { recoveryPub: f.status.recoveryPub } : {}),

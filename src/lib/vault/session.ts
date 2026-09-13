@@ -35,6 +35,7 @@ import {
   completeLedgerTenantEnrollment,
   finishTenantEnrollment,
   reconcileStagedEnrollment,
+  type EnrollmentRoles,
   type EnrollmentSecrets,
 } from './tenantEnrollment'
 import { approveLedgerRegistration, type LedgerApprovalPhase } from './ledgerApproval'
@@ -624,13 +625,20 @@ export function createVaultSession() {
         'enroll',
         async (signal) => {
           transition('enrolling')
-          const roles = {
-            protectionTier: setup.protectionTier,
-            hardwarePub: setup.hardwarePub,
-            ...(setup.recoveryPub ? { recoveryPub: setup.recoveryPub } : {}),
-            ...(setup.ledger ? { ledger: setup.ledger } : {}),
-            spendingPolicy: setupSpendingPolicy(setup),
-          }
+          const roles: EnrollmentRoles = setup.ledger
+            ? {
+                savings: 'ledger',
+                protectionTier: setup.protectionTier === 'advanced' ? 'advanced' : 'standard',
+                ledger: setup.ledger,
+                hardwarePub: setup.hardwarePub,
+                ...(setup.recoveryPub ? { recoveryPub: setup.recoveryPub } : {}),
+                spendingPolicy: setupSpendingPolicy(setup),
+              }
+            : {
+                savings: 'absent',
+                protectionTier: 'light',
+                spendingPolicy: setupSpendingPolicy(setup),
+              }
           if (setup.ledger) {
             const staged = loadStagedEnrollment()
             if (staged?.ledgerSavingsDraft) {

@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { vaultCosignerClient } from './cosignerClient'
 import { loadStagedEnrollment, saveStagedEnrollment } from './enrollmentStore'
 import { vaultStatusPath } from './status'
-import { beginTenantEnrollment, finishTenantEnrollment, reconcileStagedEnrollment } from './tenantEnrollment'
+import {
+  beginTenantEnrollment,
+  finishTenantEnrollment,
+  reconcileStagedEnrollment,
+  type EnrollmentRoles,
+} from './tenantEnrollment'
 import { defaultSpendingPolicy, spendingPolicyDigest } from './spendingPolicy'
 import { sharedSpendingEnrollment } from './vtxo/testdata/sharedSpending'
 
@@ -27,7 +32,7 @@ describe('current enrollment boundary', () => {
           hardwarePub: '',
           spendingPolicy: defaultSpendingPolicy(),
           ...extra,
-        }),
+        } as unknown as EnrollmentRoles),
       ).rejects.toThrow(/Ledger|Unsupported/)
       expect(publicStatus).not.toHaveBeenCalled()
       expect(start).not.toHaveBeenCalled()
