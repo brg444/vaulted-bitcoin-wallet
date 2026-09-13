@@ -84,11 +84,11 @@ for (const cancelAt of ['reservation', 'authorization'] as const) {
       await expect(page.getByText('Total', { exact: true }).locator('..')).toContainText('12,500')
       // Hide only the fixture controls so the capture uses the application's full frame.
       await page.getByTestId('spending-fixture-controls').evaluate((element) => {
-        element.hidden = true
+        element.setAttribute('hidden', '')
       })
       await page.screenshot({ path: testInfo.outputPath('spending-fee-review.png'), fullPage: true })
       await page.getByTestId('spending-fixture-controls').evaluate((element) => {
-        element.hidden = false
+        element.removeAttribute('hidden')
       })
       await page.getByRole('button', { name: 'Approve payment', exact: true }).click()
       await expect.poll(() => requests.filter((request) => request.phase === 'authorize').length).toBe(1)
