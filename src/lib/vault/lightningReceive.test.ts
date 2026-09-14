@@ -43,6 +43,7 @@ import { reconcileVaultLightningReceives } from './lightningReceiveClaim'
 import { networkPins } from './networkPins'
 import type { VaultStatus } from './types'
 import {
+  captureLightningRecoveryJournal,
   lightningExitBinding,
   validateLightningRecoveryJournal,
   restoreLightningRecoveryJournal,
@@ -619,4 +620,92 @@ describe('Lightning address receipt import', () => {
       )
     },
   )
+})
+
+it('captures a retired receive archive entry and still prepares independent recovery', async () => {
+  const h = await harness(true, () => {}, 'light')
+  const record = await h.request()
+  const contract = [...h.rows.values()][0]
+  const base = lightningRecoveryFixture({ light: true })
+  const binding = {
+    ...base.binding,
+    vaultId: h.status.vaultId,
+    phonePub: h.status.phoneBip340Pub!,
+    spendingScript: h.status.spendingArkScript!,
+  }
+  const tx = new Transaction({ version: 3 })
+  tx.addInput({ ...base.tx.getInput(0), tapKeySig: undefined })
+  tx.addOutput({ amount: 1000n, script: hex.decode(contract.script) })
+  tx.addOutput({ amount: 0n, script: hex.decode('51024e73') })
+  tx.sign(scalarSecret(21))
+  const exitBinding = lightningExitBinding({ record, contract }, binding)
+  const entry = {
+    record,
+    contract,
+    exit: {
+      ...base.entry.exit,
+      descriptorHash: exitBinding.descriptorHash,
+      coins: packExitArchive([{ ...base.coin, txid: tx.id, script: contract.script, value: 1000 }]),
+      branches: {
+        [tx.id + ':0']: base.entry.exit.branches[base.tx.id + ':0'].map((node) => ({
+          ...node,
+          txid: node.txid === base.tx.id ? tx.id : node.txid,
+        })),
+      },
+      transactions: { [tx.id]: base64.encode(tx.toPSBT()) },
+    },
+  }
+  const journal = validateLightningRecoveryJournal(
+    { name: 'vaulted-lightning-recovery', version: 1, binding, entries: [entry] },
+    binding,
+  )
+  vi.stubGlobal('navigator', {
+    locks: { request: async (_name: unknown, _options: unknown, run: (lock: object) => unknown) => run({}) },
+  })
+  vi.useRealTimers()
+  // The live repository no longer holds the record: the journal was retired.
+  const captured = await captureLightningRecoveryJournal({
+    binding,
+    swaps: { getAllRfqSwaps: async () => [] },
+    contracts: { getContracts: async () => [] },
+    virtualTxRepository: {} as never,
+    previous: journal,
+  } as never)
+  const retained = captured.entries[0]
+  const prior = entry.record.profile.hashlock as { preimageHex: string }
+  const kept = retained.record.profile.hashlock as { preimageHex: string }
+  expect(kept).toEqual(prior)
+  expect(kept.preimageHex).toBe(prior.preimageHex)
+  expect(retained.exit).toEqual(entry.exit)
+  expect(retained.contract).toEqual(entry.contract)
+
+  // Independent recovery still builds from the retained archived entry.
+  const chain = {
+    getCoins: async () => [],
+    getFeeRate: async () => 1,
+    getTxStatus: async () => ({ confirmed: true, blockTime: 1, blockHeight: 1 }),
+    getChainTip: async () => ({ height: 10000, time: 2_000_000_000, hash: '01'.repeat(32) }),
+    getTxOutspends: async () => [{ spent: false }],
+    getTransactions: async () => [],
+    watchAddresses: async () => () => {},
+    broadcastTransaction: vi.fn(async () => {
+      throw new Error('no broadcasting')
+    }),
+  } satisfies OnchainProvider
+  const limits = { absoluteFeeCapSats: 5000, feerateCapSatVb: 10 }
+  const destination = p2tr(hex.decode(compressedFromScalar(23)).slice(1), undefined, getNetwork('bitcoin')).address!
+  const file = await prepareLightningRecovery(
+    JSON.parse(JSON.stringify(retained)) as never,
+    binding,
+    destination,
+    async ({ psbt }) => {
+      const signed = Transaction.fromPSBT(hex.decode(psbt))
+      signed.sign(new Uint8Array(32).fill(7))
+      return hex.encode(signed.toPSBT())
+    },
+    limits,
+    chain,
+  )
+  expect(validateLightningRecoveryPackage(file, binding, limits)).toEqual(file)
+  expect(chain.broadcastTransaction).not.toHaveBeenCalled()
 })

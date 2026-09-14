@@ -513,6 +513,40 @@ describe('Lightning receive retirement predicate', () => {
     }
   })
 
+  it('retains the persisted receipt and permits a retry when deletion fails', async () => {
+    const restore = installImmediateLock()
+    try {
+      const f = await settledReceive()
+      armAccept(f)
+      const proto = Object.getPrototypeOf(f.h.repository)
+      const remove = vi.spyOn(proto, 'removeRfqSwap').mockResolvedValueOnce(undefined)
+      await expect(
+        acknowledgeVaultLightningReceiveRecovery(
+          f.h.status,
+          f.h.repository,
+          f.settled.rfqId,
+          historyFor(f.claim.txid),
+          coverageOf(),
+        ),
+      ).rejects.toThrow('not durably retired')
+      remove.mockRestore()
+      expect(readRetiredLightningReceive(f.settled.rfqId)).not.toBeNull()
+      expect(await f.h.repository.getRfqSwap(f.settled.rfqId)).not.toBeUndefined()
+      expect(
+        await acknowledgeVaultLightningReceiveRecovery(
+          f.h.status,
+          f.h.repository,
+          f.settled.rfqId,
+          historyFor(f.claim.txid),
+          coverageOf(),
+        ),
+      ).toBe(true)
+      expect(await f.h.repository.getRfqSwap(f.settled.rfqId)).toBeUndefined()
+    } finally {
+      restore()
+    }
+  })
+
   it('projects a retired receipt as a labeled received history record', async () => {
     const restore = installImmediateLock()
     try {
