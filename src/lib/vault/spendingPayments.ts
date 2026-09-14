@@ -419,7 +419,7 @@ function createSpendingPayments(session: SessionSource) {
       vaultLatency.count('review')
       const endReview = vaultLatency.span('review')
       const promise = run('review', JSON.stringify(['review', payment, replace]), async (check, signal) => {
-        const { status, enrollment, setup } = access()
+        const { status, setup } = access()
         // The broad settled sweep and archive capture are scheduled on the
         // account-maintenance clock. Review only reconciles the exact
         // finalized operation that blocks this payment, and only when one
@@ -437,84 +437,75 @@ function createSpendingPayments(session: SessionSource) {
             if (invoice.amountSats > setup.txCapSats)
               throw new ReviewError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
             if (invoice.amountSats > available()) throw new ReviewError('Not enough confirmed spending funds.')
-            // Start WebAuthn in the click gesture, before any awaited
-            // retirement or solver discovery or dynamic imports.
-            phase = 'passkey approval'
-            const phoneSecret = await vaultLatency.measure('passkey', () =>
-              unlockPhoneBip340(enrollment, status, signal),
-            )
-            try {
+            if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending)) {
+              await reconcileBlockingOperations(status, check, signal)
               check()
-              if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending)) {
-                await reconcileBlockingOperations(status, check, signal)
-                check()
-              }
-              if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending))
-                throw new ReviewError(
-                  'A payment is still pending. Open Pending payment to resume it before starting another.',
-                )
-              const current = loadPersistedVtxoSpend(status.vaultId)
-              const resumeVtxo =
-                current?.receiptFinalized !== true &&
-                current?.bundleDigest &&
-                current.destAddress &&
-                Number.isSafeInteger(current.amountSats)
-                  ? {
-                      operationId: current.operationId,
-                      bundleDigest: current.bundleDigest,
-                      address: current.destAddress,
-                      amountSats: current.amountSats,
-                      fundingFeeSats: current.feeSats,
-                    }
-                  : undefined
-              phase = 'solver verification'
-              const profile = await discoverVaultLightningSolver(status.network)
-              check()
-              if (!profile) throw new ReviewError('No verified Lightning solver is configured for this network.')
-              const api = await import('./lightning')
-              check()
-              phase = 'quote'
-              lightning = await vaultLatency.measure('quote', () =>
-                api.withVaultLightningSdkWallet(
-                  phoneSecret,
-                  status,
-                  (session) => {
-                    check()
-                    return api.withVaultLightningTransport(profile, (transport) => {
-                      check()
-                      return api.requestVaultLightningQuote({
-                        wallet: session.wallet,
-                        arkServerUrl: vaultOperatorOrigin(profile.network),
-                        invoice: invoice.raw,
-                        network: profile.network,
-                        transport,
-                        repository: session.repository,
-                        contracts: session.contracts,
-                        manager: session.manager,
-                        profile,
-                        resumeVtxo,
-                      })
-                    })
-                  },
-                  { signal },
-                ),
-              )
-              check()
-              if (lightning.fundAmountSats > setup.txCapSats)
-                throw new ReviewError(
-                  `This payment exceeds the ${setup.txCapSats.toLocaleString()} sat send limit after fees.`,
-                )
-              phase = 'reservation'
-              funding = await vaultLatency.measure('reserve', () =>
-                reserveVaultVtxo(enrollment, status, lightning!.fundAddress, lightning!.fundAmountSats, {
-                  phoneSecret,
-                  signal,
-                }),
-              )
-              check()
-            } finally {
-              zeroBytes(phoneSecret)
             }
+            if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending))
+              throw new ReviewError(
+                'A payment is still pending. Open Pending payment to resume it before starting another.',
+              )
+            const current = loadPersistedVtxoSpend(status.vaultId)
+            const resumeVtxo =
+              current?.receiptFinalized !== true &&
+              current?.bundleDigest &&
+              current.destAddress &&
+              Number.isSafeInteger(current.amountSats)
+                ? {
+                    operationId: current.operationId,
+                    bundleDigest: current.bundleDigest,
+                    address: current.destAddress,
+                    amountSats: current.amountSats,
+                    fundingFeeSats: current.feeSats,
+                  }
+                : undefined
+            phase = 'solver verification'
+            const profile = await discoverVaultLightningSolver(status.network)
+            check()
+            if (!profile) throw new ReviewError('No verified Lightning solver is configured for this network.')
+            const api = await import('./lightning')
+            check()
+            // Quote on enrolled public information only: no passkey, no
+            // reservation, no signing, and no broad observer maintenance.
+            phase = 'quote'
+            lightning = await vaultLatency.measure('quote', () =>
+              api.withVaultLightningPublicQuote(
+                status,
+                ({ wallet, contracts, repository, manager, refund, operatorInfo }) => {
+                  check()
+                  return api.withVaultLightningTransport(profile, (transport) => {
+                    check()
+                    return api.requestVaultLightningQuote({
+                      wallet,
+                      arkServerUrl: vaultOperatorOrigin(profile.network),
+                      invoice: invoice.raw,
+                      network: profile.network,
+                      transport,
+                      repository,
+                      contracts,
+                      manager,
+                      profile,
+                      resumeVtxo,
+                      refund,
+                      operatorInfo,
+                    })
+                  })
+                },
+                { signal },
+              ),
+            )
+            check()
+            if (lightning.fundAmountSats > setup.txCapSats)
+              throw new ReviewError(
+                `This payment exceeds the ${setup.txCapSats.toLocaleString()} sat send limit after fees.`,
+              )
+            // Public funding-fee preview. The authoritative fee is reserved at
+            // approval; a changed total forces a fresh review there.
+            phase = 'funding preview'
+            funding = await vaultLatency.measure('quote', () =>
+              previewVaultVtxoSend(status, lightning!.fundAddress, lightning!.fundAmountSats),
+            )
+            check()
             if (lightning.fundAmountSats + funding.feeSats > available())
               throw new ReviewError('Not enough confirmed spending funds after fees.')
             payment.amount = lightning.invoiceAmountSats
@@ -635,46 +626,93 @@ function createSpendingPayments(session: SessionSource) {
         try {
           let sent: { txid: string; feeSats: number }
           if (lightning) {
-            const api = await import('./lightning')
-            check()
-            const pending = loadPersistedVtxoSpendById(status.vaultId, reviewed.operationId)
-            const alreadyAuthorized =
-              !!pending &&
-              vtxoSpendIsLivePending(pending) &&
-              pending.bundleDigest === reviewed.bundleDigest &&
-              isSameVtxoPayment(pending, lightning.fundAddress, lightning.fundAmountSats)
-            if (!alreadyAuthorized) api.assertVaultLightningQuoteCurrent(lightning)
-            sent = await api.withVaultLightningLifecycleLock(status.vaultId, async () => {
+            // One operation-scoped ceremony, started in the user gesture before
+            // the awaited dynamic import, exactly like the Arkade branch. The
+            // same unlocker reserves, authorizes the send and is disposed after.
+            const prior = loadPersistedVtxoSpendById(status.vaultId, reviewed.operationId)
+            const resume =
+              !!prior &&
+              !!reviewed.operationId &&
+              vtxoSpendIsLivePending(prior) &&
+              prior.bundleDigest === reviewed.bundleDigest &&
+              isSameVtxoPayment(prior, lightning.fundAddress, lightning.fundAmountSats)
+            const unlocker = createVtxoSpendUnlocker(
+              enrollment,
+              status,
+              resume ? reviewed.bundleDigest : newVtxoSpendChallenge(),
+              undefined,
+              signal,
+            )
+            try {
+              const auth = await vaultLatency.measure('passkey', () => unlocker.unlock())
               check()
-              const proof = { rfqId: lightning.rfqId, ...fundingProof(reviewed) }
-              const target = await api.withVaultLightningRepository(status.vaultId, async (repository) => {
-                check()
-                try {
-                  return await api.resumeVaultLightningFunding(repository, proof, undefined, alreadyAuthorized)
-                } catch (error) {
-                  check()
-                  if (!(error instanceof api.VaultLightningFundingNotStartedError)) throw error
-                  return api.beginVaultLightningFunding(repository, lightning.rfqId, proof)
-                }
-              })
+              const api = await import('./lightning')
               check()
-              if (target.address !== reviewed.destAddress || target.amountSats !== reviewed.amountSats)
-                throw new Error('Lightning funding target changed after Review.')
-              let result: { txid: string; feeSats: number }
-              try {
-                result = await vaultLatency.measure('submit', () =>
-                  sendVaultVtxo(enrollment, status, reviewed, undefined, signal),
-                )
-              } catch (error) {
-                if (!isVtxoReceiptPendingError(error)) throw error
-                result = { txid: error.txid, feeSats: error.feeSats }
-              }
-              // A returned transaction remains bound to the RFQ even if the UI session ends.
-              await api.withVaultLightningRepository(status.vaultId, (repository) =>
-                api.recordVaultLightningFundingTxid(repository, lightning.rfqId, result.txid),
+              if (!resume) api.assertVaultLightningQuoteCurrent(lightning)
+              const record = await api.withVaultLightningRepository(status.vaultId, (repository) =>
+                repository.getRfqSwap(lightning.rfqId),
               )
-              return result
-            })
+              check()
+              if (!record) throw new ReviewError('This Lightning payment is no longer available.')
+              await api.assertVaultLightningStoredSigner(record, auth.phoneSecret)
+              check()
+              const reviewedFundingFee = review.payment.fee - lightning.corridorFeeSats
+              const reserved = resume
+                ? reviewed
+                : await vaultLatency.measure('reserve', () =>
+                    reserveVaultVtxo(enrollment, status, lightning.fundAddress, lightning.fundAmountSats, {
+                      phoneSecret: auth.phoneSecret,
+                      signal,
+                    }),
+                  )
+              check()
+              if (!resume && reserved.feeSats !== reviewedFundingFee) {
+                const updated = freeze({
+                  ...review,
+                  payment: { ...payment, fee: lightning.corridorFeeSats + reserved.feeSats },
+                  funding: structuredClone(reserved),
+                })
+                publish({
+                  review: updated,
+                  error: 'The network fee changed. Review the updated total before approving.',
+                })
+                event('fee-changed', updated)
+                return
+              }
+              sent = await api.withVaultLightningLifecycleLock(status.vaultId, async () => {
+                check()
+                const proof = { rfqId: lightning.rfqId, ...fundingProof(reserved) }
+                const target = await api.withVaultLightningRepository(status.vaultId, async (repository) => {
+                  check()
+                  try {
+                    return await api.resumeVaultLightningFunding(repository, proof, undefined, resume)
+                  } catch (error) {
+                    check()
+                    if (!(error instanceof api.VaultLightningFundingNotStartedError)) throw error
+                    return api.beginVaultLightningFunding(repository, lightning.rfqId, proof)
+                  }
+                })
+                check()
+                if (target.address !== lightning.fundAddress || target.amountSats !== lightning.fundAmountSats)
+                  throw new Error('Lightning funding target changed after Review.')
+                let result: { txid: string; feeSats: number }
+                try {
+                  result = await vaultLatency.measure('submit', () =>
+                    sendVaultVtxo(enrollment, status, reserved, () => unlocker, signal),
+                  )
+                } catch (error) {
+                  if (!isVtxoReceiptPendingError(error)) throw error
+                  result = { txid: error.txid, feeSats: error.feeSats }
+                }
+                // A returned transaction remains bound to the RFQ even if the UI session ends.
+                await api.withVaultLightningRepository(status.vaultId, (repository) =>
+                  api.recordVaultLightningFundingTxid(repository, lightning.rfqId, result.txid),
+                )
+                return result
+              })
+            } finally {
+              unlocker.dispose()
+            }
           } else {
             const existing = loadPersistedVtxoSpendById(status.vaultId, reviewed.operationId)
             const resume = !!existing && !!reviewed.operationId && vtxoSpendIsLivePending(existing)

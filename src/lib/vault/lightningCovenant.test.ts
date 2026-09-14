@@ -26,6 +26,7 @@ import { hex } from '@scure/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { requestVaultLightningQuote, vaultLightningRequestWallet } from './lightning'
 import {
+  assertVaultLightningPublicRefund,
   buildLightningSendCandidates,
   matchLightningSendCandidate,
   requestVaultLightningSend,
@@ -604,6 +605,21 @@ describe('Lightning dual-candidate covenant matching', () => {
     expect(result.refundAddress).toBe(fx.vaultAddress)
     expect(hex.encode(result.secrets.pkScript)).toBe(hex.encode(ArkAddress.decode(fx.vaultAddress).pkScript))
     expect((fx.wallet as unknown as { getNextSigningDescriptor?: unknown }).getNextSigningDescriptor).toBeUndefined()
+  })
+
+  it('validates a public refund context and rejects any mismatch before quoting', async () => {
+    const fx = await covenantFixture()
+    const secrets = await provisionRefundKey(fx.wallet)
+    expect(() => assertVaultLightningPublicRefund(secrets)).not.toThrow()
+    expect(() => assertVaultLightningPublicRefund({ ...secrets, pubkey: new Uint8Array(32).fill(1) })).toThrow(
+      /does not match its descriptor/,
+    )
+    expect(() =>
+      assertVaultLightningPublicRefund({ ...secrets, pkScript: new Uint8Array(secrets.pkScript.length).fill(9) }),
+    ).toThrow(/script/)
+    expect(() =>
+      assertVaultLightningPublicRefund({ ...secrets, descriptor: `tr(${hex.encode(fx.operatorXOnly)})` }),
+    ).toThrow(/does not match its descriptor/)
   })
 
   it('matches both candidates purely and persists the nine-leaf flag through the quote flow', async () => {

@@ -1,12 +1,16 @@
 import {
+  ArkAddress,
   RestArkProvider,
   VHTLC,
+  deriveDescriptorLeafPubKey,
   getNetwork,
   provisionRefundKey,
   resolveEmulatorPubkey,
   toXOnly,
+  type ArkInfo,
   type IWallet,
   type NetworkName,
+  type ProvisionedKey,
 } from '@arkade-os/sdk'
 import {
   AddressMismatch,
@@ -125,11 +129,43 @@ export function matchLightningSendCandidate(
  * locally derived candidate matches `quote.profile.lockup_address` it throws
  * before registering any contract and before returning any funding address.
  */
+/**
+ * A quote may bind the enrolled sender key and the pinned spending refund
+ * address without any signing capability. This validates the public context
+ * end to end: the descriptor must derive the exact public key, and the refund
+ * address must encode the exact script. A mismatch fails before any RFQ is
+ * sent, and the actual signer is re-derived from the same descriptor at
+ * funding/refund time, so a public quote can never bind a key it does not own.
+ */
+export function assertVaultLightningPublicRefund(refund: ProvisionedKey): void {
+  let derived: Uint8Array
+  try {
+    derived = deriveDescriptorLeafPubKey(refund.descriptor)
+  } catch {
+    throw new Error('Lightning refund descriptor is not a materialized taproot key.')
+  }
+  if (hex.encode(derived) !== hex.encode(refund.pubkey)) {
+    throw new Error('Lightning refund public key does not match its descriptor.')
+  }
+  const { pkScript } = ArkAddress.decode(refund.address)
+  if (hex.encode(pkScript) !== hex.encode(refund.pkScript)) {
+    throw new Error('Lightning refund address does not match its script.')
+  }
+}
+
 export async function requestVaultLightningSend(
   wallet: IWallet,
   arkServerUrl: string,
   transport: RfqTransport,
-  params: { invoice: InvoiceFacts; rfqId?: string; emulatorPubkey?: string },
+  params: {
+    invoice: InvoiceFacts
+    rfqId?: string
+    emulatorPubkey?: string
+    refund?: ProvisionedKey
+    /** Operator info already validated against the enrolled vault, if the
+     * caller read it; avoids a duplicate Operator round-trip in one attempt. */
+    operatorInfo?: ArkInfo
+  },
 ): Promise<{
   rfqId: string
   quote: RfqQuote
@@ -143,10 +179,11 @@ export async function requestVaultLightningSend(
   treeParams: LightningSendTreeParams
 }> {
   const rfqId = params.rfqId ?? newRfqId()
-  const secrets = await provisionRefundKey(wallet)
+  if (params.refund) assertVaultLightningPublicRefund(params.refund)
+  const secrets = params.refund ?? (await provisionRefundKey(wallet))
   const senderPubkey = secrets.pubkey
   const refundAddress = secrets.address
-  const info = await new RestArkProvider(arkServerUrl).getInfo()
+  const info = params.operatorInfo ?? (await new RestArkProvider(arkServerUrl).getInfo())
   const quote = await transport.requestQuote(
     lightningSendRequest({ rfqId, invoice: params.invoice.raw, refundAddress, senderPubkey }),
   )
