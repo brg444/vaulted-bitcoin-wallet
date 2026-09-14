@@ -85,6 +85,27 @@ describe('outbound Lightning recovery journal', () => {
     },
   )
 
+  it('preserves a quote-raised solo-refund delay through recovery export and import', () => {
+    const QUOTED = 10_240 // the solver horizon delay for this fixture (base 6144)
+    const f = lightningRecoveryFixture({ nine: true, soloRefundDelay: QUOTED })
+    const script = VHTLCV2ContractHandler.createScript(f.contract.params)
+    expect(script.options.unilateralRefundWithoutReceiverDelay).toEqual({ type: 'seconds', value: BigInt(QUOTED) })
+
+    const recovered = JSON.parse(JSON.stringify(f.journal))
+    expect(validateLightningRecoveryJournal(recovered, f.binding)).toEqual(f.journal)
+    const local = lightningArchiveProviders(recovered.entries[0], f.binding)
+    const rebuilt = VHTLCV2ContractHandler.createScript(local.contract.params)
+    expect(Number(rebuilt.options.unilateralRefundWithoutReceiverDelay.value)).toBe(QUOTED)
+    const paths = VHTLCV2ContractHandler.getAllSpendingPaths(rebuilt, local.contract, {
+      collaborative: false,
+      currentTime: Date.now(),
+      walletDescriptor: local.signingDescriptor,
+    })
+    expect(paths).toHaveLength(1)
+    expect(paths[0].leaf).toEqual(rebuilt.unilateralRefundWithoutReceiver())
+    expect(paths[0].sequence).toBe(Number(f.contract.params.refundNoReceiverDelay))
+  })
+
   it('captures actual funded graph and preserves ambiguous funding without a txid', async () => {
     const f = lightningRecoveryFixture({ nine: true }),
       storage = await stores(f)
