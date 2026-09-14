@@ -65,6 +65,32 @@ describe('Vault service-worker isolation', () => {
     await next
   })
 
+  it('keeps submitted boarding pending until exact evidence arrives without reporting a failed settlement', async () => {
+    vi.useFakeTimers()
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const settle = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error('Settlement failed: Error: named boarding is blocked: final submission awaits exact VTXO evidence'),
+        )
+        .mockResolvedValue('aa'.repeat(32))
+      const current: VaultBoardingSettlementRuntime = { notify: vi.fn() }
+      await scheduleVaultBoardingSettlement(current, settle)
+      expect(current.boardingError).toBe('Deposit is settling. Waiting for Spending confirmation.')
+      expect(log).not.toHaveBeenCalled()
+      await scheduleVaultBoardingSettlement(current, settle)
+      expect(settle).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(15_000)
+      await scheduleVaultBoardingSettlement(current, settle)
+      expect(current.boardingError).toBeUndefined()
+      expect(current.boardingRetryAfter).toBeUndefined()
+    } finally {
+      log.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('publishes boarding failure without listener-triggered retry loops, then clears it after success', async () => {
     vi.useFakeTimers()
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)

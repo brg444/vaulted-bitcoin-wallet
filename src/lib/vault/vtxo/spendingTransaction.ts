@@ -48,6 +48,8 @@ export interface PersistedVtxoSpend {
   authorizedPsbt?: string
   authorizedPendingProof?: string
   operatorSubmitAttempted?: boolean
+  /** Exact Guardian receipt observed; recovery bytes may still need retention. */
+  receiptFinalized?: boolean
   unsignedCheckpointPsbts?: string[]
   operatorCheckpointPsbts?: string[]
   checkpointPsbts?: string[]

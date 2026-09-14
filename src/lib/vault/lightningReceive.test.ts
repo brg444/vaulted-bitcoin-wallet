@@ -174,7 +174,9 @@ describe('Lightning receive', () => {
     expect(profile).toBeDefined()
     expect(vaultLightningReceivePlan(500, profile)).toEqual({ receiveSats: 500, maxPaySats: 502 })
     expect(vaultLightningReceivePlan(50000, profile).maxPaySats).toBe(50151)
-    expect(vaultLightningFundingForInvoice(50000, profile)).toBe(50151)
+    expect(vaultLightningFundingForInvoice(50000, profile)).toBe(50401)
+    expect(vaultLightningFundingForInvoice(2000, profile)).toBe(2032)
+    expect(vaultLightningFundingForInvoice(500, profile)).toBe(527)
     for (const n of [0, 499, 50001, NaN, 1.5]) expect(() => vaultLightningReceivePlan(n, profile)).toThrow()
   })
   it.each(

@@ -146,6 +146,8 @@ async function sweepSettledVaultLightning(status: VaultStatus, check: () => void
   try {
     const api = await import('./lightning')
     check()
+    await ensureVaultWalletWorker(status)
+    check()
     const funded = await api.withVaultLightningRepository(status.vaultId, (repository) =>
       listFundedTerminalLightningRecords(repository),
     )
@@ -174,6 +176,8 @@ async function sweepSettledVaultLightning(status: VaultStatus, check: () => void
 async function sweepSettledVaultLightningReceives(status: VaultStatus, check: () => void, signal?: AbortSignal) {
   try {
     const api = await import('./lightning')
+    check()
+    await ensureVaultWalletWorker(status)
     check()
     const settled = await api.withVaultLightningRepository(status.vaultId, (repository) =>
       listSettledVaultLightningRecords(repository),
@@ -252,13 +256,15 @@ function createSpendingPayments(session: SessionSource) {
     } catch {
       return
     }
-    const pendingPayments = listPersistedVtxoSpends(status.vaultId).map((operation) => ({
-      operationId: operation.operationId,
-      amountSats: operation.amountSats,
-      destination: operation.destAddress,
-      authorized: vtxoSpendIsLivePending(operation),
-      reservedSats: operation.reservedInputs?.reduce((total, input) => total + input.valueSats, 0),
-    }))
+    const pendingPayments = listPersistedVtxoSpends(status.vaultId)
+      .filter((operation) => operation.receiptFinalized !== true)
+      .map((operation) => ({
+        operationId: operation.operationId,
+        amountSats: operation.amountSats,
+        destination: operation.destAddress,
+        authorized: vtxoSpendIsLivePending(operation),
+        reservedSats: operation.reservedInputs?.reduce((total, input) => total + input.valueSats, 0),
+      }))
     if (JSON.stringify(pendingPayments) !== JSON.stringify(snapshot.pendingPayments)) publish({ pendingPayments })
   }
   const cancel = () => {
@@ -394,8 +400,8 @@ function createSpendingPayments(session: SessionSource) {
       return run('review', JSON.stringify(['review', payment, replace]), async (check, signal) => {
         const { status, enrollment, setup } = access()
         // Retire service-finalized operations whose recovery evidence has
-        // caught up, so a settled payment stops blocking review. Evidence lag
-        // keeps the journal; the live-pending check below still applies. The
+        // caught up. An exact service receipt ends payment blocking, while
+        // evidence lag keeps the recovery journal. The
         // sweep runs after the passkey gesture so WebAuthn starts in the click.
         const retireSettled = async () => {
           try {
@@ -434,7 +440,10 @@ function createSpendingPayments(session: SessionSource) {
                 )
               const current = loadPersistedVtxoSpend(status.vaultId)
               const resumeVtxo =
-                current?.bundleDigest && current.destAddress && Number.isSafeInteger(current.amountSats)
+                current?.receiptFinalized !== true &&
+                current?.bundleDigest &&
+                current.destAddress &&
+                Number.isSafeInteger(current.amountSats)
                   ? {
                       operationId: current.operationId,
                       bundleDigest: current.bundleDigest,
@@ -503,7 +512,10 @@ function createSpendingPayments(session: SessionSource) {
           check()
           const operations = listPersistedVtxoSpends(status.vaultId)
           const pending = loadPersistedVtxoSpend(status.vaultId)
-          const resuming = !!pending && isSameVtxoPayment(pending, payment.address, payment.amount)
+          const resuming =
+            !!pending &&
+            pending.receiptFinalized !== true &&
+            isSameVtxoPayment(pending, payment.address, payment.amount)
           if (!resuming && operations.some(vtxoSpendIsLivePending))
             throw new ReviewError(
               'A payment is still pending. Open Pending payment to resume it before starting another.',
@@ -542,7 +554,7 @@ function createSpendingPayments(session: SessionSource) {
         }
         check()
         const pending = loadPersistedVtxoSpendById(status.vaultId, operationId)
-        if (!pending) throw new ReviewError('This pending payment has already finished. Refresh the wallet.')
+        if (!pending || pending.receiptFinalized === true) throw new ReviewError('This payment has already finished.')
         await ensureVaultWalletWorker(status)
         check()
         const api = await import('./lightning')

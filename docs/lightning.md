@@ -5,6 +5,13 @@ verify an Arkade-to-Lightning quote. The package decodes the invoice facts,
 derives the VHTLC, checks the solver's lockup address, and registers the
 contract with the official Arkade SDK before any funding transaction is built.
 
+The signed solver card prices the spread, while an outbound quote can also
+include the Lightning backend's fee for that invoice. The wallet permits the
+card-priced funding amount plus an additional routing charge capped at the
+greater of 25 sats or 0.5% of the invoice amount, rounded up to whole sats.
+Payment review shows the exact quoted total and combined fee. Quotes above
+that ceiling are rejected before funding; receive invoice pricing is separate.
+
 The Vault adapter opens a standard SDK wallet with the enrolled phone identity
 and the existing per-vault SDK repositories. It changes only `getAddress()` so
 the package commits every refund to the exact `vault-policy-v1` Spending

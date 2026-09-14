@@ -565,9 +565,12 @@ export function scheduleVaultBoardingSettlement(
       // A listener refresh must not immediately start another failed attempt.
       current.boardingRetryAfter = Date.now() + VAULT_BOARDING_RETRY_DELAY_MS
       if (!(error instanceof Error) || !error.message.includes('No inputs found')) {
-        consoleError(error, 'Vault boarding settlement')
-        const message =
-          error instanceof Error && error.message.includes('final authorization cannot be released')
+        const awaitingEvidence =
+          error instanceof Error && error.message.includes('final submission awaits exact VTXO evidence')
+        if (!awaitingEvidence) consoleError(error, 'Vault boarding settlement')
+        const message = awaitingEvidence
+          ? 'Deposit is settling. Waiting for Spending confirmation.'
+          : error instanceof Error && error.message.includes('final authorization cannot be released')
             ? 'Deposit boarding needs attention. Guardian could not complete this attempt. The deposit is not yet available in Spending.'
             : 'Deposit boarding is delayed. The deposit is not yet available in Spending.'
         if (current.boardingError !== message) {

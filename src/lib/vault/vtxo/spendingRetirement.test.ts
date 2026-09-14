@@ -31,9 +31,11 @@ import {
   acknowledgeSpendingVtxoRecovery,
   reconcilePersistedVtxoSpend,
   sendVaultVtxo,
+  previewVaultVtxoSend,
+  vtxoSpendIsLivePending,
   type VtxoOperationView,
 } from './spend'
-import { loadPersistedVtxoSpendById, persistVtxoSpend } from './spendingJournal'
+import { loadPersistedVtxoSpendById, persistVtxoSpend, restoreSpendingRecoveryJournal } from './spendingJournal'
 
 // Pin this fixture release to the disposable Operator key used to sign the
 // real transactions. Capture and readback exercise the same identity checks.
@@ -158,10 +160,20 @@ async function signedFinalizedOp(vaultId: string, changeSats = 7_500) {
     unsignedArkPsbt: base64.encode(built.arkTx.toPSBT()),
     unsignedCheckpointPsbts: built.checkpoints.map((checkpoint) => base64.encode(checkpoint.toPSBT())),
     authorizedPsbt: base64.encode(authorizedArk.toPSBT()),
-    authorizedPendingProof: await createPhoneSignedPendingProof(
-      built.checkpoints.map((checkpoint) => base64.encode(checkpoint.toPSBT())),
-      PHONE,
-      hex.decode(golden.fixtures.userPub),
+    authorizedPendingProof: base64.encode(
+      (
+        await VAULT_KEY.sign(
+          Transaction.fromPSBT(
+            base64.decode(
+              await createPhoneSignedPendingProof(
+                built.checkpoints.map((checkpoint) => base64.encode(checkpoint.toPSBT())),
+                PHONE,
+                hex.decode(golden.fixtures.userPub),
+              ),
+            ),
+          ),
+        )
+      ).toPSBT(),
     ),
     operatorArkPsbt: base64.encode(operatorArk.toPSBT()),
     operatorCheckpointPsbts,
@@ -469,7 +481,10 @@ describe('shared Spending retirement predicate', () => {
         ...changes,
       } as never)
       await expect(acknowledgeSpendingVtxoRecovery(f.status, OP)).resolves.toBe(false)
-      expect(loadPersistedVtxoSpendById(f.status.vaultId, OP)?.stage).toBe('operator-finalized')
+      const retained = loadPersistedVtxoSpendById(f.status.vaultId, OP)!
+      expect(retained.stage).toBe('operator-finalized')
+      expect(retained.receiptFinalized).not.toBe(true)
+      expect(vtxoSpendIsLivePending(retained)).toBe(true)
     } finally {
       restoreLock()
     }
@@ -857,7 +872,20 @@ describe('shared Spending retirement predicate', () => {
         txid: f.pending.arkTxid,
         operationId: OP,
       })
-      expect(loadPersistedVtxoSpendById(vaultId, OP)?.stage).toBe('operator-finalized')
+      const retained = loadPersistedVtxoSpendById(vaultId, OP)!
+      expect(retained).toMatchObject({ ...f.pending, stage: 'operator-finalized', receiptFinalized: true })
+      expect(vtxoSpendIsLivePending(retained)).toBe(false)
+      await expect(previewVaultVtxoSend(f.status, retained.destAddress, retained.amountSats)).resolves.toMatchObject({
+        operationId: '',
+        bundleDigest: '',
+      })
+      // Restoring the recovery bytes on another device requires a fresh receipt.
+      localStorage.clear()
+      await restoreSpendingRecoveryJournal(f.status, { version: 1, vaultId, operations: [retained] })
+      const restored = loadPersistedVtxoSpendById(vaultId, OP)!
+      expect(restored.checkpointPsbts).toEqual(retained.checkpointPsbts)
+      expect(restored.receiptFinalized).toBeUndefined()
+      expect(vtxoSpendIsLivePending(restored)).toBe(true)
     } finally {
       restoreLock()
     }

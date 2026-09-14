@@ -46,6 +46,9 @@ function parsePersistedVtxoSpend(
     persistedReservationFactsAreValid(parsed) &&
     (parsed.stage === 'pre-reserve' || (parsed.bundleDigest && (parsed.stage === 'reserved' || parsed.arkTxid)))
   ) {
+    // Presentation metadata must never make a malformed local row disappear.
+    if (parsed.receiptFinalized !== undefined)
+      parsed.receiptFinalized = parsed.receiptFinalized === true && parsed.stage !== 'pre-reserve' && !!parsed.arkTxid
     return parsed as PersistedVtxoSpend
   }
   return undefined
@@ -87,7 +90,7 @@ export function validateSpendingRecoveryJournal(status: VaultStatus, raw: unknow
   const ids = new Set<string>()
   for (const record of journal.operations) {
     if (
-      !parsePersistedVtxoSpend(status.vaultId, record) ||
+      !parsePersistedVtxoSpend(status.vaultId, { ...record }) ||
       !(record.stage in VTXO_SPEND_STAGE_RANK) ||
       ids.has(record.operationId) ||
       !Number.isSafeInteger(record.amountSats) ||
@@ -100,6 +103,11 @@ export function validateSpendingRecoveryJournal(status: VaultStatus, raw: unknow
       throw new Error('Spending reservation signature changed')
     if (record.operatorSubmitAttempted !== undefined && typeof record.operatorSubmitAttempted !== 'boolean')
       throw new Error('Invalid submission ambiguity flag')
+    if (
+      (record.receiptFinalized !== undefined && typeof record.receiptFinalized !== 'boolean') ||
+      (record.receiptFinalized === true && (record.stage === 'pre-reserve' || !record.arkTxid))
+    )
+      throw new Error('Invalid finalization receipt flag')
     if (record.stage === 'pre-reserve') {
       if (
         record.bundleDigest ||
@@ -206,6 +214,8 @@ export function restoreSpendingRecoveryJournal(status: VaultStatus, raw: unknown
       const operations = [...local.operations]
       const resolved = [...(local.resolved || [])]
       for (const incoming of imported.operations) {
+        // A restored device observes confirmation from Guardian itself.
+        delete incoming.receiptFinalized
         const closed = resolved.find((record) => record.operationId === incoming.operationId)
         if (closed) {
           if (

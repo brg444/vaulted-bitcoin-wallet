@@ -239,7 +239,9 @@ beforeEach(() => {
   api.settle.mockResolvedValue(0)
   api.acknowledge.mockResolvedValue(false)
   api.snapshot.mockResolvedValue({ history: [] })
-  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) => run({}))
+  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+    run(memoryLightningRepo([])),
+  )
   api.lightningJournal.mockResolvedValue(null)
   api.coverage.mockResolvedValue(null)
   const checkpoint = new Transaction({ version: 2 })
@@ -375,6 +377,19 @@ it('preserves pending identity after a lost response and reopens it without requ
   expect(api.reserve).not.toHaveBeenCalled()
   expect(api.send.mock.calls.at(-1)![2].operationId).toBe(quote.operationId)
 })
+it('clears the notice after an exact receipt and allows a fresh review while retaining recovery bytes', async () => {
+  records = [pending('operator-finalized')]
+  const { payments } = open()
+  expect(payments.getSnapshot().pendingPayments).toHaveLength(1)
+  records[0].receiptFinalized = true
+  window.dispatchEvent(new Event(SPENDING_PAYMENT_EVENT))
+  expect(payments.getSnapshot().pendingPayments).toEqual([])
+  expect(records).toHaveLength(1)
+  const view = await payments.review(draft)
+  expect(view.resuming).toBe(false)
+  expect(view.funding.operationId).toBe('')
+  expect(api.send).not.toHaveBeenCalled()
+})
 it('treats a pending receipt as submitted without clearing the durable journal itself', async () => {
   api.send.mockImplementation(async () => {
     records = [pending('operator-finalized')]
@@ -385,6 +400,7 @@ it('treats a pending receipt as submitted without clearing the durable journal i
   await payments.approve(view.payment)
   expect(payments.getSnapshot().event?.outcome).toBe('sent')
   expect(records[0].operationId).toBe(quote.operationId)
+  expect(payments.getSnapshot().pendingPayments).toHaveLength(1)
 })
 it('invalidates an opened pre-reservation across lock and reauthentication even while both reviews are null', async () => {
   records = [pending('pre-reserve')]
@@ -447,7 +463,11 @@ it('uses one phone approval for Lightning quote and reservation, then records th
   expect(api.reserve.mock.calls[0][4]).toMatchObject({ phoneSecret: phone, signal: expect.any(AbortSignal) })
   expect(phone.every((byte) => byte === 0)).toBe(true)
   await payments.approve(review.payment)
-  expect(api.record).toHaveBeenCalledWith({}, lightning.rfqId, 'ab'.repeat(32))
+  expect(api.record).toHaveBeenCalledWith(
+    expect.objectContaining({ saveRfqSwap: expect.any(Function) }),
+    lightning.rfqId,
+    'ab'.repeat(32),
+  )
   expect(payments.getSnapshot().event).toMatchObject({ outcome: 'sent', kind: 'lightning' })
 })
 it('stops Lightning quote acceptance after locking during solver discovery and wipes the phone key', async () => {
@@ -742,6 +762,41 @@ it('settles funded Lightning terminals before review without failing on evidence
     restoreLock()
   }
 })
+it('waits for cold wallet initialization before either Lightning recovery sweep reads its repository', async () => {
+  const { payments } = open()
+  const ready = deferred<void>()
+  api.ensure.mockReturnValue(ready.promise)
+  const repository = memoryLightningRepo([])
+  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+    run(repository),
+  )
+  const pending = payments.acknowledgeSettledRecovery(lightningCoverage())
+  await vi.waitFor(() => expect(api.ensure).toHaveBeenCalledOnce())
+  expect(api.lightningRepo).not.toHaveBeenCalled()
+  ready.resolve()
+  await pending
+  expect(api.ensure).toHaveBeenCalledTimes(2)
+  expect(api.lightningRepo).toHaveBeenCalledTimes(2)
+})
+
+it('does not read the Lightning repository if its account is replaced while the wallet initializes', async () => {
+  const { payments, update } = open()
+  const ready = deferred<void>()
+  api.ensure.mockReturnValue(ready.promise)
+  const pending = payments.acknowledgeSettledRecovery(lightningCoverage())
+  await vi.waitFor(() => expect(api.ensure).toHaveBeenCalledOnce())
+  update({
+    account: {
+      savings: 'absent',
+      status: { ...status, vaultId: 'other-vault' },
+      enrollment,
+    } as unknown as AdmittedAccount,
+  })
+  ready.resolve()
+  await pending
+  expect(api.lightningRepo).not.toHaveBeenCalled()
+})
+
 it('keeps one committed Lightning sweep in flight and drains before teardown', async () => {
   const restoreLock = installImmediateLock()
   try {

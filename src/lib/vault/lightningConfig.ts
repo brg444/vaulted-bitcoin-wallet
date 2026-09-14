@@ -6,6 +6,18 @@ import { sdkNetworkName } from './networkPins'
 
 const LIGHTNING_SEND_RELEASE_FLAG = 'true'
 
+// The card prices the solver spread. Outbound quotes also include the
+// Lightning backend's invoice-specific fee. Bound that additional charge
+// independently: 0.5% with a 25-sat floor, matching the solver-core routing
+// budget. The payment review still shows the exact quoted total.
+const LIGHTNING_ROUTING_FEE_BPS = 50n
+const LIGHTNING_ROUTING_FEE_FLOOR_SATS = 25n
+
+function lightningRoutingFeeLimit(invoiceSats: number): bigint {
+  const proportional = (BigInt(invoiceSats) * LIGHTNING_ROUTING_FEE_BPS + 9_999n) / 10_000n
+  return proportional > LIGHTNING_ROUTING_FEE_FLOOR_SATS ? proportional : LIGHTNING_ROUTING_FEE_FLOOR_SATS
+}
+
 export interface VaultLightningSolverProfile {
   network: NetworkName
   pubkey: string
@@ -31,7 +43,7 @@ function fundingCeilingSats(market: Market, maxQuoteSats: number): number {
     wantAmount: BigInt(maxQuoteSats),
     safetyBps: 0,
   })
-  return Number(plan.deposit.atomic)
+  return Number(plan.deposit.atomic + lightningRoutingFeeLimit(maxQuoteSats))
 }
 
 /** Release-pinned Mutinynet solver. The bundled card is its source of truth. */
@@ -116,7 +128,7 @@ export async function discoverVaultLightningSolver(network: string): Promise<Vau
   }
 }
 
-/** Package-native exact-out ceiling with the card's whole-sat rounding. */
+/** Card-priced exact-out amount plus a bounded outbound routing charge. */
 export function vaultLightningFundingForInvoice(invoiceSats: number, profile: VaultLightningSolverProfile): number {
   if (!Number.isSafeInteger(invoiceSats) || invoiceSats < 1) throw new Error('Lightning invoice amount is invalid.')
   const plan = planOffer({
@@ -126,10 +138,11 @@ export function vaultLightningFundingForInvoice(invoiceSats: number, profile: Va
     safetyBps: 0,
   })
   if (!plan.limits.withinLimits) throw new Error('Lightning amount is outside the solver market limits.')
-  if (plan.deposit.atomic > BigInt(profile.maxFundingSats)) {
+  const fundingCeiling = plan.deposit.atomic + lightningRoutingFeeLimit(invoiceSats)
+  if (fundingCeiling > BigInt(profile.maxFundingSats)) {
     throw new Error('Lightning funding amount is outside the solver market limits.')
   }
-  return Number(plan.deposit.atomic)
+  return Number(fundingCeiling)
 }
 
 export function vaultLightningSendEnabled(

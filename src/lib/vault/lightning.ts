@@ -391,7 +391,7 @@ export async function requestVaultLightningQuote({
     const fundingCeiling = vaultLightningFundingForInvoice(facts.amountSats, profile)
     if (result.fundAmount > fundingCeiling) {
       throw new Error(
-        `Lightning quote asks ${result.fundAmount.toLocaleString()} sats; the pinned solver fee allows at most ${fundingCeiling.toLocaleString()} sats.`,
+        `Lightning quote asks ${result.fundAmount.toLocaleString()} sats; the solver and routing fee limit allows at most ${fundingCeiling.toLocaleString()} sats.`,
       )
     }
     const contractParams = await readRegisteredLightningContractParams({ result, contracts })

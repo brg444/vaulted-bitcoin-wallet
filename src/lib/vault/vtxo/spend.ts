@@ -313,7 +313,7 @@ async function finalizeVaultOperation(vaultId: string, operationId: string, bund
 }
 
 export function pendingVtxoSpendBlocksNewSend(pending: PersistedVtxoSpend | undefined): boolean {
-  return Boolean(pending)
+  return Boolean(pending && pending.receiptFinalized !== true)
 }
 
 export function isSameVtxoPayment(pending: PersistedVtxoSpend, destAddress: string, amountSats: number): boolean {
@@ -327,6 +327,7 @@ export function vtxoSpendIsAbortable(pending: PersistedVtxoSpend): boolean {
 }
 
 export function vtxoSpendIsLivePending(pending: PersistedVtxoSpend): boolean {
+  if (pending.receiptFinalized === true) return false
   return (
     pending.operatorSubmitAttempted === true ||
     pending.stage === 'authorized' ||
@@ -341,7 +342,7 @@ export function vtxoNewSendAction(
   destAddress: string,
   amountSats: number,
 ): VtxoNewSendAction {
-  if (!pending) return 'start'
+  if (!pending || pending.receiptFinalized === true) return 'start'
   if (isSameVtxoPayment(pending, destAddress, amountSats)) {
     if (
       pending.operatorSubmitAttempted ||
@@ -362,6 +363,7 @@ export function vtxoJournalSendAction(
   destAddress: string,
   amountSats: number,
 ): VtxoNewSendAction {
+  operations = operations.filter((record) => record.receiptFinalized !== true)
   const matching = operations.find((record) => isSameVtxoPayment(record, destAddress, amountSats))
   if (operations.some((record) => record.operationId !== matching?.operationId && vtxoSpendIsLivePending(record))) {
     return 'live-pending'
@@ -447,6 +449,7 @@ export function applyVtxoOperationView(
         authorizedPendingProof: view.authorizedPendingProof || pending.authorizedPendingProof,
         checkpointPsbts,
         stage: laterVtxoSpendStage(pending.stage, floor),
+        receiptFinalized: (view.state === 'finalized' && receiptBindsImmutableOperation(pending, view)) || undefined,
       }
       persistVtxoSpend(next)
       return next
@@ -673,7 +676,7 @@ async function prepareVtxoSpendLocked(
   for (const record of operations) {
     const next = await syncPersistedSpendWithOperation(record)
     signal?.throwIfAborted()
-    if (next) synced.push(next)
+    if (next && next.receiptFinalized !== true) synced.push(next)
   }
   const matching = synced.find((record) => isSameVtxoPayment(record, destAddress, amountSats))
   const action = vtxoJournalSendAction(synced, destAddress, amountSats)
@@ -720,7 +723,7 @@ export async function previewVaultVtxoSend(
   requireEnrolledSpendingStatus(status)
   if (!Number.isSafeInteger(amountSats) || amountSats < VTXO_DUST_SATS) throw new Error('VTXO amount is below dust')
   vtxoDestinationScript(status, destAddress)
-  const operations = listPersistedVtxoSpends(status.vaultId)
+  const operations = listPersistedVtxoSpends(status.vaultId).filter((record) => record.receiptFinalized !== true)
   const action = vtxoJournalSendAction(operations, destAddress, amountSats)
   const pending = operations.find((record) => isSameVtxoPayment(record, destAddress, amountSats))
   if ((action === 'warn' || action === 'resume') && pending && !options?.replaceExisting) {
@@ -806,7 +809,7 @@ async function reconcileOnePersistedVtxoSpend(
     return { kind: 'pending', operationId: pending.operationId, stage: pending.stage }
   }
   if (view.state === 'finalized') {
-    if (!view.arkTxid || view.arkTxid !== pending.arkTxid) {
+    if (!receiptBindsImmutableOperation(pending, view)) {
       return { kind: 'pending', operationId: pending.operationId, stage: pending.stage }
     }
     // The service receipt is observed, but the journal retires only through
@@ -1121,7 +1124,7 @@ async function retireFinalizedVtxoSpendLocked(
   signal?: AbortSignal,
 ): Promise<boolean> {
   signal?.throwIfAborted()
-  const pending = loadPersistedVtxoSpendById(status.vaultId, operationId)
+  let pending = loadPersistedVtxoSpendById(status.vaultId, operationId)
   if (!pending || !pending.arkTxid) return false
   let view: VtxoOperationView
   try {
@@ -1131,6 +1134,12 @@ async function retireFinalizedVtxoSpendLocked(
   }
   if (view.state !== 'finalized' || !receiptBindsImmutableOperation(pending, view)) return false
   signal?.throwIfAborted()
+  // Confirmation ends payment blocking even when recovery coverage lags.
+  // Retain the complete journal until every retirement predicate below passes.
+  if (pending.receiptFinalized !== true) {
+    pending = { ...pending, receiptFinalized: true }
+    persistVtxoSpend(pending)
+  }
   const snapshot = await fetchVaultWalletVtxoSnapshot(status)
   const outflow = pending.amountSats + (pending.feeSats ?? 0)
   if (

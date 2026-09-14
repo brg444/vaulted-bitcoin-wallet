@@ -85,7 +85,7 @@ describe('Lightning SEND release boundary', () => {
       network: 'mutinynet',
       minSats: 1_000,
       maxSats: 25_000,
-      maxFundingSats: 25_076,
+      maxFundingSats: 25_201,
     })
     expect(BITCOIN_LIGHTNING_SOLVER).toMatchObject({
       network: 'bitcoin',
@@ -103,7 +103,7 @@ describe('Lightning SEND release boundary', () => {
       relays: ['wss://nostr.arkade.sh'],
       minSats: 1_000,
       maxSats: 25_000,
-      maxFundingSats: 25_076,
+      maxFundingSats: 25_201,
       market: { pair: 'BTC/lightning:BTC', fee_bps: 30 },
     })
     const bitcoin = await discoverVaultLightningSolver('bitcoin')
@@ -544,9 +544,9 @@ describe('Lightning SEND release boundary', () => {
     await harness.repository[Symbol.asyncDispose]()
   })
 
-  it('rejects a quote above the published solver fee ceiling before Review', async () => {
+  it('rejects a quote above the solver and routing fee ceiling before Review', async () => {
     const harness = await lightningQuoteHarness()
-    const result = await completeRequestResult(harness.wallet, harness.contracts, { fundAmount: 2_126 })
+    const result = await completeRequestResult(harness.wallet, harness.contracts, { fundAmount: 2_151 })
 
     await expect(
       requestVaultLightningQuote({
@@ -564,10 +564,36 @@ describe('Lightning SEND release boundary', () => {
         nowSeconds: INVOICE_TIMESTAMP + 1,
         enabled: true,
       }),
-    ).rejects.toThrow(/pinned solver fee allows at most 2,125 sats/)
+    ).rejects.toThrow(/solver and routing fee limit allows at most 2,150 sats/)
 
     expect(await harness.repository.getRfqSwap(result.rfqId)).toBeUndefined()
     await harness.manager.stop()
     await harness.repository[Symbol.asyncDispose]()
+  })
+
+  it('allows a quoted backend routing charge and preserves the exact total for review', async () => {
+    const harness = await lightningQuoteHarness()
+    const result = await completeRequestResult(harness.wallet, harness.contracts, { fundAmount: 2_117 })
+    try {
+      const quote = await requestVaultLightningQuote({
+        wallet: harness.wallet,
+        arkServerUrl: 'https://arkade.computer',
+        invoice: MAINNET_INVOICE,
+        network: 'bitcoin',
+        transport: {} as never,
+        repository: harness.repository,
+        contracts: harness.contracts,
+        manager: harness.manager,
+        profile: { ...MAINNET_TEST_PROFILE, market: { ...MAINNET_TEST_PROFILE.market, fee_bps: 30 } },
+        rfqId: result.rfqId,
+        requester: vi.fn(async () => result) as never,
+        nowSeconds: INVOICE_TIMESTAMP + 1,
+        enabled: true,
+      })
+      expect(quote).toMatchObject({ invoiceAmountSats: 2_100, fundAmountSats: 2_117, corridorFeeSats: 17 })
+    } finally {
+      await harness.manager.stop()
+      await harness.repository[Symbol.asyncDispose]()
+    }
   })
 })
