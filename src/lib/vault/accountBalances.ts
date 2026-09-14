@@ -357,7 +357,17 @@ function createVaultBalanceController(initialOptions: VaultBalancesOptions, acco
         try {
           const spending: VaultWalletVtxoSnapshot =
             spendingAddress && liveStatus.enrolled
-              ? await fetchVaultWalletVtxoSnapshot(liveStatus)
+              ? await fetchVaultWalletVtxoSnapshot(liveStatus, (verified) => {
+                  // Publish verified spendability as soon as it is known; the
+                  // final publish below only adds history enrichment.
+                  if (!active()) return
+                  publishAccount(id, 'spend', { loaded: true, fresh: true, error: '' }, (current) => ({
+                    ...current,
+                    boardingBalance: verified.boardingBalance || 0,
+                    vtxoSpendingSats: verified.balance,
+                    vtxoPendingSats: verified.pendingBalance || 0,
+                  }))
+                })
               : { balance: 0, boardingBalance: 0, history: [] }
           if (!active()) return
           clearRetry('spend')
@@ -519,23 +529,19 @@ function createVaultBalanceController(initialOptions: VaultBalancesOptions, acco
   const ensureTasks = () => {
     if (tasks) return tasks
     const observe = account.maintenance.observe
+    const spendRead = (signal: AbortSignal) =>
+      vaultLatency.measure('balance-publication', () => readAccount('spend', signal))
+    const savingsRead = (signal: AbortSignal) =>
+      vaultLatency.measure('balance-publication', () => readAccount('savings', signal))
     tasks = {
-      spend: observe(
-        'spending-balance',
-        (signal) => vaultLatency.measure('balance-publication', () => readAccount('spend', signal)),
-        {
-          intervalMs: () => retryDelays.spend,
-          events: ['wallet', 'vaulted-savings-setup'],
-        },
-      ),
-      savings: observe(
-        'savings-balance',
-        (signal) => vaultLatency.measure('balance-publication', () => readAccount('savings', signal)),
-        {
-          intervalMs: () => retryDelays.savings,
-          events: ['wallet', 'vaulted-savings-setup'],
-        },
-      ),
+      spend: observe('spending-balance', spendRead, {
+        intervalMs: () => retryDelays.spend,
+        events: ['wallet', 'vaulted-savings-setup'],
+      }),
+      savings: observe('savings-balance', savingsRead, {
+        intervalMs: () => retryDelays.savings,
+        events: ['wallet', 'vaulted-savings-setup'],
+      }),
       sync: observe(
         'wallet-sync',
         async (signal) => {

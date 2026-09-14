@@ -406,7 +406,7 @@ describe('useVaultBalances', () => {
       totalSats: 78_000,
     })
     expect(result.current.history.map((item) => item.txid)).toEqual(['boarding'])
-    expect(mockedSnapshot).toHaveBeenCalledWith(STATUS)
+    expect(mockedSnapshot).toHaveBeenCalledWith(STATUS, expect.any(Function))
   })
 
   it('replaces pending boarding with the settled snapshot while Esplora still lists the deposit', async () => {
@@ -631,7 +631,7 @@ it('refreshes fresh Light Spending through the same pinned status and worker as 
   expect(setStatus).toHaveBeenCalledWith(status)
   expect(mockedStatus).toHaveBeenCalledWith(expect.any(AbortSignal), status.vaultId)
   expect(fetchVaultStatusUnpinned).not.toHaveBeenCalled()
-  expect(mockedSnapshot).toHaveBeenCalledWith(status)
+  expect(mockedSnapshot).toHaveBeenCalledWith(status, expect.any(Function))
   expect(mockedUtxos).not.toHaveBeenCalled()
   expect(result.current.positions.savings.totalSats).toBe(0)
 })

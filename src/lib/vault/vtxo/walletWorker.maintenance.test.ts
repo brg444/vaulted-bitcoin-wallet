@@ -136,6 +136,27 @@ it('coalesces concurrent VTXO snapshot reads onto one connection pass', async ()
   expect(wallet.getContractManager).toHaveBeenCalledOnce()
 })
 
+it('reports verified balance before history enrichment resolves', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const wallet = mockWallet()
+  vi.spyOn(ServiceWorkerWallet, 'create').mockResolvedValue(wallet as never)
+  await ensureVaultWalletWorker(status)
+  wallet.getActivityHistory.mockClear()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  wallet.getActivityHistory.mockImplementation(async () => {
+    await gate
+    return []
+  })
+  const verified = vi.fn()
+  const snapshot = fetchVaultWalletVtxoSnapshot(status, verified)
+  await vi.waitFor(() => expect(verified).toHaveBeenCalledOnce())
+  expect(verified).toHaveBeenCalledWith(expect.objectContaining({ balance: 12_000 }))
+  expect(wallet.getActivityHistory).toHaveBeenCalledOnce()
+  release()
+  expect((await snapshot).balance).toBe(12_000)
+})
+
 it('runs account maintenance while SDK initialization is pending', async () => {
   mocks.receipts.mockResolvedValue(undefined)
   const wallet = mockWallet()

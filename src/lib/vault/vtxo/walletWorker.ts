@@ -613,13 +613,24 @@ export interface VaultWalletVtxoSnapshot {
   history: VaultHistoryItem[]
 }
 
-export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise<VaultWalletVtxoSnapshot> {
+/** Verified, non-history balance facts. Safe to publish before enrichment. */
+export interface VaultWalletVerifiedBalance {
+  balance: number
+  pendingBalance?: number
+  boardingBalance?: number
+  boardingConfirmedBalance?: number
+}
+
+export async function fetchVaultWalletVtxoSnapshot(
+  status: VaultStatus,
+  onVerifiedBalance?: (balance: VaultWalletVerifiedBalance) => void,
+): Promise<VaultWalletVtxoSnapshot> {
   const current = await ensureVaultWalletWorker(status)
   // Coalesce concurrent foreground readers onto one exact account generation.
   // The connection is replaced wholesale on revive, so a shared pass can never
   // cross a generation boundary.
   if (current.vtxoSnapshot) return current.vtxoSnapshot
-  const promise = readVaultWalletVtxoSnapshot(status, current).finally(() => {
+  const promise = readVaultWalletVtxoSnapshot(status, current, onVerifiedBalance).finally(() => {
     if (current.vtxoSnapshot === promise) current.vtxoSnapshot = undefined
   })
   current.vtxoSnapshot = promise
@@ -629,6 +640,7 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
 async function readVaultWalletVtxoSnapshot(
   status: VaultStatus,
   current: WalletConnection,
+  onVerifiedBalance?: (balance: VaultWalletVerifiedBalance) => void,
 ): Promise<VaultWalletVtxoSnapshot> {
   vaultLatency.count('snapshot')
   const manager = await current.wallet.getContractManager()
@@ -642,13 +654,25 @@ async function readVaultWalletVtxoSnapshot(
     if (vtxo.settledBy) commitmentIds.add(vtxo.settledBy)
     for (const txid of vtxo.commitmentTxIds || []) commitmentIds.add(txid)
   }
-  const [activities, swapRecords, lightningRecords, boardingUtxos, balance] = await Promise.all([
-    current.wallet.getActivityHistory(),
-    current.swapRepository.getAllRfqSwaps(),
-    listVaultLightningActivityRecords(current.swapRepository),
-    current.wallet.getBoardingUtxos(),
-    current.wallet.getBalance(),
-  ])
+  // Verified balance facts come from the VTXO set and the exact persisted
+  // operations only. History enrichment below never holds them up.
+  const setup = readSpendingBitcoin(status)
+  const position = vtxoBalanceWithPending(
+    vtxos,
+    listPersistedVtxoSpends(status.vaultId),
+    setup
+      ? {
+          txid: setup.txid,
+          vout: setup.vout,
+          valueSats: setup.valueSats,
+          changeSats: setup.plan?.plan.changeSats,
+          receiverTxid: setup.receipt?.receiverTxid,
+          receiverVout: setup.receipt?.receiverVout,
+          submitted: ['submitted', 'confirmed'].includes(setup.stage),
+        }
+      : null,
+  )
+  const [boardingUtxos, balance] = await Promise.all([current.wallet.getBoardingUtxos(), current.wallet.getBalance()])
   if (balance.boarding.confirmed === 0 && !current.boardingSettle) {
     current.boardingError = undefined
     current.boardingRetryAfter = undefined
@@ -665,6 +689,17 @@ async function readVaultWalletVtxoSnapshot(
       return current.wallet.settle(params)
     })
   }
+  onVerifiedBalance?.({
+    balance: position.availableSats,
+    pendingBalance: position.pendingSats,
+    boardingBalance: balance.boarding.total,
+    boardingConfirmedBalance: balance.boarding.confirmed,
+  })
+  const [activities, swapRecords, lightningRecords] = await Promise.all([
+    current.wallet.getActivityHistory(),
+    current.swapRepository.getAllRfqSwaps(),
+    listVaultLightningActivityRecords(current.swapRepository),
+  ])
   const retiredReceives = listRetiredReceiveActivityRecords({ vaultId: status.vaultId, network: status.network })
   const liveRfqIds = new Set(lightningRecords.map((record) => record.rfqId))
   const mergedLightningRecords = [
@@ -686,22 +721,6 @@ async function readVaultWalletVtxoSnapshot(
   const knownTransactions = new Set(activityHistory.map((item) => item.txid))
   const detectedBoardingHistory = historyFromBoardingUtxos(boardingUtxos).filter(
     (item) => !knownTransactions.has(item.txid),
-  )
-  const setup = readSpendingBitcoin(status)
-  const position = vtxoBalanceWithPending(
-    vtxos,
-    listPersistedVtxoSpends(status.vaultId),
-    setup
-      ? {
-          txid: setup.txid,
-          vout: setup.vout,
-          valueSats: setup.valueSats,
-          changeSats: setup.plan?.plan.changeSats,
-          receiverTxid: setup.receipt?.receiverTxid,
-          receiverVout: setup.receipt?.receiverVout,
-          submitted: ['submitted', 'confirmed'].includes(setup.stage),
-        }
-      : null,
   )
   return {
     balance: position.availableSats,
