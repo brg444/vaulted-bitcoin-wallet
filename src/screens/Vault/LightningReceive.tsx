@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { RestArkProvider, RestEmulatorProvider } from '@arkade-os/sdk'
+import { RestEmulatorProvider } from '@arkade-os/sdk'
 import type { RfqSwapRecord } from '@arkade-os/swap'
 import QrCode from '../../components/QrCode'
 import { copyToClipboard } from '../../lib/clipboard'
@@ -12,6 +12,8 @@ import { withVaultLightningLifecycleLock } from '../../lib/vault/lightningLock'
 import { withVaultWalletState } from '../../lib/vault/vtxo/walletWorker'
 import { networkPins } from '../../lib/vault/networkPins'
 import { vaultLatency } from '../../lib/vault/latency'
+import { getOperatorInfo } from '../../lib/vault/operatorInfoCache'
+import { forgetLightningReceivePrewarm, prewarmLightningReceive } from '../../lib/vault/lightningReceivePrewarm'
 import type { VaultStatus } from '../../lib/vault/types'
 import { formatMoney, satsFromUsd, usdInputFromSats } from '../../lib/vault/fiatDisplay'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
@@ -82,6 +84,19 @@ export default function LightningReceive({
     setBusy(false)
   }, [scope])
 
+  // Warm only the read-only receive setup while this enrolled screen is open.
+  // Failures are non-fatal; the explicit Generate invoice click retries. The
+  // warm session is dropped when the selected wallet/network changes so a late
+  // result cannot populate a new account.
+  const lastScope = useRef(scope)
+  useEffect(() => {
+    if (lastScope.current !== scope) {
+      forgetLightningReceivePrewarm(status)
+      lastScope.current = scope
+    }
+    void prewarmLightningReceive(status).catch(() => undefined)
+  }, [scope, status])
+
   const displayedRate = useRef<number | null>(null)
   useEffect(() => {
     if (denom.unit !== 'usd' || !denom.rate) {
@@ -126,7 +141,7 @@ export default function LightningReceive({
       // still running before any invoice is requested or persisted.
       const emulatorInfoPromise = new RestEmulatorProvider(pins.emulatorOrigin).getInfo()
       const [verified, operatorInfo] = await vaultLatency.measure('public-setup', () =>
-        Promise.all([discoverVaultLightningSolver(status.network), new RestArkProvider(pins.operatorOrigin).getInfo()]),
+        Promise.all([discoverVaultLightningSolver(status.network), getOperatorInfo(pins.operatorOrigin)]),
       )
       if (!unchanged()) return
       if (!verified) throw new Error('The Lightning solver card could not be verified.')

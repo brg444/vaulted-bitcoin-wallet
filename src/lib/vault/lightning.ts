@@ -41,6 +41,7 @@ import {
 import { decodeVaultLightningInvoice } from './lightningInvoice'
 import { withVaultLightningLifecycleLock } from './lightningLock'
 import { vaultLatency } from './latency'
+import { getOperatorInfo } from './operatorInfoCache'
 import { readRegisteredLightningContractParams, registeredContractScript } from './lightningValidation'
 import {
   discardUnexposedVaultLightningQuote,
@@ -379,9 +380,7 @@ export async function withVaultLightningPublicQuote<T>(
         // refund address/script and the signing Operator key must match, and
         // the single reply is reused by the requester below.
         const arkServerUrl = vaultOperatorOrigin(status.network)
-        const operatorInfo = await vaultLatency.measure('operator-info', () =>
-          new RestArkProvider(arkServerUrl).getInfo(),
-        )
+        const operatorInfo = await vaultLatency.measure('operator-info', () => getOperatorInfo(arkServerUrl))
         assertVaultLightningOperatorSetup(status, operatorInfo)
         options.signal?.throwIfAborted()
         const identity = ReadonlySingleKey.fromPublicKey(hex.decode(String(status.phoneBip340Pub || '').toLowerCase()))

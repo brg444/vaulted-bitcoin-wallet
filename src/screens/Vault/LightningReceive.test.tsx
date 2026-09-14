@@ -9,6 +9,8 @@ import { RestArkProvider, RestEmulatorProvider } from '@arkade-os/sdk'
 import { Fiats } from '../../lib/types'
 import LightningReceive from './LightningReceive'
 import { networkPins } from '../../lib/vault/networkPins'
+import { invalidateOperatorInfo } from '../../lib/vault/operatorInfoCache'
+import { forgetLightningReceivePrewarm } from '../../lib/vault/lightningReceivePrewarm'
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -30,6 +32,7 @@ vi.mock('../../lib/vault/lightningLock', () => ({
   withVaultLightningLifecycleLock: async (_id: unknown, run: () => unknown) => run(),
 }))
 vi.mock('../../lib/vault/vtxo/walletWorker', () => ({
+  ensureVaultWalletWorker: async () => ({}),
   withVaultWalletState: async (_status: unknown, run: (s: object) => unknown) =>
     run({ swapRepository: { getAllRfqSwaps: mocks.list, getRfqSwap: mocks.read }, contracts: {} }),
 }))
@@ -105,6 +108,8 @@ function show(denomination?: {
   )
 }
 beforeEach(() => {
+  forgetLightningReceivePrewarm()
+  invalidateOperatorInfo()
   mocks.observe.mockImplementation(() => () => {})
   mocks.list.mockResolvedValue([])
   mocks.read.mockResolvedValue(undefined)
@@ -136,6 +141,15 @@ describe('Lightning receive screen', () => {
     expect(mocks.request).not.toHaveBeenCalled()
     expect(mocks.backup).not.toHaveBeenCalled()
   })
+  it('prewarms the read-only setup and reuses the Operator read for the click', async () => {
+    show()
+    await waitFor(() => expect(RestArkProvider.prototype.getInfo).toHaveBeenCalledTimes(1))
+    await create()
+    expect(mocks.request).toHaveBeenCalledOnce()
+    // The click reused the warm Operator read instead of fetching again.
+    expect(RestArkProvider.prototype.getInfo).toHaveBeenCalledTimes(1)
+  })
+
   it('shows the invoice and exact fee together after the local record is saved', async () => {
     const saved = record()
     let finish!: (value: typeof saved) => void
