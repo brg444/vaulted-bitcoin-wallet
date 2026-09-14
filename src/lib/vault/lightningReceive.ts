@@ -1,4 +1,5 @@
 import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { vaultLatency } from './latency'
 import {
   ArkAddress,
   VHTLC,
@@ -346,7 +347,8 @@ export async function requestVaultLightningReceive(input: {
     amountSide: 'to',
     claimPacket: packet.ciphertext,
   })
-  const quote = await input.transport.requestQuote(request)
+  vaultLatency.count('rfq')
+  const quote = await vaultLatency.measure('rfq', () => input.transport.requestQuote(request))
   const now = input.now ?? Math.floor(Date.now() / 1000)
   if (
     quote.rfq_id !== rfqId ||

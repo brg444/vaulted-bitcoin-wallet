@@ -51,6 +51,7 @@ export interface VaultSendContextProps {
   approveSend: () => Promise<void>
   lastTxid: string
   lastTxKind: 'onchain' | 'vtxo' | 'lightning' | ''
+  starting: boolean
   openSendScan: () => void
   scanOnSend: boolean
   clearSendScan: () => void
@@ -141,6 +142,7 @@ export const VaultSendContext = createContext<VaultSendContextProps>({
   approveSend: async () => {},
   lastTxid: '',
   lastTxKind: '',
+  starting: false,
   openSendScan: noop,
   scanOnSend: false,
   clearSendScan: noop,

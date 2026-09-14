@@ -173,6 +173,10 @@ export function useVaultSendBinding(input: {
   const [lastSend, setLastSend] = useState<VaultSpend | null>(null)
   const [lastTxid, setLastTxid] = useState('')
   const [lastTxKind, setLastTxKind] = useState<'onchain' | 'vtxo' | 'lightning' | ''>('')
+  // True while an explicitly approved payment is being prepared/submitted by the
+  // account owner; the result screen shows a truthful starting state until the
+  // owner acknowledges durable acceptance or submission.
+  const [starting, setStarting] = useState(false)
   const [scanOnSend, setScanOnSend] = useState(false)
 
   useEffect(() => {
@@ -181,6 +185,7 @@ export function useVaultSendBinding(input: {
     setLastSend(null)
     setLastTxid('')
     setLastTxKind('')
+    setStarting(false)
     setScanOnSend(false)
   }, [transition])
 
@@ -192,10 +197,12 @@ export function useVaultSendBinding(input: {
       setLastTxid(spendingEvent.txid!)
       setLastTxKind(spendingEvent.kind)
       setLastSend(spendingEvent.payment)
+      setStarting(false)
       setSpend({ address: '', amount: 0, fee: 0 })
       setScreen('success')
       void refreshBalance().catch(() => undefined)
     } else {
+      setStarting(false)
       setSpend(spendingEvent.outcome === 'fee-changed' ? spendingEvent.payment : { ...spendingEvent.payment, fee: 0 })
       setScreen(spendingEvent.outcome === 'fee-changed' ? 'review' : 'send')
     }
@@ -353,10 +360,21 @@ export function useVaultSendBinding(input: {
       return
     }
     setError('')
+    // Acknowledge the explicit approval immediately on the existing tracking
+    // screen; the account owner keeps the operation and publishes the durable
+    // accepted/submitted transition. No transaction is invented here.
+    setLastSend(spend)
+    setLastTxid('')
+    setLastTxKind(isVaultLightningInput(spend.address) ? 'lightning' : 'vtxo')
+    setStarting(true)
+    setScreen('success')
     try {
       await spendingPayments.payments.approve(spend)
     } catch {
-      if (!session.getSnapshot().locked && !spendingPayments.payments.getSnapshot().review) setScreen('send')
+      setStarting(false)
+      const snapshot = spendingPayments.payments.getSnapshot()
+      if (snapshot.review) setScreen('review')
+      else if (!session.getSnapshot().locked) setScreen('send')
     }
   }, [
     account,
@@ -385,6 +403,7 @@ export function useVaultSendBinding(input: {
     lastSend,
     lastTxid,
     lastTxKind,
+    starting,
     scanOnSend,
     openSendScan,
     clearSendScan,

@@ -888,6 +888,30 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     expect(mocks.reserve).toHaveBeenCalledTimes(2)
   })
 
+  it('shows the Payment started screen immediately while approval runs in the background', async () => {
+    let release!: (quote: unknown) => void
+    mocks.reserve.mockReturnValue(new Promise((resolve) => (release = resolve)))
+    mocks.send.mockResolvedValue({ txid: '55'.repeat(32), feeSats: 0, operationId: reviewed.operationId })
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByRole('button', { name: 'Set draft' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review' })))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })))
+    // The explicit approval acknowledges immediately; no reservation has resolved.
+    expect(screen.getByTestId('screen')).toHaveTextContent('success')
+    expect(screen.getByTestId('sent-amount')).toHaveTextContent('12000')
+    expect(mocks.send).not.toHaveBeenCalled()
+    release({ ...reviewed, feeSats: 0 })
+    await waitFor(() => expect(mocks.send).toHaveBeenCalled())
+    // Completion is quiet and in place: no second screen was forced.
+    expect(screen.getByTestId('screen')).toHaveTextContent('success')
+  })
+
   it.each(['resolve', 'reject'] as const)(
     'shows the completed payment before a delayed balance refresh can %s',
     async (outcome) => {

@@ -11,6 +11,7 @@ import { vaultWalletRuntimeKey } from '../../lib/vault/accountRuntime'
 import { withVaultLightningLifecycleLock } from '../../lib/vault/lightningLock'
 import { withVaultWalletState } from '../../lib/vault/vtxo/walletWorker'
 import { networkPins } from '../../lib/vault/networkPins'
+import { vaultLatency } from '../../lib/vault/latency'
 import type { VaultStatus } from '../../lib/vault/types'
 import { formatMoney, satsFromUsd, usdInputFromSats } from '../../lib/vault/fiatDisplay'
 import { useBalanceDenomination, type BalanceDenomination } from './AccountBalance'
@@ -120,14 +121,14 @@ export default function LightningReceive({
     setProgress('Connecting to Lightning…')
     try {
       const pins = networkPins(status.network)
-      const [emulatorInfo, verified, operatorInfo] = await Promise.all([
-        new RestEmulatorProvider(pins.emulatorOrigin).getInfo(),
-        discoverVaultLightningSolver(status.network),
-        new RestArkProvider(pins.operatorOrigin).getInfo(),
-      ])
+      // Start the claim-service check now, but validate it only after worker
+      // setup and the outstanding-quote scan, so it overlaps that work while
+      // still running before any invoice is requested or persisted.
+      const emulatorInfoPromise = new RestEmulatorProvider(pins.emulatorOrigin).getInfo()
+      const [verified, operatorInfo] = await vaultLatency.measure('public-setup', () =>
+        Promise.all([discoverVaultLightningSolver(status.network), new RestArkProvider(pins.operatorOrigin).getInfo()]),
+      )
       if (!unchanged()) return
-      if (emulatorInfo.signerPubkey !== networkPins(status.network).emulatorSignerPub)
-        throw new Error('The Lightning claim service does not match this wallet.')
       if (!verified) throw new Error('The Lightning solver card could not be verified.')
       setProgress('Requesting invoice…')
       const saved = await withVaultLightningLifecycleLock(status.vaultId, () =>
@@ -141,6 +142,9 @@ export default function LightningReceive({
               Math.floor(Date.now() / 1000) < receiveProfile(r).invoiceExpiresAt,
           )
           if (outstanding) return outstanding
+          const emulatorInfo = await emulatorInfoPromise
+          if (emulatorInfo.signerPubkey !== networkPins(status.network).emulatorSignerPub)
+            throw new Error('The Lightning claim service does not match this wallet.')
           return withVaultLightningTransport(verified, async (transport) =>
             requestVaultLightningReceive({
               status,

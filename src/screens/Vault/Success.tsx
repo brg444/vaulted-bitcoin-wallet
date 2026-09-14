@@ -13,7 +13,7 @@ import PaymentResult from './qg/PaymentResult'
 export default function VaultSuccess({ denomination }: { denomination?: BalanceDenomination }) {
   const status = useVaultStatus()
   const { account, boardingAddress } = useVaultAccount()
-  const { lastSend, lastTxid, lastTxKind } = useVaultSend()
+  const { lastSend, lastTxid, lastTxKind, starting } = useVaultSend()
   const { navigate } = useVaultNavigation()
   const denom = useBalanceDenomination(denomination)
   const money = { unit: denom.unit, rate: denom.rate }
@@ -24,26 +24,34 @@ export default function VaultSuccess({ denomination }: { denomination?: BalanceD
     ? vaultTransactionExplorer(lastTxid, lastTxKind === 'onchain' ? 'onchain' : 'arkade', status?.network)
     : null
 
-  const headline = onchain
-    ? account === 'savings'
-      ? 'Savings transfer submitted'
-      : 'Bitcoin payment submitted'
-    : lightning
-      ? 'Payment started'
-      : 'Payment sent'
-  const copy = movingToSpending
-    ? 'Bitcoin confirmation is next'
-    : lightning
-      ? 'Quote accepted. The Lightning payment is completing.'
-      : lastTxKind === 'vtxo'
-        ? 'Fast transfer complete'
-        : onchain
-          ? 'Bitcoin confirmation is next'
-          : 'Done'
+  const headline = starting
+    ? 'Payment started'
+    : onchain
+      ? account === 'savings'
+        ? 'Savings transfer submitted'
+        : 'Bitcoin payment submitted'
+      : lightning
+        ? 'Payment started'
+        : 'Payment sent'
+  const copy = starting
+    ? 'Your payment is processing. Activity and balances update automatically.'
+    : movingToSpending
+      ? 'Bitcoin confirmation is next'
+      : lightning
+        ? 'Quote accepted. The Lightning payment is completing.'
+        : lastTxKind === 'vtxo'
+          ? 'Fast transfer complete'
+          : onchain
+            ? 'Bitcoin confirmation is next'
+            : 'Done'
 
   return (
     <WalletScreen variant='success' footer={<QgPrimary onClick={() => navigate('home')} label='Done' />}>
-      <PaymentResult state={onchain ? 'submitted' : lightning ? 'started' : 'sent'} title={headline} copy={copy}>
+      <PaymentResult
+        state={starting ? 'started' : onchain ? 'submitted' : lightning ? 'started' : 'sent'}
+        title={headline}
+        copy={copy}
+      >
         {lastSend ? (
           <section className='qg-details'>
             <div>
@@ -64,7 +72,7 @@ export default function VaultSuccess({ denomination }: { denomination?: BalanceD
             </div>
           </section>
         ) : null}
-        <TransactionReference txid={lastTxid} explorer={explorer} funding={lightning} />
+        {starting ? null : <TransactionReference txid={lastTxid} explorer={explorer} funding={lightning} />}
       </PaymentResult>
     </WalletScreen>
   )
