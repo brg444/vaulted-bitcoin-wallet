@@ -323,7 +323,7 @@ export function isSameVtxoPayment(pending: PersistedVtxoSpend, destAddress: stri
 export type VtxoNewSendAction = 'start' | 'resume' | 'abort-reserved' | 'warn' | 'live-pending'
 
 export function vtxoSpendIsAbortable(pending: PersistedVtxoSpend): boolean {
-  return pending.stage === 'pre-reserve' || pending.stage === 'reserved'
+  return pending.receiptFinalized !== true && (pending.stage === 'pre-reserve' || pending.stage === 'reserved')
 }
 
 export function vtxoSpendIsLivePending(pending: PersistedVtxoSpend): boolean {

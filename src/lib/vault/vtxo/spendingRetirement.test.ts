@@ -33,6 +33,7 @@ import {
   sendVaultVtxo,
   previewVaultVtxoSend,
   vtxoSpendIsLivePending,
+  vtxoSpendIsAbortable,
   type VtxoOperationView,
 } from './spend'
 import { loadPersistedVtxoSpendById, persistVtxoSpend, restoreSpendingRecoveryJournal } from './spendingJournal'
@@ -875,6 +876,7 @@ describe('shared Spending retirement predicate', () => {
       const retained = loadPersistedVtxoSpendById(vaultId, OP)!
       expect(retained).toMatchObject({ ...f.pending, stage: 'operator-finalized', receiptFinalized: true })
       expect(vtxoSpendIsLivePending(retained)).toBe(false)
+      expect(vtxoSpendIsAbortable({ ...retained, stage: 'reserved' })).toBe(false)
       await expect(previewVaultVtxoSend(f.status, retained.destAddress, retained.amountSats)).resolves.toMatchObject({
         operationId: '',
         bundleDigest: '',
