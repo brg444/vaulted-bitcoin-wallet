@@ -41,7 +41,7 @@ it('uses one clock for task deadlines and one listener for shared foreground eve
   scheduler.observe('spending-renewals', first, { intervalMs: 1000 }).request()
   scheduler.observe('bitcoin-payment', second, { intervalMs: 2000 }).request()
   expect(vi.getTimerCount()).toBe(1)
-  expect(add.mock.calls.filter(([name]) => name === 'focus')).toHaveLength(1)
+  expect(add.mock.calls.filter(([name]) => String(name) === 'focus')).toHaveLength(1)
   await vi.advanceTimersByTimeAsync(150)
   expect(first).toHaveBeenCalledOnce()
   expect(second).toHaveBeenCalledOnce()
