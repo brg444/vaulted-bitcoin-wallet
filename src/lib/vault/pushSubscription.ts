@@ -3,6 +3,7 @@ import {
   NOTIFY_WORKER_SCOPE,
   NOTIFY_WORKER_URL,
   awaitNotifyWorkerActive,
+  compareSubscriptionVapidKey,
   pushVapidPublicKey,
   vapidKeyBytes,
 } from './nativeNotifications'
@@ -83,6 +84,7 @@ export async function reconcilePushState(
       typeof Notification === 'undefined' ||
       Notification.permission !== 'granted' ||
       !subscription ||
+      compareSubscriptionVapidKey(subscription, pushVapidPublicKey()) === 'mismatch' ||
       (stored.endpoint && stored.endpoint !== subscription.endpoint)
     ) {
       await disableBackgroundPush(status)
@@ -211,12 +213,26 @@ export async function enableBackgroundPush(
   if (!registration.pushManager) throw new Error('Push notifications are not supported in this browser.')
   const existing = await registration.pushManager.getSubscription()
   const stored = loadStored(status)
-  const subscription =
-    existing ??
-    (await registration.pushManager.subscribe({
+  let subscription = existing
+  if (existing && compareSubscriptionVapidKey(existing, pushVapidPublicKey()) === 'mismatch') {
+    // The release rotated its VAPID key since this device subscribed: the old
+    // binding can never be delivered to. Recycle it instead of leaving a false
+    // Enabled state that silently drops every notice.
+    try {
+      await existing.unsubscribe()
+    } catch {
+      // A failed unsubscribe is replaced below; the old binding is unusable.
+    }
+    subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: new Uint8Array(vapidKey),
-    }))
+    })
+  } else if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: new Uint8Array(vapidKey),
+    })
+  }
   assertCurrent()
   const body = {
     endpoint: subscription.endpoint,
@@ -263,16 +279,60 @@ export async function refreshBackgroundPush(status: VaultStatus): Promise<void> 
   const stored = loadStored(status)
   if (!stored || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
   const registration = await navigator.serviceWorker.getRegistration(NOTIFY_WORKER_SCOPE)
-  const subscription = await registration?.pushManager.getSubscription()
-  if (!subscription) return
-  // Renew before the server lease expires; keep endpoint rotation in sync.
-  if (stored.endpoint === subscription.endpoint && stored.expiresAt > Date.now() + 7 * 86400000) return
+  if (!registration?.pushManager) return
+  let subscription = await registration.pushManager.getSubscription()
+  // Closed-app recovery: the browser drops a subscription without telling this
+  // page (the notify worker holds no credential for pushsubscriptionchange),
+  // and a release can rotate its VAPID key. Either way the stored handle no
+  // longer delivers, so recycle the browser binding before renewing the lease.
+  let recycled = false
+  const expectedKey = pushVapidPublicKey()
+  const keyMatch = compareSubscriptionVapidKey(subscription, expectedKey)
+  if (!subscription || keyMatch === 'mismatch') {
+    const keyBytes = vapidKeyBytes(expectedKey)
+    if (!keyBytes) return
+    if (subscription) {
+      try {
+        await subscription.unsubscribe()
+      } catch {
+        // Replaced below.
+      }
+    }
+    try {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: new Uint8Array(keyBytes),
+      })
+      recycled = true
+    } catch {
+      return
+    }
+  }
   const body = JSON.stringify({
     endpoint: subscription.endpoint,
     p256dh: keyToBase64url(subscription.getKey('p256dh')),
     auth: keyToBase64url(subscription.getKey('auth')),
     encoding: 'aes128gcm',
   })
+  if (!recycled && stored.endpoint === subscription.endpoint && stored.expiresAt > Date.now() + 7 * 86400000) {
+    // A healthy local lease is not proof the server still holds the record: a
+    // restored, reset, or swept database can lose it while the client keeps a
+    // false Enabled state and the push service silently drops every delivery.
+    // Verify the handle, and rebuild from the same authorized browser binding
+    // when it is gone (the user's opt-in is preserved, no re-enable needed).
+    const listed = (await receiverFetch(status, '/v1/vaulted/push/subscriptions', { method: 'GET' })) as {
+      subscriptions?: { subHandle: string; expiresAt: number }[]
+    }
+    const match = Array.isArray(listed.subscriptions)
+      ? listed.subscriptions.find((s) => s.subHandle === stored.subHandle)
+      : undefined
+    if (match) {
+      if (Number.isSafeInteger(match.expiresAt))
+        saveStored(status, { ...stored, expiresAt: match.expiresAt, endpoint: subscription.endpoint })
+      return
+    }
+    // Server record gone: fall through and recreate an authorized registration.
+  }
   const updated = (await receiverFetch(status, '/v1/vaulted/push/subscriptions', {
     method: 'POST',
     body,
@@ -282,8 +342,18 @@ export async function refreshBackgroundPush(status: VaultStatus): Promise<void> 
       await receiverFetch(status, `/v1/vaulted/push/subscriptions/${updated.subHandle}`, { method: 'DELETE' })
     return
   }
-  if (/^[0-9a-f]{64}$/.test(updated.subHandle) && Number.isSafeInteger(updated.expiresAt))
+  if (/^[0-9a-f]{64}$/.test(updated.subHandle) && Number.isSafeInteger(updated.expiresAt)) {
     saveStored(status, { ...updated, endpoint: subscription.endpoint })
+    // Retire the previous server handle so a rotated/recreated binding cannot
+    // leave a second live subscription that can never be delivered to.
+    if (recycled && updated.subHandle !== stored.subHandle) {
+      try {
+        await receiverFetch(status, `/v1/vaulted/push/subscriptions/${stored.subHandle}`, { method: 'DELETE' })
+      } catch {
+        // The outbox drops a dead endpoint on 404/410; the lease expires too.
+      }
+    }
+  }
 }
 
 export interface BackgroundPushState {

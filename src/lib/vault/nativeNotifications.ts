@@ -79,6 +79,37 @@ export function pushVapidPublicKey(): string {
   return String(import.meta.env.VITE_PUSH_VAPID_PUBLIC_KEY || '').trim()
 }
 
+export type VapidKeyMatch = 'match' | 'mismatch' | 'unknown'
+
+interface KeyedSubscription {
+  options?: { applicationServerKey?: ArrayBuffer | ArrayBufferView | null } | null
+}
+
+/**
+ * Compare a browser push subscription's bound application server key with the
+ * configured VAPID public key. A web-push subscription is pinned to the VAPID
+ * key presented at subscribe time; if a release rotates the key, the old
+ * binding can never be delivered to and must be recycled rather than kept in a
+ * false Enabled state. Browsers that do not expose `applicationServerKey`
+ * report `unknown`, and callers must not recycle on doubt.
+ */
+export function compareSubscriptionVapidKey(
+  subscription: KeyedSubscription | null | undefined,
+  key: unknown,
+): VapidKeyMatch {
+  const expected = vapidKeyBytes(key)
+  if (!expected) return 'unknown'
+  const provided = subscription?.options?.applicationServerKey
+  if (!provided) return 'unknown'
+  const bytes =
+    provided instanceof ArrayBuffer
+      ? new Uint8Array(provided)
+      : new Uint8Array(provided.buffer, provided.byteOffset, provided.byteLength)
+  if (bytes.length !== expected.length) return 'mismatch'
+  for (let i = 0; i < bytes.length; i++) if (bytes[i] !== expected[i]) return 'mismatch'
+  return 'match'
+}
+
 /**
  * Gesture-only permission request. Call exclusively from a user-activated
  * button; never on load, navigation, or render.
