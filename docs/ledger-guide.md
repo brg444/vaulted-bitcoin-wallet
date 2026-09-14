@@ -1,8 +1,8 @@
 # Ledger and Vaulted Savings
 
 The native Ledger integration is under qualification and is not enabled for new
-RC enrollments yet. This cleanup candidate supports shared Spending with optional
-Ledger Savings and retires historical account programs.
+RC enrollments yet. All account modes share Spending; protected modes add
+Ledger Savings.
 
 ## Native Savings setup
 

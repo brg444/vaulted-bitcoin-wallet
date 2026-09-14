@@ -5,6 +5,7 @@ capabilities also depend on the connected Guardian and wallet build settings.
 
 | Guide                                              | Contents                                                              |
 | -------------------------------------------------- | --------------------------------------------------------------------- |
+| [RC deployment](rc-deployment.md) | Release inputs, signing origin and live verification |
 | [Architecture](architecture.md)                    | Wallet, worker, Guardian, Operator, and storage responsibilities      |
 | [Programs](program.md)                             | Spending, protection tiers, and recovery authority |
 | [Security](security.md)                            | Enforced checks and remaining trust assumptions                       |

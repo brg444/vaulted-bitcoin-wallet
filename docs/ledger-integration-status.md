@@ -46,11 +46,10 @@ worker hashes, Contract Packs and companion inputs verified together. See
 
 ## Activation
 
-Schema 12 preserves retained accounts and removes historical account storage
-under the authenticated [runtime retirement contract](https://github.com/brg444/arkade-runtime/blob/main/docs/ledger-schema-migration.md).
-A release requires a database backup and a compatible rollback snapshot;
-a schema 11 binary cannot read the upgraded database. The independent policy
-sequence must continue to agree with retained economic state.
+Guardian uses schema 12 with authenticated account and operation records.
+Database backups and the independent policy sequence must preserve consistent
+economic state. Follow the [runtime storage contract](https://github.com/brg444/arkade-runtime/blob/main/docs/storage.md)
+when planning activation or recovery.
 
 A Guardian restart requires its configured interactive unlock procedure.
 Deploy the matched wallet and companion only within the separately scoped

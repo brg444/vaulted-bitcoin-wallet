@@ -23,9 +23,8 @@ build configuration and services. A configured Lightning address appears on
 the primary Receive screen alongside access to invoices and Bitcoin receive.
 
 Protected Savings uses Ledger registration and its enrolled receive/change policies.
-See the [Ledger guide](docs/ledger-guide.md) for setup, signing and recovery
-requirements. This cleanup candidate accepts shared Spending and Ledger accounts;
-historical account programs are retired.
+All account modes share Spending, with protected modes adding Ledger Savings; the
+[Ledger guide](docs/ledger-guide.md) covers setup, signing and recovery requirements.
 
 Per-payment and rolling 24-hour limits are fixed at enrollment. Admission may
 be open or invitation-based; the wallet follows the Guardian's advertised mode.
@@ -81,5 +80,7 @@ Generic `pnpm build` requires an explicit network. Use the named build commands
 above to select it for both the app and worker. [Testing](docs/testing.md)
 describes browser fixtures, visual baselines, and optional integration tests.
 [Dependencies](docs/upstream-alignment.md) records the vendored SDK boundary.
+[RC deployment](docs/rc-deployment.md) covers the signing address, complete
+frontend/gateway build and live release verification.
 
 Report vulnerabilities through [SECURITY.md](SECURITY.md).
