@@ -17,7 +17,9 @@ import {
 
 const owner = new Uint8Array(32).fill(1),
   scalar = new Uint8Array(32).fill(7)
-const now = Date.UTC(2026, 8, 7)
+// Relative to wall-clock: the SDK skips forfeit building once the fixture
+// coin is past its batch expiry, so a fixed date would time-bomb this file.
+const now = Date.now()
 async function fixture(raw: unknown) {
   const status = structuredClone(raw) as VaultStatus
   status.phoneDirectP256 = hex.encode(p256.getPublicKey(scalar, true))
