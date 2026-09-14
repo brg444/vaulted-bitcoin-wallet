@@ -9,7 +9,8 @@ passkey ceremony; an app-domain setting sends an RC visitor to that domain.
 
 Use a clean, integrated wallet `main` checkout with its pinned recovery
 companion. Verify the vendored SDK, both Contract Packs and companion producer
-inputs. Use Node 24.15.0 and the pnpm version pinned in `package.json`.
+inputs. Use Node 24.15.0 and the pnpm version pinned in `package.json`. Link the
+build checkout to the existing `vaulted-mainnet` Vercel project before building.
 
 Build the complete mainnet frontend, worker and gateway from the same revision.
 `vercel.mainnet.json` supplies the mainnet feature flags. For a local Vercel
@@ -50,6 +51,15 @@ automatically during a production deployment. Deploy without automatic domain
 assignment, then assign only the intended alias; inspect the current domain
 configuration before the operation. Restoring another alias after it moves does
 not provide deployment isolation.
+
+```sh
+vercel deploy --prebuilt --prod --skip-domain --local-config vercel.mainnet.json
+pnpm verify:deployment <deployment-url> <expected-index-asset> mainnet https://rc.getvaulted.xyz rc.getvaulted.xyz
+vercel alias set <deployment-url> rc.getvaulted.xyz
+```
+
+Take the expected index asset from the local build and confirm the deployment's
+`release.json` names the intended commit before assigning the alias.
 
 After assigning RC to the complete build, verify it with the explicit signing
 identity:
