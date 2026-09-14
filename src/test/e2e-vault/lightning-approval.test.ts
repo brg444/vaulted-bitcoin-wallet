@@ -7,17 +7,9 @@ const MUTINYNET_INVOICE =
   'lntbs21u1p4ghty5pp500cgfavsavx2prgw3vm4s6ckrjvg9zyjx3k87segw240hr2l2glqdqqcqzzsxqyz5vqsp56tscwj6zyk4k9g2xm4r0tf7s6xemuq2rqm7vea0tfymmzwapaqlq9qxpqysgq49fj3f48wy2utl25xzs8tjg7ak89p3242p2h3e9rk20alxajjqarjusq8222fsa9ncy43ucslfdcdtld2pd58hcxtndmjf0sfyqsf2qpsf0h6s'
 const MUTINYNET_INVOICE_TIMESTAMP = 1_787_538_580
 
-test('@ux-lightning a valid invoice reaches the passkey boundary', async ({ page }) => {
+test('@ux-lightning a valid invoice is quoted without a Review passkey', async ({ page }) => {
   await page.clock.setSystemTime((MUTINYNET_INVOICE_TIMESTAMP + 1) * 1000)
   await page.addInitScript(() => {
-    window.addEventListener('click', (event) => {
-      const target = event.target as HTMLElement
-      if (target.closest('button')?.textContent?.trim() === 'Review payment') {
-        document.documentElement.dataset.lightningPasskeyInClick = String(
-          document.documentElement.dataset.lightningPasskeyRequested === 'true',
-        )
-      }
-    })
     // Stub navigator directly, including browser builds without an exposed
     // CredentialsContainer constructor or a platform authenticator.
     Object.defineProperty(navigator, 'credentials', {
@@ -25,7 +17,6 @@ test('@ux-lightning a valid invoice reaches the passkey boundary', async ({ page
       value: {
         get: async () => {
           document.documentElement.dataset.lightningPasskeyRequested = 'true'
-          document.documentElement.dataset.lightningPasskeyActive = String(navigator.userActivation.isActive)
           throw new Error('E2E passkey boundary reached')
         },
       },
@@ -36,9 +27,10 @@ test('@ux-lightning a valid invoice reaches the passkey boundary', async ({ page
   await page.getByPlaceholder('Payment address or Lightning invoice').fill(MUTINYNET_INVOICE)
   await expect(page.getByRole('button', { name: 'Review payment', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Review payment', exact: true }).tap()
-  await expect(page.locator('html')).toHaveAttribute('data-lightning-passkey-requested', 'true')
-  await expect(page.locator('html')).toHaveAttribute('data-lightning-passkey-in-click', 'true')
-  await expect(page.locator('html')).toHaveAttribute('data-lightning-passkey-active', 'true')
+  await page.waitForTimeout(1500)
+  // The quote is negotiated from public enrolled information; WebAuthn is
+  // requested only from the explicit approval, not from Review.
+  await expect(page.locator('html')).not.toHaveAttribute('data-lightning-passkey-requested', 'true')
 })
 
 test('@ux-lightning explains a rejected invoice before passkey approval', async ({ page }) => {
