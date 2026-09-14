@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_VAULT_LIGHTNING_SEND?: string
   readonly VITE_VAULT_LIGHTNING_RECEIVE?: string
   readonly VITE_VAULT_LIGHTNING_RECEIVE_VAULT?: string
+  readonly VITE_VAULT_LATENCY_METRICS?: string
 }
 
 interface ImportMeta {

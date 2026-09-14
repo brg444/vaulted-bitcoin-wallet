@@ -4,6 +4,7 @@ import { describePayment, paymentIdentityForItem, type PaymentScope } from '../l
 import { loadArrivalBaseline, saveArrivalBaseline } from '../lib/vault/arrivalBaseline'
 import { claimNativeDelivery } from '../lib/vault/nativeDelivery'
 import { showForegroundPaymentNotice } from '../lib/vault/nativeNotifications'
+import { vaultLatency } from '../lib/vault/latency'
 import { detectPaymentArrivals, seedArrivalBaseline } from '../lib/vault/arrivalDetection'
 
 export interface NativeForegroundDeps {
@@ -115,7 +116,9 @@ export function useNativePaymentNotifications(
             pendingRef.current.push(payKey)
             continue
           }
-          await showForegroundPaymentNotice(registration ?? undefined)
+          await vaultLatency.measure('notification-delivery', () =>
+            showForegroundPaymentNotice(registration ?? undefined),
+          )
         } catch {
           // A foreground notice is advisory; history and lifecycle continue.
         }
@@ -149,7 +152,9 @@ export function useNativePaymentNotifications(
           return
         }
         try {
-          await showForegroundPaymentNotice(registration ?? undefined)
+          await vaultLatency.measure('notification-delivery', () =>
+            showForegroundPaymentNotice(registration ?? undefined),
+          )
         } catch {
           // Advisory only.
         }

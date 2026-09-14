@@ -14,6 +14,7 @@ import {
   type VtxoOperationView,
   type VtxoReserveResponse,
 } from '../cosignerClient'
+import { vaultLatency } from '../latency'
 import { networkPins, vaultOperatorOrigin } from '../networkPins'
 import { PRF_SALT, unwrapPhoneSecret } from '../prfEnvelope'
 import { readCommittedRecoveryCoverage, type CommittedRecoveryCoverage } from '../recovery/committedCoverage'
@@ -295,12 +296,14 @@ async function finalizeVaultOperation(vaultId: string, operationId: string, bund
   let lastError: unknown
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
-      const result: VtxoFinalizeResponse = await vaultCosignerClient.spending.finalize({
-        vaultId,
-        operationId,
-        bundleDigest,
-        arkTxid,
-      })
+      const result: VtxoFinalizeResponse = await vaultLatency.measure('receipt', () =>
+        vaultCosignerClient.spending.finalize({
+          vaultId,
+          operationId,
+          bundleDigest,
+          arkTxid,
+        }),
+      )
       if (result.state !== 'finalized' || result.arkTxid !== arkTxid)
         throw new Error('invalid VTXO finalization receipt')
       return
@@ -1236,7 +1239,7 @@ async function authorizeReservedVtxoSpend(
   )
   signal?.throwIfAborted()
   persistVtxoSpend({ ...pending, unsignedArkPsbt })
-  const authorized: VtxoAuthorizeResponse = await vaultCosignerClient.spending.authorize({
+  const request: VtxoAuthorizeRequest = {
     vaultId: status.vaultId,
     operationId: pending.operationId,
     bundleDigest: pending.bundleDigest,
@@ -1245,7 +1248,10 @@ async function authorizeReservedVtxoSpend(
     pendingProof,
     ...auth.assertion,
     directSig: vtxoSpendDirectSig(auth, pending.bundleDigest),
-  })
+  }
+  const authorized: VtxoAuthorizeResponse = await vaultLatency.measure('authorize', () =>
+    vaultCosignerClient.spending.authorize(request),
+  )
   if (
     authorized.operationId !== pending.operationId ||
     authorized.bundleDigest !== pending.bundleDigest ||
@@ -1395,12 +1401,14 @@ async function authorizeSubmittedVtxoCheckpoints(
     userAndOperatorCheckpoints.push(base64.encode((await identity.sign(checkpoint)).toPSBT()))
   }
   signal?.throwIfAborted()
-  const checkpoints: VtxoCheckpointAuthorizeResponse = await vaultCosignerClient.spending.authorizeCheckpoints({
-    vaultId: status.vaultId,
-    operationId: pending.operationId,
-    bundleDigest: pending.bundleDigest,
-    checkpointPsbts: userAndOperatorCheckpoints,
-  })
+  const checkpoints: VtxoCheckpointAuthorizeResponse = await vaultLatency.measure('authorize', () =>
+    vaultCosignerClient.spending.authorizeCheckpoints({
+      vaultId: status.vaultId,
+      operationId: pending.operationId,
+      bundleDigest: pending.bundleDigest,
+      checkpointPsbts: userAndOperatorCheckpoints,
+    }),
+  )
   if (
     checkpoints.operationId !== pending.operationId ||
     checkpoints.bundleDigest !== pending.bundleDigest ||

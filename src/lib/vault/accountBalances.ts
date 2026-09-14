@@ -10,6 +10,7 @@ import {
 } from './history'
 import { loadAddressPin, requireStatusMatchesPin, type AddressPin } from './pin'
 import { fetchVaultStatus } from './status'
+import { vaultLatency } from './latency'
 import {
   selectedVaultAccountRuntime,
   vaultAccountRuntime,
@@ -519,14 +520,22 @@ function createVaultBalanceController(initialOptions: VaultBalancesOptions, acco
     if (tasks) return tasks
     const observe = account.maintenance.observe
     tasks = {
-      spend: observe('spending-balance', (signal) => readAccount('spend', signal), {
-        intervalMs: () => retryDelays.spend,
-        events: ['wallet', 'vaulted-savings-setup'],
-      }),
-      savings: observe('savings-balance', (signal) => readAccount('savings', signal), {
-        intervalMs: () => retryDelays.savings,
-        events: ['wallet', 'vaulted-savings-setup'],
-      }),
+      spend: observe(
+        'spending-balance',
+        (signal) => vaultLatency.measure('balance-publication', () => readAccount('spend', signal)),
+        {
+          intervalMs: () => retryDelays.spend,
+          events: ['wallet', 'vaulted-savings-setup'],
+        },
+      ),
+      savings: observe(
+        'savings-balance',
+        (signal) => vaultLatency.measure('balance-publication', () => readAccount('savings', signal)),
+        {
+          intervalMs: () => retryDelays.savings,
+          events: ['wallet', 'vaulted-savings-setup'],
+        },
+      ),
       sync: observe(
         'wallet-sync',
         async (signal) => {

@@ -21,6 +21,7 @@ import {
 } from '@arkade-os/swap'
 import { hex } from '@scure/base'
 import { consoleError } from '../../logs'
+import { vaultLatency } from '../latency'
 import { ABSOLUTE_FEE_CEILING_SATS, DUST_SATS } from '../constants'
 import { historyFromBoardingUtxos, historyFromSdkActivities, type VaultHistoryItem } from '../history'
 import { tryVaultLightningLifecycleLock } from '../lightningLock'
@@ -70,6 +71,8 @@ export type WalletConnection = {
   unsubscribeSwap: () => void
   onWorkerMessage: (event: MessageEvent) => void
   lightningObserver: VaultMaintenanceTask<void>
+  /** One shared in-flight VTXO snapshot per live connection. */
+  vtxoSnapshot?: Promise<VaultWalletVtxoSnapshot>
   boardingSettle?: Promise<void>
   boardingError?: string
   boardingRetryAfter?: number
@@ -599,6 +602,22 @@ export interface VaultWalletVtxoSnapshot {
 
 export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise<VaultWalletVtxoSnapshot> {
   const current = await ensureVaultWalletWorker(status)
+  // Coalesce concurrent foreground readers onto one exact account generation.
+  // The connection is replaced wholesale on revive, so a shared pass can never
+  // cross a generation boundary.
+  if (current.vtxoSnapshot) return current.vtxoSnapshot
+  const promise = readVaultWalletVtxoSnapshot(status, current).finally(() => {
+    if (current.vtxoSnapshot === promise) current.vtxoSnapshot = undefined
+  })
+  current.vtxoSnapshot = promise
+  return promise
+}
+
+async function readVaultWalletVtxoSnapshot(
+  status: VaultStatus,
+  current: WalletConnection,
+): Promise<VaultWalletVtxoSnapshot> {
+  vaultLatency.count('snapshot')
   const manager = await current.wallet.getContractManager()
   const script = String(status.spendingArkScript || '').toLowerCase()
   const contracts = await manager.getContractsWithVtxos({ script })

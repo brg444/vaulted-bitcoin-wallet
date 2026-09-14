@@ -113,6 +113,29 @@ it('initializes and refreshes Spending while Lightning address receipts are stal
   expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(wallet.dispose.mock.invocationCallOrder[0])
 })
 
+it('coalesces concurrent VTXO snapshot reads onto one connection pass', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const wallet = mockWallet()
+  vi.spyOn(ServiceWorkerWallet, 'create').mockResolvedValue(wallet as never)
+  await ensureVaultWalletWorker(status)
+  wallet.getActivityHistory.mockClear()
+  wallet.getContractManager.mockClear()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  wallet.getActivityHistory.mockImplementation(async () => {
+    await gate
+    return []
+  })
+  const first = fetchVaultWalletVtxoSnapshot(status)
+  const second = fetchVaultWalletVtxoSnapshot(status)
+  release()
+  const [a, b] = await Promise.all([first, second])
+  expect(a.balance).toBe(12_000)
+  expect(b.balance).toBe(12_000)
+  expect(wallet.getActivityHistory).toHaveBeenCalledOnce()
+  expect(wallet.getContractManager).toHaveBeenCalledOnce()
+})
+
 it('runs account maintenance while SDK initialization is pending', async () => {
   mocks.receipts.mockResolvedValue(undefined)
   const wallet = mockWallet()

@@ -7,6 +7,7 @@ import { DUST_SATS } from './constants'
 import { zeroBytes } from './ceremony/directauth'
 import { unlockPhoneBip340 } from './savingsSpend'
 import { humanizeVaultError } from './humanize'
+import { vaultLatency } from './latency'
 import { consoleError } from '../logs'
 import { requireSdkNetworkName, sdkNetworkName, vaultOperatorOrigin } from './networkPins'
 import {
@@ -350,6 +351,24 @@ function createSpendingPayments(session: SessionSource) {
       })
     return current.promise as Promise<T>
   }
+  /** Reconcile exactly the service-finalized operations that would block the
+   * payment being reviewed. Each retirement is operation-scoped and keeps its
+   * authoritative evidence checks; the broad settled sweep and archive capture
+   * stay on the account-maintenance clock, off the interactive path. A genuine
+   * in-flight operation never retires, so it still blocks a new payment. */
+  const reconcileBlockingOperations = async (status: VaultStatus, check: () => void, signal: AbortSignal) => {
+    const blocking = listPersistedVtxoSpends(status.vaultId).filter(vtxoSpendIsLivePending)
+    for (const operation of blocking) {
+      check()
+      vaultLatency.count('retirement')
+      try {
+        await acknowledgeSpendingVtxoRecovery(status, operation.operationId, undefined, signal)
+      } catch (error) {
+        if (signal.aborted) signal.throwIfAborted()
+        consoleError(error, `Spending blocking-operation reconciliation ${operation.operationId}`)
+      }
+    }
+  }
   const owner = {
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) {
@@ -397,23 +416,14 @@ function createSpendingPayments(session: SessionSource) {
     },
     review(draft: SpendingPaymentDraft, replace = false): Promise<SpendingPaymentReview> {
       const payment = { ...draft, address: draft.address.trim() }
-      return run('review', JSON.stringify(['review', payment, replace]), async (check, signal) => {
+      vaultLatency.count('review')
+      const endReview = vaultLatency.span('review')
+      const promise = run('review', JSON.stringify(['review', payment, replace]), async (check, signal) => {
         const { status, enrollment, setup } = access()
-        // Retire service-finalized operations whose recovery evidence has
-        // caught up. An exact service receipt ends payment blocking, while
-        // evidence lag keeps the recovery journal. The
-        // sweep runs after the passkey gesture so WebAuthn starts in the click.
-        const retireSettled = async () => {
-          try {
-            await acknowledgeSettledVtxoSpends(status, undefined, signal)
-          } catch (error) {
-            if (signal.aborted) signal.throwIfAborted()
-            consoleError(error, 'Spending settled acknowledgment')
-          }
-          // Retire funded Lightning terminals on the same terms, from the one
-          // committed file snapshot. Evidence lag keeps the record for later.
-          await sweepSettledVaultLightning(status, check, signal)
-        }
+        // The broad settled sweep and archive capture are scheduled on the
+        // account-maintenance clock. Review only reconciles the exact
+        // finalized operation that blocks this payment, and only when one
+        // actually blocks; a warm review performs zero retirement work.
         let funding: VaultVtxoSpendQuote
         let lightning: VaultLightningQuote | null = null
         if (isVaultLightningInput(payment.address)) {
@@ -427,13 +437,18 @@ function createSpendingPayments(session: SessionSource) {
             if (invoice.amountSats > setup.txCapSats)
               throw new ReviewError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
             if (invoice.amountSats > available()) throw new ReviewError('Not enough confirmed spending funds.')
-            // Start WebAuthn in the click gesture, before solver discovery or dynamic imports.
+            // Start WebAuthn in the click gesture, before any awaited
+            // retirement or solver discovery or dynamic imports.
             phase = 'passkey approval'
-            const phoneSecret = await unlockPhoneBip340(enrollment, status, signal)
+            const phoneSecret = await vaultLatency.measure('passkey', () =>
+              unlockPhoneBip340(enrollment, status, signal),
+            )
             try {
               check()
-              await retireSettled()
-              check()
+              if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending)) {
+                await reconcileBlockingOperations(status, check, signal)
+                check()
+              }
               if (listPersistedVtxoSpends(status.vaultId).some(vtxoSpendIsLivePending))
                 throw new ReviewError(
                   'A payment is still pending. Open Pending payment to resume it before starting another.',
@@ -459,28 +474,30 @@ function createSpendingPayments(session: SessionSource) {
               const api = await import('./lightning')
               check()
               phase = 'quote'
-              lightning = await api.withVaultLightningSdkWallet(
-                phoneSecret,
-                status,
-                (session) => {
-                  check()
-                  return api.withVaultLightningTransport(profile, (transport) => {
+              lightning = await vaultLatency.measure('quote', () =>
+                api.withVaultLightningSdkWallet(
+                  phoneSecret,
+                  status,
+                  (session) => {
                     check()
-                    return api.requestVaultLightningQuote({
-                      wallet: session.wallet,
-                      arkServerUrl: vaultOperatorOrigin(profile.network),
-                      invoice: invoice.raw,
-                      network: profile.network,
-                      transport,
-                      repository: session.repository,
-                      contracts: session.contracts,
-                      manager: session.manager,
-                      profile,
-                      resumeVtxo,
+                    return api.withVaultLightningTransport(profile, (transport) => {
+                      check()
+                      return api.requestVaultLightningQuote({
+                        wallet: session.wallet,
+                        arkServerUrl: vaultOperatorOrigin(profile.network),
+                        invoice: invoice.raw,
+                        network: profile.network,
+                        transport,
+                        repository: session.repository,
+                        contracts: session.contracts,
+                        manager: session.manager,
+                        profile,
+                        resumeVtxo,
+                      })
                     })
-                  })
-                },
-                { signal },
+                  },
+                  { signal },
+                ),
               )
               check()
               if (lightning.fundAmountSats > setup.txCapSats)
@@ -488,10 +505,12 @@ function createSpendingPayments(session: SessionSource) {
                   `This payment exceeds the ${setup.txCapSats.toLocaleString()} sat send limit after fees.`,
                 )
               phase = 'reservation'
-              funding = await reserveVaultVtxo(enrollment, status, lightning.fundAddress, lightning.fundAmountSats, {
-                phoneSecret,
-                signal,
-              })
+              funding = await vaultLatency.measure('reserve', () =>
+                reserveVaultVtxo(enrollment, status, lightning!.fundAddress, lightning!.fundAmountSats, {
+                  phoneSecret,
+                  signal,
+                }),
+              )
               check()
             } finally {
               zeroBytes(phoneSecret)
@@ -508,25 +527,30 @@ function createSpendingPayments(session: SessionSource) {
           if (!isVaultArkAddress(payment.address, status.network)) throw new ReviewError('Enter an Arkade address.')
           if (!Number.isSafeInteger(payment.amount) || payment.amount < DUST_SATS)
             throw new ReviewError(`At least ₿${DUST_SATS}.`)
-          await retireSettled()
-          check()
           const operations = listPersistedVtxoSpends(status.vaultId)
           const pending = loadPersistedVtxoSpend(status.vaultId)
           const resuming =
             !!pending &&
             pending.receiptFinalized !== true &&
             isSameVtxoPayment(pending, payment.address, payment.amount)
-          if (!resuming && operations.some(vtxoSpendIsLivePending))
-            throw new ReviewError(
-              'A payment is still pending. Open Pending payment to resume it before starting another.',
-            )
+          if (!resuming && operations.some(vtxoSpendIsLivePending)) {
+            await reconcileBlockingOperations(status, check, signal)
+            check()
+            const remaining = listPersistedVtxoSpends(status.vaultId)
+            if (remaining.some(vtxoSpendIsLivePending))
+              throw new ReviewError(
+                'A payment is still pending. Open Pending payment to resume it before starting another.',
+              )
+          }
           if (!resuming && payment.amount > setup.txCapSats)
             throw new ReviewError(`Over this device’s send limit of ${setup.txCapSats.toLocaleString()} sats.`)
           if (!resuming && payment.amount > available()) throw new ReviewError('Not enough confirmed spending funds.')
           if (replace && !offeredReplacementIds?.length)
             throw new ReviewError('The pending payment changed. Review the send again.')
           replacementIds = replace ? [...offeredReplacementIds!] : undefined
-          funding = await previewVaultVtxoSend(status, payment.address, payment.amount, { replaceExisting: replace })
+          funding = await vaultLatency.measure('quote', () =>
+            previewVaultVtxoSend(status, payment.address, payment.amount, { replaceExisting: replace }),
+          )
           check()
           payment.fee = funding.feeSats
         }
@@ -540,6 +564,8 @@ function createSpendingPayments(session: SessionSource) {
         publish({ review, canReplace: false })
         return review
       })
+      void promise.then(endReview, endReview)
+      return promise
     },
     openPending(operationId: string): Promise<OpenedSpendingPayment> {
       return run('open', 'open:' + operationId, async (check, signal) => {
@@ -636,7 +662,9 @@ function createSpendingPayments(session: SessionSource) {
                 throw new Error('Lightning funding target changed after Review.')
               let result: { txid: string; feeSats: number }
               try {
-                result = await sendVaultVtxo(enrollment, status, reviewed, undefined, signal)
+                result = await vaultLatency.measure('submit', () =>
+                  sendVaultVtxo(enrollment, status, reviewed, undefined, signal),
+                )
               } catch (error) {
                 if (!isVtxoReceiptPendingError(error)) throw error
                 result = { txid: error.txid, feeSats: error.feeSats }
@@ -658,16 +686,18 @@ function createSpendingPayments(session: SessionSource) {
               signal,
             )
             try {
-              const auth = await unlocker.unlock()
+              const auth = await vaultLatency.measure('passkey', () => unlocker.unlock())
               check()
               const quote = resume
                 ? reviewed
-                : await reserveVaultVtxo(enrollment, status, reviewed.destAddress, reviewed.amountSats, {
-                    replaceExisting: !!replacementIds,
-                    replacementIds,
-                    phoneSecret: auth.phoneSecret,
-                    signal,
-                  })
+                : await vaultLatency.measure('reserve', () =>
+                    reserveVaultVtxo(enrollment, status, reviewed.destAddress, reviewed.amountSats, {
+                      replaceExisting: !!replacementIds,
+                      replacementIds,
+                      phoneSecret: auth.phoneSecret,
+                      signal,
+                    }),
+                  )
               check()
               replacementIds = undefined
               if (!resume && quote.feeSats !== reviewed.feeSats) {
@@ -683,7 +713,9 @@ function createSpendingPayments(session: SessionSource) {
                 event('fee-changed', updated)
                 return
               }
-              sent = await sendVaultVtxo(enrollment, status, quote, () => unlocker, signal)
+              sent = await vaultLatency.measure('submit', () =>
+                sendVaultVtxo(enrollment, status, quote, () => unlocker, signal),
+              )
             } finally {
               unlocker.dispose()
             }

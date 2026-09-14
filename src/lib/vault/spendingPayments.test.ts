@@ -496,12 +496,60 @@ it('rejects competing commands and coalesces an authenticated Lightning refund',
   expect(api.sdk.mock.calls[0][3]).toMatchObject({ refundRfqId: lightning.rfqId, signal: expect.any(AbortSignal) })
   expect(phone.every((byte) => byte === 0)).toBe(true)
 })
-it('settles finalized operations before review without failing on evidence lag', async () => {
+it('performs no settled retirement during a warm review with no blocking operation', async () => {
   const { payments } = open()
-  api.settle.mockRejectedValueOnce(new Error('coverage syncing'))
   await payments.review(draft)
-  expect(api.settle).toHaveBeenCalledTimes(1)
-  expect(api.settle.mock.calls[0][0]).toMatchObject({ vaultId: status.vaultId })
+  expect(api.settle).not.toHaveBeenCalled()
+  expect(api.acknowledge).not.toHaveBeenCalled()
+})
+it('reconciles only the finalized operation that blocks review, then proceeds', async () => {
+  const blocking = {
+    ...pending(),
+    operationId: '99'.repeat(16),
+    destAddress: 'ark1qblockingdestination',
+    amountSats: 10,
+  }
+  records = [blocking]
+  api.acknowledge.mockImplementation(async (_status: unknown, operationId: string) => {
+    records = records.filter((record) => record.operationId !== operationId)
+    return true
+  })
+  const { payments } = open()
+  const view = await payments.review(draft)
+  expect(view.payment).toMatchObject({ address: draft.address, amount: draft.amount })
+  expect(api.acknowledge).toHaveBeenCalledTimes(1)
+  expect(api.acknowledge.mock.calls[0][1]).toBe(blocking.operationId)
+  expect(api.settle).not.toHaveBeenCalled()
+})
+it('keeps a genuinely live operation blocking review after a failed reconcile', async () => {
+  const blocking = {
+    ...pending(),
+    operationId: '88'.repeat(16),
+    destAddress: 'ark1qlivependingdestination',
+    amountSats: 11,
+  }
+  records = [blocking]
+  api.acknowledge.mockResolvedValue(false)
+  const { payments } = open()
+  await expect(payments.review(draft)).rejects.toThrow('still pending')
+  expect(api.acknowledge).toHaveBeenCalledTimes(1)
+  expect(api.settle).not.toHaveBeenCalled()
+})
+it('does not await artificially delayed background retirement or archive scans during review', async () => {
+  const never = new Promise<never>(() => {})
+  api.settle.mockReturnValue(never)
+  api.snapshot.mockReturnValue(never)
+  const { payments } = open()
+  const samples: number[] = []
+  for (let index = 0; index < 30; index += 1) {
+    const started = performance.now()
+    await payments.review(draft)
+    samples.push(performance.now() - started)
+  }
+  expect(api.settle).not.toHaveBeenCalled()
+  expect(api.snapshot).not.toHaveBeenCalled()
+  const sorted = [...samples].sort((left, right) => left - right)
+  expect(sorted[Math.ceil(sorted.length * 0.95) - 1]).toBeLessThan(250)
 })
 it('delegates recovery acknowledgment, coalesces identical commands and drains before teardown', async () => {
   const { payments } = open()
@@ -732,7 +780,7 @@ function lightningJournalFor(record: { rfqId: string; fundingArkTxid?: string })
   }
 }
 
-it('settles funded Lightning terminals before review without failing on evidence lag', async () => {
+it('settles funded Lightning terminals on the recovery-archive pass without failing on evidence lag', async () => {
   const restoreLock = installImmediateLock()
   try {
     const { payments } = open()
@@ -746,7 +794,7 @@ it('settles funded Lightning terminals before review without failing on evidence
     })
     api.coverage.mockResolvedValue(lightningCoverage())
     api.lightningJournal.mockResolvedValue(lightningJournalFor(record))
-    await payments.review(draft)
+    await payments.acknowledgeSettledRecovery(lightningCoverage())
     expect(await repository.getRfqSwap((record as { rfqId: string }).rfqId)).toBeUndefined()
     expect(api.snapshot).toHaveBeenCalled()
     api.coverage.mockResolvedValue(null)
@@ -756,7 +804,7 @@ it('settles funded Lightning terminals before review without failing on evidence
       run(pending),
     )
     api.lightningJournal.mockResolvedValue(lightningJournalFor(lagging.record))
-    await payments.review(draft)
+    await payments.acknowledgeSettledRecovery(lightningCoverage())
     expect(await pending.getRfqSwap((lagging.record as { rfqId: string }).rfqId)).not.toBeUndefined()
   } finally {
     restoreLock()
