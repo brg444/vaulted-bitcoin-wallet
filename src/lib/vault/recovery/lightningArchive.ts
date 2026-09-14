@@ -20,10 +20,12 @@ import { storedLightningProfile } from '../lightningLifecycle'
 import {
   mergeLightningRefundAttempts,
   readLightningRefundAttempt,
+  readRetiredLightningReceive,
   seedRestoredRefundAttempt,
   validateLightningRefundAttempt,
   validateLightningRefundGraph,
   type VaultLightningRefundAttempt,
+  type VaultLightningRetiredReceive,
 } from '../lightningEvidence'
 import { decodeVaultLightningInvoice } from '../lightningInvoice'
 import { withVaultLightningLifecycleLock } from '../lightningLock'
@@ -371,6 +373,45 @@ export async function captureLightningRecoveryJournal(input: {
   })
 }
 
+/** A retired receive restores nothing operational, and only when the incoming
+ * record carries the exact claim the receipt was written for and matches the
+ * full enrolled identity: rfqId, vault, network, descriptor, lockup script,
+ * amount, payout address and payout script. An unclaimed file restores
+ * conservatively and later reconciles its claim through the normal merge. The
+ * archived entry itself is always retained for independent recovery. */
+export function retiredReceiveBindsEntry(
+  receipt: VaultLightningRetiredReceive,
+  record: RfqSwapRecord,
+  binding: LightningArchiveBinding,
+): boolean {
+  if (record.kind !== 'lightning_receive' || receipt.rfqId !== record.rfqId) return false
+  let lockupScript: string
+  let payoutAddress: string
+  let payoutScript: string
+  let claimTxid: string
+  try {
+    const profile = receiveProfile(record)
+    if (!profile.claim) return false
+    claimTxid = profile.claim.txid
+    lockupScript = hex.encode(ArkAddress.decode(record.lockupAddress).pkScript)
+    payoutAddress = profile.payoutAddress
+    payoutScript = hex.encode(ArkAddress.decode(profile.payoutAddress).pkScript)
+  } catch {
+    return false
+  }
+  return (
+    receipt.vaultId === binding.vaultId &&
+    receipt.network === binding.network &&
+    receipt.descriptorHash === binding.descriptorHash &&
+    receipt.lockupAddress === record.lockupAddress &&
+    receipt.lockupPkScriptHex === lockupScript &&
+    receipt.amountSats === record.amount &&
+    receipt.payoutAddress === payoutAddress &&
+    receipt.payoutPkScriptHex === payoutScript &&
+    receipt.claimArkTxid === claimTxid
+  )
+}
+
 /** Caller has independently verified the enrollment binding before this import. */
 export async function restoreLightningRecoveryJournal(
   journal: LightningRecoveryJournal,
@@ -403,6 +444,8 @@ export async function restoreLightningRecoveryJournal(
       const observed = validateExitArchive(entry.exit, lightningExitBinding(entry, binding)).coins.length > 0
       if (record.kind === 'lightning_send' && observed && !fundingEvidence(record) && !isRfqSwapTerminal(record.state))
         throw new Error('Funded Lightning output has no funding journal; use its saved onchain recovery data')
+      const receipt = readRetiredLightningReceive(entry.record.rfqId)
+      if (receipt && retiredReceiveBindsEntry(receipt, entry.record, binding)) continue
       writes.push({ entry, contractMissing: !contracts.length, ...(record !== local ? { record } : {}) })
     }
     let restored = 0

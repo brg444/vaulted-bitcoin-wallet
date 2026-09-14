@@ -131,16 +131,17 @@ export function deriveVaultLightningReceive(input: {
   return script
 }
 
-export function validateReceiveRecord(
+/** Enrolled binding and preimage checks shared by full record validation and
+ * owner retirement. The preimage stays in the record; callers never copy it. */
+export function validateReceiveSecretBinding(
   record: RfqSwapRecord,
-  contract: Contract,
   binding: {
     vaultId: string
     network: string
     phonePub: string
     spendingScript: string
   },
-) {
+): VaultLightningReceiveProfile {
   const p = receiveProfile(record)
   const hashlock = record.profile.hashlock as { paymentHash: string; preimageHex?: string }
   if (
@@ -157,6 +158,59 @@ export function validateReceiveRecord(
   ) {
     throw new Error('Lightning receive recovery material does not match this wallet.')
   }
+  return p
+}
+
+/** Exact saved-claim graph against the lockup and Spending scripts. Shared by
+ * full record validation and owner retirement; no contract registration read. */
+export function validateSavedReceiveClaim(record: RfqSwapRecord, lockupScript: string, spendingScript: string): void {
+  const p = receiveProfile(record)
+  if (!p.claim) return
+  const hashlock = record.profile.hashlock as { preimageHex?: string }
+  if (
+    !hex32(p.claim.txid) ||
+    typeof p.claim.arkTx !== 'string' ||
+    !Array.isArray(p.claim.checkpoints) ||
+    p.claim.checkpoints.length !== 1
+  )
+    throw new Error('Invalid saved Lightning claim.')
+  const tx = Transaction.fromPSBT(base64.decode(p.claim.arkTx))
+  const checkpoint = Transaction.fromPSBT(base64.decode(p.claim.checkpoints[0]))
+  const coin = checkpoint.getInput(0).witnessUtxo
+  const payout = tx.getOutput(0)
+  const witness = getArkPsbtFields(tx, 0, ConditionWitness)
+  if (
+    tx.id !== p.claim.txid ||
+    tx.inputsLength !== 1 ||
+    tx.outputsLength !== 3 ||
+    checkpoint.inputsLength !== 1 ||
+    checkpoint.outputsLength !== 2 ||
+    hex.encode(tx.getInput(0).txid!) !== checkpoint.id ||
+    tx.getInput(0).index !== 0 ||
+    !coin ||
+    coin.amount < BigInt(record.amount!) ||
+    hex.encode(coin.script) !== lockupScript ||
+    payout.amount !== coin.amount ||
+    hex.encode(payout.script!) !== spendingScript ||
+    witness.length !== 1 ||
+    witness[0].length !== 1 ||
+    hex.encode(witness[0][0]) !== hashlock.preimageHex
+  )
+    throw new Error('Saved Lightning claim does not match its contract and payout.')
+}
+
+export function validateReceiveRecord(
+  record: RfqSwapRecord,
+  contract: Contract,
+  binding: {
+    vaultId: string
+    network: string
+    phonePub: string
+    spendingScript: string
+  },
+) {
+  const p = validateReceiveSecretBinding(record, binding)
+  const hashlock = record.profile.hashlock as { paymentHash: string; preimageHex?: string }
   const actualScript = VHTLCV2ContractHandler.createScript(contract.params)
   const options = actualScript.options
   const script = deriveVaultLightningReceive({
@@ -190,38 +244,7 @@ export function validateReceiveRecord(
   ) {
     throw new Error('Lightning receive contract or invoice changed.')
   }
-  if (p.claim) {
-    if (
-      !hex32(p.claim.txid) ||
-      typeof p.claim.arkTx !== 'string' ||
-      !Array.isArray(p.claim.checkpoints) ||
-      p.claim.checkpoints.length !== 1
-    )
-      throw new Error('Invalid saved Lightning claim.')
-    const tx = Transaction.fromPSBT(base64.decode(p.claim.arkTx))
-    const checkpoint = Transaction.fromPSBT(base64.decode(p.claim.checkpoints[0]))
-    const coin = checkpoint.getInput(0).witnessUtxo
-    const payout = tx.getOutput(0)
-    const witness = getArkPsbtFields(tx, 0, ConditionWitness)
-    if (
-      tx.id !== p.claim.txid ||
-      tx.inputsLength !== 1 ||
-      tx.outputsLength !== 3 ||
-      checkpoint.inputsLength !== 1 ||
-      checkpoint.outputsLength !== 2 ||
-      hex.encode(tx.getInput(0).txid!) !== checkpoint.id ||
-      tx.getInput(0).index !== 0 ||
-      !coin ||
-      coin.amount < BigInt(record.amount!) ||
-      hex.encode(coin.script) !== contract.script ||
-      payout.amount !== coin.amount ||
-      hex.encode(payout.script!) !== binding.spendingScript ||
-      witness.length !== 1 ||
-      witness[0].length !== 1 ||
-      hex.encode(witness[0][0]) !== hashlock.preimageHex
-    )
-      throw new Error('Saved Lightning claim does not match its contract and payout.')
-  }
+  validateSavedReceiveClaim(record, contract.script, binding.spendingScript)
   return script
 }
 

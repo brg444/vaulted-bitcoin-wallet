@@ -652,3 +652,125 @@ export function writeRetiredLightningFunding(receipt: VaultLightningRetiredFundi
   if (typeof localStorage === 'undefined') return
   localStorage.setItem(retiredFundingKey(receipt.rfqId), JSON.stringify(receipt))
 }
+
+/** Retirement receipt for a settled Lightning receive. It carries the history
+ * facts and the exact identity binding so the operational journal can be
+ * removed while the labeled history row and the archived recovery bytes
+ * survive. The preimage stays solely in the archived record. */
+export interface VaultLightningRetiredReceive {
+  rfqId: string
+  claimArkTxid: string
+  lockupAddress: string
+  lockupPkScriptHex: string
+  amountSats: number
+  displayAmount: number
+  fee: number
+  payoutAddress: string
+  payoutPkScriptHex: string
+  state: string
+  createdAt: number
+  network: string
+  vaultId: string
+  descriptorHash: string
+  fileDigest: string
+  retiredAt: number
+}
+
+const RETIRED_RECEIVE_PREFIX = 'vaulted-lightning-retired-receive:'
+const RETIRED_RECEIVE_NETWORKS = new Set(['mainnet', 'mutinynet'])
+
+function retiredReceiveKey(rfqId: string): string {
+  if (!/^[0-9a-f]{64}$/.test(rfqId)) throw new Error('Lightning RFQ id must be 32 bytes of lowercase hex.')
+  return `${RETIRED_RECEIVE_PREFIX}${rfqId}`
+}
+
+const isDigestHex = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+const isScriptHex = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length > 0 &&
+  value.length <= 40000 &&
+  value.length % 2 === 0 &&
+  /^[0-9a-f]+$/.test(value)
+
+function validateRetiredReceive(parsed: unknown): VaultLightningRetiredReceive | null {
+  const value = parsed as Partial<VaultLightningRetiredReceive> | null
+  if (
+    !value ||
+    !isDigestHex(value.rfqId) ||
+    !isDigestHex(value.claimArkTxid) ||
+    typeof value.lockupAddress !== 'string' ||
+    !value.lockupAddress ||
+    !isScriptHex(value.lockupPkScriptHex) ||
+    !Number.isSafeInteger(value.amountSats) ||
+    (value.amountSats as number) <= 0 ||
+    !Number.isSafeInteger(value.displayAmount) ||
+    (value.displayAmount as number) <= 0 ||
+    !Number.isSafeInteger(value.fee) ||
+    (value.fee as number) < 0 ||
+    typeof value.payoutAddress !== 'string' ||
+    !value.payoutAddress ||
+    !isScriptHex(value.payoutPkScriptHex) ||
+    value.state !== 'settled' ||
+    !Number.isSafeInteger(value.createdAt) ||
+    (value.createdAt as number) < 0 ||
+    typeof value.network !== 'string' ||
+    !RETIRED_RECEIVE_NETWORKS.has(value.network) ||
+    typeof value.vaultId !== 'string' ||
+    !value.vaultId ||
+    !isDigestHex(value.descriptorHash) ||
+    !isDigestHex(value.fileDigest) ||
+    !Number.isSafeInteger(value.retiredAt) ||
+    (value.retiredAt as number) < (value.createdAt as number)
+  )
+    return null
+  return value as VaultLightningRetiredReceive
+}
+
+/** Reads only the key derived from the requested rfqId and rejects a stored
+ * record whose embedded rfqId differs from that key. */
+export function readRetiredLightningReceive(rfqId: string): VaultLightningRetiredReceive | null {
+  if (typeof localStorage === 'undefined') return null
+  try {
+    const receipt = validateRetiredReceive(JSON.parse(localStorage.getItem(retiredReceiveKey(rfqId)) || 'null'))
+    if (!receipt || receipt.rfqId !== rfqId) return null
+    return receipt
+  } catch {
+    return null
+  }
+}
+
+/** Write first, then read back. A receipt that fails to land throws so the
+ * owner keeps the journal instead of deleting its only local copy. */
+export function writeRetiredLightningReceive(receipt: VaultLightningRetiredReceive): void {
+  if (typeof localStorage === 'undefined') throw new Error('Lightning receive receipt storage is unavailable.')
+  const key = retiredReceiveKey(receipt.rfqId)
+  localStorage.setItem(key, JSON.stringify(receipt))
+  const readback = validateRetiredReceive(JSON.parse(localStorage.getItem(key) || 'null'))
+  if (!readback || JSON.stringify(readback) !== JSON.stringify(receipt))
+    throw new Error('Lightning receive retirement receipt did not persist.')
+}
+
+/** Enumerate device-local receipts for exactly one vault and network. A stored
+ * record counts only when its key equals its own derived key, so an entry
+ * under an arbitrary suffix cannot masquerade as a receipt. */
+export function listRetiredLightningReceiveReceipts(scope: {
+  vaultId: string
+  network: string
+}): VaultLightningRetiredReceive[] {
+  if (typeof localStorage === 'undefined') return []
+  const out: VaultLightningRetiredReceive[] = []
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index)
+    if (!key || !key.startsWith(RETIRED_RECEIVE_PREFIX)) continue
+    let receipt: VaultLightningRetiredReceive | null
+    try {
+      receipt = validateRetiredReceive(JSON.parse(localStorage.getItem(key) || 'null'))
+    } catch {
+      continue
+    }
+    if (!receipt || key !== retiredReceiveKey(receipt.rfqId)) continue
+    if (receipt.vaultId !== scope.vaultId || receipt.network !== scope.network) continue
+    out.push(receipt)
+  }
+  return out
+}

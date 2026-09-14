@@ -19,6 +19,7 @@ import { decodeVaultLightningInvoice } from './lightningInvoice'
 import {
   isFundedLightningRecord,
   listFundedTerminalLightningRecords,
+  listSettledVaultLightningRecords,
   listVaultLightningActivityRecords,
   storedLightningProfile,
   validFundingProof,
@@ -33,6 +34,7 @@ import {
   type RfqSwapRecord,
 } from '@arkade-os/swap'
 import { readLightningRefundAttempt, writeRetiredLightningFunding } from './lightningEvidence'
+import { acknowledgeVaultLightningReceiveRecovery } from './lightningReceiveClaim'
 import { withVaultLightningLifecycleLock } from './lightningLock'
 import { ensureVaultWalletWorker, fetchVaultWalletVtxoSnapshot } from './vtxo/walletWorker'
 import {
@@ -165,6 +167,44 @@ async function sweepSettledVaultLightning(status: VaultStatus, check: () => void
   } catch (error) {
     if (signal?.aborted) signal.throwIfAborted()
     consoleError(error, 'Lightning settled acknowledgment')
+  }
+}
+/** Best-effort retirement of settled receive journals from the one committed
+ * file snapshot. A cancelled caller aborts; missing evidence keeps the record. */
+async function sweepSettledVaultLightningReceives(status: VaultStatus, check: () => void, signal?: AbortSignal) {
+  try {
+    const api = await import('./lightning')
+    check()
+    const settled = await api.withVaultLightningRepository(status.vaultId, (repository) =>
+      listSettledVaultLightningRecords(repository),
+    )
+    if (!settled.length) return
+    const snapshot = await fetchVaultWalletVtxoSnapshot(status)
+    check()
+    const evidence = await readCommittedRecoveryEvidence(status)
+    check()
+    await api.withVaultLightningRepository(status.vaultId, async (repository) => {
+      for (const rfqId of settled) {
+        signal?.throwIfAborted()
+        try {
+          await acknowledgeVaultLightningReceiveRecovery(
+            status,
+            repository,
+            rfqId,
+            snapshot.history,
+            evidence?.coverage,
+            signal,
+          )
+        } catch (error) {
+          signal?.throwIfAborted()
+          if (signal?.aborted) throw error
+          consoleError(error, `Lightning receive retirement ${rfqId}`)
+        }
+      }
+    })
+  } catch (error) {
+    if (signal?.aborted) signal.throwIfAborted()
+    consoleError(error, 'Lightning receive settled acknowledgment')
   }
 }
 function createSpendingPayments(session: SessionSource) {
@@ -697,6 +737,8 @@ function createSpendingPayments(session: SessionSource) {
         await acknowledgeSettledVtxoSpends(covered, coverage, signal)
         check()
         await sweepSettledVaultLightning(covered, check, signal)
+        check()
+        await sweepSettledVaultLightningReceives(covered, check, signal)
       }).catch(() => undefined)
     },
     retryRefund(rfqId: string): Promise<void> {

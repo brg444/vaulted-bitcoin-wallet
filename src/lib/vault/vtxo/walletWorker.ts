@@ -26,6 +26,7 @@ import { historyFromBoardingUtxos, historyFromSdkActivities, type VaultHistoryIt
 import { tryVaultLightningLifecycleLock } from '../lightningLock'
 import {
   createVaultLightningObserver,
+  listRetiredReceiveActivityRecords,
   listVaultLightningActivityRecords,
   maintainVaultLightningObserver,
   vaultLightningSwapStorageName,
@@ -629,15 +630,22 @@ export async function fetchVaultWalletVtxoSnapshot(status: VaultStatus): Promise
       return current.wallet.settle(params)
     })
   }
-  const lightningRfqIds = new Set(
-    swapRecords
+  const retiredReceives = listRetiredReceiveActivityRecords({ vaultId: status.vaultId, network: status.network })
+  const liveRfqIds = new Set(lightningRecords.map((record) => record.rfqId))
+  const mergedLightningRecords = [
+    ...lightningRecords,
+    ...retiredReceives.filter((record) => !liveRfqIds.has(record.rfqId)),
+  ]
+  const lightningRfqIds = new Set([
+    ...swapRecords
       .filter((record) => record.kind === 'lightning_send' || record.kind === 'lightning_receive')
       .map((record) => record.rfqId),
-  )
+    ...retiredReceives.map((record) => record.rfqId),
+  ])
   const activityHistory = historyFromSdkActivities(
     activities,
     { vaultTxids: commitmentIds, lightningRfqIds },
-    lightningRecords,
+    mergedLightningRecords,
     { includeBoarding: true },
   )
   const knownTransactions = new Set(activityHistory.map((item) => item.txid))

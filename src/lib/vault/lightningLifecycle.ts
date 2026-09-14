@@ -34,6 +34,7 @@ import {
 import { base64, hex } from '@scure/base'
 import { consoleError } from '../logs'
 import {
+  listRetiredLightningReceiveReceipts,
   readLightningRecoveryAcknowledgment,
   readLightningRefundAttempt,
   recordRefundAttemptProgress,
@@ -901,6 +902,39 @@ export async function listFundedTerminalLightningRecords(
     out.push(record.rfqId)
   }
   return out
+}
+
+/** Settled receive records awaiting owner retirement. Cheap enumeration for the
+ * capture sweep; the full predicate runs per record on acknowledgment. */
+export async function listSettledVaultLightningRecords(
+  repository: Pick<AssetSwapRepository, 'getAllRfqSwaps'>,
+): Promise<string[]> {
+  const out: string[] = []
+  for (const record of await repository.getAllRfqSwaps()) {
+    if (record.kind !== 'lightning_receive' || record.state !== 'settled') continue
+    out.push(record.rfqId)
+  }
+  return out
+}
+
+/** Retired-receive receipts projected as activity records for exactly one vault
+ * and network, so the labeled history row survives journal removal. The live
+ * records win when both exist for one rfqId. */
+export function listRetiredReceiveActivityRecords(scope: {
+  vaultId: string
+  network: string
+}): VaultLightningActivityRecord[] {
+  return listRetiredLightningReceiveReceipts(scope).map((receipt) => ({
+    type: 'received' as const,
+    rfqId: receipt.rfqId,
+    fundingTxid: receipt.claimArkTxid,
+    state: receipt.state,
+    amount: receipt.amountSats,
+    displayAmount: receipt.displayAmount,
+    fee: receipt.fee,
+    createdAt: receipt.createdAt,
+    terminal: true,
+  }))
 }
 
 /** Best-effort retirement sweeps live in the operation owner; this module
