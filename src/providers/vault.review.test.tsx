@@ -889,9 +889,14 @@ describe('VaultProvider reviewed VTXO reservation', () => {
   })
 
   it('keeps Payment started hidden until the passkey succeeds', async () => {
-    let authorize!: (auth: unknown) => void
+    const authorization = {
+      assertion: { credentialId: 'aa', clientDataJSON: 'bb', authenticatorData: 'cc', signature: 'dd' },
+      phoneSecret: new Uint8Array(32).fill(7),
+      scalar: new Uint8Array(32).fill(8),
+    }
+    let authorize!: (auth: typeof authorization) => void
     mocks.unlockSpend.mockReturnValueOnce(
-      new Promise((resolve) => {
+      new Promise<typeof authorization>((resolve) => {
         authorize = resolve
       }),
     )
@@ -909,11 +914,7 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })))
     // Passkey pending: the started page must stay hidden on the review path.
     expect(screen.getByTestId('screen')).toHaveTextContent('review')
-    authorize({
-      assertion: { credentialId: 'aa', clientDataJSON: 'bb', authenticatorData: 'cc', signature: 'dd' },
-      phoneSecret: new Uint8Array(32).fill(7),
-      scalar: new Uint8Array(32).fill(8),
-    })
+    authorize(authorization)
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
   })
 
