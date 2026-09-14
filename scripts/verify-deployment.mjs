@@ -1,9 +1,17 @@
 import { createHash } from 'node:crypto'
+import { assertGuardianRelease } from './release-verification.mjs'
 
-const [canonicalUrl, deploymentTarget, expectedNetwork] = process.argv.slice(2)
+const [canonicalUrl, deploymentTarget, expectedNetwork, expectedSigningOrigin, expectedRpId] = process.argv.slice(2)
 
-if (!canonicalUrl || !deploymentTarget || !['mainnet', 'mutinynet'].includes(expectedNetwork)) {
-  throw new Error('usage: pnpm verify:deployment <canonical-url> <deployment-url-or-index-asset> <mainnet|mutinynet>')
+if (
+  !canonicalUrl ||
+  !deploymentTarget ||
+  !['mainnet', 'mutinynet'].includes(expectedNetwork) ||
+  !expectedSigningOrigin
+) {
+  throw new Error(
+    'usage: pnpm verify:deployment <canonical-url> <deployment-url-or-index-asset> <mainnet|mutinynet> <expected-signing-origin> [expected-rp-id]',
+  )
 }
 
 async function indexAsset(origin) {
@@ -48,7 +56,11 @@ if (createHash('sha256').update(new Uint8Array(worker)).digest('hex') !== manife
 }
 const ready = await (await releaseResponse('/ready')).json()
 const status = await (await releaseResponse('/v1/status')).json()
-if (!ready.ok || ready.network !== expectedNetwork || status.network !== expectedNetwork) {
-  throw new Error('Guardian readiness or network mismatch')
-}
-console.log(`verified ${expectedNetwork} app, worker, and Guardian`)
+const verified = assertGuardianRelease({
+  ready,
+  status,
+  network: expectedNetwork,
+  expectedOrigin: expectedSigningOrigin,
+  expectedRpId,
+})
+console.log(`verified ${expectedNetwork} app, worker, and Guardian (${verified.origin}, schema ${verified.schema})`)
