@@ -24,13 +24,16 @@ const configureMock = configureLightningAddress as unknown as ReturnType<typeof 
 const status = { network: 'mainnet', vaultId: 'vault-1' } as VaultStatus
 const storageKey = 'vaulted:push:v1:mainnet:vault-1'
 const VAPID = Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 7)]).toString('base64url')
+const VAPID_AB = new Uint8Array(Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 7)])).buffer as ArrayBuffer
+const ROTATED_AB = new Uint8Array(Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 8)])).buffer as ArrayBuffer
 const address = { readToken: 'ab'.repeat(32), id: 'v1234567890abcdef' }
 
-function fakeSubscription() {
+function fakeSubscription(options: { applicationServerKey?: ArrayBuffer | null } = {}) {
   const bytes = (n: number, fill: number) => new Uint8Array(Array.from({ length: n }, () => fill)).buffer as ArrayBuffer
   return {
     endpoint: 'https://fcm.googleapis.com/push/test-endpoint',
     getKey: (name: string) => (name === 'p256dh' ? bytes(65, 4) : bytes(16, 9)),
+    options: { applicationServerKey: options.applicationServerKey ?? null },
     unsubscribe: vi.fn().mockResolvedValue(true),
   }
 }
@@ -219,6 +222,189 @@ describe('push subscription client', () => {
     await refreshBackgroundPush(status)
     expect(JSON.parse(localStorage.getItem(storageKey)!).expiresAt).toBeGreaterThan(Date.now() + 29 * 86400000)
     expect(requestPermission).not.toHaveBeenCalled()
+  })
+
+  it('recycles a VAPID-rotated browser binding on unlock instead of leaving it stale', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const stale = fakeSubscription({ applicationServerKey: ROTATED_AB })
+    const fresh = fakeSubscription({ applicationServerKey: VAPID_AB })
+    const subscribe = vi.fn().mockResolvedValue(fresh)
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 30 * 86400000, endpoint: stale.endpoint }),
+    )
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi.fn().mockResolvedValue({
+          pushManager: { getSubscription: () => Promise.resolve(stale), subscribe },
+        }),
+      },
+    })
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ subHandle: 'cd'.repeat(32), expiresAt: Date.now() + 30 * 86400000 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+    vi.stubGlobal('fetch', fetchSpy)
+    await refreshBackgroundPush(status)
+    expect(stale.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(subscribe).toHaveBeenCalledWith({ userVisibleOnly: true, applicationServerKey: expect.any(Uint8Array) })
+    expect(JSON.parse(localStorage.getItem(storageKey)!).subHandle).toBe('cd'.repeat(32))
+    // Fresh handle created, then the dead old handle retired.
+    expect(fetchSpy.mock.calls[0]![1].method).toBe('POST')
+    expect(fetchSpy.mock.calls[1]![0]).toContain(`/v1/vaulted/push/subscriptions/${'ef'.repeat(32)}`)
+    expect(fetchSpy.mock.calls[1]![1].method).toBe('DELETE')
+  })
+
+  it('recovers a browser-dropped subscription on unlock (pushsubscriptionchange fallback)', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const fresh = fakeSubscription({ applicationServerKey: VAPID_AB })
+    const subscribe = vi.fn().mockResolvedValue(fresh)
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 30 * 86400000, endpoint: fresh.endpoint }),
+    )
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi.fn().mockResolvedValue({
+          pushManager: { getSubscription: () => Promise.resolve(null), subscribe },
+        }),
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ subHandle: 'cd'.repeat(32), expiresAt: Date.now() + 30 * 86400000 })),
+    )
+    await refreshBackgroundPush(status)
+    expect(subscribe).toHaveBeenCalledWith({ userVisibleOnly: true, applicationServerKey: expect.any(Uint8Array) })
+    expect(JSON.parse(localStorage.getItem(storageKey)!).subHandle).toBe('cd'.repeat(32))
+  })
+
+  it('rebuilds an authorized registration when the server lost the record', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const subscription = fakeSubscription({ applicationServerKey: VAPID_AB })
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        subHandle: 'ef'.repeat(32),
+        expiresAt: Date.now() + 30 * 86400000,
+        endpoint: subscription.endpoint,
+      }),
+    )
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ subscriptions: [] })) // server record gone
+      .mockResolvedValueOnce(jsonResponse({ subHandle: 'cd'.repeat(32), expiresAt: Date.now() + 30 * 86400000 })) // rebuild
+    vi.stubGlobal('fetch', fetchSpy)
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi
+          .fn()
+          .mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }),
+      },
+    })
+    await refreshBackgroundPush(status)
+    expect(fetchSpy.mock.calls[0]?.[1].method).toBe('GET')
+    expect(fetchSpy.mock.calls[1]?.[1].method).toBe('POST')
+    expect(JSON.parse(localStorage.getItem(storageKey)!).subHandle).toBe('cd'.repeat(32))
+    // The user's opt-in survives: only the dead handle is replaced.
+    expect(subscription.unsubscribe).not.toHaveBeenCalled()
+  })
+
+  it('keeps a healthy server record without rewriting it on unlock', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const subscription = fakeSubscription({ applicationServerKey: VAPID_AB })
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        subHandle: 'ef'.repeat(32),
+        expiresAt: Date.now() + 30 * 86400000,
+        endpoint: subscription.endpoint,
+      }),
+    )
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ subscriptions: [{ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 40 * 86400000 }] }),
+      )
+    vi.stubGlobal('fetch', fetchSpy)
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi
+          .fn()
+          .mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(subscription) } }),
+      },
+    })
+    await refreshBackgroundPush(status)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy.mock.calls[0]?.[1].method).toBe('GET')
+    expect(JSON.parse(localStorage.getItem(storageKey)!).expiresAt).toBeGreaterThan(Date.now() + 39 * 86400000)
+  })
+
+  it('preserves opt-in when a resubscription attempt fails', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const stale = fakeSubscription({ applicationServerKey: ROTATED_AB })
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 30 * 86400000, endpoint: stale.endpoint }),
+    )
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi.fn().mockResolvedValue({
+          pushManager: {
+            getSubscription: () => Promise.resolve(stale),
+            subscribe: vi.fn().mockRejectedValue(new Error('denied')),
+          },
+        }),
+      },
+    })
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    await expect(refreshBackgroundPush(status)).resolves.toBeUndefined()
+    // No network and no teardown: Settings reconcile reports the truthful state.
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem(storageKey)!).subHandle).toBe('ef'.repeat(32))
+  })
+
+  it('recycles a VAPID-rotated existing subscription when enabling', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const stale = fakeSubscription({ applicationServerKey: ROTATED_AB })
+    const fresh = fakeSubscription({ applicationServerKey: VAPID_AB })
+    const subscribe = vi.fn().mockResolvedValue(fresh)
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        register: vi.fn().mockResolvedValue({
+          active: { state: 'activated' },
+          pushManager: { getSubscription: () => Promise.resolve(stale), subscribe },
+        }),
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ subHandle: 'cd'.repeat(32), expiresAt: Date.now() + 1000 })),
+    )
+    const created = await enableBackgroundPush(status)
+    expect(stale.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(subscribe).toHaveBeenCalledWith({ userVisibleOnly: true, applicationServerKey: expect.any(Uint8Array) })
+    expect(created.subHandle).toBe('cd'.repeat(32))
+  })
+
+  it('does not report enabled after a VAPID key rotation', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const stale = fakeSubscription({ applicationServerKey: ROTATED_AB })
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ subHandle: 'ef'.repeat(32), expiresAt: Date.now() + 100000, endpoint: stale.endpoint }),
+    )
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi.fn().mockResolvedValue({ pushManager: { getSubscription: () => Promise.resolve(stale) } }),
+      },
+    })
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse({ ok: true }))
+    vi.stubGlobal('fetch', fetchSpy)
+    await expect(reconcilePushState(status)).resolves.toEqual({ subscribed: false, expiresAt: null })
+    expect(fetchSpy.mock.calls[0]?.[1].method).toBe('DELETE')
+    expect(localStorage.getItem(storageKey)).toBeNull()
   })
 
   it('reads settings state without prompting or networking', () => {

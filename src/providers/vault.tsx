@@ -3,9 +3,9 @@ import { useLedgerPayments } from '../vault/useLedgerPayments'
 import { ledgerPaymentView, LedgerPaymentContext } from '../vault/ledgerPaymentContext'
 import { withBitcoinPaymentHistory } from '../lib/vault/bitcoinPaymentHistory'
 import { useNativePaymentNotifications } from '../vault/useNativePaymentNotifications'
+import { useNativeTapNavigation } from '../vault/useNativeTapNavigation'
 
 import { NOTIFY_WORKER_SCOPE } from '../lib/vault/nativeNotifications'
-import { parsePushNavScreen } from '../lib/vault/notificationEnvelope'
 import { isPushSubscribed, refreshBackgroundPush } from '../lib/vault/pushSubscription'
 import { useSpendingPayments } from '../vault/useSpendingPayments'
 import { spendingPaymentView, SpendingPaymentContext } from '../vault/spendingPaymentContext'
@@ -296,29 +296,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     // Refresh only on unlock or wallet change; receipt refreshes do not renew leases.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked, status?.vaultId, status?.network])
-  // Native tap flow: a worker tap opens `/?notify=activity`. After unlock,
-  // with a fresh snapshot, land on verified Activity and strip the param.
-  useEffect(() => {
-    if (locked || !activityReady) return
-    let screen: string | null = null
-    try {
-      screen = new URLSearchParams(window.location.search).get('notify')
-    } catch {
-      return
-    }
-    if (parsePushNavScreen(screen) !== 'activity') return
-    try {
-      const url = new URL(window.location.href)
-      url.searchParams.delete('notify')
-      window.history.replaceState(null, '', url.toString())
-    } catch {
-      // Navigation still proceeds; the param is inert afterwards.
-    }
-    setScreen('activity')
-    void refreshBalance().catch(() => undefined)
-    // Runs once per unlock-ready transition; navigation consumes the param.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locked, activityReady])
+  // Native tap flow: a worker tap opens `/?notify=activity`. After unlock and
+  // with a fresh snapshot, retain the Activity destination, strip the marker,
+  // and request a refreshed verified snapshot.
+  useNativeTapNavigation({
+    blocked: locked || !activityReady,
+    scopeKey: `${status?.network || ''}:${status?.vaultId || ''}`,
+    navigate: setScreen,
+    refresh: refreshBalance,
+  })
 
   const initiateAlert = useRecoveryAlerts(status, locked)
   const {
