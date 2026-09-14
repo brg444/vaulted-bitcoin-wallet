@@ -9,6 +9,7 @@ import {
   readNotificationPermission,
   requestNativePermission,
   showForegroundPaymentNotice,
+  compareSubscriptionVapidKey,
   vapidKeyBytes,
 } from './nativeNotifications'
 
@@ -45,6 +46,19 @@ describe('native notification primitives', () => {
     expect(vapidKeyBytes('')).toBeNull()
     expect(vapidKeyBytes('not-key')).toBeNull()
     expect(vapidKeyBytes(Buffer.alloc(65, 1).toString('base64url'))).toBeNull()
+  })
+
+  it('detects a VAPID key rotation from the bound subscription key and never guesses', () => {
+    const key = Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 7)]).toString('base64url')
+    const bound = new Uint8Array(Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 7)]))
+    const other = new Uint8Array(Buffer.concat([Buffer.from([0x04]), Buffer.alloc(64, 8)]))
+    const sub = (applicationServerKey: ArrayBuffer | null) => ({ options: { applicationServerKey } })
+    expect(compareSubscriptionVapidKey(sub(bound.buffer), key)).toBe('match')
+    expect(compareSubscriptionVapidKey(sub(other.buffer), key)).toBe('mismatch')
+    // Browsers that do not expose the key, or an unconfigured release, are unknown.
+    expect(compareSubscriptionVapidKey(sub(null), key)).toBe('unknown')
+    expect(compareSubscriptionVapidKey(null, key)).toBe('unknown')
+    expect(compareSubscriptionVapidKey(sub(bound.buffer), '')).toBe('unknown')
   })
 
   it('awaits this registration activation, not the page ready promise', async () => {
