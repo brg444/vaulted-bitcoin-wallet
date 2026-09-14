@@ -4,6 +4,7 @@ import {
   DefaultVtxo,
   SingleKey,
   VHTLCV2ContractHandler,
+  deriveDescriptorLeafPubKey,
   type IWallet,
 } from '@arkade-os/sdk'
 import {
@@ -25,7 +26,9 @@ import {
   MUTINYNET_LIGHTNING_SOLVER,
   requestVaultLightningQuote,
   requireMatchingLightningOperatorNetwork,
+  assertVaultLightningOperatorSetup,
   validateVaultLightningRefund,
+  vaultLightningPublicRefund,
   vaultLightningRequestWallet,
   vaultLightningSendEnabled,
   vaultLightningSolverProfile,
@@ -34,6 +37,7 @@ import {
   withVaultLightningLifecycleLock,
 } from './lightning'
 import { tryVaultLightningLifecycleLock } from './lightningLock'
+import { sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 import {
   INVOICE_EXPIRES,
   INVOICE_TIMESTAMP,
@@ -221,6 +225,32 @@ describe('Lightning SEND release boundary', () => {
 
     expect(validateVaultLightningRefund(status, 'mutinynet', operatorPubkey).encode()).toBe(address)
     expect(() => validateVaultLightningRefund(status, 'bitcoin', operatorPubkey)).toThrow(/networks do not match/)
+  })
+
+  it('binds a single Operator reply to the enrolled network, refund and signer before quoting', async () => {
+    const operator = SingleKey.fromPrivateKey(hex.decode('04'.padStart(64, '0')))
+    const operatorPubkey = hex.encode(await operator.compressedPublicKey())
+    const otherOperator = SingleKey.fromPrivateKey(hex.decode('07'.padStart(64, '0')))
+    const otherOperatorPubkey = hex.encode(await otherOperator.compressedPublicKey())
+    const address = await refundAddress()
+    const status = {
+      enrolled: true,
+      vaultId: 'vault-lightning',
+      network: 'bitcoin',
+      spendingArkAddress: address,
+      spendingArkScript: hex.encode(ArkAddress.decode(address).pkScript),
+    } as import('./types').VaultStatus
+    const info = { network: 'bitcoin', signerPubkey: operatorPubkey }
+    expect(assertVaultLightningOperatorSetup(status, info as never)).toBe('bitcoin')
+    expect(() =>
+      assertVaultLightningOperatorSetup(status, { network: 'mutinynet', signerPubkey: operatorPubkey } as never),
+    ).toThrow(/networks do not match/)
+    expect(() =>
+      assertVaultLightningOperatorSetup(status, { network: 'bitcoin', signerPubkey: otherOperatorPubkey } as never),
+    ).toThrow(/another Arkade Operator/)
+    expect(() =>
+      assertVaultLightningOperatorSetup({ ...status, spendingArkScript: '51'.repeat(34) }, info as never),
+    ).toThrow(/pinned script/)
   })
 
   it('treats Guardian mainnet status as the bitcoin Operator network and ark HRP', async () => {
@@ -595,5 +625,14 @@ describe('Lightning SEND release boundary', () => {
       await harness.manager.stop()
       await harness.repository[Symbol.asyncDispose]()
     }
+  })
+
+  it('derives the public refund context from enrolled keys without signing capability', async () => {
+    const status = sharedSpendingStatus()
+    const refund = await vaultLightningPublicRefund(status)
+    expect(refund.address).toBe(status.spendingArkAddress)
+    expect(hex.encode(refund.pubkey)).toBe(String(status.phoneBip340Pub).slice(2))
+    expect(hex.encode(refund.pkScript)).toBe(hex.encode(ArkAddress.decode(String(status.spendingArkAddress)).pkScript))
+    expect(hex.encode(deriveDescriptorLeafPubKey(refund.descriptor))).toBe(hex.encode(refund.pubkey))
   })
 })

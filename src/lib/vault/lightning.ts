@@ -1,14 +1,20 @@
 import {
   ArkAddress,
+  ReadonlySingleKey,
   RestArkProvider,
   RestIndexerProvider,
   SingleKey,
   Transaction,
   VHTLCV2ContractHandler,
+  deriveDescriptorLeafPubKey,
+  identityDescriptor,
+  type ArkInfo,
   type Identity,
   type IContractManager,
   type IWallet,
   type NetworkName,
+  type ProvisionedKey,
+  type ReadonlyIdentity,
 } from '@arkade-os/sdk'
 import {
   IndexedDbAssetSwapRepository,
@@ -19,6 +25,7 @@ import {
   rfqSignerOf,
   senderIdentityForSwapRecord,
   type AssetSwapRepository,
+  type RfqSwapRecord,
   type RfqTransport,
   type SwapContractRegistry,
 } from '@arkade-os/swap'
@@ -33,6 +40,7 @@ import {
 } from './lightningConfig'
 import { decodeVaultLightningInvoice } from './lightningInvoice'
 import { withVaultLightningLifecycleLock } from './lightningLock'
+import { vaultLatency } from './latency'
 import { readRegisteredLightningContractParams, registeredContractScript } from './lightningValidation'
 import {
   discardUnexposedVaultLightningQuote,
@@ -101,6 +109,18 @@ export function requireMatchingLightningOperatorNetwork(
     throw new Error('Vault and Arkade Operator networks do not match.')
   }
   return sdkNetwork
+}
+
+/**
+ * Bind one Operator reply to the enrolled vault before any RFQ is sent: the
+ * network must match, and the refund address, script and signing Operator key
+ * must all agree with the enrolled Spending contract. Returns the resolved SDK
+ * network so callers reuse the single validated reply.
+ */
+export function assertVaultLightningOperatorSetup(status: VaultStatus, info: ArkInfo): NetworkName {
+  const network = requireMatchingLightningOperatorNetwork(status.network, info.network)
+  validateVaultLightningRefund(status, network, info.signerPubkey)
+  return network
 }
 
 export function validateVaultLightningRefund(
@@ -267,7 +287,7 @@ const OPTIONAL_SDK_CAPABILITY_PROBES = new Set([
 
 /** The exact public wallet surface used by @arkade-os/swap quote creation. */
 export function vaultLightningRequestWallet(
-  identity: Identity,
+  identity: Identity | ReadonlyIdentity,
   refundAddress: string,
   contracts: IContractManager,
 ): IWallet {
@@ -294,6 +314,84 @@ export async function withVaultLightningRepository<T>(
   return withActiveVaultWalletState(vaultId, ({ swapRepository }) => run(swapRepository))
 }
 
+/**
+ * The enrolled, public Lightning refund context. Derived only from the
+ * enrolled phone public key and the pinned Spending refund address: no private
+ * key is unwrapped, no signing capability is created, and no key material
+ * crosses a screen boundary. The descriptor is exactly what the signing
+ * identity would produce, so a later authenticated refund resolves the same
+ * signer.
+ */
+export async function vaultLightningPublicRefund(status: VaultStatus): Promise<ProvisionedKey> {
+  if (!status.enrolled || !status.spendingArkAddress) throw new Error('Enroll this vault before Lightning payments.')
+  const compressed = String(status.phoneBip340Pub || '').toLowerCase()
+  if (!/^[0-9a-f]{66}$/.test(compressed)) throw new Error('Enrolled phone public key is missing.')
+  const identity = ReadonlySingleKey.fromPublicKey(hex.decode(compressed))
+  const descriptor = await identityDescriptor(identity)
+  const pubkey = await identity.xOnlyPublicKey()
+  const { pkScript } = ArkAddress.decode(String(status.spendingArkAddress))
+  return { descriptor, pubkey, pkScript, address: String(status.spendingArkAddress) }
+}
+
+/**
+ * Verify the unlocked signer is the exact key the persisted quote bound. This
+ * is the funding-time check that a public quote never bound a key the wallet
+ * does not control: the stored descriptor must derive the unlocked x-only key.
+ */
+export async function assertVaultLightningStoredSigner(record: RfqSwapRecord, phoneSecret: Uint8Array): Promise<void> {
+  const projection = rfqSignerOf(record)
+  if (!projection?.signingDescriptor) throw new Error('Lightning recovery record has no signer descriptor.')
+  const expected = deriveDescriptorLeafPubKey(projection.signingDescriptor)
+  const actual = await SingleKey.fromPrivateKey(phoneSecret).xOnlyPublicKey()
+  if (hex.encode(expected) !== hex.encode(actual)) {
+    throw new Error('The unlocked signer does not match this Lightning quote.')
+  }
+}
+
+export interface VaultLightningPublicQuoteSession {
+  /** Public request wallet: a read-only identity and the real contract manager. */
+  wallet: IWallet
+  contracts: IContractManager
+  repository: IndexedDbAssetSwapRepository
+  manager: RfqSwapManager
+  refund: ProvisionedKey
+  /** The single Operator reply validated against this enrolled vault. */
+  operatorInfo: ArkInfo
+}
+
+/**
+ * Run a foreground Lightning quote on public enrolled information under the
+ * per-vault lifecycle lock, so cross-tab RFQ serialization is preserved without
+ * unwrapping signing keys or running broad observer maintenance.
+ */
+export async function withVaultLightningPublicQuote<T>(
+  status: VaultStatus,
+  run: (session: VaultLightningPublicQuoteSession) => Promise<T>,
+  options: { signal?: AbortSignal } = {},
+): Promise<T> {
+  return vaultLatency.measure('lock-wait', () =>
+    withVaultLightningLifecycleLock(status.vaultId, () =>
+      withVaultWalletState(status, async ({ contracts, swapRepository, swapManager }) => {
+        options.signal?.throwIfAborted()
+        const refund = await vaultLatency.measure('public-setup', () => vaultLightningPublicRefund(status))
+        options.signal?.throwIfAborted()
+        // Bind the Operator to the enrolled vault before any RFQ: network,
+        // refund address/script and the signing Operator key must match, and
+        // the single reply is reused by the requester below.
+        const arkServerUrl = vaultOperatorOrigin(status.network)
+        const operatorInfo = await vaultLatency.measure('operator-info', () =>
+          new RestArkProvider(arkServerUrl).getInfo(),
+        )
+        assertVaultLightningOperatorSetup(status, operatorInfo)
+        options.signal?.throwIfAborted()
+        const identity = ReadonlySingleKey.fromPublicKey(hex.decode(String(status.phoneBip340Pub || '').toLowerCase()))
+        const wallet = vaultLightningRequestWallet(identity, refund.address, contracts)
+        return run({ wallet, contracts, repository: swapRepository, manager: swapManager, refund, operatorInfo })
+      }),
+    ),
+  )
+}
+
 export async function requestVaultLightningQuote({
   wallet,
   arkServerUrl,
@@ -306,6 +404,8 @@ export async function requestVaultLightningQuote({
   profile,
   resumeVtxo,
   rfqId,
+  refund,
+  operatorInfo,
   requester = requestVaultLightningSend,
   nowSeconds = Math.floor(Date.now() / 1000),
   enabled,
@@ -321,6 +421,10 @@ export async function requestVaultLightningQuote({
   profile: VaultLightningSolverProfile
   resumeVtxo?: VaultLightningVtxoProof
   rfqId?: string
+  /** Public refund context; required for the quote path that must not sign. */
+  refund?: ProvisionedKey
+  /** Validated Operator reply to reuse instead of a second getInfo. */
+  operatorInfo?: ArkInfo
   requester?: LightningRequester
   nowSeconds?: number
   enabled?: boolean
@@ -380,7 +484,14 @@ export async function requestVaultLightningQuote({
 
   const requestId = rfqId ?? newRfqId()
 
-  const result = await requester(wallet, arkServerUrl, transport, { invoice: facts, rfqId: requestId })
+  const result = await vaultLatency.measure('rfq', () =>
+    requester(wallet, arkServerUrl, transport, {
+      invoice: facts,
+      rfqId: requestId,
+      ...(refund ? { refund } : {}),
+      ...(operatorInfo ? { operatorInfo } : {}),
+    }),
+  )
   const contractScript = registeredContractScript(result)
   try {
     if (!Number.isSafeInteger(result.fundAmount) || result.fundAmount > profile.maxFundingSats) {

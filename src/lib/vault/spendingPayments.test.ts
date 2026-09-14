@@ -39,6 +39,7 @@ const api = vi.hoisted(() => ({
   lightningRepo: vi.fn(),
   lightningJournal: vi.fn(),
   coverage: vi.fn(),
+  storedSigner: vi.fn(),
 }))
 const fate = vi.hoisted(() => ({
   checkpointTxid: '',
@@ -129,6 +130,9 @@ vi.mock('./lightningConfig', async (original) => ({
 vi.mock('./lightning', () => ({
   requestVaultLightningQuote: api.request,
   withVaultLightningSdkWallet: api.sdk,
+  withVaultLightningPublicQuote: async (_status: unknown, run: (session: unknown) => Promise<unknown>) =>
+    run({ wallet: {}, contracts: {}, repository: {}, manager: {}, refund: {} }),
+  assertVaultLightningStoredSigner: api.storedSigner,
   withVaultLightningTransport: async (_p: unknown, run: (transport: unknown) => Promise<unknown>) => run({}),
   withVaultLightningRepository: async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
     api.lightningRepo(_id, run),
@@ -456,13 +460,20 @@ it('observes journal changes once through shared consumers and removes its liste
   expect(payments.getSnapshot().pendingPayments[0].destination).toBe(draft.address)
   release()
 })
-it('uses one phone approval for Lightning quote and reservation, then records the funding transaction', async () => {
+it('quotes Lightning publicly, then reserves and funds on approval', async () => {
   const { payments } = open()
   const review = await payments.review({ address: MUTINYNET_INVOICE, amount: 0, fee: 0 })
-  expect(api.unlockPhone).toHaveBeenCalledOnce()
-  expect(api.reserve.mock.calls[0][4]).toMatchObject({ phoneSecret: phone, signal: expect.any(AbortSignal) })
-  expect(phone.every((byte) => byte === 0)).toBe(true)
+  expect(api.request).toHaveBeenCalledOnce()
+  expect(api.unlockPhone).not.toHaveBeenCalled()
+  expect(api.reserve).not.toHaveBeenCalled()
+  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+    run(memoryLightningRepo([{ rfqId: lightning.rfqId } as never])),
+  )
   await payments.approve(review.payment)
+  expect(api.unlock).toHaveBeenCalledOnce()
+  expect(api.unlockPhone).not.toHaveBeenCalled()
+  expect(api.reserve.mock.calls[0][4]).toMatchObject({ phoneSecret: phone, signal: expect.any(AbortSignal) })
+  expect(api.dispose).toHaveBeenCalled()
   expect(api.record).toHaveBeenCalledWith(
     expect.objectContaining({ saveRfqSwap: expect.any(Function) }),
     lightning.rfqId,
@@ -470,19 +481,48 @@ it('uses one phone approval for Lightning quote and reservation, then records th
   )
   expect(payments.getSnapshot().event).toMatchObject({ outcome: 'sent', kind: 'lightning' })
 })
-it('stops Lightning quote acceptance after locking during solver discovery and wipes the phone key', async () => {
+it('does not inherit authorization from a different operation bundle with matching coordinates', async () => {
+  records = [{ ...pending('operator-submitted'), operationId: quote.operationId, bundleDigest: '22'.repeat(32) }]
+  api.loadFunding.mockResolvedValue(lightning)
+  api.lightningRepo.mockImplementation(async (_id: string, run: (repository: unknown) => Promise<unknown>) =>
+    run(memoryLightningRepo([{ rfqId: lightning.rfqId } as never])),
+  )
+  const { payments } = open()
+  const opened = await payments.openPending(quote.operationId)
+  expect(opened.review?.lightning?.rfqId).toBe(lightning.rfqId)
+  // The durable operation is rewritten with a different bundle digest while the
+  // payment coordinates stay the same.
+  records = [{ ...records[0], bundleDigest: '33'.repeat(32) }]
+  await payments.approve(opened.payment)
+  // No earlier authorization is inherited: the quote gate applies and a fresh
+  // reservation is requested instead of resuming the changed operation.
+  expect(api.current).toHaveBeenCalled()
+  expect(api.reserve).toHaveBeenCalledOnce()
+  expect(api.resumeFunding.mock.calls[0]?.[3]).toBe(false)
+})
+it('completes a Lightning review while the signing SDK path is never awaited', async () => {
+  const never = new Promise<never>(() => {})
+  api.sdk.mockReturnValue(never)
+  const { payments } = open()
+  const review = await payments.review({ address: MUTINYNET_INVOICE, amount: 0, fee: 0 })
+  expect(review.payment).toMatchObject({ address: MUTINYNET_INVOICE })
+  expect(api.sdk).not.toHaveBeenCalled()
+  expect(api.unlockPhone).not.toHaveBeenCalled()
+  expect(api.reserve).not.toHaveBeenCalled()
+})
+it('stops Lightning quote acceptance after locking during solver discovery without a passkey', async () => {
   const later = deferred<typeof MUTINYNET_LIGHTNING_SOLVER>()
   api.discover.mockReturnValue(later.promise)
   const { payments, update } = open()
   const result = payments.review({ address: MUTINYNET_INVOICE, amount: 0, fee: 0 })
   const rejected = expect(result).rejects.toThrow()
   await vi.waitFor(() => expect(api.discover).toHaveBeenCalled())
+  expect(api.unlockPhone).not.toHaveBeenCalled()
   update({ locked: true })
   later.resolve(MUTINYNET_LIGHTNING_SOLVER)
   await rejected
   expect(api.request).not.toHaveBeenCalled()
   expect(api.reserve).not.toHaveBeenCalled()
-  expect(phone.every((byte) => byte === 0)).toBe(true)
 })
 it('rejects competing commands and coalesces an authenticated Lightning refund', async () => {
   const later = deferred<Uint8Array>()

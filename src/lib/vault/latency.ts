@@ -17,6 +17,10 @@ export type VaultLatencyPhase =
   | 'receipt'
   | 'snapshot'
   | 'retirement'
+  | 'lock-wait'
+  | 'public-setup'
+  | 'operator-info'
+  | 'rfq'
   | 'balance-publication'
   | 'notification-delivery'
 
