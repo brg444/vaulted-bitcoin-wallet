@@ -188,6 +188,7 @@ function quoteFor(params: {
   toAmount: number
   receiverPkScript: Uint8Array
   lockupAddress: string
+  refundWithoutReceiverDelay?: number
 }): RfqQuote {
   return {
     v: 1,
@@ -203,6 +204,9 @@ function quoteFor(params: {
     profile: {
       receiver_pk_script: hex.encode(params.receiverPkScript),
       lockup_address: params.lockupAddress,
+      ...(params.refundWithoutReceiverDelay !== undefined
+        ? { refund_without_receiver_delay: params.refundWithoutReceiverDelay }
+        : {}),
     },
   }
 }
@@ -687,5 +691,187 @@ describe('Lightning dual-candidate covenant matching', () => {
     const eightPersisted = VHTLCV2ContractHandler.serializeParams(lightningSendVtxoScript(treeParams).options)
     const eightRebuilt = VHTLCV2ContractHandler.createScript(eightPersisted)
     expect(eightRebuilt.nonInteractiveRefundWithoutReceiverScript).toBeUndefined()
+  })
+
+  it('binds the advertised refund delay to both shapes and persists it exactly', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW * 1000)
+    const fx = await covenantFixture()
+    stubServerInfo(serverInfo(fx.operatorCompressedHex))
+    const QUOTED = 612_864
+    const treeParams = await treeParamsFor(fx, { refundLocktime: NOW + 612_384 })
+    const expected = buildLightningSendCandidates(treeParams, 'ark', fx.operatorXOnly, {
+      refundWithoutReceiverDelay: QUOTED,
+    })
+    const fixed = buildLightningSendCandidates(treeParams, 'ark', fx.operatorXOnly)
+    expect(expected.eightAddress).not.toBe(expected.nineAddress)
+    expect(expected.eightAddress).not.toBe(fixed.eightAddress)
+    expect(expected.nineAddress).not.toBe(fixed.nineAddress)
+    const rfqId = 'a1'.repeat(32)
+    const quote = quoteFor({
+      rfqId,
+      solverPubkeyHex: hex.encode(fx.solverXOnly),
+      refundLocktime: treeParams.refundLocktime,
+      validUntil: NOW + 100,
+      fromAmount: FUND_AMOUNT,
+      toAmount: AMOUNT_SATS,
+      receiverPkScript: fx.receiverPkScript,
+      lockupAddress: expected.nineAddress,
+      refundWithoutReceiverDelay: QUOTED,
+    })
+    const result = await requestVaultLightningSend(fx.wallet, ARK_SERVER, transportFor(quote), {
+      invoice: facts(),
+      rfqId,
+    })
+    expect(result.address).toBe(expected.nineAddress)
+    expect(hex.encode(result.swapPkScript)).toBe(hex.encode(expected.nine.pkScript))
+    expect(fx.createContract).toHaveBeenCalledOnce()
+    expect(fx.createContract.mock.calls[0][0].address).toBe(expected.nineAddress)
+    const stored = await lockupContractParams(fx.contracts, expected.nineAddress)
+    const rebuilt = VHTLCV2ContractHandler.createScript(stored)
+    expect(rebuilt.options.unilateralRefundWithoutReceiverDelay).toEqual({ type: 'seconds', value: BigInt(QUOTED) })
+    expect(rebuilt.address('ark', fx.operatorXOnly).encode()).toBe(expected.nineAddress)
+    expect(hex.encode(rebuilt.pkScript)).toBe(hex.encode(expected.nine.pkScript))
+  })
+
+  it('refuses a fixed-delay eight-leaf address when the quote advertises a larger delay', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW * 1000)
+    const fx = await covenantFixture()
+    stubServerInfo(serverInfo(fx.operatorCompressedHex))
+    const treeParams = await treeParamsFor(fx, { refundLocktime: NOW + 612_384 })
+    const fixed = buildLightningSendCandidates(treeParams, 'ark', fx.operatorXOnly)
+    const rfqId = 'a2'.repeat(32)
+    const quote = quoteFor({
+      rfqId,
+      solverPubkeyHex: hex.encode(fx.solverXOnly),
+      refundLocktime: treeParams.refundLocktime,
+      validUntil: NOW + 100,
+      fromAmount: FUND_AMOUNT,
+      toAmount: AMOUNT_SATS,
+      receiverPkScript: fx.receiverPkScript,
+      lockupAddress: fixed.eightAddress,
+      refundWithoutReceiverDelay: 612_864,
+    })
+    await expect(
+      requestVaultLightningSend(fx.wallet, ARK_SERVER, transportFor(quote), { invoice: facts(), rfqId }),
+    ).rejects.toBeInstanceOf(AddressMismatch)
+    expect(fx.createContract).not.toHaveBeenCalled()
+  })
+
+  it('refuses malformed, too-short or excessive advertised delays before registration', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW * 1000)
+    const fx = await covenantFixture()
+    stubServerInfo(serverInfo(fx.operatorCompressedHex))
+    const treeParams = await treeParamsFor(fx, { refundLocktime: NOW + 612_384 })
+    const expected = buildLightningSendCandidates(treeParams, 'ark', fx.operatorXOnly, {
+      refundWithoutReceiverDelay: 612_864,
+    })
+    const base = {
+      solverPubkeyHex: hex.encode(fx.solverXOnly),
+      refundLocktime: treeParams.refundLocktime,
+      validUntil: NOW + 100,
+      fromAmount: FUND_AMOUNT,
+      toAmount: AMOUNT_SATS,
+      receiverPkScript: fx.receiverPkScript,
+      lockupAddress: expected.nineAddress,
+    }
+    const tooShort = quoteFor({
+      ...base,
+      rfqId: 'b1'.repeat(32),
+      refundWithoutReceiverDelay: fx.claimDelay, // 605_184, below the 609_280 floor
+    })
+    await expect(
+      requestVaultLightningSend(fx.wallet, ARK_SERVER, transportFor(tooShort), {
+        invoice: facts(),
+        rfqId: tooShort.rfq_id,
+      }),
+    ).rejects.toThrow(/below the independently derived solo-refund floor/)
+    const nonGranular = quoteFor({ ...base, rfqId: 'b2'.repeat(32), refundWithoutReceiverDelay: 612_000 })
+    await expect(
+      requestVaultLightningSend(fx.wallet, ARK_SERVER, transportFor(nonGranular), {
+        invoice: facts(),
+        rfqId: nonGranular.rfq_id,
+      }),
+    ).rejects.toThrow(/whole multiple/)
+    const farFuture = quoteFor({
+      ...base,
+      rfqId: 'b3'.repeat(32),
+      refundLocktime: NOW + 400 * 24 * 3600,
+      refundWithoutReceiverDelay: fx.claimDelay + 4096,
+    })
+    await expect(
+      requestVaultLightningSend(fx.wallet, ARK_SERVER, transportFor(farFuture), {
+        invoice: facts(),
+        rfqId: farFuture.rfq_id,
+      }),
+    ).rejects.toThrow(/sender recovery ceiling/)
+    expect(fx.createContract).not.toHaveBeenCalled()
+  })
+
+  it('persists and restores the exact advertised delay through the quote flow', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime((INVOICE_TIMESTAMP + 1) * 1000)
+    const fx = await covenantFixture()
+    stubServerInfo(serverInfo(fx.operatorCompressedHex))
+    const QUOTED = 612_864
+    const secrets = await provisionRefundKey(fx.wallet)
+    const treeParams: LightningSendTreeParams = {
+      solverPubkey: fx.solverXOnly,
+      refundLocktime: INVOICE_TIMESTAMP + 612_384,
+      serverPubkey: fx.operatorXOnly,
+      paymentHash: PAYMENT_HASH,
+      claimDelay: fx.claimDelay,
+      emulatorPubkey: fx.emulatorXOnly,
+      refundPkScript: secrets.pkScript,
+      senderPubkey: secrets.pubkey,
+      receiverPkScript: fx.receiverPkScript,
+    }
+    const expected = buildLightningSendCandidates(treeParams, 'ark', fx.operatorXOnly, {
+      refundWithoutReceiverDelay: QUOTED,
+    })
+    const rfqId = 'a3'.repeat(32)
+    const quote = quoteFor({
+      rfqId,
+      solverPubkeyHex: hex.encode(fx.solverXOnly),
+      refundLocktime: treeParams.refundLocktime,
+      validUntil: INVOICE_TIMESTAMP + 100,
+      fromAmount: FUND_AMOUNT,
+      toAmount: AMOUNT_SATS,
+      receiverPkScript: fx.receiverPkScript,
+      lockupAddress: expected.nineAddress,
+      refundWithoutReceiverDelay: QUOTED,
+    })
+    const repository = new InMemoryAssetSwapRepository()
+    const { manager } = quoteManager(repository, fx.contracts)
+    try {
+      const stored = await requestVaultLightningQuote({
+        wallet: fx.wallet,
+        arkServerUrl: ARK_SERVER,
+        invoice: MAINNET_INVOICE,
+        network: 'bitcoin',
+        transport: transportFor(quote),
+        repository,
+        contracts: fx.contracts,
+        manager,
+        profile: MAINNET_TEST_PROFILE,
+        rfqId,
+        nowSeconds: INVOICE_TIMESTAMP + 1,
+        enabled: true,
+      })
+      expect(stored.fundAddress).toBe(expected.nineAddress)
+      const record = await repository.getRfqSwap(rfqId)
+      expect(record?.lockupAddress).toBe(expected.nineAddress)
+      const params = await lockupContractParams(fx.contracts, expected.nineAddress)
+      const rebuilt = VHTLCV2ContractHandler.createScript(params)
+      expect(rebuilt.options.unilateralRefundWithoutReceiverDelay).toEqual({ type: 'seconds', value: BigInt(QUOTED) })
+      const swap = rebuildRfqSwap(record!, params)
+      expect(swap.lockup?.address).toBe(expected.nineAddress)
+      expect(swap.lockup?.script.options.unilateralRefundWithoutReceiverDelay.value).toBe(BigInt(QUOTED))
+    } finally {
+      await manager.stop()
+      await repository[Symbol.asyncDispose]()
+    }
   })
 })

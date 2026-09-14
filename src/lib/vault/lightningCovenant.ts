@@ -22,6 +22,7 @@ import {
   type RfqTransport,
 } from '@arkade-os/swap'
 import { hex } from '@scure/base'
+import { resolveQuotedRefundWithoutReceiverDelay } from './lightningRefundDelay'
 
 export type LightningCovenantVariant = 'eight-leaf' | 'nine-leaf'
 
@@ -31,6 +32,16 @@ export interface LightningCovenantCandidates {
   eightAddress: string
   nineAddress: string
   treeParams: LightningSendTreeParams
+}
+
+export interface LightningSendCandidateOptions {
+  /**
+   * Validated `profile.refund_without_receiver_delay` from the quote. When
+   * present it binds the solo CSV delay of BOTH candidate shapes, so neither
+   * the eight- nor the nine-leaf address can be accepted while ignoring the
+   * advertised term.
+   */
+  refundWithoutReceiverDelay?: number
 }
 
 function solverHex(value: unknown, field: string): Uint8Array {
@@ -47,16 +58,30 @@ function solverHex(value: unknown, field: string): Uint8Array {
  * The eight-leaf tree is the package `lightningSendVtxoScript` derivation.
  * The nine-leaf tree clones that script's options and sets
  * `nonInteractiveRefund.withoutReceiver: true` (timelocked non-interactive
- * refund: server + emulator, CLTV). Leaves are never hand-rolled.
+ * refund: server + emulator, CLTV). Leaves are never hand-rolled. When the
+ * quote advertises a bounded `refundWithoutReceiverDelay`, that value binds
+ * the solo CSV leaf of both shapes: an older eight-leaf quote whose address was
+ * derived from the fixed delay can then no longer be accepted as a downgrade.
  */
 export function buildLightningSendCandidates(
   treeParams: LightningSendTreeParams,
   hrp: string,
   serverPubkey: Uint8Array,
+  options: LightningSendCandidateOptions = {},
 ): LightningCovenantCandidates {
-  const eight = lightningSendVtxoScript(treeParams)
-  const nonInteractiveRefund = eight.options.nonInteractiveRefund
+  const packageEight = lightningSendVtxoScript(treeParams)
+  const nonInteractiveRefund = packageEight.options.nonInteractiveRefund
   if (!nonInteractiveRefund) throw new Error('lightning-send covenant is missing its non-interactive refund leaf')
+  const eight =
+    options.refundWithoutReceiverDelay === undefined
+      ? packageEight
+      : new VHTLC.ScriptV2({
+          ...packageEight.options,
+          unilateralRefundWithoutReceiverDelay: {
+            type: packageEight.options.unilateralRefundWithoutReceiverDelay.type,
+            value: BigInt(options.refundWithoutReceiverDelay),
+          },
+        })
   const nine = new VHTLC.ScriptV2({
     ...eight.options,
     nonInteractiveRefund: { ...nonInteractiveRefund, withoutReceiver: true },
@@ -146,24 +171,34 @@ export async function requestVaultLightningSend(
   if (!Number.isSafeInteger(exitDelay) || exitDelay < 1) {
     throw new Error('Arkade Operator unilateralExitDelay is missing or malformed')
   }
+  const claimDelay = unilateralClaimDelay(exitDelay)
+  const now = Math.floor(Date.now() / 1000)
+  const quotedRefundDelay = resolveQuotedRefundWithoutReceiverDelay({
+    quoted: (quote.profile as Record<string, unknown> | undefined)?.refund_without_receiver_delay,
+    claimDelay,
+    refundLocktime: quote.refund_locktime,
+    nowSeconds: now,
+  })
   const treeParams: LightningSendTreeParams = {
     solverPubkey: toXOnly(hex.decode(quote.solver_pubkey), 'solver key'),
     refundLocktime: quote.refund_locktime,
     serverPubkey,
     paymentHash: params.invoice.paymentHash,
-    claimDelay: unilateralClaimDelay(exitDelay),
+    claimDelay,
     emulatorPubkey: toXOnly(hex.decode(resolveEmulatorPubkey(network, params.emulatorPubkey)), 'emulator signer key'),
     senderPubkey,
     receiverPkScript: solverHex(receiverPkScriptHex, 'profile.receiver_pk_script'),
     refundPkScript: secrets.pkScript,
   }
-  const candidates = buildLightningSendCandidates(treeParams, network.hrp, serverPubkey)
+  const candidates = buildLightningSendCandidates(treeParams, network.hrp, serverPubkey, {
+    refundWithoutReceiverDelay: quotedRefundDelay,
+  })
   const quoted = (quote.profile as Record<string, unknown> | undefined)?.lockup_address
   const matched = matchLightningSendCandidate(candidates, quoted)
   assertFundable({
     quote,
     invoiceExpiresAt: params.invoice.expiresAt,
-    now: Math.floor(Date.now() / 1000),
+    now,
   })
   await registerLockupContract(await wallet.getContractManager(), matched.script, matched.address)
   return {

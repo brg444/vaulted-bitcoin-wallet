@@ -26,6 +26,8 @@ export function lightningRecoveryFixture(
     advanced?: boolean
     light?: boolean
     lockupOutputs?: 1 | 2
+    /** Quote-raised solo CSV delay, bound into the nine-leaf tree only. */
+    soloRefundDelay?: number
   } = {},
 ) {
   const network = options.network ?? 'mainnet'
@@ -61,6 +63,14 @@ export function lightningRecoveryFixture(
   const script = options.nine
     ? new VHTLC.ScriptV2({
         ...tree.options,
+        ...(options.soloRefundDelay !== undefined
+          ? {
+              unilateralRefundWithoutReceiverDelay: {
+                type: tree.options.unilateralRefundWithoutReceiverDelay.type,
+                value: BigInt(options.soloRefundDelay),
+              },
+            }
+          : {}),
         nonInteractiveRefund: { ...tree.options.nonInteractiveRefund!, withoutReceiver: true },
       })
     : tree
