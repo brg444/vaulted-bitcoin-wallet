@@ -157,6 +157,56 @@ it('reports verified balance before history enrichment resolves', async () => {
   expect((await snapshot).balance).toBe(12_000)
 })
 
+it('delivers verified balance to a callback that joins a pass started without one', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const wallet = mockWallet()
+  vi.spyOn(ServiceWorkerWallet, 'create').mockResolvedValue(wallet as never)
+  await ensureVaultWalletWorker(status)
+  wallet.getActivityHistory.mockClear()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  wallet.getActivityHistory.mockImplementation(async () => {
+    await gate
+    return []
+  })
+  const first = fetchVaultWalletVtxoSnapshot(status)
+  const verified = vi.fn()
+  const second = fetchVaultWalletVtxoSnapshot(status, verified)
+  await vi.waitFor(() => expect(verified).toHaveBeenCalledOnce())
+  expect(verified).toHaveBeenCalledWith(expect.objectContaining({ balance: 12_000 }))
+  release()
+  const [a, b] = await Promise.all([first, second])
+  expect(a.balance).toBe(12_000)
+  expect(b.balance).toBe(12_000)
+  expect(wallet.getActivityHistory).toHaveBeenCalledOnce()
+})
+
+it('delivers verified balance to a callback that joins after verification', async () => {
+  mocks.receipts.mockResolvedValue(undefined)
+  const wallet = mockWallet()
+  vi.spyOn(ServiceWorkerWallet, 'create').mockResolvedValue(wallet as never)
+  await ensureVaultWalletWorker(status)
+  wallet.getActivityHistory.mockClear()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  wallet.getActivityHistory.mockImplementation(async () => {
+    await gate
+    return []
+  })
+  const firstVerified = vi.fn()
+  const first = fetchVaultWalletVtxoSnapshot(status, firstVerified)
+  await vi.waitFor(() => expect(firstVerified).toHaveBeenCalledOnce())
+  // History is still unresolved; a late subscriber gets the verified facts.
+  const lateVerified = vi.fn()
+  const second = fetchVaultWalletVtxoSnapshot(status, lateVerified)
+  await vi.waitFor(() => expect(lateVerified).toHaveBeenCalledOnce())
+  expect(lateVerified).toHaveBeenCalledWith(expect.objectContaining({ balance: 12_000 }))
+  release()
+  await Promise.all([first, second])
+  expect(firstVerified).toHaveBeenCalledOnce()
+  expect(wallet.getActivityHistory).toHaveBeenCalledOnce()
+})
+
 it('runs account maintenance while SDK initialization is pending', async () => {
   mocks.receipts.mockResolvedValue(undefined)
   const wallet = mockWallet()

@@ -126,7 +126,14 @@ export function useNativePaymentNotifications(
         for (const payKey of accepted) if (!pendingRef.current.includes(payKey)) pendingRef.current.push(payKey)
         return
       }
-      await vaultLatency.measure('notification-delivery', () => showForegroundPaymentNotice(registration ?? undefined))
+      try {
+        await vaultLatency.measure('notification-delivery', () =>
+          showForegroundPaymentNotice(registration ?? undefined),
+        )
+      } catch {
+        // An advisory notice must never reject the detached task or interrupt
+        // the payment state; Activity and history remain authoritative.
+      }
     })()
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps

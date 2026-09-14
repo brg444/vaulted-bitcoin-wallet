@@ -73,6 +73,9 @@ export type WalletConnection = {
   lightningObserver: VaultMaintenanceTask<void>
   /** One shared in-flight VTXO snapshot per live connection. */
   vtxoSnapshot?: Promise<VaultWalletVtxoSnapshot>
+  /** Verified balance for the current in-flight pass, plus late subscribers. */
+  verifiedBalance?: VaultWalletVerifiedBalance
+  verifiedBalanceSubscribers?: Set<(balance: VaultWalletVerifiedBalance) => void>
   boardingSettle?: Promise<void>
   boardingError?: string
   boardingRetryAfter?: number
@@ -629,9 +632,32 @@ export async function fetchVaultWalletVtxoSnapshot(
   // Coalesce concurrent foreground readers onto one exact account generation.
   // The connection is replaced wholesale on revive, so a shared pass can never
   // cross a generation boundary.
+  //
+  // Every subscriber for the same generation gets the verified balance, even
+  // when it joins a pass that another caller started without a callback, or
+  // after verification but while history is still loading.
+  if (onVerifiedBalance) {
+    if (current.verifiedBalance) onVerifiedBalance(current.verifiedBalance)
+    else (current.verifiedBalanceSubscribers ??= new Set()).add(onVerifiedBalance)
+  }
   if (current.vtxoSnapshot) return current.vtxoSnapshot
-  const promise = readVaultWalletVtxoSnapshot(status, current, onVerifiedBalance).finally(() => {
+  // A new pass owns a fresh verified channel for this generation.
+  current.verifiedBalance = undefined
+  const promise = readVaultWalletVtxoSnapshot(status, current, (balance) => {
+    current.verifiedBalance = balance
+    const subscribers = current.verifiedBalanceSubscribers
+    current.verifiedBalanceSubscribers = undefined
+    if (subscribers) {
+      for (const subscriber of subscribers) subscriber(balance)
+      subscribers.clear()
+    }
+  }).finally(() => {
     if (current.vtxoSnapshot === promise) current.vtxoSnapshot = undefined
+    if (!current.vtxoSnapshot) {
+      current.verifiedBalance = undefined
+      current.verifiedBalanceSubscribers?.clear()
+      current.verifiedBalanceSubscribers = undefined
+    }
   })
   current.vtxoSnapshot = promise
   return promise
