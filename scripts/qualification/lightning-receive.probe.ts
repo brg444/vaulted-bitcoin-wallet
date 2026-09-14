@@ -1,5 +1,6 @@
 import { it } from 'vitest'
 import { ArkAddress, RestArkProvider } from '@arkade-os/sdk'
+import { vaultLatency } from '../../src/lib/vault/latency'
 import { InMemoryAssetSwapRepository } from '@arkade-os/swap'
 import { nostrRfqTransport } from '@arkade-os/swap/nostr'
 import { hex } from '@scure/base'
@@ -49,7 +50,9 @@ it.skipIf(process.env.VAULT_LN_RECEIVE_PROBE !== 'true')(
         },
         repository: new InMemoryAssetSwapRepository(),
         contracts: memoryContracts().contracts,
-        operatorInfo: await new RestArkProvider(pins.operatorOrigin).getInfo(),
+        operatorInfo: await vaultLatency.measure('operator-info', () =>
+          new RestArkProvider(pins.operatorOrigin).getInfo(),
+        ),
       })
       const p = receiveProfile(record)
       console.log(
@@ -64,6 +67,17 @@ it.skipIf(process.env.VAULT_LN_RECEIVE_PROBE !== 'true')(
     } finally {
       await transport.close()
     }
+    console.log(
+      JSON.stringify({
+        phaseSummary: vaultLatency.summary().map(({ phase, count, p50, p95, max }) => ({
+          phase,
+          count,
+          p50: Math.round(p50),
+          p95: Math.round(p95),
+          max: Math.round(max),
+        })),
+      }),
+    )
   },
   30000,
 )

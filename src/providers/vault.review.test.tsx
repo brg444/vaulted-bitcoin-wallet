@@ -888,7 +888,53 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     expect(mocks.reserve).toHaveBeenCalledTimes(2)
   })
 
-  it('shows the Payment started screen immediately while approval runs in the background', async () => {
+  it('keeps Payment started hidden until the passkey succeeds', async () => {
+    let authorize!: (auth: unknown) => void
+    mocks.unlockSpend.mockReturnValueOnce(
+      new Promise((resolve) => {
+        authorize = resolve
+      }),
+    )
+    mocks.reserve.mockResolvedValue({ ...reviewed, feeSats: 0 })
+    mocks.send.mockResolvedValue({ txid: '55'.repeat(32), feeSats: 0, operationId: reviewed.operationId })
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByRole('button', { name: 'Set draft' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review' })))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })))
+    // Passkey pending: the started page must stay hidden on the review path.
+    expect(screen.getByTestId('screen')).toHaveTextContent('review')
+    authorize({
+      assertion: { credentialId: 'aa', clientDataJSON: 'bb', authenticatorData: 'cc', signature: 'dd' },
+      phoneSecret: new Uint8Array(32).fill(7),
+      scalar: new Uint8Array(32).fill(8),
+    })
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
+  })
+
+  it('stays on review when the passkey authorization is rejected', async () => {
+    mocks.unlockSpend.mockRejectedValueOnce(new Error('Passkey cancelled'))
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByRole('button', { name: 'Set draft' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review' })))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })))
+    await waitFor(() => expect(screen.getByTestId('error')).not.toBeEmptyDOMElement())
+    expect(screen.getByTestId('screen')).toHaveTextContent('review')
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
+
+  it('shows Payment started after authorization while submission runs in the background', async () => {
     let release!: (quote: unknown) => void
     mocks.reserve.mockReturnValue(new Promise((resolve) => (release = resolve)))
     mocks.send.mockResolvedValue({ txid: '55'.repeat(32), feeSats: 0, operationId: reviewed.operationId })
@@ -902,8 +948,8 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review' })))
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })))
-    // The explicit approval acknowledges immediately; no reservation has resolved.
-    expect(screen.getByTestId('screen')).toHaveTextContent('success')
+    // Authorization resolved; reservation (submission prep) is still pending.
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
     expect(screen.getByTestId('sent-amount')).toHaveTextContent('12000')
     expect(mocks.send).not.toHaveBeenCalled()
     release({ ...reviewed, feeSats: 0 })

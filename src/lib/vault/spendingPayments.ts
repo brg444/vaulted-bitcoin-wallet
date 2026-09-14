@@ -106,7 +106,7 @@ interface SpendingPaymentsSnapshot {
   error: string
   event: {
     id: number
-    outcome: 'sent' | 'fee-changed' | 'review-required'
+    outcome: 'authorized' | 'sent' | 'fee-changed' | 'review-required'
     kind: 'vtxo' | 'lightning'
     payment: SpendingPaymentDraft
     txid?: string
@@ -646,6 +646,10 @@ function createSpendingPayments(session: SessionSource) {
             try {
               const auth = await vaultLatency.measure('passkey', () => unlocker.unlock())
               check()
+              // Authorization succeeded: the workflow has started. Submission
+              // and reconciliation continue under this owner; nothing is
+              // claimed as settled here.
+              event('authorized', review)
               const api = await import('./lightning')
               check()
               if (!resume) api.assertVaultLightningQuoteCurrent(lightning)
@@ -726,6 +730,9 @@ function createSpendingPayments(session: SessionSource) {
             try {
               const auth = await vaultLatency.measure('passkey', () => unlocker.unlock())
               check()
+              // Authorization succeeded: the workflow has started. Reservation,
+              // submission and reconciliation continue under this owner.
+              event('authorized', review)
               const quote = resume
                 ? reviewed
                 : await vaultLatency.measure('reserve', () =>

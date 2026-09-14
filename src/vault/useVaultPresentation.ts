@@ -193,7 +193,15 @@ export function useVaultSendBinding(input: {
   useEffect(() => {
     if (!spendingEvent || spendingPayments.payments.getSnapshot().event !== spendingEvent) return
     if (!spendingPayments.payments.consumeEvent(spendingEvent.id)) return
-    if (spendingEvent.outcome === 'sent') {
+    if (spendingEvent.outcome === 'authorized') {
+      // The passkey ceremony succeeded. Show the existing Payment started page
+      // now; submission and reconciliation continue under the account owner.
+      setLastSend(spendingEvent.payment)
+      setLastTxid('')
+      setLastTxKind(spendingEvent.kind)
+      setStarting(true)
+      setScreen('success')
+    } else if (spendingEvent.outcome === 'sent') {
       setLastTxid(spendingEvent.txid!)
       setLastTxKind(spendingEvent.kind)
       setLastSend(spendingEvent.payment)
@@ -360,21 +368,13 @@ export function useVaultSendBinding(input: {
       return
     }
     setError('')
-    // Acknowledge the explicit approval immediately on the existing tracking
-    // screen; the account owner keeps the operation and publishes the durable
-    // accepted/submitted transition. No transaction is invented here.
-    setLastSend(spend)
-    setLastTxid('')
-    setLastTxKind(isVaultLightningInput(spend.address) ? 'lightning' : 'vtxo')
-    setStarting(true)
-    setScreen('success')
+    // Keep the user on Review while the passkey prompt is pending. The owner
+    // publishes 'authorized' only after the ceremony succeeds, and the result
+    // page appears then; cancellation or failure leaves the review/retry path.
     try {
       await spendingPayments.payments.approve(spend)
     } catch {
-      setStarting(false)
-      const snapshot = spendingPayments.payments.getSnapshot()
-      if (snapshot.review) setScreen('review')
-      else if (!session.getSnapshot().locked) setScreen('send')
+      if (!session.getSnapshot().locked && !spendingPayments.payments.getSnapshot().review) setScreen('send')
     }
   }, [
     account,
