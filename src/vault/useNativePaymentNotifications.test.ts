@@ -125,6 +125,38 @@ describe('foreground native notifications', () => {
     await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
   })
 
+  it('coalesces a burst of verified receipts into one notice and claims every key', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const { showNotification, deps: d } = deps()
+    const first = { ...savingsReceive, txid: 'a1'.repeat(32) }
+    const second = { ...savingsReceive, txid: 'a2'.repeat(32) }
+    const hook = renderHook(({ rows }) => useNativePaymentNotifications(rows, scope, false, true, new Set(), d), {
+      initialProps: { rows: [] as VaultHistoryItem[] },
+    })
+    hook.rerender({ rows: [first, second] })
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+    // Both arriving keys were claimed, so resupplying the same rows stays silent.
+    hook.rerender({ rows: [first, second] })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)))
+    expect(showNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('flushes a buffered burst as one notice on unlock', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    const { showNotification, deps: d } = deps()
+    const first = { ...savingsReceive, txid: 'b1'.repeat(32) }
+    const second = { ...savingsReceive, txid: 'b2'.repeat(32) }
+    const hook = renderHook(
+      ({ rows, paused }) => useNativePaymentNotifications(rows, scope, paused, true, new Set(), d),
+      { initialProps: { rows: [] as VaultHistoryItem[], paused: true } },
+    )
+    hook.rerender({ rows: [first, second], paused: true })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)))
+    expect(showNotification).not.toHaveBeenCalled()
+    hook.rerender({ rows: [first, second], paused: false })
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+  })
+
   it('drops stale scope work after an A-B-A change', async () => {
     vi.stubGlobal('Notification', { permission: 'granted' })
     const { showNotification, deps: d } = deps()

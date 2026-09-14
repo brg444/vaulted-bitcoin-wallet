@@ -313,6 +313,26 @@ export function loadPersistedVtxoSpendById(vaultId: string, operationId: string)
   return readVtxoSpendJournal(vaultId).find((record) => record.operationId === operationId)
 }
 
+/** A submitted-but-unfinished operation. Shared by the payment owners and the
+ * wallet-worker observation cadence without importing `./spend`. */
+export function vtxoSpendIsLivePending(
+  record: Pick<PersistedVtxoSpend, 'receiptFinalized' | 'operatorSubmitAttempted' | 'stage'>,
+): boolean {
+  if (record.receiptFinalized === true) return false
+  return (
+    record.operatorSubmitAttempted === true ||
+    record.stage === 'authorized' ||
+    record.stage === 'operator-submitted' ||
+    record.stage === 'checkpoints-authorized' ||
+    record.stage === 'operator-finalized'
+  )
+}
+
+/** True when this vault has any submitted-but-unfinished Spending operation. */
+export function hasLivePendingVtxoSpend(vaultId: string): boolean {
+  return readVtxoSpendJournal(vaultId).some((record) => vtxoSpendIsLivePending(record))
+}
+
 export function isVtxoOperationId(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{32}$/.test(value)
 }

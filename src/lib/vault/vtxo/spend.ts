@@ -51,6 +51,7 @@ import {
   preReserveVtxoSpend,
   VTXO_SPEND_STAGE_RANK,
   vtxoReserveRequest,
+  vtxoSpendIsLivePending as journalVtxoSpendIsLivePending,
 } from './spendingJournal'
 import {
   buildPersistedVtxoSdkBundle,
@@ -330,14 +331,7 @@ export function vtxoSpendIsAbortable(pending: PersistedVtxoSpend): boolean {
 }
 
 export function vtxoSpendIsLivePending(pending: PersistedVtxoSpend): boolean {
-  if (pending.receiptFinalized === true) return false
-  return (
-    pending.operatorSubmitAttempted === true ||
-    pending.stage === 'authorized' ||
-    pending.stage === 'operator-submitted' ||
-    pending.stage === 'checkpoints-authorized' ||
-    pending.stage === 'operator-finalized'
-  )
+  return journalVtxoSpendIsLivePending(pending)
 }
 
 export function vtxoNewSendAction(

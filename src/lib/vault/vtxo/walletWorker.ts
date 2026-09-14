@@ -41,7 +41,7 @@ import {
   vaultWalletWorkerPath,
   vaultWalletWorkerScope,
 } from './walletWorkerNames'
-import { listPersistedVtxoSpends } from './spendingJournal'
+import { hasLivePendingVtxoSpend, listPersistedVtxoSpends } from './spendingJournal'
 import { vaultOperatorOrigin } from '../networkPins'
 import { readSpendingBitcoin } from '../spendingBitcoinStore'
 import { vtxoBalanceWithPending } from './pendingBalance'
@@ -79,6 +79,10 @@ export type WalletConnection = {
 }
 
 const VAULT_WORKER_STOP_TIMEOUT_MS = 60_000
+/** Idle Lightning observation fallback; events remain the primary trigger. */
+const IDLE_LIGHTNING_OBSERVER_INTERVAL_MS = 15_000
+/** Bounded faster fallback while a submitted Spending payment is unfinished. */
+const ACTIVE_PAYMENT_OBSERVER_INTERVAL_MS = 2_000
 
 export function isVaultWalletStateUpdate(message: unknown, updaterTag: string): boolean {
   const value = message as { tag?: string; type?: string } | null
@@ -299,7 +303,16 @@ async function createConnection(status: VaultStatus, account: VaultAccountRuntim
         logMaintenanceFailures(attempt.value)
         if (!lightningObserver.isDisposed()) notify()
       },
-      { intervalMs: 15_000, failed: (error) => consoleError(error, 'Lightning observer refresh') },
+      {
+        // Bounded faster observation while a submitted payment is unfinished,
+        // then back off to the idle fallback. Wallet, contract and swap events
+        // remain the primary trigger; this only shortens the fallback window.
+        intervalMs: () =>
+          hasLivePendingVtxoSpend(status.vaultId)
+            ? ACTIVE_PAYMENT_OBSERVER_INTERVAL_MS
+            : IDLE_LIGHTNING_OBSERVER_INTERVAL_MS,
+        failed: (error) => consoleError(error, 'Lightning observer refresh'),
+      },
     )
     const unsubscribeContract = manager.onContractEvent(() => {
       notify()

@@ -91,6 +91,10 @@ export function useNativePaymentNotifications(
       return
     }
     void (async () => {
+      // Claim every fresh arrival so a burst cannot replay, but coalesce the
+      // visible notice: one generic entry replaces itself regardless of how
+      // many verified receipts arrived in this pass.
+      const accepted: string[] = []
       for (const arrival of fresh) {
         // Stale scope work (A-B-A, unmount, lock transitions) never shows.
         if (!aliveRef.current || generationRef.current !== generation) return
@@ -98,31 +102,31 @@ export function useNativePaymentNotifications(
         if (isServerCovered(arrival.item, scope)) continue
         const payKey = paymentIdentityForItem(arrival.item, scope).key
         try {
-          const accepted = await claimNativeDelivery([payKey], current.idbFactory)
+          const claimed = await claimNativeDelivery([payKey], current.idbFactory)
           if (!aliveRef.current || generationRef.current !== generation) return
-          if (!accepted.includes(payKey)) continue
-          if (pausedRef.current) {
-            if (!pendingRef.current.includes(payKey)) pendingRef.current.push(payKey)
-            continue
-          }
-          let registration: ServiceWorkerRegistration | undefined
-          try {
-            registration = await current.getRegistration()
-          } catch {
-            registration = undefined
-          }
-          if (!aliveRef.current || generationRef.current !== generation) return
-          if (pausedRef.current) {
-            pendingRef.current.push(payKey)
-            continue
-          }
-          await vaultLatency.measure('notification-delivery', () =>
-            showForegroundPaymentNotice(registration ?? undefined),
-          )
+          if (!claimed.includes(payKey)) continue
+          if (!accepted.includes(payKey)) accepted.push(payKey)
         } catch {
           // A foreground notice is advisory; history and lifecycle continue.
         }
       }
+      if (!accepted.length) return
+      if (pausedRef.current) {
+        for (const payKey of accepted) if (!pendingRef.current.includes(payKey)) pendingRef.current.push(payKey)
+        return
+      }
+      let registration: ServiceWorkerRegistration | undefined
+      try {
+        registration = await current.getRegistration()
+      } catch {
+        registration = undefined
+      }
+      if (!aliveRef.current || generationRef.current !== generation) return
+      if (pausedRef.current) {
+        for (const payKey of accepted) if (!pendingRef.current.includes(payKey)) pendingRef.current.push(payKey)
+        return
+      }
+      await vaultLatency.measure('notification-delivery', () => showForegroundPaymentNotice(registration ?? undefined))
     })()
     // paused intentionally gates delivery without reseeding the baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,19 +149,18 @@ export function useNativePaymentNotifications(
       } catch {
         registration = undefined
       }
-      for (let index = 0; index < flushed.length; index += 1) {
-        if (!aliveRef.current || generationRef.current !== generation) return
-        if (pausedRef.current) {
-          pendingRef.current.push(...flushed.slice(index))
-          return
-        }
-        try {
-          await vaultLatency.measure('notification-delivery', () =>
-            showForegroundPaymentNotice(registration ?? undefined),
-          )
-        } catch {
-          // Advisory only.
-        }
+      if (!flushed.length) return
+      if (!aliveRef.current || generationRef.current !== generation) return
+      if (pausedRef.current) {
+        pendingRef.current.push(...flushed)
+        return
+      }
+      try {
+        await vaultLatency.measure('notification-delivery', () =>
+          showForegroundPaymentNotice(registration ?? undefined),
+        )
+      } catch {
+        // Advisory only.
       }
     })()
   }, [paused, scopeKey, enabled])
