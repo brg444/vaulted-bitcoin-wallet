@@ -918,6 +918,41 @@ describe('VaultProvider reviewed VTXO reservation', () => {
     await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
   })
 
+  it('does not reopen Payment started after dismissal and presents a later attempt', async () => {
+    let finish!: (value: unknown) => void
+    mocks.reserve.mockResolvedValue({ ...reviewed, feeSats: 0 })
+    mocks.send.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    render(
+      <VaultProvider>
+        <Probe />
+      </VaultProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('true'))
+    fireEvent.click(screen.getByRole('button', { name: 'Set draft' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review' })))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
+    // Dismiss the acknowledgement.
+    fireEvent.click(screen.getByRole('button', { name: 'Go home' }))
+    expect(screen.getByTestId('screen')).toHaveTextContent('home')
+    // The terminal event must not reopen the dismissed page.
+    await act(async () => finish({ txid: '55'.repeat(32), feeSats: 0 }))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)))
+    expect(screen.getByTestId('screen')).toHaveTextContent('home')
+    // A later explicit attempt presents its own acknowledgement.
+    mocks.send.mockResolvedValue({ txid: '66'.repeat(32), feeSats: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Set draft' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Review' })))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('review'))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Approve' })))
+    await waitFor(() => expect(screen.getByTestId('screen')).toHaveTextContent('success'))
+  })
+
   it('stays on review when the passkey authorization is rejected', async () => {
     mocks.unlockSpend.mockRejectedValueOnce(new Error('Passkey cancelled'))
     render(

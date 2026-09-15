@@ -90,20 +90,20 @@ export default function VaultHome({ children }: { children?: ReactNode }) {
       {spending && boardingError ? <PaymentNotice message={boardingError} /> : null}
       {spending && spendingBitcoin.journalError ? <PaymentNotice message={spendingBitcoin.journalError} /> : null}
       {spending
-        ? pendingPayments.map((payment) => (
-            <PendingPayment
-              key={payment.operationId}
-              amount={payment.amountSats}
-              description={
-                payment.authorized
-                  ? 'Not confirmed as paid. Its funds remain unavailable for another payment.'
-                  : 'Reserved for review; this payment has not been authorized.'
-              }
-              label={payment.authorized ? 'Resume payment' : 'Review reserved payment'}
-              disabled={busy}
-              onResume={() => void openPendingPayment(payment.operationId)}
-            />
-          ))
+        ? // Only a reserved (not yet authorized) operation needs a user action.
+          // Submitted payments awaiting confirmation stay in Activity/background.
+          pendingPayments
+            .filter((payment) => !payment.authorized)
+            .map((payment) => (
+              <PendingPayment
+                key={payment.operationId}
+                amount={payment.amountSats}
+                description='Reserved for review; this payment has not been authorized.'
+                label='Review reserved payment'
+                disabled={busy}
+                onResume={() => void openPendingPayment(payment.operationId)}
+              />
+            ))
         : null}
       {error && (pendingPayments.length > 0 || error !== read.error) ? <PaymentNotice message={error} /> : null}
 

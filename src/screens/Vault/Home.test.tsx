@@ -118,9 +118,7 @@ describe('Vault home account boundaries', () => {
     expect(screen.getByRole('button', { name: 'Receive' })).toBeEnabled()
   })
 
-  it('keeps an authorized payment reachable even when available balance is zero', async () => {
-    const user = userEvent.setup()
-    const openPendingPayment = vi.fn().mockResolvedValue(undefined)
+  it('keeps a submitted payment awaiting confirmation out of Home notices', () => {
     renderHome(
       {
         canSend: false,
@@ -131,14 +129,28 @@ describe('Vault home account boundaries', () => {
       },
       undefined,
       {
-        openPendingPayment,
-        pendingPayments: [{ operationId: 'original', amountSats: 1505, destination: 'tark1pending', authorized: true }],
+        openPendingPayment: vi.fn(),
+        pendingPayments: [
+          { operationId: 'submitted', amountSats: 1505, destination: 'tark1pending', authorized: true },
+        ],
       },
     )
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    expect(screen.getByRole('region', { name: 'Pending payment' })).toHaveTextContent('Not confirmed as paid')
-    await user.click(screen.getByRole('button', { name: 'Resume payment' }))
-    expect(openPendingPayment).toHaveBeenCalledWith('original')
+    // Ordinary settlement waiting is background/Activity, not a Home action.
+    expect(screen.queryByRole('region', { name: 'Pending payment' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Resume payment' })).toBeNull()
+  })
+
+  it('surfaces a reserved payment that needs review and resumes it', async () => {
+    const user = userEvent.setup()
+    const openPendingPayment = vi.fn().mockResolvedValue(undefined)
+    renderHome({}, undefined, {
+      openPendingPayment,
+      pendingPayments: [{ operationId: 'reserved', amountSats: 1505, destination: 'tark1pending', authorized: false }],
+    })
+    expect(screen.getByRole('region', { name: 'Pending payment' })).toHaveTextContent('Reserved for review')
+    await user.click(screen.getByRole('button', { name: 'Review reserved payment' }))
+    expect(openPendingPayment).toHaveBeenCalledWith('reserved')
   })
 
   it('puts a pending Bitcoin send in Recent without labelling the remaining balance pending', async () => {

@@ -178,6 +178,11 @@ export function useVaultSendBinding(input: {
   // owner acknowledges durable acceptance or submission.
   const [starting, setStarting] = useState(false)
   const [scanOnSend, setScanOnSend] = useState(false)
+  // The Payment started page is presented at most once per explicit attempt.
+  // A dismissal therefore cannot be undone by later events, polling,
+  // reconciliation, unlock, refresh or a remount; the next explicit payment
+  // attempt resets this and may present its own acknowledgement.
+  const presentedRef = useRef(false)
 
   useEffect(() => {
     if (transition?.outcome !== 'signed-out') return
@@ -186,6 +191,7 @@ export function useVaultSendBinding(input: {
     setLastTxid('')
     setLastTxKind('')
     setStarting(false)
+    presentedRef.current = false
     setScanOnSend(false)
   }, [transition])
 
@@ -195,19 +201,28 @@ export function useVaultSendBinding(input: {
     if (!spendingPayments.payments.consumeEvent(spendingEvent.id)) return
     if (spendingEvent.outcome === 'authorized') {
       // The passkey ceremony succeeded. Show the existing Payment started page
-      // now; submission and reconciliation continue under the account owner.
+      // once for this attempt; submission and reconciliation continue under the
+      // account owner and update the page in place.
       setLastSend(spendingEvent.payment)
       setLastTxid('')
       setLastTxKind(spendingEvent.kind)
       setStarting(true)
-      setScreen('success')
+      if (!presentedRef.current) {
+        presentedRef.current = true
+        setScreen('success')
+      }
     } else if (spendingEvent.outcome === 'sent') {
       setLastTxid(spendingEvent.txid!)
       setLastTxKind(spendingEvent.kind)
       setLastSend(spendingEvent.payment)
       setStarting(false)
       setSpend({ address: '', amount: 0, fee: 0 })
-      setScreen('success')
+      // In-place update only. A dismissed Payment started page never reopens
+      // from the terminal event; a route that skips 'authorized' presents here.
+      if (!presentedRef.current) {
+        presentedRef.current = true
+        setScreen('success')
+      }
       void refreshBalance().catch(() => undefined)
     } else {
       setStarting(false)
@@ -224,7 +239,10 @@ export function useVaultSendBinding(input: {
     setLastTxKind('onchain')
     setLastSend(ledgerCompletion.payment)
     setSpend({ address: '', amount: 0, fee: 0 })
-    setScreen('success')
+    if (!presentedRef.current) {
+      presentedRef.current = true
+      setScreen('success')
+    }
     void refreshBalance().catch(() => undefined)
   }, [ledgerCompletion, ledgerSavings.payments, refreshBalance, setScreen])
 
@@ -237,7 +255,10 @@ export function useVaultSendBinding(input: {
       setLastTxKind('onchain')
       setLastSend(bitcoinCompletion.payment)
       setSpend({ address: '', amount: 0, fee: 0 })
-      setScreen('success')
+      if (!presentedRef.current) {
+        presentedRef.current = true
+        setScreen('success')
+      }
     } else setScreen('home')
     void refreshBalance().catch(() => undefined)
   }, [bitcoinCompletion, bitcoinPayments.payments, refreshBalance, setScreen])
@@ -353,6 +374,8 @@ export function useVaultSendBinding(input: {
     await reviewSpending()
   }, [account, status, spend, setError, reviewSpending, bitcoinPayments.payments, ledgerSavings.payments, setScreen])
   const approveSend = useCallback(async () => {
+    // A new explicit attempt may present its own acknowledgement.
+    presentedRef.current = false
     if (account === 'savings') {
       clearError()
       try {
