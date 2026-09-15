@@ -640,11 +640,14 @@ export async function sendSpendingToBitcoin(
 /**
  * Definitive pre-registration rejection: the Guardian refused this exact
  * prepare request (400) and authoritative status confirms the operation was
- * never admitted (`not_found`, including a 404). The local draft is cleared
- * and the Guardian's reason surfaces as `not_sent` — nothing was reserved.
- * Every other case (network/timeout errors, an unreachable status lookup, a
- * real operation state) keeps the journal and the pending path, because a
- * lost prepare response must never be mistaken for a rejection.
+ * never admitted (a 200 body with state `not_found`). The local draft is
+ * cleared and the Guardian's reason surfaces as `not_sent` — nothing was
+ * reserved. A transport-level 404 proves nothing about the authenticated
+ * operation, so it keeps the pending path, as do network/timeout errors, an
+ * unreachable status lookup, and any real operation state: a lost prepare
+ * response must never be mistaken for a rejection. All runtime rejections
+ * precede any ledger write, so `not_found` for the rejected operationId is
+ * conclusive rather than a lagging index.
  */
 async function prepareRejection(
   status: VaultStatus,
@@ -656,9 +659,8 @@ async function prepareRejection(
   let admitted: string | null = null
   try {
     admitted = (await bitcoinPaymentClient.status({ vaultId: journal.vaultId, operationId: journal.operationId })).state
-  } catch (statusError) {
-    if (statusError instanceof VaultRequestError && statusError.status === 404) admitted = 'not_found'
-    else return null
+  } catch {
+    return null
   }
   if (admitted !== 'not_found') return null
   clearBitcoinPayment(journal)

@@ -17,7 +17,17 @@ export function bitcoinPaymentRejected(reason?: string, retryAt?: number): Bitco
   let message = 'The Bitcoin payment was not sent. Review the payment and try again. If it repeats, contact support.'
   if (text.includes('expires after') && text.includes('minexpirygap:')) {
     return bitcoinPaymentWait(retryAt, reason)
-  } else if (text.includes('already spent') || text.includes('duplicated input')) {
+  } else if (text.includes('still active') || text.includes('already active')) {
+    message =
+      'The Bitcoin payment was not sent because another Spending payment is still active. Open it in Recent to check its status or cancel it before starting a new one.'
+  } else if (text.includes('allowance')) {
+    message =
+      'The Bitcoin payment was not sent because it exceeds the remaining Spending allowance. It will become available as the rolling window resets.'
+  } else if (
+    text.includes('already spent') ||
+    text.includes('duplicated input') ||
+    text.includes('no longer available')
+  ) {
     message =
       'The Bitcoin payment was not sent because its funds changed or are in use. Refresh your balance and review the payment again.'
   } else if (text.includes('fee')) {

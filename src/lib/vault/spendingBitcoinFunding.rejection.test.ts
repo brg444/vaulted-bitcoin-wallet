@@ -108,6 +108,41 @@ describe('spending-to-bitcoin prepare rejection', () => {
     expect(String(retry.message)).not.toMatch(/pending Bitcoin payment/)
   })
 
+  it('routes an active-operation rejection to the existing payment', async () => {
+    vi.stubGlobal(
+      'fetch',
+      routeFetch({
+        prepare: () =>
+          json(
+            {
+              error: 'another Spending payment is still active; finish or cancel it before starting a new one',
+              code: 'REJECTED',
+            },
+            400,
+          ),
+      }),
+    )
+    const failure = await sendSpendingToBitcoin(enrollment, status, [OUTPUT], vi.fn(), vi.fn()).catch((e) => e)
+    expect(failure).toBeInstanceOf(BitcoinPaymentError)
+    expect(failure.outcome).toBe('not_sent')
+    expect(failure.message).toMatch(/still active|Recent/i)
+    expect(readSpendingBitcoin(status)).toBeNull()
+  })
+
+  it('keeps the journal pending on a transport 404, which proves no operation absence', async () => {
+    vi.stubGlobal(
+      'fetch',
+      routeFetch({
+        prepare: rejected400,
+        status: () => json({ error: 'not found', code: '' }, 404),
+      }),
+    )
+    const failure = await sendSpendingToBitcoin(enrollment, status, [OUTPUT], vi.fn(), vi.fn()).catch((e) => e)
+    expect(failure).toBeInstanceOf(BitcoinPaymentError)
+    expect(failure.outcome).toBe('pending')
+    expect(readSpendingBitcoin(status)?.stage).toBe('preparing')
+  })
+
   it('keeps the journal pending when the operation exists despite the error', async () => {
     vi.stubGlobal('fetch', routeFetch({ prepare: rejected400, status: () => json({ state: 'prepared' }) }))
     const failure = await sendSpendingToBitcoin(enrollment, status, [OUTPUT], vi.fn(), vi.fn()).catch((e) => e)
