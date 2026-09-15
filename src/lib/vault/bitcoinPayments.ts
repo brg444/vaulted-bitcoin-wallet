@@ -59,6 +59,12 @@ export function bitcoinPaymentsForSession(session: SessionSource) {
   }
   return owner
 }
+/** Max journals checked per observe pass; bounds pass time as records grow. */
+export const MAX_BITCOIN_OBSERVE_BATCH = 10
+/** Oldest retained records first, bounded. Exported for tests. */
+export function selectBitcoinObserveBatch(journals: BitcoinPaymentJournal[]): BitcoinPaymentJournal[] {
+  return journals.slice(0, MAX_BITCOIN_OBSERVE_BATCH)
+}
 function createBitcoinPayments(session: SessionSource) {
   let snapshot: BitcoinPaymentsSnapshot = freeze({
     operation: null,
@@ -133,8 +139,9 @@ function createBitcoinPayments(session: SessionSource) {
       const { status } = access()
       // Every retained operation stays tracked: a submitted payment keeps
       // refreshing while a newer draft is being built, and vice versa.
-      // Per-operation failures stay isolated.
-      const journals = listSpendingBitcoin(status)
+      // Per-operation failures stay isolated. The batch is bounded so one
+      // pass cannot grow with the journal count.
+      const journals = selectBitcoinObserveBatch(listSpendingBitcoin(status))
       if (!journals.length) return
       for (const saved of journals) {
         try {

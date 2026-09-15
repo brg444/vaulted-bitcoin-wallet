@@ -82,7 +82,18 @@ export function listSpendingBitcoin(status: VaultStatus): BitcoinPaymentJournal[
   const journals = (Array.isArray(parsed) ? parsed : [parsed]).filter(
     (j): j is BitcoinPaymentJournal => typeof j === 'object' && j !== null,
   )
-  journals.forEach((j) => validateBitcoinJournal(j, status))
+  // Fail closed on any invalid record — a tampered entry blocks rather than
+  // releases — but name the offending operation so support can identify it
+  // without dumping payment contents.
+  journals.forEach((j) => {
+    try {
+      validateBitcoinJournal(j, status)
+    } catch (error) {
+      throw new Error(
+        `Bitcoin payment record ${typeof j.operationId === 'string' ? j.operationId : 'unknown'} is invalid: ${error instanceof Error ? error.message : 'unreadable'}`,
+      )
+    }
+  })
   return journals
 }
 export function readSpendingBitcoinById(status: VaultStatus, operationId: string): BitcoinPaymentJournal | null {
@@ -160,6 +171,18 @@ function validateBitcoinJournal(j: BitcoinPaymentJournal, status: VaultStatus): 
     throw new Error('Saved Bitcoin payment cancellation is invalid')
   if (j.receipt) validateBitcoinReceipt(j.receipt, j, status)
 }
+/** Forward-only stage order. Saves must never regress a retained record: a
+ *  stale async result (same tab) or a lagging tab must not overwrite a newer
+ *  stage or drop its receipt. Equal stages allow idempotent rewrites. */
+const BITCOIN_STAGE_RANK: Record<BitcoinPaymentJournal['stage'], number> = {
+  preparing: 0,
+  prepared: 1,
+  registering: 2,
+  registered: 3,
+  finalizing: 4,
+  submitted: 5,
+  confirmed: 6,
+}
 function writeBitcoinJournals(vaultId: string, journals: BitcoinPaymentJournal[]) {
   const raw = JSON.stringify(journals)
   if (raw.length > 1000000) throw new Error('Bitcoin payment recovery paths are too large to save')
@@ -176,10 +199,14 @@ export function saveBitcoinPayment(status: VaultStatus, j: BitcoinPaymentJournal
   if (j.vaultId !== status.vaultId) throw new Error('Bitcoin payment record does not match this wallet')
   const raw = localStorage.getItem(setupKey(j.vaultId))
   const parsed = raw ? (JSON.parse(raw) as BitcoinPaymentJournal | BitcoinPaymentJournal[]) : []
-  const journals = (Array.isArray(parsed) ? parsed : [parsed]).filter(
-    (record): record is BitcoinPaymentJournal =>
-      typeof record === 'object' && record !== null && record.operationId !== j.operationId,
+  const retained = (Array.isArray(parsed) ? parsed : [parsed]).filter(
+    (record): record is BitcoinPaymentJournal => typeof record === 'object' && record !== null,
   )
+  const stored = retained.find((record) => record.operationId === j.operationId)
+  if (stored && BITCOIN_STAGE_RANK[j.stage] < BITCOIN_STAGE_RANK[stored.stage])
+    throw new Error('Bitcoin payment record is newer than this update')
+  if (stored?.receipt && !j.receipt) throw new Error('Bitcoin payment receipt cannot be removed')
+  const journals = retained.filter((record) => record.operationId !== j.operationId)
   journals.push(j)
   writeBitcoinJournals(j.vaultId, journals)
 }

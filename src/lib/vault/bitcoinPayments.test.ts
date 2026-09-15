@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Address, TEST_NETWORK } from '@scure/btc-signer'
-import { bitcoinPaymentsForSession, type BitcoinPayments } from './bitcoinPayments'
+import { bitcoinPaymentsForSession, selectBitcoinObserveBatch, type BitcoinPayments } from './bitcoinPayments'
 import { activeVaultAccountRuntime, disposeVaultAccountRuntime } from './accountRuntime'
 import type { VaultSessionSnapshot } from './session'
 import type { AdmittedAccount } from './admittedAccount'
@@ -98,6 +98,13 @@ afterEach(async () => {
   for (const owner of owners.splice(0)) await owner.suspend()
   const account = activeVaultAccountRuntime(status.vaultId)
   if (account) await disposeVaultAccountRuntime(account)
+})
+it('bounds the observe batch so pass time cannot grow with the journal count', () => {
+  const journals = Array.from({ length: 25 }, (_, i) => ({ operationId: `op-${i}` }))
+  const batch = selectBitcoinObserveBatch(journals as never[])
+  expect(batch).toHaveLength(10)
+  expect(batch[0]).toBe(journals[0])
+  expect(selectBitcoinObserveBatch(journals.slice(0, 3) as never[])).toHaveLength(3)
 })
 it('owns one immutable review and consumes completion without retiring the saved operation', async () => {
   const { payments } = open()

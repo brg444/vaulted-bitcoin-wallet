@@ -715,6 +715,9 @@ describe('payment-owned recovery acknowledgment', () => {
     async (stage) => {
       const f = await confirmedBitcoinFixture()
       await recoveryFileStore(f.key, f.file)
+      // Stage downgrades are refused by the store; reset first to simulate an
+      // earlier-stage record for acknowledgment behavior.
+      clearBitcoinPayment(f.journal)
       saveBitcoinPayment(f.status, { ...f.journal, stage, receipt: { ...f.journal.receipt!, state: 'submitted' } })
       await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
       expect(f.snapshot).not.toHaveBeenCalled()
@@ -929,6 +932,35 @@ describe('concurrent Bitcoin payment journals', () => {
     clearBitcoinPayment(f.journal)
     expect(listSpendingBitcoin(f.status)).toEqual([])
     expect(readSpendingBitcoin(f.status)).toBeNull()
+  })
+  it('refuses stage regressions and receipt removal for the same operation', async () => {
+    const f = await bitcoinFixture(2)
+    saveBitcoinPayment(f.status, f.journal)
+    const prepared = { ...f.journal, plan: f.prepared, stage: 'prepared' as const }
+    saveBitcoinPayment(f.status, prepared)
+    expect(readSpendingBitcoin(f.status)?.stage).toBe('prepared')
+    // A stale writer must not regress the retained stage.
+    expect(() => saveBitcoinPayment(f.status, f.journal)).toThrow('newer than this update')
+    expect(readSpendingBitcoin(f.status)?.stage).toBe('prepared')
+    // Nor drop a retained receipt.
+    const c = await confirmedBitcoinFixture()
+    saveBitcoinPayment(c.status, c.journal)
+    expect(() => saveBitcoinPayment(c.status, { ...c.journal, receipt: undefined })).toThrow('cannot be removed')
+    expect(readSpendingBitcoin(c.status)?.receipt).toBeDefined()
+    expect(() => saveBitcoinPayment(c.status, { ...c.journal, stage: 'submitted' as const })).toThrow(
+      'newer than this update',
+    )
+    expect(readSpendingBitcoin(c.status)?.stage).toBe('confirmed')
+  })
+  it('names the offending operation when a record fails validation', async () => {
+    const f = await bitcoinFixture(2)
+    saveBitcoinPayment(f.status, f.journal)
+    const raw = JSON.parse(
+      localStorage.getItem(`vaulted:savings-setup:${f.status.vaultId}`)!,
+    ) as BitcoinPaymentJournal[]
+    raw[0]!.outputs = [{ script: `0014${'99'.repeat(20)}`, amountSats: 1 }]
+    localStorage.setItem(`vaulted:savings-setup:${f.status.vaultId}`, JSON.stringify(raw))
+    expect(() => listSpendingBitcoin(f.status)).toThrow(f.plan.operationId)
   })
   it('reads a legacy singleton record as one journal', async () => {
     const f = await bitcoinFixture(2)
