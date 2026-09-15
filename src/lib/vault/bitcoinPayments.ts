@@ -7,6 +7,7 @@ import { BitcoinPaymentError } from './bitcoinPaymentError'
 import { humanizeVaultError } from './humanize'
 import {
   BITCOIN_PAYMENT_EVENT,
+  listSpendingBitcoin,
   readSpendingBitcoin,
   type BitcoinPaymentJournal,
   type BitcoinPaymentOutput,
@@ -130,10 +131,20 @@ function createBitcoinPayments(session: SessionSource) {
     const epoch = generation
     try {
       const { status } = access()
-      const saved = readSpendingBitcoin(status)
-      if (!saved) return
-      if (saved.stage !== 'confirmed') await checkSpendingBitcoin(status, { operationId: saved.operationId, signal })
-      requireCurrent(epoch, signal)
+      // Every retained operation stays tracked: a submitted payment keeps
+      // refreshing while a newer draft is being built, and vice versa.
+      // Per-operation failures stay isolated.
+      const journals = listSpendingBitcoin(status)
+      if (!journals.length) return
+      for (const saved of journals) {
+        try {
+          if (saved.stage !== 'confirmed')
+            await checkSpendingBitcoin(status, { operationId: saved.operationId, signal })
+        } catch {
+          // This journal stays visible; the next refresh retries it.
+        }
+        requireCurrent(epoch, signal)
+      }
       if (!flight) await acknowledgeSpendingBitcoinRecovery(status, undefined, signal)
     } catch {
       // The journal remains visible and acknowledgment can resume on the next refresh.

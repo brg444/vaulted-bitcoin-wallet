@@ -8,7 +8,14 @@ import type { BitcoinPaymentJournal, SpendingBitcoinPlan } from './spendingBitco
 import { SPENDING_ONLY_TEMPLATE } from './spendingEnrollment'
 
 const api = vi.hoisted(() => ({ read: vi.fn(), send: vi.fn(), check: vi.fn(), cancel: vi.fn(), acknowledge: vi.fn() }))
-vi.mock('./spendingBitcoinStore', () => ({ readSpendingBitcoin: api.read, BITCOIN_PAYMENT_EVENT: 'bitcoin-journal' }))
+vi.mock('./spendingBitcoinStore', () => ({
+  readSpendingBitcoin: api.read,
+  listSpendingBitcoin: () => {
+    const journal = api.read()
+    return journal ? [structuredClone(journal)] : []
+  },
+  BITCOIN_PAYMENT_EVENT: 'bitcoin-journal',
+}))
 vi.mock('./spendingBitcoinFunding', () => ({
   sendSpendingToBitcoin: api.send,
   checkSpendingBitcoin: api.check,

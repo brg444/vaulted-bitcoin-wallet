@@ -45,11 +45,14 @@ import { readCommittedRecoveryCoverage, type CommittedRecoveryCoverage } from '.
 import { fetchVaultWalletVtxoSnapshot, withVaultWalletState } from './vtxo/walletWorker'
 import {
   bitcoinPlanOutputs,
+  bitcoinReservedInputs,
+  listSpendingBitcoin,
   validateBitcoinOutputs,
   type BitcoinPaymentOutput,
   savingsSetupDigest as digest,
   validateSpendingBitcoinPlan,
   readSpendingBitcoin,
+  readSpendingBitcoinById,
   saveBitcoinPayment,
   clearBitcoinPayment,
   validateBitcoinReceipt,
@@ -99,12 +102,17 @@ function requireBitcoinCommand(journal: BitcoinPaymentJournal | null, scope?: Bi
   if (scope?.operationId !== undefined && journal?.operationId !== scope.operationId)
     throw new Error('The saved Bitcoin payment changed. Reopen its current details.')
 }
+/** The journal a scoped command addresses; unscoped callers get the latest. */
+function scopedBitcoinJournal(status: VaultStatus, scope?: BitcoinCommandScope): BitcoinPaymentJournal | null {
+  if (scope?.operationId !== undefined) return readSpendingBitcoinById(status, scope.operationId)
+  return readSpendingBitcoin(status)
+}
 export async function checkSpendingBitcoin(
   status: VaultStatus,
   scope?: BitcoinCommandScope,
 ): Promise<BitcoinPaymentResponse | null> {
   return withVtxoSendLock(status.vaultId, async () => {
-    const journal = readSpendingBitcoin(status)
+    const journal = scopedBitcoinJournal(status, scope)
     requireBitcoinCommand(journal, scope)
     if (!journal) return null
     const body = { vaultId: journal.vaultId, operationId: journal.operationId }
@@ -135,10 +143,10 @@ export async function checkSpendingBitcoin(
       journal.prepareRequest!.expiresAt * 1000 <= Date.now() - 15000 &&
       (journal.deleteIntent || result.state === 'prepared' || result.state === 'register_authorized')
     ) {
-      requireBitcoinCommand(readSpendingBitcoin(status), scope)
+      requireBitcoinCommand(scopedBitcoinJournal(status, scope), scope)
       result = await bitcoinPaymentClient.release({ ...body, deleteIntent: journal.deleteIntent })
     }
-    retainBitcoinOutcome(status, result)
+    retainBitcoinOutcome(status, journal, result)
     return result
   })
 }
@@ -151,48 +159,66 @@ export async function acknowledgeSpendingBitcoinRecovery(
 ) {
   return withVtxoSendLock(status.vaultId, async () => {
     signal?.throwIfAborted()
-    const journal = readSpendingBitcoin(status)
-    if (!journal || journal.stage !== 'confirmed') return false
-    const plan = journal.plan!.plan
-    const receipt = journal.receipt!
-    const outflow = bitcoinPlanOutputs(plan).reduce((sum, output) => sum + output.amountSats, 0) + plan.feeSats
+    const confirmed = listSpendingBitcoin(status).filter((journal) => journal.stage === 'confirmed')
+    if (!confirmed.length) return false
+    // Shared observations stay outside per-journal isolation: a failed
+    // history or coverage read aborts the pass exactly as before, while one
+    // journal's mismatch never blocks another's retirement.
     const snapshot = await fetchVaultWalletVtxoSnapshot(status)
-    if (
-      !snapshot.history.some(
-        (row) =>
-          row.account === 'spend' &&
-          row.type === 'sent' &&
-          row.txid === receipt.commitmentTxid &&
-          row.amount === outflow,
-      )
-    )
-      return false
     // Read durable evidence again after history observation. This also resumes
     // acknowledgment after a reload between recovery commit and notification.
     signal?.throwIfAborted()
     const coverage = await readCommittedRecoveryCoverage(status)
-    if (
-      !coverage ||
-      (evidence &&
-        (evidence.vaultId !== coverage.vaultId ||
-          evidence.network !== coverage.network ||
-          evidence.descriptorHash !== coverage.descriptorHash ||
-          evidence.fileDigest !== coverage.fileDigest)) ||
-      !coverage.outputs.some(
-        (coin) =>
-          coin.txid === receipt.receiverTxid &&
-          coin.vout === receipt.receiverVout &&
-          coin.value === plan.changeSats &&
-          coin.script === status.spendingArkScript,
-      )
-    )
-      return false
-    // A stale observation cannot retire a replacement or rewritten operation.
-    if (JSON.stringify(readSpendingBitcoin(status)) !== JSON.stringify(journal)) return false
-    signal?.throwIfAborted()
-    clearBitcoinPayment(journal)
-    return true
+    let retired = false
+    for (const journal of confirmed) {
+      try {
+        if (await acknowledgeOneConfirmed(status, journal, snapshot, coverage, evidence, signal)) retired = true
+      } catch {
+        // Next journal; acknowledgment resumes on a later pass.
+      }
+    }
+    return retired
   })
+}
+async function acknowledgeOneConfirmed(
+  status: VaultStatus,
+  journal: BitcoinPaymentJournal,
+  snapshot: Awaited<ReturnType<typeof fetchVaultWalletVtxoSnapshot>>,
+  coverage: Awaited<ReturnType<typeof readCommittedRecoveryCoverage>>,
+  evidence: CommittedRecoveryCoverage | undefined,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const plan = journal.plan!.plan
+  const receipt = journal.receipt!
+  const outflow = bitcoinPlanOutputs(plan).reduce((sum, output) => sum + output.amountSats, 0) + plan.feeSats
+  if (
+    !snapshot.history.some(
+      (row) =>
+        row.account === 'spend' && row.type === 'sent' && row.txid === receipt.commitmentTxid && row.amount === outflow,
+    )
+  )
+    return false
+  if (
+    !coverage ||
+    (evidence &&
+      (evidence.vaultId !== coverage.vaultId ||
+        evidence.network !== coverage.network ||
+        evidence.descriptorHash !== coverage.descriptorHash ||
+        evidence.fileDigest !== coverage.fileDigest)) ||
+    !coverage.outputs.some(
+      (coin) =>
+        coin.txid === receipt.receiverTxid &&
+        coin.vout === receipt.receiverVout &&
+        coin.value === plan.changeSats &&
+        coin.script === status.spendingArkScript,
+    )
+  )
+    return false
+  // A stale observation cannot retire a replacement or rewritten operation.
+  if (JSON.stringify(readSpendingBitcoinById(status, journal.operationId)) !== JSON.stringify(journal)) return false
+  signal?.throwIfAborted()
+  clearBitcoinPayment(journal)
+  return true
 }
 /** Explicit cancellation also works before the expiry cleanup runs. */
 export async function cancelSpendingBitcoin(
@@ -200,7 +226,7 @@ export async function cancelSpendingBitcoin(
   scope?: BitcoinCommandScope,
 ): Promise<BitcoinPaymentResponse | null> {
   return withVtxoSendLock(status.vaultId, async () => {
-    const journal = readSpendingBitcoin(status)
+    const journal = scopedBitcoinJournal(status, scope)
     requireBitcoinCommand(journal, scope)
     if (!journal) return null
     if (journal.final || journal.receipt?.commitmentTxid)
@@ -210,7 +236,7 @@ export async function cancelSpendingBitcoin(
       operationId: journal.operationId,
       deleteIntent: journal.deleteIntent,
     })
-    retainBitcoinOutcome(status, result)
+    retainBitcoinOutcome(status, journal, result)
     return result
   })
 }
@@ -238,12 +264,12 @@ class SpendingBitcoinProvider extends RestArkProvider {
     this.signal.throwIfAborted()
     if (forfeits.length !== 1 || commitment || !this.finalEvidence)
       throw new Error('Unexpected Bitcoin payment finalization')
-    const saved = readSpendingBitcoin(this.status)
-    if (!saved || saved.operationId !== this.journal.operationId) throw new Error('Bitcoin payment journal changed')
+    const saved = readSpendingBitcoinById(this.status, this.journal.operationId)
+    if (!saved) throw new Error('Bitcoin payment journal changed')
     this.journal = saved
     const evidence = { ...this.finalEvidence, ownerForfeitPsbt: serializeBitcoinForfeit(forfeits[0]) }
     this.journal = { ...this.journal, stage: 'finalizing', final: evidence }
-    saveBitcoinPayment(this.journal)
+    saveBitcoinPayment(this.status, this.journal)
     const result = await bitcoinPaymentClient.final({
       vaultId: this.journal.vaultId,
       operationId: this.journal.operationId,
@@ -253,17 +279,16 @@ class SpendingBitcoinProvider extends RestArkProvider {
       throw new Error('Payment outcome is still being checked. Keep this wallet open or check again later.')
     validateBitcoinReceipt(result, this.journal, this.status)
     this.journal = { ...this.journal, stage: 'submitted', receipt: result }
-    saveBitcoinPayment(this.journal)
+    saveBitcoinPayment(this.status, this.journal)
   }
   override async registerIntent(intent: Parameters<RestArkProvider['registerIntent']>[0]): Promise<string> {
     this.signal.throwIfAborted()
     await waitForVaultSettlementStream(`${this.journal.txid}:${this.journal.vout}`)
     this.signal.throwIfAborted()
-    const saved = readSpendingBitcoin(this.status)
-    if (!saved || saved.operationId !== this.journal.operationId || !saved.deleteIntent)
-      throw new Error('Bitcoin payment cancellation proof is unavailable')
+    const saved = readSpendingBitcoinById(this.status, this.journal.operationId)
+    if (!saved || !saved.deleteIntent) throw new Error('Bitcoin payment cancellation proof is unavailable')
     this.journal = { ...saved, stage: 'registering' }
-    saveBitcoinPayment(this.journal)
+    saveBitcoinPayment(this.status, this.journal)
     const result = await bitcoinPaymentClient.register({
       vaultId: this.journal.vaultId,
       operationId: this.journal.operationId,
@@ -271,7 +296,7 @@ class SpendingBitcoinProvider extends RestArkProvider {
       message: JSON.stringify(intent.message),
       ...this.authorization,
     })
-    retainBitcoinOutcome(this.status, result)
+    retainBitcoinOutcome(this.status, this.journal, result)
     if (terminal(result.state)) {
       const retryAt = rememberBitcoinEligibility(
         eligibilityScope(this.status),
@@ -286,7 +311,7 @@ class SpendingBitcoinProvider extends RestArkProvider {
         'Payment registration is still being checked. Open the pending payment before trying again.',
       )
     this.journal = { ...this.journal, stage: 'registered' }
-    saveBitcoinPayment(this.journal)
+    saveBitcoinPayment(this.status, this.journal)
     return result.intentId
   }
   override getEventStream(signal?: AbortSignal, topics: string[] = []) {
@@ -334,24 +359,43 @@ export async function sendSpendingToBitcoin(
   await vaultLatency.measure('bitcoin-setup', () => supportsSpendingBitcoin(status))
   signal?.throwIfAborted()
   if (enrollment.vaultId !== status.vaultId) throw new Error('Sign in again to send from Spending')
-  progress('Waiting for exclusive Spending access')
-  return withVtxoSendLock(status.vaultId, async () => {
+  const abort = new AbortController()
+  const cancel = () => abort.abort(signal?.reason)
+  signal?.addEventListener('abort', cancel, { once: true })
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  let stream: AsyncIterableIterator<import('@arkade-os/sdk').SettlementEvent> | undefined
+  const visibility = () => consoleLog(`Bitcoin payment page: ${document.visibilityState}`)
+  const pagehide = () => consoleLog('Bitcoin payment page closed before the signing session finished')
+  document.addEventListener('visibilitychange', visibility)
+  window.addEventListener('pagehide', pagehide)
+  const unlocker = createVtxoSpendUnlocker(enrollment, bound, newVtxoSpendChallenge(), undefined, signal)
+  // The outer try covers the ceremony too, so the finally below always
+  // releases listeners, the batch stream, and the ceremony session.
+  // `journal` stays null until construction saves the reservation; recovery
+  // below therefore only ever addresses this attempt's own operation.
+  let journal: BitcoinPaymentJournal | null = null
+  // Assigned by the ceremony below; every later use is unreachable otherwise
+  // because a failed ceremony always throws.
+  let auth!: VtxoSpendPasskey
+  try {
+    // The credential ceremony runs before network setup so the platform sees
+    // a fresh user activation; authorization is operation-generic and the
+    // exact plan is still validated before approval.
+    progress('Unlock Spending with your passkey')
+    try {
+      auth = await vaultLatency.measure('passkey', () => unlocker.unlock())
+    } catch (error) {
+      throw bitcoinPaymentCredentialError(error)
+    }
     signal?.throwIfAborted()
-    const prior = readSpendingBitcoin(status)
-    if (prior) throw new Error('Check the pending Bitcoin payment before starting another')
-    return withVaultWalletState(status, async ({ contracts }) => {
+    progress('Waiting for exclusive Spending access')
+    // The lock covers conflict-check, selection, and the preparing save only:
+    // concurrent tabs serialize construction, while batch participation for an
+    // already-saved operation never blocks a new independent send.
+    const constructed = await withVtxoSendLock(status.vaultId, async () => {
       signal?.throwIfAborted()
-      const unlocker = createVtxoSpendUnlocker(enrollment, bound, newVtxoSpendChallenge(), undefined, signal)
-      const abort = new AbortController()
-      const cancel = () => abort.abort(signal?.reason)
-      signal?.addEventListener('abort', cancel, { once: true })
-      let timeout: ReturnType<typeof setTimeout> | undefined
-      let stream: AsyncIterableIterator<import('@arkade-os/sdk').SettlementEvent> | undefined
-      const visibility = () => consoleLog(`Bitcoin payment page: ${document.visibilityState}`)
-      const pagehide = () => consoleLog('Bitcoin payment page closed before the signing session finished')
-      document.addEventListener('visibilitychange', visibility)
-      window.addEventListener('pagehide', pagehide)
-      try {
+      return withVaultWalletState(status, async ({ contracts }) => {
+        signal?.throwIfAborted()
         progress('Checking funds for this Bitcoin payment')
         const script = vaultPolicyV1ScriptFromStatus(status)
         const url = vaultOperatorOrigin(status.network)
@@ -361,6 +405,7 @@ export async function sendSpendingToBitcoin(
         })
         const known = await contracts.getContractsWithVtxos({ script: context.scriptPubKey })
         signal?.throwIfAborted()
+        const reserved = bitcoinReservedInputs(status)
         const candidates = known
           .flatMap((contract) => contract.vtxos)
           .filter(
@@ -379,20 +424,22 @@ export async function sendSpendingToBitcoin(
               !v.assets?.length &&
               v.commitmentTxIds?.length &&
               v.expiresAt &&
-              v.expiresAt.getTime() > Date.now(),
+              v.expiresAt.getTime() > Date.now() &&
+              !reserved.outpoints.has(`${v.txid}:${v.vout}`) &&
+              !reserved.commitments.has(v.txid),
           )
         const coin = chooseBitcoinInput(
           eligibilityScope(status),
           candidates,
           outputs.reduce((sum, output) => sum + output.amountSats, 0),
         )
-        if (!coin) throw new Error('No live Spending output is available for this Bitcoin payment')
-        progress('Unlock Spending with your passkey')
-        let auth: VtxoSpendPasskey
-        try {
-          auth = await vaultLatency.measure('passkey', () => unlocker.unlock())
-        } catch (error) {
-          throw bitcoinPaymentCredentialError(error)
+        if (!coin) {
+          if (reserved.outpoints.size)
+            throw new BitcoinPaymentError(
+              'pending',
+              'The other Spending outputs are reserved by a payment that is still being checked. Open it in Recent to check its status before trying again.',
+            )
+          throw new Error('No live Spending output is available for this Bitcoin payment')
         }
         signal?.throwIfAborted()
         let journal: BitcoinPaymentJournal = {
@@ -420,221 +467,224 @@ export async function sendSpendingToBitcoin(
           ownerSignature: hex.encode(schnorr.sign(hex.decode(digest('bitcoin-prepare', prepare)), auth.phoneSecret)),
         }
         journal = { ...journal, prepareRequest }
-        saveBitcoinPayment(journal)
-        const prepared = validateSpendingBitcoinPlan(await bitcoinPaymentClient.prepare(prepareRequest), status)
-        const plan = prepared.plan
-        if (
-          plan.operationId !== journal.operationId ||
-          plan.txid !== coin.txid ||
-          plan.vout !== coin.vout ||
-          plan.valueSats !== coin.value ||
-          JSON.stringify(plan.outputs) !== JSON.stringify(outputs)
-        )
-          throw new Error('Payment input changed')
-        journal = { ...journal, stage: 'prepared', plan: prepared }
-        saveBitcoinPayment(journal)
-        if (signal?.aborted || !(await approve(plan))) {
-          const released = await bitcoinPaymentClient.release({
-            vaultId: journal.vaultId,
-            operationId: journal.operationId,
-          })
-          if (terminal(released.state)) clearBitcoinPayment(journal)
-          return released
-        }
-        signal?.throwIfAborted()
-        if (plan.registerExpireAt * 1000 - Date.now() < 30_000)
-          throw new Error('Payment approval expired. Check this payment before trying again.')
-        progress('Sending to Bitcoin. Keep this page open.')
-        installVaultSettlementEventSource()
-        const provider = cancellableSdkCapability(
-          new SpendingBitcoinProvider(
-            url,
-            journal,
-            status,
-            {
-              assertion: auth.assertion,
-              directSig: vtxoSpendDirectSig(auth, prepared.planDigest),
-            },
-            abort.signal,
-            coin.expiresAt!,
-          ),
-          abort.signal,
-        )
-        const identity = cancellableSdkCapability(SingleKey.fromPrivateKey(auth.phoneSecret), abort.signal)
-        const settlement = await createSettlementSession({
-          identity,
-          contracts,
-          arkProvider: provider,
-          network: networkPins(status.network).sdkNetwork,
-        })
-        signal?.throwIfAborted()
-        const address = new ArkAddress(
-          hex.decode(context.operatorPub),
-          script.tweakedPublicKey,
-          networkPins(status.network).arkHrp,
-        ).encode()
-        const input: ExtendedVirtualCoin = {
-          ...coin,
-          forfeitTapLeafScript: script.forfeit(),
-          intentTapLeafScript: script.forfeit(),
-          tapTree: script.encode(),
-        }
-        // Retain the owner's exact non-monetary cancellation before registration.
-        // It remains usable after a reload without another passkey ceremony.
-        const deletion = await settlement.makeDeleteIntentSignature([input])
-        journal = { ...journal, deleteIntent: { proof: deletion.proof, message: JSON.stringify(deletion.message) } }
-        saveBitcoinPayment(journal)
-        // The same signing session must advertise the tree key and sign the tree.
-        // wallet.settle() hides this protected-flow boundary and previously caused
-        // Guardian finalization to miss the Operator's batch deadline.
-        signal?.throwIfAborted()
-        const session = identity.signerSession()
-        const publicKey = hex.encode(await session.getPublicKey())
-        signal?.throwIfAborted()
-        const intent = await settlement.makeRegisterIntentSignature(
-          [input],
-          [
-            { amount: BigInt(plan.changeSats), script: script.pkScript },
-            ...bitcoinPlanOutputs(plan).map((output) => ({
-              amount: BigInt(output.amountSats),
-              script: hex.decode(output.script),
-            })),
-          ],
-          outputs.map((_, i) => i + 1),
-          [publicKey],
-          undefined,
-          plan.registerExpireAt,
-        )
-        signal?.throwIfAborted()
-        timeout = setTimeout(
-          () => {
-            consoleLog('Bitcoin payment signing deadline reached')
-            abort.abort()
-          },
-          Math.max(1000, plan.registerExpireAt * 1000 - Date.now() + 30_000),
-        )
-        stream = provider.getEventStream(abort.signal, [publicKey, `${coin.txid}:${coin.vout}`])
-        const first = stream.next()
-        void first.catch(() => {})
-        const source = stream
-        const primed = (async function* () {
-          const next = await first
-          if (!next.done) yield next.value
-          yield* source
-        })()
-        signal?.throwIfAborted()
-        const intentId = await provider.registerIntent(intent)
-        let handler = scopeBitcoinBatchFailures(
-          settlement.createBatchHandler(
-            intentId,
-            [input],
-            [
-              { address, amount: plan.changeSats },
-              ...bitcoinPlanOutputs(plan).map((output) => ({
-                address: Address(vaultAddressNetwork(status.network)).encode(
-                  OutScript.decode(hex.decode(output.script)),
-                ),
-                amount: output.amountSats,
-              })),
-            ],
-            session,
-          ),
-        )
-        let batchExpiry = 0
-        let unsignedTree: TxTreeNode[] = []
-        const signing = handler.onTreeSigningStarted
-        handler.onTreeSigningStarted = async (event, tree) => {
-          abort.signal.throwIfAborted()
-          const decision = await signing(event, tree)
-          if (!decision.skip) unsignedTree = flattenTree(tree)
-          return decision
-        }
-        const start = handler.onBatchStarted
-        handler.onBatchStarted = async (event) => {
-          const decision = await start(event)
-          if (!decision.skip) batchExpiry = Number(event.batchExpiry)
-          return decision
-        }
-        const finalize = handler.onBatchFinalization
-        handler.onBatchFinalization = async (event, tree, connectors) => {
-          abort.signal.throwIfAborted()
-          if (!tree || !connectors || !Number.isSafeInteger(batchExpiry) || batchExpiry <= 0)
-            throw new Error('Payment recovery paths are incomplete')
-          provider.finalEvidence = {
-            batchId: event.id,
-            batchExpiry,
-            commitmentPsbt: event.commitmentTx,
-            vtxoTree: serializeBitcoinBatchTree(tree, unsignedTree),
-            connectors: flattenTree(connectors),
-          }
-          await finalize(event, tree, connectors)
-        }
-        handler = traceBitcoinBatch(handler, () =>
-          markVaultSettlementStreamParticipating(`${journal.txid}:${journal.vout}`),
-        )
-        const commitment = await Batch.join(primed, handler, {
-          abortController: abort,
-          eventCallback: async (event) => {
-            if (
-              [
-                'batch_started',
-                'tree_signing_started',
-                'batch_finalization',
-                'batch_finalized',
-                'batch_failed',
-              ].includes(event.type)
-            )
-              consoleLog(`Bitcoin payment event received: ${event.type} (${event.id})`)
-          },
-        })
-        if (!commitment || !/^[a-f0-9]{64}$/.test(commitment))
-          throw new Error(
-            'The batch connection ended before Bitcoin payment completed. Check the pending payment before trying again.',
-          )
-        progress('Waiting for Bitcoin confirmation')
-        const receipt = await bitcoinPaymentClient.status({
-          vaultId: journal.vaultId,
-          operationId: journal.operationId,
-        })
-        retainBitcoinOutcome(status, receipt)
-        if (!['submitted', 'confirmed'].includes(receipt.state))
-          throw new BitcoinPaymentError(
-            'pending',
-            'The batch completed. Its Bitcoin payment receipt is still being checked.',
-          )
-        return receipt
-      } catch (error) {
-        consoleError(error, 'Bitcoin payment lifecycle')
-        if (error instanceof BitcoinPaymentError) throw error
-        const saved = readSpendingBitcoin(status)
-        if (saved) {
-          const rejected = await prepareRejection(status, saved, error)
-          if (rejected) throw rejected
-          const receipt = await bitcoinPaymentClient
-            .status({ vaultId: saved.vaultId, operationId: saved.operationId })
-            .catch(() => null)
-          if (receipt) {
-            retainBitcoinOutcome(status, receipt)
-            if (['submitted', 'confirmed'].includes(receipt.state)) return receipt
-            if (terminal(receipt.state)) throw bitcoinPaymentRejected(receipt.reason)
-          }
-          throw new BitcoinPaymentError(
-            'pending',
-            'This payment has not completed. Open it in Recent to check its status before trying again.',
-          )
-        }
-        throw error
-      } finally {
-        signal?.removeEventListener('abort', cancel)
-        document.removeEventListener('visibilitychange', visibility)
-        window.removeEventListener('pagehide', pagehide)
-        if (timeout) clearTimeout(timeout)
-        abort.abort()
-        await stream?.return?.().catch(() => {})
-        unlocker.dispose()
-      }
+        saveBitcoinPayment(status, journal)
+        // Construction ends here: the reservation is persisted and the lock
+        // is released, so batch participation for a saved operation never
+        // blocks construction of an independent send.
+        return { journal, prepareRequest, coin, contracts, script, url }
+      })
     })
-  })
+    const { journal: constructedJournal, prepareRequest, coin, contracts, script, url } = constructed
+    journal = constructedJournal
+    const prepared = validateSpendingBitcoinPlan(await bitcoinPaymentClient.prepare(prepareRequest), status)
+    const plan = prepared.plan
+    if (
+      plan.operationId !== journal.operationId ||
+      plan.txid !== coin.txid ||
+      plan.vout !== coin.vout ||
+      plan.valueSats !== coin.value ||
+      JSON.stringify(plan.outputs) !== JSON.stringify(outputs)
+    )
+      throw new Error('Payment input changed')
+    journal = { ...journal, stage: 'prepared', plan: prepared }
+    saveBitcoinPayment(status, journal)
+    if (signal?.aborted || !(await approve(plan))) {
+      const released = await bitcoinPaymentClient.release({
+        vaultId: journal.vaultId,
+        operationId: journal.operationId,
+      })
+      if (terminal(released.state)) clearBitcoinPayment(journal)
+      return released
+    }
+    signal?.throwIfAborted()
+    if (plan.registerExpireAt * 1000 - Date.now() < 30_000)
+      throw new Error('Payment approval expired. Check this payment before trying again.')
+    progress('Sending to Bitcoin. Keep this page open.')
+    installVaultSettlementEventSource()
+    const provider = cancellableSdkCapability(
+      new SpendingBitcoinProvider(
+        url,
+        journal,
+        status,
+        {
+          assertion: auth.assertion,
+          directSig: vtxoSpendDirectSig(auth, prepared.planDigest),
+        },
+        abort.signal,
+        coin.expiresAt!,
+      ),
+      abort.signal,
+    )
+    const identity = cancellableSdkCapability(SingleKey.fromPrivateKey(auth.phoneSecret), abort.signal)
+    const settlement = await createSettlementSession({
+      identity,
+      contracts,
+      arkProvider: provider,
+      network: networkPins(status.network).sdkNetwork,
+    })
+    signal?.throwIfAborted()
+    const address = new ArkAddress(
+      hex.decode(context.operatorPub),
+      script.tweakedPublicKey,
+      networkPins(status.network).arkHrp,
+    ).encode()
+    const input: ExtendedVirtualCoin = {
+      ...coin,
+      forfeitTapLeafScript: script.forfeit(),
+      intentTapLeafScript: script.forfeit(),
+      tapTree: script.encode(),
+    }
+    // Retain the owner's exact non-monetary cancellation before registration.
+    // It remains usable after a reload without another passkey ceremony.
+    const deletion = await settlement.makeDeleteIntentSignature([input])
+    journal = { ...journal, deleteIntent: { proof: deletion.proof, message: JSON.stringify(deletion.message) } }
+    saveBitcoinPayment(status, journal)
+    // The same signing session must advertise the tree key and sign the tree.
+    // wallet.settle() hides this protected-flow boundary and previously caused
+    // Guardian finalization to miss the Operator's batch deadline.
+    signal?.throwIfAborted()
+    const session = identity.signerSession()
+    const publicKey = hex.encode(await session.getPublicKey())
+    signal?.throwIfAborted()
+    const intent = await settlement.makeRegisterIntentSignature(
+      [input],
+      [
+        { amount: BigInt(plan.changeSats), script: script.pkScript },
+        ...bitcoinPlanOutputs(plan).map((output) => ({
+          amount: BigInt(output.amountSats),
+          script: hex.decode(output.script),
+        })),
+      ],
+      outputs.map((_, i) => i + 1),
+      [publicKey],
+      undefined,
+      plan.registerExpireAt,
+    )
+    signal?.throwIfAborted()
+    timeout = setTimeout(
+      () => {
+        consoleLog('Bitcoin payment signing deadline reached')
+        abort.abort()
+      },
+      Math.max(1000, plan.registerExpireAt * 1000 - Date.now() + 30_000),
+    )
+    stream = provider.getEventStream(abort.signal, [publicKey, `${coin.txid}:${coin.vout}`])
+    const first = stream.next()
+    void first.catch(() => {})
+    const source = stream
+    const primed = (async function* () {
+      const next = await first
+      if (!next.done) yield next.value
+      yield* source
+    })()
+    signal?.throwIfAborted()
+    const intentId = await provider.registerIntent(intent)
+    let handler = scopeBitcoinBatchFailures(
+      settlement.createBatchHandler(
+        intentId,
+        [input],
+        [
+          { address, amount: plan.changeSats },
+          ...bitcoinPlanOutputs(plan).map((output) => ({
+            address: Address(vaultAddressNetwork(status.network)).encode(OutScript.decode(hex.decode(output.script))),
+            amount: output.amountSats,
+          })),
+        ],
+        session,
+      ),
+    )
+    let batchExpiry = 0
+    let unsignedTree: TxTreeNode[] = []
+    const signing = handler.onTreeSigningStarted
+    handler.onTreeSigningStarted = async (event, tree) => {
+      abort.signal.throwIfAborted()
+      const decision = await signing(event, tree)
+      if (!decision.skip) unsignedTree = flattenTree(tree)
+      return decision
+    }
+    const start = handler.onBatchStarted
+    handler.onBatchStarted = async (event) => {
+      const decision = await start(event)
+      if (!decision.skip) batchExpiry = Number(event.batchExpiry)
+      return decision
+    }
+    const finalize = handler.onBatchFinalization
+    handler.onBatchFinalization = async (event, tree, connectors) => {
+      abort.signal.throwIfAborted()
+      if (!tree || !connectors || !Number.isSafeInteger(batchExpiry) || batchExpiry <= 0)
+        throw new Error('Payment recovery paths are incomplete')
+      provider.finalEvidence = {
+        batchId: event.id,
+        batchExpiry,
+        commitmentPsbt: event.commitmentTx,
+        vtxoTree: serializeBitcoinBatchTree(tree, unsignedTree),
+        connectors: flattenTree(connectors),
+      }
+      await finalize(event, tree, connectors)
+    }
+    handler = traceBitcoinBatch(handler, () =>
+      markVaultSettlementStreamParticipating(`${constructedJournal.txid}:${constructedJournal.vout}`),
+    )
+    const commitment = await Batch.join(primed, handler, {
+      abortController: abort,
+      eventCallback: async (event) => {
+        if (
+          ['batch_started', 'tree_signing_started', 'batch_finalization', 'batch_finalized', 'batch_failed'].includes(
+            event.type,
+          )
+        )
+          consoleLog(`Bitcoin payment event received: ${event.type} (${event.id})`)
+      },
+    })
+    if (!commitment || !/^[a-f0-9]{64}$/.test(commitment))
+      throw new Error(
+        'The batch connection ended before Bitcoin payment completed. Check the pending payment before trying again.',
+      )
+    progress('Waiting for Bitcoin confirmation')
+    const receipt = await bitcoinPaymentClient.status({
+      vaultId: journal.vaultId,
+      operationId: journal.operationId,
+    })
+    retainBitcoinOutcome(status, journal, receipt)
+    if (!['submitted', 'confirmed'].includes(receipt.state))
+      throw new BitcoinPaymentError(
+        'pending',
+        'The batch completed. Its Bitcoin payment receipt is still being checked.',
+      )
+    return receipt
+  } catch (error) {
+    consoleError(error, 'Bitcoin payment lifecycle')
+    if (error instanceof BitcoinPaymentError) throw error
+    // Scope recovery to this operation: another tab may have saved its
+    // own journal since construction. A pre-save construction failure
+    // has no journal and rethrows untouched.
+    const saved = journal ? readSpendingBitcoinById(status, journal.operationId) : null
+    if (saved) {
+      const rejected = await prepareRejection(status, saved, error)
+      if (rejected) throw rejected
+      const receipt = await bitcoinPaymentClient
+        .status({ vaultId: saved.vaultId, operationId: saved.operationId })
+        .catch(() => null)
+      if (receipt) {
+        retainBitcoinOutcome(status, saved, receipt)
+        if (['submitted', 'confirmed'].includes(receipt.state)) return receipt
+        if (terminal(receipt.state)) throw bitcoinPaymentRejected(receipt.reason)
+      }
+      throw new BitcoinPaymentError(
+        'pending',
+        'This payment has not completed. Open it in Recent to check its status before trying again.',
+      )
+    }
+    throw error
+  } finally {
+    signal?.removeEventListener('abort', cancel)
+    document.removeEventListener('visibilitychange', visibility)
+    window.removeEventListener('pagehide', pagehide)
+    if (timeout) clearTimeout(timeout)
+    abort.abort()
+    await stream?.return?.().catch(() => {})
+    unlocker.dispose()
+  }
 }
 
 /**
@@ -667,13 +717,11 @@ async function prepareRejection(
   return bitcoinPaymentRejected(error.message)
 }
 
-function retainBitcoinOutcome(status: VaultStatus, result: BitcoinPaymentResponse) {
-  const journal = readSpendingBitcoin(status)
-  if (!journal) return
+function retainBitcoinOutcome(status: VaultStatus, journal: BitcoinPaymentJournal, result: BitcoinPaymentResponse) {
   if (terminal(result.state)) clearBitcoinPayment(journal)
   else if (result.commitmentTxid) {
     validateBitcoinReceipt(result, journal, status)
-    saveBitcoinPayment({
+    saveBitcoinPayment(status, {
       ...journal,
       receipt: result,
       ...(result.state === 'confirmed' ? { stage: 'confirmed' as const } : {}),

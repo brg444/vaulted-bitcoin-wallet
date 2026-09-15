@@ -34,6 +34,11 @@ import { sharedSpendingEnrollment, sharedSpendingStatus } from './vtxo/testdata/
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
 import { scalarSecret } from './program/fixtures'
 import {
+  bitcoinReservedInputs,
+  clearBitcoinPayment,
+  listSpendingBitcoin,
+  prepareFacts,
+  readSpendingBitcoinById,
   savingsSetupDigest,
   validateBitcoinOutputs,
   saveBitcoinPayment,
@@ -156,7 +161,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
   it('binds destination, fee, enrollment, outputs and signed prepare expiry', async () => {
     const f = await bitcoinFixture(2)
     expect(validateSpendingBitcoinPlan(f.prepared, f.status)).toEqual(f.prepared)
-    saveBitcoinPayment({ ...f.journal, plan: f.prepared })
+    saveBitcoinPayment(f.status, { ...f.journal, plan: f.prepared })
     expect(readSpendingBitcoin(f.status)?.plan).toEqual(f.prepared)
     for (const change of [
       { reserveScript: '0014' + 'dd'.repeat(20) },
@@ -172,13 +177,13 @@ describe('Bitcoin payment binding and lifecycle', () => {
       { expiresAt: f.plan.registerExpireAt + 1 },
       { ownerSignature: '00'.repeat(64) },
     ]) {
-      saveBitcoinPayment({ ...f.journal, prepareRequest: { ...f.journal.prepareRequest!, ...change } })
+      saveBitcoinPayment(f.status, { ...f.journal, prepareRequest: { ...f.journal.prepareRequest!, ...change } })
       expect(() => readSpendingBitcoin(f.status)).toThrow('authorization changed')
     }
   })
   it('checks a lost prepare without replaying it or cancelling it', async () => {
     const f = await bitcoinFixture(2)
-    saveBitcoinPayment(f.journal)
+    saveBitcoinPayment(f.status, f.journal)
     vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'not_found' })
     const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare')
     const release = vi.spyOn(bitcoinPaymentClient, 'release')
@@ -194,7 +199,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
     'unexpired status %s never requests cancellation',
     async (state) => {
       const f = await bitcoinFixture(2)
-      saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered' })
+      saveBitcoinPayment(f.status, { ...f.journal, plan: f.prepared, stage: 'registered' })
       vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state })
       const release = vi.spyOn(bitcoinPaymentClient, 'release')
       expect((await checkSpendingBitcoin(f.status))?.state).toBe(state)
@@ -207,7 +212,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
     async (state) => {
       const f = await bitcoinFixture(2)
       const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
-      saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
+      saveBitcoinPayment(f.status, { ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
       vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 15) * 1000)
       vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'registered' })
       const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state })
@@ -224,7 +229,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
     'expired status %s does not infer that final submission failed',
     async (state) => {
       const f = await bitcoinFixture(2)
-      saveBitcoinPayment({
+      saveBitcoinPayment(f.status, {
         ...f.journal,
         plan: f.prepared,
         stage: 'registered',
@@ -242,7 +247,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
   it('asks Guardian to release an expired final authorization that never reached dispatch', async () => {
     const f = await bitcoinFixture(2)
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
-    saveBitcoinPayment({
+    saveBitcoinPayment(f.status, {
       ...f.journal,
       plan: f.prepared,
       stage: 'finalizing',
@@ -263,21 +268,21 @@ describe('Bitcoin payment binding and lifecycle', () => {
   it('retains an expired registration after cancellation transport failure or missing owner proof', async () => {
     const f = await bitcoinFixture(2)
     const saved = { ...f.journal, plan: f.prepared, stage: 'registered' as const }
-    saveBitcoinPayment(saved)
+    saveBitcoinPayment(f.status, saved)
     vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
     vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'registered' })
     const release = vi.spyOn(bitcoinPaymentClient, 'release').mockRejectedValue(new Error('connection reset'))
     await checkSpendingBitcoin(f.status)
     expect(release).not.toHaveBeenCalled()
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
-    saveBitcoinPayment({ ...saved, deleteIntent: deletion })
+    saveBitcoinPayment(f.status, { ...saved, deleteIntent: deletion })
     await expect(checkSpendingBitcoin(f.status)).rejects.toThrow('connection reset')
     expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deletion)
   })
   it('explicit cancellation uses the retained proof and keeps ambiguous funds reserved', async () => {
     const f = await bitcoinFixture(2)
     const deletion = { proof: 'public-test-proof', message: '{"type":"delete","expire_at":0}' }
-    saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
+    saveBitcoinPayment(f.status, { ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent: deletion })
     const release = vi.spyOn(bitcoinPaymentClient, 'release').mockResolvedValue({ state: 'uncertain' })
     expect((await cancelSpendingBitcoin(f.status))?.state).toBe('uncertain')
     expect(release).toHaveBeenCalledWith({
@@ -340,7 +345,7 @@ describe('Bitcoin payment binding and lifecycle', () => {
       )
       const deletion = await settlement.makeDeleteIntentSignature([input])
       const deleteIntent = { proof: deletion.proof, message: JSON.stringify(deletion.message) }
-      saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent })
+      saveBitcoinPayment(f.status, { ...f.journal, plan: f.prepared, stage: 'registered', deleteIntent })
       expect(readSpendingBitcoin(f.status)?.deleteIntent).toEqual(deleteIntent)
       const proof = Transaction.fromPSBT(base64.decode(intent.proof))
       const vector = process.env.VAULT_BITCOIN_SDK_VECTOR
@@ -402,13 +407,13 @@ it.each([1, 2])(
   async (count) => {
     const f = await bitcoinFixture(count)
     expect(validateSpendingBitcoinPlan(f.prepared, f.status)).toEqual(f.prepared)
-    saveBitcoinPayment(f.journal)
+    saveBitcoinPayment(f.status, f.journal)
     expect(readSpendingBitcoin(f.status)?.outputs).toEqual(f.plan.outputs)
     const outputs = [{ script: '0014' + '44'.repeat(20), amountSats: 1500 }]
     expect(() => validateSpendingBitcoinPlan({ ...f.prepared, plan: { ...f.plan, outputs } }, f.status)).toThrow()
     // Even replacing both the display and quote with a new valid hash cannot change the owner's signed request.
     const plan = { ...f.plan, outputs, changeSats: f.plan.valueSats - 1500 - f.plan.feeSats }
-    saveBitcoinPayment({
+    saveBitcoinPayment(f.status, {
       ...f.journal,
       outputs,
       plan: { ...f.prepared, plan, planDigest: savingsSetupDigest('bitcoin-plan', plan) },
@@ -426,7 +431,7 @@ it('rejects retired reserve-only plans, journals and prepare requests without po
     reserveCount: 2,
   }
   expect(() => validateSpendingBitcoinPlan({ ...f.prepared, plan } as never, f.status)).toThrow()
-  saveBitcoinPayment({ ...f.journal, outputs: undefined, reserveCount: 2 } as never)
+  saveBitcoinPayment(f.status, { ...f.journal, outputs: undefined, reserveCount: 2 } as never)
   expect(() => readSpendingBitcoin(f.status)).toThrow('does not match this wallet')
   const post = vi.spyOn(apiModule, 'vaultPost')
   const request = { ...f.journal.prepareRequest!, outputs: undefined, reserveCount: 2 }
@@ -447,7 +452,7 @@ it('rejects nonstandard outputs, dust and unsafe values before preparing a payme
 })
 it('reconciles a new Bitcoin payment through the shared status path without creating another authorization', async () => {
   const f = await bitcoinFixture(2)
-  saveBitcoinPayment(f.journal)
+  saveBitcoinPayment(f.status, f.journal)
   const status = vi.spyOn(bitcoinPaymentClient, 'status').mockResolvedValue({ state: 'uncertain' })
   const prepare = vi.spyOn(bitcoinPaymentClient, 'prepare')
   const release = vi.spyOn(bitcoinPaymentClient, 'release')
@@ -546,7 +551,9 @@ it.each(
         () => {},
       ),
     ).rejects.toThrow('Expected availability')
-    expect(unlock).toHaveBeenCalledOnce()
+    // Each send attempt carries its own passkey ceremony: the retry cannot
+    // reuse the first attempt's authorization.
+    expect(unlock).toHaveBeenCalledTimes(2)
     expect(bitcoinPaymentClient.prepare).toHaveBeenCalledOnce()
     expect(registered).toHaveBeenCalledOnce()
     expect(readSpendingBitcoin(f.status)).toBeNull()
@@ -560,7 +567,7 @@ it.each(
   }
 })
 
-it('checks the enrolled Light output before asking for a Bitcoin payment signature', async () => {
+it('requests the credential first, then reports unavailable funds and releases the session', async () => {
   const enrollment = sharedSpendingEnrollment()
   const status = sharedSpendingStatus()
   const unlock = vi.fn()
@@ -584,7 +591,8 @@ it('checks the enrolled Light output before asking for a Bitcoin payment signatu
     ),
   ).rejects.toThrow('No live Spending output is available')
   expect(coins).toHaveBeenCalledWith({ script: status.spendingArkScript })
-  expect(unlock).not.toHaveBeenCalled()
+  // The ceremony precedes network setup so the platform sees fresh activation.
+  expect(unlock).toHaveBeenCalledOnce()
   expect(approve).not.toHaveBeenCalled()
   expect(dispose).toHaveBeenCalledOnce()
 })
@@ -617,7 +625,7 @@ async function confirmedBitcoinFixture(network: 'mainnet' | 'mutinynet' = 'mainn
       receiverVout: f.coin.vout,
     },
   }
-  saveBitcoinPayment(journal)
+  saveBitcoinPayment(f.status, journal)
   expect(readSpendingBitcoin(f.status)?.stage).toBe('confirmed')
   const file: VaultRecoveryFile = {
     name: 'vaulted-recovery',
@@ -707,7 +715,7 @@ describe('payment-owned recovery acknowledgment', () => {
     async (stage) => {
       const f = await confirmedBitcoinFixture()
       await recoveryFileStore(f.key, f.file)
-      saveBitcoinPayment({ ...f.journal, stage, receipt: { ...f.journal.receipt!, state: 'submitted' } })
+      saveBitcoinPayment(f.status, { ...f.journal, stage, receipt: { ...f.journal.receipt!, state: 'submitted' } })
       await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
       expect(f.snapshot).not.toHaveBeenCalled()
       expect(readSpendingBitcoin(f.status)?.stage).toBe(stage)
@@ -721,7 +729,7 @@ describe('payment-owned recovery acknowledgment', () => {
       deleteIntent: { proof: 'retained-proof', message: '{"type":"delete","expire_at":0}' },
     }
     f.snapshot.mockImplementationOnce(async () => {
-      saveBitcoinPayment(changed)
+      saveBitcoinPayment(f.status, changed)
       return { history: f.history } as never
     })
     await expect(acknowledgeSpendingBitcoinRecovery(f.status)).resolves.toBe(false)
@@ -750,7 +758,7 @@ it.each([checkSpendingBitcoin, cancelSpendingBitcoin])(
   'binds a manual Bitcoin command to the journal under the send lock',
   async (command) => {
     const f = await bitcoinFixture()
-    saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'prepared' })
+    saveBitcoinPayment(f.status, { ...f.journal, plan: f.prepared, stage: 'prepared' })
     const status = vi.spyOn(bitcoinPaymentClient, 'status')
     const release = vi.spyOn(bitcoinPaymentClient, 'release')
     await expect(command(f.status, { operationId: 'another-operation' })).rejects.toThrow(
@@ -767,7 +775,7 @@ it.each([checkSpendingBitcoin, cancelSpendingBitcoin])(
 
 it('does not dispatch expiry release when the observing account locks during status lookup', async () => {
   const f = await bitcoinFixture()
-  saveBitcoinPayment({ ...f.journal, plan: f.prepared, stage: 'prepared' })
+  saveBitcoinPayment(f.status, { ...f.journal, plan: f.prepared, stage: 'prepared' })
   vi.spyOn(Date, 'now').mockReturnValue((f.plan.registerExpireAt + 16) * 1000)
   const abort = new AbortController()
   vi.spyOn(bitcoinPaymentClient, 'status').mockImplementation(async () => {
@@ -888,3 +896,69 @@ it.each(['discovery', 'passkey', 'prepared', 'approved', 'sdk-session', 'contrac
     if (phase === 'prepared') expect(approve).not.toHaveBeenCalled()
   },
 )
+
+describe('concurrent Bitcoin payment journals', () => {
+  const secondJournal = (f: Awaited<ReturnType<typeof bitcoinFixture>>, operationId: string, txid: string) => {
+    const request = { ...f.journal.prepareRequest!, operationId, txid }
+    const journal: BitcoinPaymentJournal = {
+      ...f.journal,
+      operationId,
+      txid,
+      prepareRequest: {
+        ...request,
+        ownerSignature: hex.encode(
+          schnorr.sign(hex.decode(savingsSetupDigest('bitcoin-prepare', prepareFacts(request))), f.phoneSecret),
+        ),
+      },
+    }
+    return journal
+  }
+  it('retains independent records with latest/by-id access and scoped clearing', async () => {
+    const f = await bitcoinFixture(2)
+    saveBitcoinPayment(f.status, f.journal)
+    const other = secondJournal(f, 'bb'.repeat(16), 'cc'.repeat(32))
+    saveBitcoinPayment(f.status, other)
+    expect(listSpendingBitcoin(f.status).map((j) => j.operationId)).toEqual([f.plan.operationId, 'bb'.repeat(16)])
+    expect(readSpendingBitcoin(f.status)?.operationId).toBe('bb'.repeat(16))
+    expect(readSpendingBitcoinById(f.status, f.plan.operationId)?.txid).toBe(f.journal.txid)
+    expect(readSpendingBitcoinById(f.status, 'dd'.repeat(16))).toBeNull()
+    // Clearing one record preserves the other, including across a legacy read.
+    clearBitcoinPayment(other)
+    expect(listSpendingBitcoin(f.status).map((j) => j.operationId)).toEqual([f.plan.operationId])
+    expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
+    clearBitcoinPayment(f.journal)
+    expect(listSpendingBitcoin(f.status)).toEqual([])
+    expect(readSpendingBitcoin(f.status)).toBeNull()
+  })
+  it('reads a legacy singleton record as one journal', async () => {
+    const f = await bitcoinFixture(2)
+    localStorage.setItem(`vaulted:savings-setup:${f.status.vaultId}`, JSON.stringify(f.journal))
+    expect(listSpendingBitcoin(f.status).map((j) => j.operationId)).toEqual([f.plan.operationId])
+    expect(readSpendingBitcoin(f.status)?.operationId).toBe(f.plan.operationId)
+  })
+  it('fails closed when any retained record is tampered', async () => {
+    const f = await bitcoinFixture(2)
+    saveBitcoinPayment(f.status, f.journal)
+    saveBitcoinPayment(f.status, secondJournal(f, 'bb'.repeat(16), 'cc'.repeat(32)))
+    const raw = JSON.parse(
+      localStorage.getItem(`vaulted:savings-setup:${f.status.vaultId}`)!,
+    ) as BitcoinPaymentJournal[]
+    raw[1]!.outputs = [{ script: `0014${'99'.repeat(20)}`, amountSats: 1 }]
+    localStorage.setItem(`vaulted:savings-setup:${f.status.vaultId}`, JSON.stringify(raw))
+    expect(() => listSpendingBitcoin(f.status)).toThrow()
+    expect(() => readSpendingBitcoin(f.status)).toThrow()
+  })
+  it('reserves inputs and batch commitments across journals', async () => {
+    const f = await bitcoinFixture(2)
+    saveBitcoinPayment(f.status, f.journal)
+    const other = secondJournal(f, 'bb'.repeat(16), 'cc'.repeat(32))
+    saveBitcoinPayment(f.status, other)
+    // A confirmed journal contributes its input and its batch commitment.
+    const c = await confirmedBitcoinFixture()
+    saveBitcoinPayment(c.status, c.journal)
+    const reserved = bitcoinReservedInputs(f.status)
+    expect(reserved.outpoints.has(`${f.journal.txid}:${f.journal.vout}`)).toBe(true)
+    expect(reserved.outpoints.has('cc'.repeat(32) + ':0')).toBe(true)
+    expect(reserved.commitments.has(c.journal.receipt!.commitmentTxid!)).toBe(true)
+  })
+})

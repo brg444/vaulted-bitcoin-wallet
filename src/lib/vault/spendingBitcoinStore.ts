@@ -65,11 +65,35 @@ export interface BitcoinPaymentJournal {
     ownerSignature: string
   }
 }
-export function readSpendingBitcoin(status: VaultStatus): BitcoinPaymentJournal | null {
+/**
+ * Concurrent onchain payments persist as a per-vault list keyed by
+ * operationId. Saves replace by id after a synchronous re-read, so two tabs
+ * racing through the construction lock cannot drop each other's records.
+ * Reads validate every retained record and fail closed on any mismatch: a
+ * tampered record must never silently vanish and release its reservation.
+ */
+export function listSpendingBitcoin(status: VaultStatus): BitcoinPaymentJournal[] {
   const raw = localStorage.getItem(setupKey(status.vaultId))
-  if (!raw) return null
+  if (!raw) return []
   if (raw.length > 1000000) throw new Error('Bitcoin payment record is too large')
-  const j = JSON.parse(raw) as BitcoinPaymentJournal
+  const parsed = JSON.parse(raw) as BitcoinPaymentJournal | BitcoinPaymentJournal[]
+  // Legacy singleton records (including live submitted operations) read as a
+  // one-element list and migrate to the list shape on the next save.
+  const journals = (Array.isArray(parsed) ? parsed : [parsed]).filter(
+    (j): j is BitcoinPaymentJournal => typeof j === 'object' && j !== null,
+  )
+  journals.forEach((j) => validateBitcoinJournal(j, status))
+  return journals
+}
+export function readSpendingBitcoinById(status: VaultStatus, operationId: string): BitcoinPaymentJournal | null {
+  return listSpendingBitcoin(status).find((j) => j.operationId === operationId) ?? null
+}
+/** Latest saved journal, preserving single-operation call-site behavior. */
+export function readSpendingBitcoin(status: VaultStatus): BitcoinPaymentJournal | null {
+  const journals = listSpendingBitcoin(status)
+  return journals.length ? journals[journals.length - 1]! : null
+}
+function validateBitcoinJournal(j: BitcoinPaymentJournal, status: VaultStatus): void {
   if (
     j.version !== 1 ||
     j.vaultId !== status.vaultId ||
@@ -135,14 +159,46 @@ export function readSpendingBitcoin(status: VaultStatus): BitcoinPaymentJournal 
   )
     throw new Error('Saved Bitcoin payment cancellation is invalid')
   if (j.receipt) validateBitcoinReceipt(j.receipt, j, status)
-  return j
 }
-export function saveBitcoinPayment(j: BitcoinPaymentJournal) {
-  const raw = JSON.stringify(j)
+function writeBitcoinJournals(vaultId: string, journals: BitcoinPaymentJournal[]) {
+  const raw = JSON.stringify(journals)
   if (raw.length > 1000000) throw new Error('Bitcoin payment recovery paths are too large to save')
-  localStorage.setItem(setupKey(j.vaultId), raw)
-  if (localStorage.getItem(setupKey(j.vaultId)) !== raw) throw new Error('Could not save Bitcoin payment progress')
+  localStorage.setItem(setupKey(vaultId), raw)
+  if (localStorage.getItem(setupKey(vaultId)) !== raw) throw new Error('Could not save Bitcoin payment progress')
   window.dispatchEvent(new Event('vaulted-savings-setup'))
+}
+export function saveBitcoinPayment(status: VaultStatus, j: BitcoinPaymentJournal) {
+  // Re-read at save time so a concurrent tab's record survives: replacement
+  // is scoped to this operationId and the splice holds no awaits. The splice
+  // itself never validates: a poisoned store must remain writable only by
+  // shape, never silently dropped — every read still validates all retained
+  // records and fails closed, so tampering can only block, never release.
+  if (j.vaultId !== status.vaultId) throw new Error('Bitcoin payment record does not match this wallet')
+  const raw = localStorage.getItem(setupKey(j.vaultId))
+  const parsed = raw ? (JSON.parse(raw) as BitcoinPaymentJournal | BitcoinPaymentJournal[]) : []
+  const journals = (Array.isArray(parsed) ? parsed : [parsed]).filter(
+    (record): record is BitcoinPaymentJournal =>
+      typeof record === 'object' && record !== null && record.operationId !== j.operationId,
+  )
+  journals.push(j)
+  writeBitcoinJournals(j.vaultId, journals)
+}
+
+/**
+ * Outpoints and batch commitments reserved by retained journals. Every
+ * retained stage reserves its input: pre-registration drafts may still be
+ * admitted, and dispatched operations must never be double-spent. Confirmed
+ * journals keep reserving until acknowledgment retires them. A submitted
+ * marker alone never releases the original inputs.
+ */
+export function bitcoinReservedInputs(status: VaultStatus): { outpoints: Set<string>; commitments: Set<string> } {
+  const outpoints = new Set<string>()
+  const commitments = new Set<string>()
+  for (const journal of listSpendingBitcoin(status)) {
+    outpoints.add(`${journal.txid}:${journal.vout}`)
+    if (journal.receipt?.commitmentTxid) commitments.add(journal.receipt.commitmentTxid)
+  }
+  return { outpoints, commitments }
 }
 
 export const BITCOIN_PAYMENT_EVENT = 'vaulted-savings-setup'
@@ -157,12 +213,19 @@ export function prepareFacts(r: NonNullable<BitcoinPaymentJournal['prepareReques
   }
 }
 export function clearBitcoinPayment(j: BitcoinPaymentJournal) {
-  // Never remove a newer operation from another observer.
+  // Removal is scoped to this operationId: another operation's record from
+  // this or another tab is never touched.
   const raw = localStorage.getItem(setupKey(j.vaultId))
-  if (raw && JSON.parse(raw).operationId === j.operationId) {
-    localStorage.removeItem(setupKey(j.vaultId))
-    window.dispatchEvent(new Event(BITCOIN_PAYMENT_EVENT))
-  }
+  if (!raw) return
+  const parsed = JSON.parse(raw) as BitcoinPaymentJournal | BitcoinPaymentJournal[]
+  const journals = (Array.isArray(parsed) ? parsed : [parsed]).filter(
+    (record): record is BitcoinPaymentJournal =>
+      typeof record === 'object' && record !== null && record.operationId !== j.operationId,
+  )
+  if (journals.length === (Array.isArray(parsed) ? parsed.length : 1)) return
+  if (!journals.length) localStorage.removeItem(setupKey(j.vaultId))
+  else localStorage.setItem(setupKey(j.vaultId), JSON.stringify(journals))
+  window.dispatchEvent(new Event(BITCOIN_PAYMENT_EVENT))
 }
 export function validateBitcoinReceipt(r: BitcoinPaymentResponse, j: BitcoinPaymentJournal, status: VaultStatus) {
   if (

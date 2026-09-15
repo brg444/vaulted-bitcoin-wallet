@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sendSpendingToBitcoin } from './spendingBitcoinFunding'
 import { BitcoinPaymentError } from './bitcoinPaymentError'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
-import { readSpendingBitcoin } from './spendingBitcoinStore'
+import { listSpendingBitcoin, readSpendingBitcoin, savingsSetupDigest } from './spendingBitcoinStore'
 import { sharedSpendingEnrollment, sharedSpendingStatus } from './vtxo/testdata/sharedSpending'
 
 const unlockMock = vi.hoisted(() => ({ current: null as null | (() => Promise<unknown>) }))
@@ -64,14 +64,21 @@ const json = (body: unknown, code = 200) =>
     text: async () => JSON.stringify(body),
   }) as Response
 
-function routeFetch(handlers: { prepare?: (url: string) => Response | Promise<Response>; status?: () => Response }) {
-  return vi.fn(async (url: unknown) => {
+function routeFetch(handlers: {
+  prepare?: (url: string, body: Record<string, never>) => Response | Promise<Response>
+  status?: () => Response
+  release?: () => Response
+}) {
+  return vi.fn(async (url: unknown, init?: { body?: string }) => {
     const target = String(url)
     if (target.includes('/v1/vtxo/bitcoin/info'))
       return json({ version: 1, maxInputs: 1, descriptorHash: guardianRenewalContextDigest(status) })
     if (target.endsWith('/prepare'))
-      return handlers.prepare ? handlers.prepare(target) : json({ error: 'x', code: 'REJECTED' }, 400)
+      return handlers.prepare
+        ? handlers.prepare(target, JSON.parse(String(init?.body)))
+        : json({ error: 'x', code: 'REJECTED' }, 400)
     if (target.endsWith('/status')) return handlers.status ? handlers.status() : json({ state: 'not_found' })
+    if (target.endsWith('/release')) return handlers.release ? handlers.release() : json({ state: 'released' })
     throw new Error(`unexpected request ${target}`)
   })
 }
@@ -197,6 +204,94 @@ describe('spending-to-bitcoin prepare rejection', () => {
   })
 })
 
+describe('concurrent spending-to-bitcoin sends', () => {
+  const COIN2 = { ...COIN, txid: 'cd'.repeat(32), value: 200000 }
+  const valuesByTxid = { [COIN.txid]: COIN.value, [COIN2.txid]: COIN2.value }
+  const echoPrepare = (_url: string, body: Record<string, never>) => {
+    const request = body as unknown as {
+      operationId: string
+      txid: string
+      vout: number
+      outputs: never[]
+      expiresAt: number
+    }
+    const valueSats = valuesByTxid[request.txid]!
+    const amount = 30000
+    const plan = {
+      operationId: request.operationId,
+      vaultId: status.vaultId,
+      descriptorHash: guardianRenewalContextDigest(status),
+      enrollmentDigest: '',
+      txid: request.txid,
+      vout: request.vout,
+      valueSats,
+      changeSats: valueSats - amount - 400,
+      reserveScript: '',
+      reserveSats: 0,
+      reserveCount: 0,
+      feeSats: 400,
+      feePolicyDigest: 'ee'.repeat(32),
+      registerExpireAt: request.expiresAt,
+      outputs: request.outputs,
+    }
+    return json({ plan, planDigest: savingsSetupDigest('bitcoin-plan', plan), state: 'prepared' })
+  }
+  beforeEach(() => {
+    localStorage.clear()
+    contractsMock.vtxos = [COIN, COIN2]
+    contractsMock.refresh = async () => {}
+    unlockMock.current = async () => AUTH
+    vi.stubGlobal('fetch', routeFetch({ prepare: echoPrepare }))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('lets an independent send reach review while the first is retained', async () => {
+    const approvals: { plan: { operationId: string }; resolve: (ok: boolean) => void }[] = []
+    const approve = vi.fn(
+      (plan: { operationId: string }) =>
+        new Promise<boolean>((resolve) => {
+          approvals.push({ plan, resolve })
+        }),
+    )
+    const first = sendSpendingToBitcoin(enrollment, status, [OUTPUT], approve, vi.fn()).catch((e) => e)
+    await vi.waitFor(() => expect(approvals).toHaveLength(1))
+    expect(listSpendingBitcoin(status)).toHaveLength(1)
+    // Second send proceeds: the first journal reserves only its own input.
+    const second = sendSpendingToBitcoin(enrollment, status, [OUTPUT], approve, vi.fn()).catch((e) => e)
+    await vi.waitFor(() => expect(approvals).toHaveLength(2))
+    expect(approvals[0]!.plan.operationId).not.toBe(approvals[1]!.plan.operationId)
+    expect(listSpendingBitcoin(status)).toHaveLength(2)
+    // Declining both releases both reservations without touching each other.
+    approvals.forEach((a) => a.resolve(false))
+    const [firstResult, secondResult] = await Promise.all([first, second])
+    expect(firstResult.state).toBe('released')
+    expect(secondResult.state).toBe('released')
+    expect(listSpendingBitcoin(status)).toHaveLength(0)
+  })
+
+  it('names the constraint when only reserved outputs remain', async () => {
+    contractsMock.vtxos = [COIN]
+    const approvals: { resolve: (ok: boolean) => void }[] = []
+    const first = sendSpendingToBitcoin(
+      enrollment,
+      status,
+      [OUTPUT],
+      () => new Promise<boolean>((resolve) => approvals.push({ resolve })),
+      vi.fn(),
+    ).catch((e) => e)
+    await vi.waitFor(() => expect(approvals).toHaveLength(1))
+    const blocked = await sendSpendingToBitcoin(enrollment, status, [OUTPUT], vi.fn(), vi.fn()).catch((e) => e)
+    expect(blocked).toBeInstanceOf(BitcoinPaymentError)
+    expect(blocked.outcome).toBe('pending')
+    expect(blocked.message).toMatch(/reserved|still being checked|Recent/i)
+    approvals.forEach((a) => a.resolve(false))
+    await first
+  })
+})
+
 describe('spending-to-bitcoin passkey context', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -243,7 +338,7 @@ describe('spending-to-bitcoin passkey context', () => {
     expect(String(failure?.message)).toMatch(/RP ID/)
   })
 
-  it('waits out a slow refresh, then requests the credential once', async () => {
+  it('requests the credential before a slow refresh, then selects once it resolves', async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -253,12 +348,12 @@ describe('spending-to-bitcoin passkey context', () => {
     unlockMock.current = unlock
     const progress = vi.fn()
     const pending = sendSpendingToBitcoin(enrollment, status, [OUTPUT], vi.fn(), progress).catch((e) => e)
+    // Fresh user activation first: the ceremony must not wait on network setup.
+    await vi.waitFor(() => expect(unlock).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(progress).toHaveBeenCalledWith('Checking funds for this Bitcoin payment'))
-    expect(unlock).not.toHaveBeenCalled()
     release()
     const failure = await pending
     expect(unlock).toHaveBeenCalledTimes(1)
-    expect(progress).toHaveBeenCalledWith('Unlock Spending with your passkey')
     expect(failure).toBeInstanceOf(BitcoinPaymentError)
     expect(failure.outcome).toBe('not_sent')
   })
