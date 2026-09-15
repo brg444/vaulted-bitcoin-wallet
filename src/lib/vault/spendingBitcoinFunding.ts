@@ -655,7 +655,7 @@ async function prepareRejection(
   error: unknown,
 ): Promise<BitcoinPaymentError | null> {
   if (journal.stage !== 'preparing') return null
-  if (!(error instanceof VaultRequestError) || error.status !== 400) return null
+  if (!(error instanceof VaultRequestError) || error.status !== 400 || error.code !== 'REJECTED') return null
   let admitted: string | null = null
   try {
     admitted = (await bitcoinPaymentClient.status({ vaultId: journal.vaultId, operationId: journal.operationId })).state

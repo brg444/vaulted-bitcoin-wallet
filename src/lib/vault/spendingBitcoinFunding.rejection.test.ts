@@ -168,6 +168,14 @@ describe('spending-to-bitcoin prepare rejection', () => {
     expect(readSpendingBitcoin(status)?.stage).toBe('preparing')
   })
 
+  it('keeps the journal pending when a 400 carries another code', async () => {
+    vi.stubGlobal('fetch', routeFetch({ prepare: () => json({ error: 'bad request', code: 'INVALID' }, 400) }))
+    const failure = await sendSpendingToBitcoin(enrollment, status, [OUTPUT], vi.fn(), vi.fn()).catch((e) => e)
+    expect(failure).toBeInstanceOf(BitcoinPaymentError)
+    expect(failure.outcome).toBe('pending')
+    expect(readSpendingBitcoin(status)?.stage).toBe('preparing')
+  })
+
   it('keeps the journal pending for non-rejection prepare failures', async () => {
     vi.stubGlobal('fetch', routeFetch({ prepare: () => json({ error: 'boom' }, 500) }))
     const failure = await sendSpendingToBitcoin(enrollment, status, [OUTPUT], vi.fn(), vi.fn()).catch((e) => e)
