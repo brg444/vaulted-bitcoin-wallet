@@ -12,14 +12,16 @@ import { Address, OutScript } from '@scure/btc-signer'
 import { vaultAddressNetwork } from './bitcoin'
 import { schnorr } from '@noble/curves/secp256k1.js'
 import { consoleError, consoleLog } from '../logs'
-import { BitcoinPaymentError, bitcoinPaymentRejected } from './bitcoinPaymentError'
+import { BitcoinPaymentError, bitcoinPaymentCredentialError, bitcoinPaymentRejected } from './bitcoinPaymentError'
+
+import { vaultLatency } from './latency'
 import { traceBitcoinBatch } from './bitcoinBatchTrace'
 import { chooseBitcoinInput, rememberBitcoinEligibility } from './bitcoinEligibility'
-import { vaultGet, vaultPost } from './api'
+import { VaultRequestError, vaultGet, vaultPost } from './api'
 import { guardianRenewalContext, guardianRenewalContextDigest } from './vtxo/renewalContext'
 import { vaultPolicyV1ScriptFromStatus } from './vtxo/spendingTransaction'
 import { createVtxoOperationId } from './vtxo/spendingJournal'
-import { createVtxoSpendUnlocker, newVtxoSpendChallenge, vtxoSpendDirectSig } from './vtxo/spend'
+import { createVtxoSpendUnlocker, newVtxoSpendChallenge, vtxoSpendDirectSig, type VtxoSpendPasskey } from './vtxo/spend'
 import { withVtxoSendLock } from './vtxo/lock'
 import {
   installVaultSettlementEventSource,
@@ -329,9 +331,10 @@ export async function sendSpendingToBitcoin(
   const context = guardianRenewalContext(status)
   if (outputs.reduce((sum, output) => sum + output.amountSats, 0) > context.spendingPolicy.txRecipientCapSats)
     throw new Error('This Bitcoin payment exceeds your per-payment limit')
-  await supportsSpendingBitcoin(status)
+  await vaultLatency.measure('bitcoin-setup', () => supportsSpendingBitcoin(status))
   signal?.throwIfAborted()
   if (enrollment.vaultId !== status.vaultId) throw new Error('Sign in again to send from Spending')
+  progress('Waiting for exclusive Spending access')
   return withVtxoSendLock(status.vaultId, async () => {
     signal?.throwIfAborted()
     const prior = readSpendingBitcoin(status)
@@ -352,8 +355,10 @@ export async function sendSpendingToBitcoin(
         progress('Checking funds for this Bitcoin payment')
         const script = vaultPolicyV1ScriptFromStatus(status)
         const url = vaultOperatorOrigin(status.network)
-        await contracts.refreshVtxos({ scripts: [context.scriptPubKey] })
-        signal?.throwIfAborted()
+        await vaultLatency.measure('bitcoin-setup', async () => {
+          await contracts.refreshVtxos({ scripts: [context.scriptPubKey] })
+          signal?.throwIfAborted()
+        })
         const known = await contracts.getContractsWithVtxos({ script: context.scriptPubKey })
         signal?.throwIfAborted()
         const candidates = known
@@ -383,7 +388,12 @@ export async function sendSpendingToBitcoin(
         )
         if (!coin) throw new Error('No live Spending output is available for this Bitcoin payment')
         progress('Unlock Spending with your passkey')
-        const auth = await unlocker.unlock()
+        let auth: VtxoSpendPasskey
+        try {
+          auth = await vaultLatency.measure('passkey', () => unlocker.unlock())
+        } catch (error) {
+          throw bitcoinPaymentCredentialError(error)
+        }
         signal?.throwIfAborted()
         let journal: BitcoinPaymentJournal = {
           version: 1,
@@ -598,6 +608,8 @@ export async function sendSpendingToBitcoin(
         if (error instanceof BitcoinPaymentError) throw error
         const saved = readSpendingBitcoin(status)
         if (saved) {
+          const rejected = await prepareRejection(status, saved, error)
+          if (rejected) throw rejected
           const receipt = await bitcoinPaymentClient
             .status({ vaultId: saved.vaultId, operationId: saved.operationId })
             .catch(() => null)
@@ -623,6 +635,34 @@ export async function sendSpendingToBitcoin(
       }
     })
   })
+}
+
+/**
+ * Definitive pre-registration rejection: the Guardian refused this exact
+ * prepare request (400) and authoritative status confirms the operation was
+ * never admitted (`not_found`, including a 404). The local draft is cleared
+ * and the Guardian's reason surfaces as `not_sent` — nothing was reserved.
+ * Every other case (network/timeout errors, an unreachable status lookup, a
+ * real operation state) keeps the journal and the pending path, because a
+ * lost prepare response must never be mistaken for a rejection.
+ */
+async function prepareRejection(
+  status: VaultStatus,
+  journal: BitcoinPaymentJournal,
+  error: unknown,
+): Promise<BitcoinPaymentError | null> {
+  if (journal.stage !== 'preparing') return null
+  if (!(error instanceof VaultRequestError) || error.status !== 400) return null
+  let admitted: string | null = null
+  try {
+    admitted = (await bitcoinPaymentClient.status({ vaultId: journal.vaultId, operationId: journal.operationId })).state
+  } catch (statusError) {
+    if (statusError instanceof VaultRequestError && statusError.status === 404) admitted = 'not_found'
+    else return null
+  }
+  if (admitted !== 'not_found') return null
+  clearBitcoinPayment(journal)
+  return bitcoinPaymentRejected(error.message)
 }
 
 function retainBitcoinOutcome(status: VaultStatus, result: BitcoinPaymentResponse) {

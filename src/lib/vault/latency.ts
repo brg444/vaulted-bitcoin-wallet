@@ -23,6 +23,7 @@ export type VaultLatencyPhase =
   | 'rfq'
   | 'balance-publication'
   | 'notification-delivery'
+  | 'bitcoin-setup'
 
 export interface VaultLatencySample {
   phase: VaultLatencyPhase

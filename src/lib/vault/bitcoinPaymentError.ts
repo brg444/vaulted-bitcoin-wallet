@@ -27,6 +27,33 @@ export function bitcoinPaymentRejected(reason?: string, retryAt?: number): Bitco
   return new BitcoinPaymentError('not_sent', message, reason?.slice(0, 500), retryAt)
 }
 
+/**
+ * Classify a passkey ceremony failure. Cancellation and platform context
+ * rejections (expired user activation after a long setup, backgrounded page,
+ * dismissed prompt) are actionable retry states: no journal exists yet, so
+ * nothing was sent or reserved. Anything else propagates untouched so real
+ * ceremony bugs stay loud.
+ */
+export function bitcoinPaymentCredentialError(error: unknown): unknown {
+  const name =
+    error instanceof DOMException
+      ? error.name
+      : error instanceof Error && /NotAllowedError|AbortError/.test(error.name)
+        ? error.name
+        : undefined
+  if (name === 'AbortError')
+    return new BitcoinPaymentError(
+      'not_sent',
+      'The passkey step was cancelled. Review the payment and try again when ready.',
+    )
+  if (name === 'NotAllowedError')
+    return new BitcoinPaymentError(
+      'not_sent',
+      'The passkey step did not complete. Keep this page open and try again, and approve the prompt on this device.',
+    )
+  return error
+}
+
 export function bitcoinPaymentWait(retryAt?: number, details?: string): BitcoinPaymentError {
   const message = retryAt
     ? `Expected availability: ${new Date(retryAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}. Nothing was sent or queued.`
